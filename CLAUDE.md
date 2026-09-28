@@ -10,6 +10,7 @@ Weekly health review agent built on a shared core in /core.
 /metrics            deterministic metric calculations with unit tests
 /evals              metric regression fixtures
 /data               gitignored; local health datastore and exports
+/legacy contains the v1 scripts for reference only. Do not modify or import from them.
 
 ## Commands
 npm test            run unit tests, including metric fixtures
