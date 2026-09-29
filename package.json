@@ -10,6 +10,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "agent-core": "file:../Agent-Core"
+    "@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.1.2"
   }
 }
