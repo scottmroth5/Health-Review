@@ -1,11 +1,13 @@
 # Health Review Agent
 
 ## Purpose
-Weekly health review agent built on a shared core in /core.
-/core is copied from Job-Agent; keep it generic and port any core improvements back.
+Weekly health review agent built on the shared agent-core package.
+agent-core comes from the public Agent-Core repo as a git dependency pinned to a version tag
+("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.1.2"). Upgrade with npm update @scottmroth5/agent-core; test unreleased changes with npm link ../Agent-Core.
+Health specific logic stays in this repo; never add it to agent-core.
+
 
 ## Structure
-/core               generic agent infrastructure
 /agent              prompts, tools, and review logic
 /metrics            deterministic metric calculations with unit tests
 /evals              metric regression fixtures
