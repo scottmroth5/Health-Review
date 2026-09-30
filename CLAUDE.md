@@ -13,6 +13,8 @@ Health specific logic stays in this repo; never add it to agent-core.
 /ingest             Google Sheets to SQLite: sheets.js (read-only client, fakeable), parsers.js (one per sheet), sync.js;
                     the only code touching raw source rows
 /db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides)
+/server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
+                    static UI in server/public (plain HTML, CSS and JS modules; no build step)
 /evals              metric regression fixtures; fixtures/v1 holds v1 golden outputs (see its README)
 /tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core)
 /scripts            command-line entry points
@@ -29,6 +31,8 @@ npm run sync                      copy new rows from the Sheets into data/health
 npm run sync -- --backfill        one-time full import, including the v1 drinking log and weekly check-ins
 powershell -ExecutionPolicy Bypass -File scripts\register-sync-task.ps1   (re)register the daily 7am sync task
                                   ("Health-Review daily sync"; runs scripts\sync-daily.cmd, logs to data\logs\sync.log)
+npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
+npm run prompts:import-v1         one-time import of data/v1-export/prompts into prompt_sections (-- --replace to overwrite)
 npm run evals                     run eval suites and print results (not built yet)
 npm run review                    generate the weekly health review (not built yet)
 Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
@@ -43,6 +47,13 @@ Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI
 overwrite UI rows. The Workout Log can hold planned future workouts with weights but no reps: metrics count only sets
 with reps, time, or distance, on dates up to today. Text in the log's date column (illness, injury, vacation) is kept
 in workout_log_notes; treat it as symptom data under the hard rules.
+
+## UI and API
+AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS rebinding);
+exposing the server requires a login mode in server/auth.js first. Check-in and drinking scales are 1 to 10 to match
+v1 history. CBD drinks are stored in drinking_days.cbd and never counted as alcohol. Prompt sections live in
+prompt_sections (edited on the Prompt tab; every save and delete copies the old row to prompt_section_versions);
+sensitive sections are left out of the weekly review by buildInstructions in agent/prompts.js.
 
 ## Hard rules
 All health data stays on this machine. Never add cloud storage, CI, or remote sync for /data.

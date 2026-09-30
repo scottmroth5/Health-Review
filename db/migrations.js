@@ -133,4 +133,40 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    id: '002-cbd-prompts-reviews',
+    up: `
+      -- CBD drinks are tracked beside alcohol but never counted in the alcohol total.
+      ALTER TABLE drinking_days ADD COLUMN cbd INTEGER NOT NULL DEFAULT 0;
+
+      -- Prompt sections for the weekly review, edited in the UI. position sets the order.
+      -- Sensitive sections (medications, genetics) are left out of the weekly review.
+      CREATE TABLE prompt_sections (
+        id INTEGER PRIMARY KEY,
+        position INTEGER NOT NULL,
+        name TEXT NOT NULL UNIQUE,
+        text TEXT NOT NULL,
+        sensitive INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+      -- Previous contents, kept on every save and delete.
+      CREATE TABLE prompt_section_versions (
+        id INTEGER PRIMARY KEY,
+        section_id INTEGER NOT NULL,
+        position INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        text TEXT NOT NULL,
+        sensitive INTEGER NOT NULL,
+        replaced_at TEXT NOT NULL
+      );
+
+      CREATE TABLE reviews (
+        week_ending TEXT PRIMARY KEY,
+        summary_json TEXT NOT NULL,
+        report_md TEXT NOT NULL,
+        run_id INTEGER,
+        created_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
