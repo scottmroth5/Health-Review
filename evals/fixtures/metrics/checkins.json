@@ -1,0 +1,40 @@
+{
+  "description": "Check-ins: daily week scores vs a baseline of v1 weekly rows, body measurement change, too few pairs for correlation",
+  "notes": [
+    "Week 2026-03-01..07: readiness 7, 5, 8 = 6.67 -> 6.7, min 5, max 8. Baseline weekly rows Feb 14, 21, 28: 6, 7, 6 = 6.33 -> 6.3; change 0.33 -> 0.3.",
+    "Stress 3, 6, 2 = 3.67 -> 3.7; the weekly rows have no stress, so no baseline.",
+    "Weight by measured date: Jan 29 183.5, Feb 26 182.0, Mar 6 180.4. Latest on or before Feb 6 is Jan 29: change -3.1.",
+    "Only 3 daily check-ins, below 10 pairs, so readiness correlations are null."
+  ],
+  "weekEnd": "2026-03-07",
+  "input": {
+    "checkins": [
+      { "date": "2026-01-31", "cadence": "weekly", "readiness": 5, "weight_lbs": 183.5, "body_measured_on": "2026-01-29" },
+      { "date": "2026-02-14", "cadence": "weekly", "readiness": 6 },
+      { "date": "2026-02-21", "cadence": "weekly", "readiness": 7 },
+      { "date": "2026-02-28", "cadence": "weekly", "readiness": 6, "weight_lbs": 182.0, "body_measured_on": "2026-02-26" },
+      { "date": "2026-03-02", "cadence": "daily", "readiness": 7, "energy": 6, "mood": 8, "stress": 3, "nutrition": 7 },
+      { "date": "2026-03-04", "cadence": "daily", "readiness": 5, "energy": 5, "mood": 6, "stress": 6, "nutrition": 6 },
+      { "date": "2026-03-06", "cadence": "daily", "readiness": 8, "energy": 7, "mood": 8, "stress": 2, "nutrition": 8, "weight_lbs": 180.4, "body_measured_on": "2026-03-06" }
+    ],
+    "daily_metrics": [
+      { "date": "2026-03-02", "hrv_ms": 50, "sleep_total_hr": 7.1 },
+      { "date": "2026-03-04", "hrv_ms": 45, "sleep_total_hr": 6.4 },
+      { "date": "2026-03-06", "hrv_ms": 55, "sleep_total_hr": 7.9 }
+    ]
+  },
+  "expected": {
+    "checkins": {
+      "week": { "entries": 3, "dailyEntries": 3 },
+      "scales": {
+        "readiness": { "entries": 3, "mean": 6.7, "min": 5, "max": 8, "baselineEntries": 3, "baselineMean": 6.3, "changeVsBaseline": 0.3 },
+        "stress": { "entries": 3, "mean": 3.7, "min": 2, "max": 6, "baselineEntries": 0, "baselineMean": null, "changeVsBaseline": null }
+      },
+      "body": {
+        "weight_lbs": { "latest": 180.4, "latestDate": "2026-03-06", "change": -3.1, "comparedWith": "2026-01-29" },
+        "body_fat_pct": { "latest": null, "change": null }
+      },
+      "readinessCorrelation90d": { "hrv_ms": { "pairs": 3, "r": null }, "sleep_total_hr": { "pairs": 3, "r": null } }
+    }
+  }
+}

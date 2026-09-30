@@ -1,0 +1,47 @@
+{
+  "description": "Drinking: week totals without CBD, unlogged days not counted as zero, next-morning recovery after drinking vs alcohol-free days",
+  "notes": [
+    "Week 2026-03-01..07: 4 logged days (Mar 3, 5, 7 unlogged). Alcohol 2 + 0 + 2 + 0 = 4; CBD 1 + 2 = 3 is not alcohol, so Mar 6 is alcohol-free.",
+    "Moods on drinking days: before (6 + 5) / 2 = 5.5, after (7 + 8) / 2 = 7.5.",
+    "Baseline Feb: 3 logged days, 4 drinks: 4 / 3 * 7 = 9.33 -> 9.3 per 7 logged days.",
+    "Next mornings after drinking days (Mar 1, Mar 4, Feb 5, Feb 19): HRV 40, 42, 44, 46 = 43; RHR 60, 59, 58, 58 = 58.75 -> 58.8; sleep 6.5, 6.8, 7.0, 7.2 = 6.875 -> 6.9.",
+    "Next mornings after alcohol-free days (Mar 2, Mar 6, Feb 12): HRV 50, 52, 54 = 52; RHR 55, 54, 54 = 54.33 -> 54.3; sleep 7.5, 7.8, 7.6 = 7.63 -> 7.6.",
+    "Differences: HRV -9, RHR 4.42 -> 4.4, sleep -0.76 -> -0.8. Only 7 pairs, below 10, so no correlation."
+  ],
+  "weekEnd": "2026-03-07",
+  "input": {
+    "drinking_days": [
+      { "date": "2026-02-05", "beers": 3, "wine": 0, "bourbon": 0, "other": 0, "cbd": 0 },
+      { "date": "2026-02-12", "beers": 0, "wine": 0, "bourbon": 0, "other": 0, "cbd": 0 },
+      { "date": "2026-02-19", "beers": 0, "wine": 0, "bourbon": 0, "other": 1, "cbd": 0 },
+      { "date": "2026-03-01", "beers": 2, "wine": 0, "bourbon": 0, "other": 0, "cbd": 0, "mood_before": 6, "mood_after": 7 },
+      { "date": "2026-03-02", "beers": 0, "wine": 0, "bourbon": 0, "other": 0, "cbd": 0 },
+      { "date": "2026-03-04", "beers": 0, "wine": 1, "bourbon": 1, "other": 0, "cbd": 1, "mood_before": 5, "mood_after": 8 },
+      { "date": "2026-03-06", "beers": 0, "wine": 0, "bourbon": 0, "other": 0, "cbd": 2 }
+    ],
+    "daily_metrics": [
+      { "date": "2026-02-06", "hrv_ms": 44, "resting_hr": 58, "sleep_total_hr": 7.0 },
+      { "date": "2026-02-13", "hrv_ms": 54, "resting_hr": 54, "sleep_total_hr": 7.6 },
+      { "date": "2026-02-20", "hrv_ms": 46, "resting_hr": 58, "sleep_total_hr": 7.2 },
+      { "date": "2026-03-02", "hrv_ms": 40, "resting_hr": 60, "sleep_total_hr": 6.5 },
+      { "date": "2026-03-03", "hrv_ms": 50, "resting_hr": 55, "sleep_total_hr": 7.5 },
+      { "date": "2026-03-05", "hrv_ms": 42, "resting_hr": 59, "sleep_total_hr": 6.8 },
+      { "date": "2026-03-07", "hrv_ms": 52, "resting_hr": 54, "sleep_total_hr": 7.8 }
+    ]
+  },
+  "expected": {
+    "drinking": {
+      "week": {
+        "loggedDays": 4, "unloggedDays": 3, "drinkingDays": 2, "alcoholFreeDays": 2, "totalDrinks": 4, "maxInOneDay": 2,
+        "byType": { "beers": 2, "wine": 1, "bourbon": 1, "other": 0 }, "cbdDrinks": 3, "moodBeforeMean": 5.5, "moodAfterMean": 7.5
+      },
+      "baseline": { "loggedDays": 3, "drinksPer7Days": 9.3 },
+      "nextMorning90d": {
+        "hrv_ms": { "afterDrinkingDays": 4, "afterAlcoholFreeDays": 3, "meanAfterDrinking": 43, "meanAfterAlcoholFree": 52, "difference": -9 },
+        "resting_hr": { "afterDrinkingDays": 4, "afterAlcoholFreeDays": 3, "meanAfterDrinking": 58.8, "meanAfterAlcoholFree": 54.3, "difference": 4.4 },
+        "sleep_total_hr": { "afterDrinkingDays": 4, "afterAlcoholFreeDays": 3, "meanAfterDrinking": 6.9, "meanAfterAlcoholFree": 7.6, "difference": -0.8 }
+      },
+      "drinksVsNextMorningHrvCorrelation90d": { "pairs": 7, "r": null }
+    }
+  }
+}

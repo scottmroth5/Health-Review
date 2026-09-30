@@ -145,6 +145,25 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     }
   });
 
+  // ---- settings ----
+  const bpm = nullable({ type: 'integer', minimum: 40, maximum: 220 });
+  app.get('/api/settings', { schema: { summary: 'Personal settings used by the metrics', response: { 200: anyObject } } },
+    async () => q.getSettings(db));
+
+  app.put('/api/settings', {
+    schema: {
+      summary: 'Update personal settings (null clears one)',
+      body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { zone2_low_bpm: bpm, zone2_high_bpm: bpm } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => {
+    const next = { ...q.getSettings(db), ...req.body };
+    if (next.zone2_low_bpm != null && next.zone2_high_bpm != null && next.zone2_low_bpm >= next.zone2_high_bpm) {
+      throw badRequest('The Zone 2 low end must be below the high end');
+    }
+    return q.saveSettings(db, req.body);
+  });
+
   // ---- prompt sections ----
   app.get('/api/prompt/sections', { schema: { summary: 'Prompt sections in order', response: { 200: { type: 'array', items: anyObject } } } },
     async () => q.listSections(db));

@@ -9,7 +9,9 @@ Health specific logic stays in this repo; never add it to agent-core.
 
 ## Structure
 /agent              prompts, tools, and review logic
-/metrics            deterministic metric calculations with unit tests
+/metrics            deterministic metric calculations: stats.js (windows, rounding, pearson), one module per report
+                    area (recovery, cardio, strength, drinking, checkins), index.js computeWeek, load.js (SQL);
+                    fixtures with hand-computed expectations in evals/fixtures/metrics, run by test/metrics.test.js
 /ingest             Google Sheets to SQLite: sheets.js (read-only client, fakeable), parsers.js (one per sheet), sync.js;
                     the only code touching raw source rows
 /db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides)
@@ -33,6 +35,7 @@ powershell -ExecutionPolicy Bypass -File scripts\register-sync-task.ps1   (re)re
                                   ("Health-Review daily sync"; runs scripts\sync-daily.cmd, logs to data\logs\sync.log)
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
 npm run prompts:import-v1         one-time import of data/v1-export/prompts into prompt_sections (-- --replace to overwrite)
+npm run metrics                   print the computed summary for last week (-- --week YYYY-MM-DD for another Saturday)
 npm run evals                     run eval suites and print results (not built yet)
 npm run review                    generate the weekly health review (not built yet)
 Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
@@ -47,6 +50,13 @@ Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI
 overwrite UI rows. The Workout Log can hold planned future workouts with weights but no reps: metrics count only sets
 with reps, time, or distance, on dates up to today. Text in the log's date column (illness, injury, vacation) is kept
 in workout_log_notes; treat it as symptom data under the hard rules.
+
+## Metrics
+The review week is the 7 days ending on the most recent Saturday before today; the baseline is the 28 days before it;
+strength looks back 28 days; correlations and next-morning comparisons use 90 days and return null below their minimum
+counts (3 per group, 10 pairs). Values are rounded in code to the precision the report prints, so the review can be
+checked for numbers that are not in the summary. Days without a row are unknown, never zero (drinking rates are per
+logged day). Zone 2 counts cardio sessions whose average heart rate is inside the range in settings (no per-minute HR).
 
 ## UI and API
 AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS rebinding);

@@ -83,6 +83,27 @@ export function lastSync(db) {
   return run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
 }
 
+// ---- settings ----
+
+export const SETTING_KEYS = ['zone2_low_bpm', 'zone2_high_bpm'];
+
+export function getSettings(db) {
+  const rows = db.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS.map(() => '?').join(', ')})`).all(...SETTING_KEYS);
+  const values = Object.fromEntries(rows.map((r) => [r.key, Number(r.value)]));
+  return Object.fromEntries(SETTING_KEYS.map((k) => [k, values[k] ?? null]));
+}
+
+/** Sets the given keys; null removes a setting. */
+export function saveSettings(db, changes) {
+  const upsert = db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
+  const remove = db.prepare('DELETE FROM settings WHERE key = ?');
+  db.transaction(() => {
+    for (const [k, v] of Object.entries(changes)) (v === null ? remove.run(k) : upsert.run(k, String(v), now()));
+  })();
+  return getSettings(db);
+}
+
 // ---- prompt sections ----
 
 const SECTION_COLS = 'id, position, name, text, sensitive, updated_at';

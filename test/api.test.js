@@ -140,6 +140,16 @@ test('sync: runs the injected sync, reports counts only, and refuses to overlap'
   await done();
 });
 
+test('settings: Zone 2 range saves, validates order and bounds, and clears with null', async () => {
+  const { app, done } = await setup();
+  assert.deepEqual((await app.inject('/api/settings')).json(), { zone2_low_bpm: null, zone2_high_bpm: null });
+  assert.deepEqual((await put(app, '/api/settings', { zone2_low_bpm: 110, zone2_high_bpm: 125 })).json(), { zone2_low_bpm: 110, zone2_high_bpm: 125 });
+  assert.match((await put(app, '/api/settings', { zone2_low_bpm: 130 })).json().error, /below the high end/);
+  assert.equal((await put(app, '/api/settings', { zone2_high_bpm: 300 })).statusCode, 400);
+  assert.deepEqual((await put(app, '/api/settings', { zone2_low_bpm: null })).json(), { zone2_low_bpm: null, zone2_high_bpm: 125 });
+  await done();
+});
+
 test('status reports today and the last sync run', async () => {
   const { app, db, done } = await setup();
   db.prepare("INSERT INTO runs (name, status, started_at, finished_at, summary) VALUES ('sync', 'ok', '2026-03-09T12:00:00Z', '2026-03-09T12:00:03Z', '{\"counts\":{}}')").run();

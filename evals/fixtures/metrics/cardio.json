@@ -1,0 +1,41 @@
+{
+  "description": "Cardio: totals by kind and type, duration-weighted heart rate, Zone 2 by session average",
+  "notes": [
+    "Week 2026-03-01..07. Cardio = walks, elliptical, HIIT: 60+30+40+20 = 150 min, weighted HR (6000+3450+4800+2800)/150 = 113.67 -> 114.",
+    "Baseline cardio (Feb 10 walk 120 min, Feb 20 elliptical 40 min) = 160 min over 4 weeks = 40 per week; change +110.",
+    "Zone 2 110..125: walk 115 and elliptical 120 are in (70 min); walk 100 below; HIIT 140 above. Strength and yoga are not cardio.",
+    "Walks: 90 min, weighted HR (6000+3450)/90 = 105, 350 kcal, 4.0 mi. The Mar 8 walk is after the week."
+  ],
+  "weekEnd": "2026-03-07",
+  "options": { "zone2": { "low": 110, "high": 125 } },
+  "input": {
+    "workout_sessions": [
+      { "type": "Outdoor Walk", "start": "2026-02-10T07:00:00", "end": "2026-02-10T09:00:00", "duration_sec": 7200, "avg_hr": 100, "max_hr": 118, "active_energy_kcal": 400, "distance_mi": 5 },
+      { "type": "Elliptical", "start": "2026-02-20T07:00:00", "end": "2026-02-20T07:40:00", "duration_sec": 2400, "avg_hr": 118, "max_hr": 135, "active_energy_kcal": 300, "distance_mi": null },
+      { "type": "Outdoor Walk", "start": "2026-03-01T07:00:00", "end": "2026-03-01T08:00:00", "duration_sec": 3600, "avg_hr": 100, "max_hr": 120, "active_energy_kcal": 200, "distance_mi": 2.5 },
+      { "type": "Outdoor Walk", "start": "2026-03-03T07:00:00", "end": "2026-03-03T07:30:00", "duration_sec": 1800, "avg_hr": 115, "max_hr": 130, "active_energy_kcal": 150, "distance_mi": 1.5 },
+      { "type": "Elliptical", "start": "2026-03-03T18:00:00", "end": "2026-03-03T18:40:00", "duration_sec": 2400, "avg_hr": 120, "max_hr": 140, "active_energy_kcal": 300, "distance_mi": null },
+      { "type": "Traditional Strength Training", "start": "2026-03-05T17:00:00", "end": "2026-03-05T17:45:00", "duration_sec": 2700, "avg_hr": 105, "max_hr": 150, "active_energy_kcal": 250, "distance_mi": null },
+      { "type": "High Intensity Interval Training", "start": "2026-03-06T06:00:00", "end": "2026-03-06T06:20:00", "duration_sec": 1200, "avg_hr": 140, "max_hr": 170, "active_energy_kcal": 220, "distance_mi": null },
+      { "type": "Yoga", "start": "2026-03-07T20:00:00", "end": "2026-03-07T20:15:00", "duration_sec": 900, "avg_hr": 80, "max_hr": 95, "active_energy_kcal": 40, "distance_mi": null },
+      { "type": "Outdoor Walk", "start": "2026-03-08T07:00:00", "end": "2026-03-08T08:00:00", "duration_sec": 3600, "avg_hr": 100, "max_hr": 180, "active_energy_kcal": 200, "distance_mi": 2.5 }
+    ]
+  },
+  "expected": {
+    "cardio": {
+      "sessions": 6,
+      "activeDays": 5,
+      "cardio": { "sessions": 4, "minutes": 150, "avgHr": 114, "baselineWeeklyMinutes": 40, "changeVsBaselineMinutes": 110 },
+      "strengthSessions": { "sessions": 1, "minutes": 45 },
+      "zone2": { "range": { "low": 110, "high": 125 }, "sessions": 2, "minutes": 70, "belowSessions": 1, "aboveSessions": 1 },
+      "peakHr": 170,
+      "byType": [
+        { "type": "Outdoor Walk", "kind": "cardio", "sessions": 2, "minutes": 90, "avgHr": 105, "activeKcal": 350, "distanceMi": 4 },
+        { "type": "Traditional Strength Training", "kind": "strength", "sessions": 1, "minutes": 45, "avgHr": 105, "activeKcal": 250, "distanceMi": null },
+        { "type": "Elliptical", "kind": "cardio", "sessions": 1, "minutes": 40, "avgHr": 120, "activeKcal": 300, "distanceMi": null },
+        { "type": "High Intensity Interval Training", "kind": "cardio", "sessions": 1, "minutes": 20, "avgHr": 140, "activeKcal": 220, "distanceMi": null },
+        { "type": "Yoga", "kind": "mobility", "sessions": 1, "minutes": 15, "avgHr": 80, "activeKcal": 40, "distanceMi": null }
+      ]
+    }
+  }
+}

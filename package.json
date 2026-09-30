@@ -13,7 +13,8 @@
     "google:check": "node --env-file=.env scripts/google-check.js",
     "sync": "node --env-file=.env scripts/sync.js",
     "start": "node --env-file=.env server/index.js",
-    "prompts:import-v1": "node scripts/import-v1-prompts.js"
+    "prompts:import-v1": "node scripts/import-v1-prompts.js",
+    "metrics": "node scripts/metrics.js"
   },
   "keywords": [],
   "author": "",

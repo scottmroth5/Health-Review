@@ -89,6 +89,18 @@
           <button type="button" id="preview-prompt" class="ghost">Preview</button>
         </div>
       </div>
+      <form id="settings" class="card">
+        <h2>Settings</h2>
+        <p class="muted small">Your Zone 2 heart rate range. A cardio session counts as Zone 2 when its average heart rate falls inside it.</p>
+        <div class="grid2">
+          <label>Zone 2 low (bpm) <input type="number" name="zone2_low_bpm" min="40" max="220" step="1" inputmode="numeric"></label>
+          <label>Zone 2 high (bpm) <input type="number" name="zone2_high_bpm" min="40" max="220" step="1" inputmode="numeric"></label>
+        </div>
+        <div class="actions">
+          <button type="submit">Save settings</button>
+          <span class="status" role="status"></span>
+        </div>
+      </form>
       <div id="preview" class="card" hidden>
         <h2>Preview</h2>
         <p class="muted small" id="preview-meta"></p>

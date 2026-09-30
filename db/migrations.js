@@ -169,4 +169,15 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    id: '003-settings',
+    up: `
+      -- Personal values the metrics use (for example zone2_low_bpm, zone2_high_bpm), edited in the UI.
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];

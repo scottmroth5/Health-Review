@@ -1,0 +1,222 @@
+{
+  "description": "Recovery: week vs previous week and 28-day baseline, unusual days, VO2 max change",
+  "notes": [
+    "Baseline 2026-02-01..28 alternates HRV 48 (odd days) and 52: mean 50, sample sd 2.037, so unusual beyond 50 +/- 4.07.",
+    "Week HRV (Mar 4 missing): 50,52,55,51,44,50 -> mean 50.33 -> 50; 55 is high, 44 is low.",
+    "Previous week Feb 22..28: 52,48,52,48,52,48,52 -> 50.29; change 0.05 -> 0. Change vs baseline 0.33 -> 0, pct 0.67 -> 1.",
+    "Resting HR only in the week: 55,56,54,57,60,55 -> 56.17 -> 56.2; no baseline so no changes or unusual days.",
+    "VO2 max latest 43.1 (Mar 5); latest reading on or before Feb 5 is Jan 20 (42.0): change 1.1.",
+    "Mar 8 is after the week and must be ignored."
+  ],
+  "weekEnd": "2026-03-07",
+  "input": {
+    "daily_metrics": [
+      {
+        "date": "2026-01-20",
+        "vo2max": 42
+      },
+      {
+        "date": "2026-02-01",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-02",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-03",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-04",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-05",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-06",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-07",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-08",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-09",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-10",
+        "hrv_ms": 52,
+        "vo2max": 42.5
+      },
+      {
+        "date": "2026-02-11",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-12",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-13",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-14",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-15",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-16",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-17",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-18",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-19",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-20",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-21",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-22",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-23",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-24",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-25",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-26",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-02-27",
+        "hrv_ms": 48
+      },
+      {
+        "date": "2026-02-28",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-03-01",
+        "hrv_ms": 50,
+        "resting_hr": 55
+      },
+      {
+        "date": "2026-03-02",
+        "hrv_ms": 52,
+        "resting_hr": 56
+      },
+      {
+        "date": "2026-03-03",
+        "hrv_ms": 55,
+        "resting_hr": 54
+      },
+      {
+        "date": "2026-03-05",
+        "hrv_ms": 51,
+        "resting_hr": 57,
+        "vo2max": 43.1
+      },
+      {
+        "date": "2026-03-06",
+        "hrv_ms": 44,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-07",
+        "hrv_ms": 50,
+        "resting_hr": 55
+      },
+      {
+        "date": "2026-03-08",
+        "hrv_ms": 99,
+        "resting_hr": 99
+      }
+    ]
+  },
+  "expected": {
+    "recovery": {
+      "hrv_ms": {
+        "days": 6,
+        "mean": 50,
+        "min": 44,
+        "max": 55,
+        "prevWeekMean": 50,
+        "changeVsPrevWeek": 0,
+        "baselineDays": 28,
+        "baselineMean": 50,
+        "changeVsBaseline": 0,
+        "changeVsBaselinePct": 1,
+        "unusualDays": [
+          {
+            "date": "2026-03-03",
+            "value": 55,
+            "direction": "high"
+          },
+          {
+            "date": "2026-03-06",
+            "value": 44,
+            "direction": "low"
+          }
+        ]
+      },
+      "resting_hr": {
+        "days": 6,
+        "mean": 56.2,
+        "min": 54,
+        "max": 60,
+        "prevWeekMean": null,
+        "changeVsPrevWeek": null,
+        "baselineDays": 0,
+        "baselineMean": null,
+        "changeVsBaseline": null,
+        "changeVsBaselinePct": null,
+        "unusualDays": []
+      },
+      "sleep_total_hr": {
+        "days": 0,
+        "mean": null,
+        "min": null,
+        "max": null
+      },
+      "vo2max": {
+        "latest": 43.1,
+        "latestDate": "2026-03-05",
+        "change28d": 1.1,
+        "comparedWith": "2026-01-20"
+      }
+    }
+  }
+}

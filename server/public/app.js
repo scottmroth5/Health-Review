@@ -440,7 +440,28 @@ function sectionCard(section) {
   return card;
 }
 
+async function loadSettings() {
+  const s = await api('GET', '/api/settings');
+  const form = $('#settings');
+  for (const k of ['zone2_low_bpm', 'zone2_high_bpm']) form.elements[k].value = s[k] ?? '';
+  setStatus($('.status', form), s.zone2_low_bpm && s.zone2_high_bpm ? '' : 'Zone 2 is not set yet');
+}
+
+async function saveSettings(evt) {
+  evt.preventDefault();
+  const form = evt.currentTarget;
+  const body = {};
+  for (const k of ['zone2_low_bpm', 'zone2_high_bpm']) body[k] = numberOrNull(form.elements[k]);
+  try {
+    await api('PUT', '/api/settings', body);
+    setStatus($('.status', form), 'Saved', 'ok');
+  } catch (err) {
+    setStatus($('.status', form), err.message, 'error');
+  }
+}
+
 async function loadSections() {
+  loadSettings();
   const sections = await api('GET', '/api/prompt/sections');
   const container = $('#sections');
   container.replaceChildren();
@@ -472,6 +493,7 @@ function initPrompt() {
     $('input[name="name"]', card).focus();
   });
   $('#preview-prompt').addEventListener('click', showPreview);
+  $('#settings').addEventListener('submit', saveSettings);
 }
 
 // ---------------- start ----------------
