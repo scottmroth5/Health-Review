@@ -3,7 +3,7 @@
 ## Purpose
 Weekly health review agent built on the shared agent-core package.
 agent-core comes from the public Agent-Core repo as a git dependency pinned to a version tag
-("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.1.2"). Upgrade with npm update @scottmroth5/agent-core; test unreleased changes with npm link ../Agent-Core.
+("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.2.1"). Upgrade with npm install "github:scottmroth5/Agent-Core#semver:^<x.y.z>" (a caret on 0.x never crosses a minor version, so npm update will not); test unreleased changes with npm link ../Agent-Core.
 Health specific logic stays in this repo; never add it to agent-core.
 
 
@@ -11,13 +11,21 @@ Health specific logic stays in this repo; never add it to agent-core.
 /agent              prompts, tools, and review logic
 /metrics            deterministic metric calculations with unit tests
 /evals              metric regression fixtures
-/data               gitignored; local health datastore and exports
+/tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core)
+/scripts            command-line entry points
+/test               node:test suites with synthetic fixtures only
+/data               gitignored; local health datastore and exports; google/ holds the OAuth client_secret.json and token.json
 /legacy contains the v1 scripts for reference only. Do not modify or import from them.
 
 ## Commands
-npm test            run unit tests, including metric fixtures
-npm run evals       run eval suites and print results
-npm run review      generate the weekly health review
+npm test                          run unit tests, including metric fixtures
+node --test test/google.test.js   run one suite
+npm run google:login              one-time Google sign-in (read-only Sheets); saves data/google/token.json
+npm run google:check              verify read access to each *_SHEET_ID in .env (prints tab names and row counts only)
+npm run evals                     run eval suites and print results (not built yet)
+npm run review                    generate the weekly health review (not built yet)
+Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
+GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
 ## Hard rules
 All health data stays on this machine. Never add cloud storage, CI, or remote sync for /data.

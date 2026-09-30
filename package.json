@@ -1,15 +1,23 @@
 {
-  "name": "Health-Review",
+  "name": "health-review",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "description": "Weekly health review agent",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test",
+    "google:login": "node --env-file=.env scripts/google-login.js",
+    "google:check": "node --env-file=.env scripts/google-check.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.1.2"
+    "@googleapis/sheets": "^18.0.1",
+    "@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.2.1",
+    "google-auth-library": "^11.1.0"
   }
 }
