@@ -1,0 +1,20 @@
+{
+  "source": "legacy v1, generated once from synthetic inputs",
+  "cases": [
+    {
+      "name": "config errors send a Health Report Error email instead of throwing",
+      "v1": {
+        "mail": [
+          {
+            "to": "someone@example.com",
+            "subject": "Health Report Error",
+            "body": "Error: Error: Missing script properties: ANTHROPIC_API_KEY, HEALTH_METRICS_SHEET_ID, WORKOUT_SESSIONS_SHEET_ID, WORKOUT_LOG_SHEET_ID, DRINKING_LOG_SHEET_ID, WEEKLY_CHECKIN_SHEET_ID, PROMPT_01_<name> (at least one prompt section)"
+          }
+        ],
+        "logs": [
+          "Error running weekly health report: Error: Missing script properties: ANTHROPIC_API_KEY, HEALTH_METRICS_SHEET_ID, WORKOUT_SESSIONS_SHEET_ID, WORKOUT_LOG_SHEET_ID, DRINKING_LOG_SHEET_ID, WEEKLY_CHECKIN_SHEET_ID, PROMPT_01_<name> (at least one prompt section)"
+        ]
+      }
+    }
+  ]
+}

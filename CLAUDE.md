@@ -10,7 +10,8 @@ Health specific logic stays in this repo; never add it to agent-core.
 ## Structure
 /agent              prompts, tools, and review logic
 /metrics            deterministic metric calculations with unit tests
-/evals              metric regression fixtures
+/ingest             Google Sheets rows to records and dedupe; the only code touching raw source rows
+/evals              metric regression fixtures; fixtures/v1 holds v1 golden outputs (see its README)
 /tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core)
 /scripts            command-line entry points
 /test               node:test suites with synthetic fixtures only

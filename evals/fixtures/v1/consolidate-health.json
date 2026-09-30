@@ -1,0 +1,249 @@
+{
+  "source": "legacy v1, generated once from synthetic inputs",
+  "cases": [
+    {
+      "name": "empty destination gets the header once and rows from matching files in name order",
+      "files": [
+        {
+          "id": "f2",
+          "name": "Apple Health Metrics-HealthMetrics-2026-03-03",
+          "values": [
+            [
+              "Date",
+              "Heart Rate Variability (ms)",
+              "Resting Heart Rate (count/min)",
+              "Step Count (count)"
+            ],
+            [
+              "2026-03-03 00:00:00",
+              50,
+              54,
+              9100
+            ]
+          ]
+        },
+        {
+          "id": "f1",
+          "name": "Apple Health Metrics-HealthMetrics-2026-03-02",
+          "values": [
+            [
+              "Date",
+              "Heart Rate Variability (ms)",
+              "Resting Heart Rate (count/min)",
+              "Step Count (count)"
+            ],
+            [
+              "2026-03-02 00:00:00",
+              48,
+              55,
+              8000
+            ]
+          ]
+        },
+        {
+          "id": "x",
+          "name": "Workout session metrics-2026-03-02",
+          "values": [
+            [
+              "Type"
+            ],
+            [
+              "Run"
+            ]
+          ]
+        }
+      ],
+      "destination": [],
+      "v1": {
+        "destination": [
+          [
+            "Date",
+            "Heart Rate Variability (ms)",
+            "Resting Heart Rate (count/min)",
+            "Step Count (count)"
+          ],
+          [
+            "2026-03-02 00:00:00",
+            48,
+            55,
+            8000
+          ],
+          [
+            "2026-03-03 00:00:00",
+            50,
+            54,
+            9100
+          ]
+        ],
+        "logs": [
+          "All done! Processed 2 files."
+        ],
+        "leftoverProps": []
+      }
+    },
+    {
+      "name": "rows whose date and first metric already exist are skipped",
+      "files": [
+        {
+          "id": "f1",
+          "name": "Apple Health Metrics-HealthMetrics-2026-03-02",
+          "values": [
+            [
+              "Date",
+              "Heart Rate Variability (ms)",
+              "Resting Heart Rate (count/min)",
+              "Step Count (count)"
+            ],
+            [
+              "2026-03-02 00:00:00",
+              48,
+              55,
+              8000
+            ]
+          ]
+        }
+      ],
+      "destination": [
+        [
+          "Date",
+          "Heart Rate Variability (ms)",
+          "Resting Heart Rate (count/min)",
+          "Step Count (count)"
+        ],
+        [
+          "2026-03-02 00:00:00",
+          48,
+          55,
+          8000
+        ]
+      ],
+      "v1": {
+        "destination": [
+          [
+            "Date",
+            "Heart Rate Variability (ms)",
+            "Resting Heart Rate (count/min)",
+            "Step Count (count)"
+          ],
+          [
+            "2026-03-02 00:00:00",
+            48,
+            55,
+            8000
+          ]
+        ],
+        "logs": [
+          "All done! Processed 1 files."
+        ],
+        "leftoverProps": []
+      }
+    },
+    {
+      "name": "BUG: a partial day re-exported with a different first metric is kept twice",
+      "files": [
+        {
+          "id": "f1",
+          "name": "Apple Health Metrics-HealthMetrics-2026-03-02-a",
+          "values": [
+            [
+              "Date",
+              "Heart Rate Variability (ms)",
+              "Resting Heart Rate (count/min)",
+              "Step Count (count)"
+            ],
+            [
+              "2026-03-02 00:00:00",
+              44,
+              57,
+              3200
+            ]
+          ]
+        },
+        {
+          "id": "f2",
+          "name": "Apple Health Metrics-HealthMetrics-2026-03-02-b",
+          "values": [
+            [
+              "Date",
+              "Heart Rate Variability (ms)",
+              "Resting Heart Rate (count/min)",
+              "Step Count (count)"
+            ],
+            [
+              "2026-03-02 00:00:00",
+              48,
+              55,
+              8000
+            ]
+          ]
+        }
+      ],
+      "destination": [
+        [
+          "Date",
+          "Heart Rate Variability (ms)",
+          "Resting Heart Rate (count/min)",
+          "Step Count (count)"
+        ]
+      ],
+      "v1": {
+        "destination": [
+          [
+            "Date",
+            "Heart Rate Variability (ms)",
+            "Resting Heart Rate (count/min)",
+            "Step Count (count)"
+          ],
+          [
+            "2026-03-02 00:00:00",
+            44,
+            57,
+            3200
+          ],
+          [
+            "2026-03-02 00:00:00",
+            48,
+            55,
+            8000
+          ]
+        ],
+        "logs": [
+          "All done! Processed 2 files."
+        ],
+        "leftoverProps": []
+      }
+    },
+    {
+      "name": "empty source file is skipped",
+      "files": [
+        {
+          "id": "f1",
+          "name": "Apple Health Metrics-HealthMetrics-2026-03-02",
+          "values": []
+        }
+      ],
+      "destination": [
+        [
+          "Date",
+          "Heart Rate Variability (ms)",
+          "Resting Heart Rate (count/min)",
+          "Step Count (count)"
+        ]
+      ],
+      "v1": {
+        "destination": [
+          [
+            "Date",
+            "Heart Rate Variability (ms)",
+            "Resting Heart Rate (count/min)",
+            "Step Count (count)"
+          ]
+        ],
+        "logs": [
+          "All done! Processed 1 files."
+        ],
+        "leftoverProps": []
+      }
+    }
+  ]
+}

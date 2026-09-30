@@ -1,0 +1,56 @@
+{
+  "source": "legacy v1, generated once from synthetic inputs",
+  "cases": [
+    {
+      "name": "sections sort numerically, not alphabetically, and every {{TODAY}} is replaced",
+      "promptProps": {
+        "PROMPT_10_LATE": "Section ten on {{TODAY}}.",
+        "PROMPT_2_SECOND": "Section two.",
+        "PROMPT_01_PROFILE": "Profile for {{TODAY}} and {{TODAY}}.",
+        "PROMPTX_NOT_A_SECTION": "ignored",
+        "NOTES": "ignored"
+      },
+      "today": "2026-03-08T13:00:00Z",
+      "blocks": [
+        "[health]",
+        "[sessions]",
+        "[log]",
+        "[drinking]",
+        "[checkin]"
+      ],
+      "v1": {
+        "sectionCount": 3,
+        "prompt": "Profile for 2026-03-08 and 2026-03-08.\n\nSection two.\n\nSection ten on 2026-03-08.\n\nAPPLE WATCH DAILY METRICS (last 7 days):\n[health]\n\nAPPLE WATCH WORKOUT SESSIONS (last 7 days):\n[sessions]\n\nMANUAL WORKOUT LOG (last 28 days):\n[log]\n\nDRINKING LOG (last 7 days):\n[drinking]\n\nWEEKLY CHECK-IN:\n[checkin]"
+      }
+    },
+    {
+      "name": "a single section still gets the data blocks appended",
+      "promptProps": {
+        "PROMPT_01_ONLY": "Only section."
+      },
+      "today": "2026-03-08T13:00:00Z",
+      "blocks": [
+        "[health]",
+        "[sessions]",
+        "[log]",
+        "[drinking]",
+        "[checkin]"
+      ],
+      "v1": {
+        "sectionCount": 1,
+        "prompt": "Only section.\n\nAPPLE WATCH DAILY METRICS (last 7 days):\n[health]\n\nAPPLE WATCH WORKOUT SESSIONS (last 7 days):\n[sessions]\n\nMANUAL WORKOUT LOG (last 28 days):\n[log]\n\nDRINKING LOG (last 7 days):\n[drinking]\n\nWEEKLY CHECK-IN:\n[checkin]"
+      }
+    },
+    {
+      "name": "missing keys and no sections are reported together",
+      "promptProps": {},
+      "presentKeys": [
+        "ANTHROPIC_API_KEY",
+        "HEALTH_METRICS_SHEET_ID"
+      ],
+      "v1": {
+        "error": "Missing script properties: EMAIL_RECIPIENT, WORKOUT_SESSIONS_SHEET_ID, WORKOUT_LOG_SHEET_ID, DRINKING_LOG_SHEET_ID, WEEKLY_CHECKIN_SHEET_ID, PROMPT_01_<name> (at least one prompt section)"
+      }
+    }
+  ]
+}

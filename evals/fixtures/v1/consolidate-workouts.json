@@ -1,0 +1,157 @@
+{
+  "source": "legacy v1, generated once from synthetic inputs",
+  "cases": [
+    {
+      "name": "rows keyed by type, start and end; duplicates across files are skipped",
+      "files": [
+        {
+          "id": "w1",
+          "name": "Workout session metrics-2026-03-02",
+          "values": [
+            [
+              "Type",
+              "Start",
+              "End",
+              "Duration",
+              "Avg Heart Rate (count/min)"
+            ],
+            [
+              "Outdoor Run",
+              "2026-03-02 06:15:00",
+              "2026-03-02 06:52:30",
+              "0:37:30",
+              148
+            ]
+          ]
+        },
+        {
+          "id": "w2",
+          "name": "Workout session metrics-2026-03-03",
+          "values": [
+            [
+              "Type",
+              "Start",
+              "End",
+              "Duration",
+              "Avg Heart Rate (count/min)"
+            ],
+            [
+              "Outdoor Run",
+              "2026-03-02 06:15:00",
+              "2026-03-02 06:52:30",
+              "0:37:30",
+              148
+            ],
+            [
+              "Traditional Strength Training",
+              "2026-03-03 17:00:00",
+              "2026-03-03 17:45:00",
+              "0:45:00",
+              112
+            ]
+          ]
+        }
+      ],
+      "destination": [],
+      "v1": {
+        "destination": [
+          [
+            "Type",
+            "Start",
+            "End",
+            "Duration",
+            "Avg Heart Rate (count/min)"
+          ],
+          [
+            "Outdoor Run",
+            "2026-03-02 06:15:00",
+            "2026-03-02 06:52:30",
+            "0:37:30",
+            148
+          ],
+          [
+            "Traditional Strength Training",
+            "2026-03-03 17:00:00",
+            "2026-03-03 17:45:00",
+            "0:45:00",
+            112
+          ]
+        ],
+        "logs": [
+          "All done! Processed 2 files."
+        ],
+        "leftoverProps": []
+      }
+    },
+    {
+      "name": "same type and start with a different end is kept as a separate session",
+      "files": [
+        {
+          "id": "w3",
+          "name": "Workout session metrics-2026-03-04",
+          "values": [
+            [
+              "Type",
+              "Start",
+              "End",
+              "Duration",
+              "Avg Heart Rate (count/min)"
+            ],
+            [
+              "Outdoor Walk",
+              "2026-03-04 12:00:00",
+              "2026-03-04 12:31:00",
+              "0:31:00",
+              101
+            ]
+          ]
+        }
+      ],
+      "destination": [
+        [
+          "Type",
+          "Start",
+          "End",
+          "Duration",
+          "Avg Heart Rate (count/min)"
+        ],
+        [
+          "Outdoor Walk",
+          "2026-03-04 12:00:00",
+          "2026-03-04 12:20:00",
+          "0:20:00",
+          98
+        ]
+      ],
+      "v1": {
+        "destination": [
+          [
+            "Type",
+            "Start",
+            "End",
+            "Duration",
+            "Avg Heart Rate (count/min)"
+          ],
+          [
+            "Outdoor Walk",
+            "2026-03-04 12:00:00",
+            "2026-03-04 12:20:00",
+            "0:20:00",
+            98
+          ],
+          [
+            "Outdoor Walk",
+            "2026-03-04 12:00:00",
+            "2026-03-04 12:31:00",
+            "0:31:00",
+            101
+          ]
+        ],
+        "logs": [
+          "All done! Processed 1 files."
+        ],
+        "leftoverProps": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,219 @@
+{
+  "source": "legacy v1, generated once from synthetic inputs",
+  "cases": [
+    {
+      "name": "formats each row as Header: value joined by pipes",
+      "tabName": "Last7Days",
+      "tabs": {
+        "Last7Days": [
+          [
+            "Date",
+            "HRV (ms)",
+            "Resting HR",
+            "",
+            "Steps",
+            "Notes"
+          ],
+          [
+            {
+              "$date": "2026-03-02T00:00:00.000Z"
+            },
+            48.25,
+            55,
+            "no header",
+            8123,
+            "easy day"
+          ],
+          [
+            {
+              "$date": "2026-03-03T00:00:00.000Z"
+            },
+            51,
+            54,
+            "x",
+            10456,
+            "felt good"
+          ]
+        ]
+      },
+      "v1": {
+        "text": "Date: 3/2/2026 | HRV (ms): 48.25 | Resting HR: 55 | Steps: 8123 | Notes: easy day\nDate: 3/3/2026 | HRV (ms): 51 | Resting HR: 54 | Steps: 10456 | Notes: felt good",
+        "logs": []
+      }
+    },
+    {
+      "name": "drops empty cells, null cells and headerless columns but keeps zero and false",
+      "tabName": "Last7Days",
+      "tabs": {
+        "Last7Days": [
+          [
+            "Date",
+            "HRV (ms)",
+            "Resting HR",
+            "",
+            "Steps",
+            "Notes"
+          ],
+          [
+            {
+              "$date": "2026-03-02T00:00:00.000Z"
+            },
+            "",
+            0,
+            "ignored",
+            null,
+            false
+          ]
+        ]
+      },
+      "v1": {
+        "text": "Date: 3/2/2026 | Resting HR: 0 | Notes: false",
+        "logs": []
+      }
+    },
+    {
+      "name": "skips blank rows",
+      "tabName": "Last7Days",
+      "tabs": {
+        "Last7Days": [
+          [
+            "Date",
+            "HRV (ms)",
+            "Resting HR",
+            "",
+            "Steps",
+            "Notes"
+          ],
+          [
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          [
+            {
+              "$date": "2026-03-04T00:00:00.000Z"
+            },
+            50,
+            53,
+            "",
+            9000,
+            ""
+          ]
+        ]
+      },
+      "v1": {
+        "text": "Date: 3/4/2026 | HRV (ms): 50 | Resting HR: 53 | Steps: 9000",
+        "logs": []
+      }
+    },
+    {
+      "name": "date cells lose their time of day",
+      "tabName": "Last7Days",
+      "tabs": {
+        "Last7Days": [
+          [
+            "Type",
+            "Start",
+            "End",
+            "Avg HR"
+          ],
+          [
+            "Outdoor Run",
+            {
+              "$date": "2026-03-02T06:15:00.000Z"
+            },
+            {
+              "$date": "2026-03-02T06:52:30.000Z"
+            },
+            148
+          ]
+        ]
+      },
+      "v1": {
+        "text": "Type: Outdoor Run | Start: 3/2/2026 | End: 3/2/2026 | Avg HR: 148",
+        "logs": []
+      }
+    },
+    {
+      "name": "header only returns No data",
+      "tabName": "Last7Days",
+      "tabs": {
+        "Last7Days": [
+          [
+            "Date",
+            "HRV (ms)",
+            "Resting HR",
+            "",
+            "Steps",
+            "Notes"
+          ]
+        ]
+      },
+      "v1": {
+        "text": "No data",
+        "logs": []
+      }
+    },
+    {
+      "name": "row with only empty or headerless cells is dropped entirely",
+      "tabName": "Last7Days",
+      "tabs": {
+        "Last7Days": [
+          [
+            "Date",
+            "HRV (ms)",
+            "Resting HR",
+            "",
+            "Steps",
+            "Notes"
+          ],
+          [
+            "",
+            "",
+            "",
+            "only headerless",
+            "",
+            ""
+          ]
+        ]
+      },
+      "v1": {
+        "text": "No data",
+        "logs": []
+      }
+    },
+    {
+      "name": "missing tab returns No data",
+      "tabName": "Last7Days",
+      "tabs": {
+        "Other": [
+          [
+            "Date",
+            "HRV (ms)",
+            "Resting HR",
+            "",
+            "Steps",
+            "Notes"
+          ]
+        ]
+      },
+      "v1": {
+        "text": "No data",
+        "logs": [
+          "Tab not found: Last7Days in sheet SHEET"
+        ]
+      }
+    },
+    {
+      "name": "unknown sheet id returns Error fetching data",
+      "tabName": "Last7Days",
+      "tabs": null,
+      "v1": {
+        "text": "Error fetching data"
+      }
+    }
+  ]
+}

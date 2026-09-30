@@ -1,0 +1,170 @@
+{
+  "source": "legacy v1, generated once from synthetic inputs",
+  "cases": [
+    {
+      "name": "returns the first content block text",
+      "response": {
+        "id": "msg_1",
+        "stop_reason": "end_turn",
+        "content": [
+          {
+            "type": "text",
+            "text": "## Weekly Wins\nok"
+          }
+        ]
+      },
+      "v1": {
+        "text": "## Weekly Wins\nok",
+        "request": {
+          "url": "https://api.anthropic.com/v1/messages",
+          "method": "post",
+          "headers": [
+            "x-api-key",
+            "anthropic-version"
+          ],
+          "payload": {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 5000,
+            "messages": [
+              {
+                "role": "user",
+                "content": "PROMPT"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "BUG: a response cut off at max_tokens is returned as if complete",
+      "response": {
+        "id": "msg_2",
+        "stop_reason": "max_tokens",
+        "content": [
+          {
+            "type": "text",
+            "text": "## Weekly Wins\npartial"
+          }
+        ]
+      },
+      "v1": {
+        "text": "## Weekly Wins\npartial",
+        "request": {
+          "url": "https://api.anthropic.com/v1/messages",
+          "method": "post",
+          "headers": [
+            "x-api-key",
+            "anthropic-version"
+          ],
+          "payload": {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 5000,
+            "messages": [
+              {
+                "role": "user",
+                "content": "PROMPT"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "BUG: only the first content block is read",
+      "response": {
+        "id": "msg_3",
+        "stop_reason": "end_turn",
+        "content": [
+          {
+            "type": "text",
+            "text": "first"
+          },
+          {
+            "type": "text",
+            "text": "second"
+          }
+        ]
+      },
+      "v1": {
+        "text": "first",
+        "request": {
+          "url": "https://api.anthropic.com/v1/messages",
+          "method": "post",
+          "headers": [
+            "x-api-key",
+            "anthropic-version"
+          ],
+          "payload": {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 5000,
+            "messages": [
+              {
+                "role": "user",
+                "content": "PROMPT"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "API error becomes an exception",
+      "response": {
+        "type": "error",
+        "error": {
+          "type": "authentication_error",
+          "message": "invalid x-api-key"
+        }
+      },
+      "v1": {
+        "error": "Claude API error: invalid x-api-key",
+        "request": {
+          "url": "https://api.anthropic.com/v1/messages",
+          "method": "post",
+          "headers": [
+            "x-api-key",
+            "anthropic-version"
+          ],
+          "payload": {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 5000,
+            "messages": [
+              {
+                "role": "user",
+                "content": "PROMPT"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "no content becomes an exception",
+      "response": {
+        "id": "msg_4",
+        "content": []
+      },
+      "v1": {
+        "error": "Unexpected API response: {\"id\":\"msg_4\",\"content\":[]}",
+        "request": {
+          "url": "https://api.anthropic.com/v1/messages",
+          "method": "post",
+          "headers": [
+            "x-api-key",
+            "anthropic-version"
+          ],
+          "payload": {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 5000,
+            "messages": [
+              {
+                "role": "user",
+                "content": "PROMPT"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
