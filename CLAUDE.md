@@ -27,6 +27,8 @@ npm run google:login              one-time Google sign-in (read-only Sheets); sa
 npm run google:check              verify read access to each *_SHEET_ID in .env (prints tab names and row counts only)
 npm run sync                      copy new rows from the Sheets into data/health.db (prints counts and warnings only)
 npm run sync -- --backfill        one-time full import, including the v1 drinking log and weekly check-ins
+powershell -ExecutionPolicy Bypass -File scripts\register-sync-task.ps1   (re)register the daily 7am sync task
+                                  ("Health-Review daily sync"; runs scripts\sync-daily.cmd, logs to data\logs\sync.log)
 npm run evals                     run eval suites and print results (not built yet)
 npm run review                    generate the weekly health review (not built yet)
 Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
