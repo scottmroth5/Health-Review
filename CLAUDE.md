@@ -10,7 +10,9 @@ Health specific logic stays in this repo; never add it to agent-core.
 ## Structure
 /agent              prompts, tools, and review logic
 /metrics            deterministic metric calculations with unit tests
-/ingest             Google Sheets rows to records and dedupe; the only code touching raw source rows
+/ingest             Google Sheets to SQLite: sheets.js (read-only client, fakeable), parsers.js (one per sheet), sync.js;
+                    the only code touching raw source rows
+/db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides)
 /evals              metric regression fixtures; fixtures/v1 holds v1 golden outputs (see its README)
 /tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core)
 /scripts            command-line entry points
@@ -23,10 +25,22 @@ npm test                          run unit tests, including metric fixtures
 node --test test/google.test.js   run one suite
 npm run google:login              one-time Google sign-in (read-only Sheets); saves data/google/token.json
 npm run google:check              verify read access to each *_SHEET_ID in .env (prints tab names and row counts only)
+npm run sync                      copy new rows from the Sheets into data/health.db (prints counts and warnings only)
+npm run sync -- --backfill        one-time full import, including the v1 drinking log and weekly check-ins
 npm run evals                     run eval suites and print results (not built yet)
 npm run review                    generate the weekly health review (not built yet)
 Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
 GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
+
+## Data
+Sheets are read unformatted with dates as serial numbers and stored as local wall-clock text; no time zone conversion.
+Health metrics and workout sessions stay in Google Sheets (v1 consolidation scripts still feed them) and sync by
+watermark plus overlap; duplicate health days merge field by field. The Workout Log has one tab per year: normal syncs
+read the current year (and last year in January), and a tab is replaced only when its content hash changes.
+Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI owns them now and imports never
+overwrite UI rows. The Workout Log can hold planned future workouts with weights but no reps: metrics count only sets
+with reps, time, or distance, on dates up to today. Text in the log's date column (illness, injury, vacation) is kept
+in workout_log_notes; treat it as symptom data under the hard rules.
 
 ## Hard rules
 All health data stays on this machine. Never add cloud storage, CI, or remote sync for /data.

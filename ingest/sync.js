@@ -1,0 +1,186 @@
+// Copies the Google Sheets into the local database, adding only what is new.
+//  - Health metrics and workout sessions are append-only sheets: read from the last synced row
+//    minus a small overlap, upsert by natural key. Health days merge field by field (later
+//    non-empty values win), which removes v1's partial-day duplicates.
+//  - Workout Log: one tab per year. A tab is replaced only when its content hash changed, so
+//    edits and deletions in the sheet are picked up. Normal syncs read the current year (and
+//    last year during January); backfill reads every year tab.
+//  - Drinking log and weekly check-in are imported only on backfill: the UI owns them after
+//    that, and rows entered in the UI are never overwritten.
+import { createHash } from 'node:crypto';
+import { createTracer } from '@scottmroth5/agent-core';
+import {
+  HEALTH_METRIC_COLUMNS,
+  parseHealthMetrics,
+  parseWorkoutSessions,
+  parseWorkoutLogTab,
+  parseDrinkingLog,
+  parseWeeklyCheckins,
+} from './parsers.js';
+
+const RAW_TAB = 'Sheet1';
+export const OVERLAP_ROWS = 5;
+const V1_SOURCE = 'v1-sheet';
+
+const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+/**
+ * @param {object} options
+ * @param {{ db: import('better-sqlite3').Database, tx: Function }} options.store  from openHealthStore()
+ * @param {ReturnType<import('./sheets.js').createSheetsSource>} options.source
+ * @param {boolean} [options.backfill]   read everything and import the drinking log and check-ins
+ * @param {Date} [options.now]
+ * @param {object} [options.logger]
+ * @returns {Promise<{ counts: object, warnings: object[] }>}
+ */
+export async function runSync({ store, source, backfill = false, now = new Date(), logger = console }) {
+  const run = createTracer({ store, logger }).startRun('sync', { backfill });
+  const counts = {};
+  const warnings = [];
+  const stamp = now.toISOString();
+  try {
+    counts.health_metrics = await syncAppendOnly({
+      store, source, key: 'health_metrics', parse: parseHealthMetrics, full: backfill, warnings,
+      write: upsertDailyMetrics(store.db, stamp),
+    });
+    counts.workout_sessions = await syncAppendOnly({
+      store, source, key: 'workout_sessions', parse: parseWorkoutSessions, full: backfill, warnings,
+      write: upsertWorkoutSessions(store.db, stamp),
+    });
+    counts.workout_log = await syncWorkoutLog({ store, source, backfill, now, warnings });
+    if (backfill) {
+      counts.drinking_log = await importOnce({ store, source, key: 'drinking_log', parse: parseDrinkingLog, write: upsertDrinkingDays(store.db, stamp), warnings });
+      counts.weekly_checkin = await importOnce({ store, source, key: 'weekly_checkin', parse: parseWeeklyCheckins, write: upsertCheckins(store.db, stamp), warnings });
+    }
+    run.finish('ok', { counts, warnings: warnings.length });
+    return { counts, warnings };
+  } catch (err) {
+    run.finish('error', { counts, error: err.message });
+    throw err;
+  }
+}
+
+function getState(db, sourceKey, tab) {
+  return db.prepare('SELECT * FROM sync_state WHERE source = ? AND tab = ?').get(sourceKey, tab) ?? null;
+}
+
+function setState(db, sourceKey, tab, { rowCount, headerHash = null, contentHash = null }) {
+  db.prepare(`INSERT INTO sync_state (source, tab, row_count, header_hash, content_hash, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (source, tab) DO UPDATE SET row_count = excluded.row_count, header_hash = excluded.header_hash,
+      content_hash = excluded.content_hash, synced_at = excluded.synced_at`)
+    .run(sourceKey, tab, rowCount, headerHash, contentHash, new Date().toISOString());
+}
+
+async function syncAppendOnly({ store, source, key, parse, full, write, warnings }) {
+  const state = full ? null : getState(store.db, key, RAW_TAB);
+  let fromRow = state ? Math.max(2, state.row_count + 1 - OVERLAP_ROWS) : 2;
+  let data = await source.readRows(key, RAW_TAB, fromRow);
+  // A changed header, or no rows where rows used to be (the sheet was cleared or rebuilt), means
+  // the watermark no longer lines up: read the whole sheet again.
+  if (fromRow > 2 && (hash(data.header) !== state.header_hash || data.rows.length === 0)) {
+    fromRow = 2;
+    data = await source.readRows(key, RAW_TAB, fromRow);
+  }
+  const { records, warnings: w } = parse({ ...data, tab: RAW_TAB });
+  warnings.push(...w);
+  store.tx(() => {
+    for (const r of records) write(r);
+    setState(store.db, key, RAW_TAB, { rowCount: data.firstRowNumber - 1 + data.rows.length, headerHash: hash(data.header) });
+  });
+  return { rowsRead: data.rows.length, fromRow, upserted: records.length };
+}
+
+async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
+  const yearTabs = (await source.listTabs('workout_log')).filter((t) => /^\d{4}$/.test(t)).sort();
+  const year = now.getFullYear();
+  const inJanuary = now.getMonth() === 0 && now.getDate() <= 28;
+  const wanted = backfill ? yearTabs : yearTabs.filter((t) => Number(t) === year || (inJanuary && Number(t) === year - 1));
+  const result = { tabsRead: wanted.length, tabsReplaced: 0, exercises: 0, sets: 0, notes: 0 };
+
+  const insertExercise = store.db.prepare(`INSERT INTO strength_exercises
+    (tab_year, row_no, date, workout, prime, exercise, post, comment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  const insertSet = store.db.prepare(`INSERT INTO strength_sets
+    (exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const insertNote = store.db.prepare('INSERT INTO workout_log_notes (tab_year, row_no, date, text) VALUES (?, ?, ?, ?)');
+
+  for (const tab of wanted) {
+    const data = await source.readRows('workout_log', tab);
+    const contentHash = hash([data.header, data.rows]);
+    if (getState(store.db, 'workout_log', tab)?.content_hash === contentHash) continue;
+    const { records, notes, warnings: w } = parseWorkoutLogTab({ ...data, tab });
+    warnings.push(...w);
+    store.tx(() => {
+      store.db.prepare('DELETE FROM strength_exercises WHERE tab_year = ?').run(Number(tab));
+      store.db.prepare('DELETE FROM workout_log_notes WHERE tab_year = ?').run(Number(tab));
+      for (const e of records) {
+        const id = insertExercise.run(e.tab_year, e.row_no, e.date, e.workout, e.prime, e.exercise, e.post, e.comment).lastInsertRowid;
+        for (const s of e.sets) {
+          insertSet.run(id, s.set_no, s.weight_text, s.weight_lbs, s.per_hand, s.band, s.bodyweight, s.reps_text, s.reps, s.duration_sec, s.distance_yd);
+        }
+        result.sets += e.sets.length;
+      }
+      for (const n of notes) insertNote.run(n.tab_year, n.row_no, n.date, n.text);
+      setState(store.db, 'workout_log', tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, contentHash });
+    });
+    result.tabsReplaced += 1;
+    result.exercises += records.length;
+    result.notes += notes.length;
+  }
+  return result;
+}
+
+async function importOnce({ store, source, key, parse, write, warnings }) {
+  const data = await source.readRows(key, RAW_TAB);
+  const { records, warnings: w } = parse({ ...data, tab: RAW_TAB });
+  warnings.push(...w);
+  let written = 0;
+  store.tx(() => {
+    for (const r of records) written += write(r);
+    setState(store.db, key, RAW_TAB, { rowCount: data.firstRowNumber - 1 + data.rows.length, headerHash: hash(data.header) });
+  });
+  return { rowsRead: data.rows.length, imported: written, keptFromUi: records.length - written };
+}
+
+// ---- writers: each returns a function(record) ----
+
+function upsertDailyMetrics(db, stamp) {
+  const cols = HEALTH_METRIC_COLUMNS;
+  const stmt = db.prepare(`INSERT INTO daily_metrics (date, ${cols.join(', ')}, updated_at)
+    VALUES (@date, ${cols.map((c) => `@${c}`).join(', ')}, @updated_at)
+    ON CONFLICT (date) DO UPDATE SET ${cols.map((c) => `${c} = COALESCE(excluded.${c}, daily_metrics.${c})`).join(', ')},
+      updated_at = excluded.updated_at`);
+  return (r) => stmt.run({ ...r, updated_at: stamp });
+}
+
+function upsertWorkoutSessions(db, stamp) {
+  const cols = ['duration_sec', 'total_energy_kcal', 'active_energy_kcal', 'max_hr', 'avg_hr', 'distance_mi', 'avg_speed_mph',
+    'step_count', 'step_cadence_spm', 'swim_stroke_count', 'swim_stroke_cadence_spm', 'flights_climbed', 'elevation_up_ft', 'elevation_down_ft'];
+  const stmt = db.prepare(`INSERT INTO workout_sessions (type, start, end, ${cols.join(', ')}, updated_at)
+    VALUES (@type, @start, @end, ${cols.map((c) => `@${c}`).join(', ')}, @updated_at)
+    ON CONFLICT (type, start, end) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(', ')}, updated_at = excluded.updated_at`);
+  return (r) => stmt.run({ ...r, updated_at: stamp });
+}
+
+// Imported rows never replace a day entered in the UI. Returns 1 when written, 0 when kept.
+function upsertDrinkingDays(db, stamp) {
+  const stmt = db.prepare(`INSERT INTO drinking_days
+    (date, beers, wine, bourbon, other, setting, mood_before, mood_after, notes, source, updated_at)
+    VALUES (@date, @beers, @wine, @bourbon, @other, @setting, @mood_before, @mood_after, @notes, '${V1_SOURCE}', @updated_at)
+    ON CONFLICT (date) DO UPDATE SET beers = excluded.beers, wine = excluded.wine, bourbon = excluded.bourbon,
+      other = excluded.other, setting = excluded.setting, mood_before = excluded.mood_before, mood_after = excluded.mood_after,
+      notes = excluded.notes, updated_at = excluded.updated_at
+    WHERE drinking_days.source = '${V1_SOURCE}'`);
+  return (r) => stmt.run({ ...r, updated_at: stamp }).changes;
+}
+
+function upsertCheckins(db, stamp) {
+  const cols = ['cadence', 'readiness', 'energy', 'mood', 'stress', 'nutrition', 'weight_lbs', 'body_fat_pct', 'muscle_mass_lbs',
+    'visceral_fat', 'body_measured_on', 'notes'];
+  const stmt = db.prepare(`INSERT INTO checkins (date, ${cols.join(', ')}, source, updated_at)
+    VALUES (@date, ${cols.map((c) => `@${c}`).join(', ')}, '${V1_SOURCE}', @updated_at)
+    ON CONFLICT (date) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(', ')}, updated_at = excluded.updated_at
+    WHERE checkins.source = '${V1_SOURCE}'`);
+  return (r) => stmt.run({ ...r, updated_at: stamp }).changes;
+}

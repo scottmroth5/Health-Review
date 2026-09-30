@@ -10,7 +10,8 @@
   "scripts": {
     "test": "node --test",
     "google:login": "node --env-file=.env scripts/google-login.js",
-    "google:check": "node --env-file=.env scripts/google-check.js"
+    "google:check": "node --env-file=.env scripts/google-check.js",
+    "sync": "node --env-file=.env scripts/sync.js"
   },
   "keywords": [],
   "author": "",

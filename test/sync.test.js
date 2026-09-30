@@ -1,0 +1,163 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { openHealthStore } from '../db/store.js';
+import { runSync, OVERLAP_ROWS } from '../ingest/sync.js';
+import { fakeSource, serial, silentLogger } from './helpers.js';
+
+const HEALTH = ['Date/Time', 'Heart Rate Variability (ms)', 'Resting Heart Rate (bpm)', 'Step Count (steps)'];
+const SESSIONS = ['Type', 'Start', 'End', 'Duration', 'Avg Heart Rate (bpm)'];
+const LOG = ['Date', 'Prime', 'Exercise', 'Weight 1', 'Set 1', 'Weight 2', 'Set 2', 'Post', 'Workout', 'Comment'];
+const DRINKS = ['Date', 'Number of Beers', 'Number of glasses of wine', 'Number of glasses of bourbon', 'Other Mixed Drink', 'Total Drinks', 'Setting', 'Mood before Drinking (1-10)', 'Mood After Drinking (1-10)', 'Notes'];
+const CHECKIN = ['Week Ending (Saturday) ', 'Morning Readiness (1-10)', 'Avg Energy (1-10)', 'Avg Mood (1-10)', 'Stress Level (1-10)', 'Nutrition Quality (1-10)', 'Notes'];
+
+const day = (d, hrv, rhr, steps) => [serial(d, 3), hrv, rhr, steps];
+const NOW = new Date(2026, 2, 9, 7, 0); // local 2026-03-09
+
+function sheets() {
+  return {
+    health_metrics: { Sheet1: [HEALTH, day('2026-03-01', 45, 56, 7000), day('2026-03-02', 48, 55, 8000)], Last7Days: [HEALTH] },
+    workout_sessions: { Sheet1: [SESSIONS, ['Outdoor Run', serial('2026-03-02', 6, 15), serial('2026-03-02', 6, 52, 30), 37.5 / 1440, 148]] },
+    workout_log: {
+      2025: [LOG, [serial('2025-12-29'), '', 'Squat', 135, 5]],
+      2026: [LOG, [serial('2026-03-02'), 'A1', 'Squat', 185, 5, 205, 3, '', 'Legs A'], ['', 'A2', 'Plank', '', ':45']],
+      Last28Days: [LOG],
+      backup: [LOG, [serial('2026-01-01'), '', 'Old', 1, 1]],
+    },
+    drinking_log: { Sheet1: [DRINKS, [serial('2026-03-06'), 2, 1, 0, 0, 3, 'Dinner', 7, 8, ''], [serial('2026-03-07'), 0, 0, 0, 0, 0]] },
+    weekly_checkin: { Sheet1: [CHECKIN, [serial('2026-03-07'), 7, 6, 8, 4, 7, 'fine']] },
+  };
+}
+
+const open = () => openHealthStore(':memory:');
+const sync = (store, source, opts = {}) => runSync({ store, source, now: NOW, logger: silentLogger, ...opts });
+const count = (store, table) => store.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+
+test('backfill imports every source, all year tabs, and skips filtered and backup tabs', async () => {
+  const store = open();
+  const { counts, warnings } = await sync(store, fakeSource(sheets()), { backfill: true });
+  assert.deepEqual(warnings, []);
+  assert.equal(count(store, 'daily_metrics'), 2);
+  assert.equal(count(store, 'workout_sessions'), 1);
+  assert.deepEqual(store.db.prepare('SELECT tab_year, COUNT(*) AS n FROM strength_exercises GROUP BY tab_year').all(), [
+    { tab_year: 2025, n: 1 }, { tab_year: 2026, n: 2 },
+  ]);
+  assert.equal(count(store, 'strength_sets'), 4);
+  assert.equal(count(store, 'drinking_days'), 2);
+  assert.equal(count(store, 'checkins'), 1);
+  assert.equal(counts.workout_log.tabsRead, 2);
+  store.close();
+});
+
+test('an incremental sync reads only from the watermark minus the overlap', async () => {
+  const store = open();
+  const data = sheets();
+  for (let i = 3; i <= 20; i++) data.health_metrics.Sheet1.push(day(`2026-02-${String(i).padStart(2, '0')}`, 40 + i, 60, 5000));
+  const source = fakeSource(data);
+  await sync(store, source, { backfill: true });
+  const rowsBefore = data.health_metrics.Sheet1.length;
+
+  data.health_metrics.Sheet1.push(day('2026-03-03', 50, 54, 9000));
+  source.reads.length = 0;
+  const { counts } = await sync(store, source);
+
+  assert.deepEqual(source.reads.find((r) => r.source === 'health_metrics'), { source: 'health_metrics', tab: 'Sheet1', fromRow: rowsBefore + 1 - OVERLAP_ROWS });
+  assert.equal(counts.health_metrics.rowsRead, OVERLAP_ROWS + 1);
+  assert.equal(store.db.prepare("SELECT hrv_ms FROM daily_metrics WHERE date = '2026-03-03'").get().hrv_ms, 50);
+  assert.equal(counts.drinking_log, undefined, 'drinking log is only read on backfill');
+  store.close();
+});
+
+test('duplicate health days merge field by field: later non-empty values win, empty ones never erase', async () => {
+  const store = open();
+  const data = sheets();
+  data.health_metrics.Sheet1.push([serial('2026-03-03', 3), 44, '', 3200]); // partial export
+  data.health_metrics.Sheet1.push([serial('2026-03-03', 3), 49, 54, '']); // later export missing steps
+  await sync(store, fakeSource(data), { backfill: true });
+  assert.deepEqual(store.db.prepare("SELECT hrv_ms, resting_hr, steps FROM daily_metrics WHERE date = '2026-03-03'").get(), { hrv_ms: 49, resting_hr: 54, steps: 3200 });
+  assert.equal(count(store, 'daily_metrics'), 3);
+  store.close();
+});
+
+test('exact duplicate workout sessions are stored once', async () => {
+  const store = open();
+  const data = sheets();
+  data.workout_sessions.Sheet1.push([...data.workout_sessions.Sheet1[1]]);
+  await sync(store, fakeSource(data), { backfill: true });
+  assert.equal(count(store, 'workout_sessions'), 1);
+  store.close();
+});
+
+test('a cleared or rebuilt sheet triggers a full re-read instead of trusting the watermark', async () => {
+  const store = open();
+  const data = sheets();
+  for (let i = 3; i <= 20; i++) data.health_metrics.Sheet1.push(day(`2026-02-${String(i).padStart(2, '0')}`, 40 + i, 60, 5000));
+  const source = fakeSource(data);
+  await sync(store, source, { backfill: true });
+  data.health_metrics.Sheet1 = [HEALTH, day('2026-03-05', 51, 53, 9500)]; // far shorter than the watermark
+  source.reads.length = 0;
+  await sync(store, source);
+  const watermarkRead = 21 + 1 - OVERLAP_ROWS; // 20 data rows plus the header were synced
+  assert.deepEqual(source.reads.filter((r) => r.source === 'health_metrics').map((r) => r.fromRow), [watermarkRead, 2]);
+  assert.equal(store.db.prepare("SELECT hrv_ms FROM daily_metrics WHERE date = '2026-03-05'").get().hrv_ms, 51);
+  store.close();
+});
+
+test('Workout Log: unchanged tabs are skipped, edited tabs replaced, deleted rows removed', async () => {
+  const store = open();
+  const data = sheets();
+  const source = fakeSource(data);
+  await sync(store, source, { backfill: true });
+
+  let { counts } = await sync(store, source);
+  assert.deepEqual([counts.workout_log.tabsRead, counts.workout_log.tabsReplaced], [1, 0], 'only the current year is read, and it is unchanged');
+
+  data.workout_log['2026'][1][3] = 190; // edit a weight
+  data.workout_log['2026'].pop(); // delete the plank row
+  ({ counts } = await sync(store, source));
+  assert.equal(counts.workout_log.tabsReplaced, 1);
+  const rows = store.db.prepare('SELECT e.exercise, s.set_no, s.weight_lbs FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id WHERE e.tab_year = 2026 ORDER BY s.set_no').all();
+  assert.deepEqual(rows, [{ exercise: 'Squat', set_no: 1, weight_lbs: 190 }, { exercise: 'Squat', set_no: 2, weight_lbs: 205 }]);
+  assert.equal(count(store, 'strength_sets'), 3, 'the plank set is gone and 2025 is untouched');
+  store.close();
+});
+
+test('Workout Log: in January the previous year tab is synced too', async () => {
+  const store = open();
+  const source = fakeSource(sheets());
+  const { counts } = await sync(store, source, { now: new Date(2026, 0, 10) });
+  assert.equal(counts.workout_log.tabsRead, 2);
+  store.close();
+});
+
+test('backfill never overwrites drinking days or check-ins entered in the UI', async () => {
+  const store = open();
+  store.db.prepare("INSERT INTO drinking_days (date, beers, source, updated_at) VALUES ('2026-03-06', 5, 'ui', 'x')").run();
+  store.db.prepare("INSERT INTO checkins (date, cadence, readiness, source, updated_at) VALUES ('2026-03-07', 'daily', 9, 'ui', 'x')").run();
+  const { counts } = await sync(store, fakeSource(sheets()), { backfill: true });
+  assert.equal(store.db.prepare("SELECT beers FROM drinking_days WHERE date = '2026-03-06'").get().beers, 5);
+  assert.equal(store.db.prepare("SELECT readiness FROM checkins WHERE date = '2026-03-07'").get().readiness, 9);
+  assert.deepEqual([counts.drinking_log.imported, counts.drinking_log.keptFromUi], [1, 1]);
+  assert.deepEqual([counts.weekly_checkin.imported, counts.weekly_checkin.keptFromUi], [0, 1]);
+  store.close();
+});
+
+test('each sync is recorded as a run with counts only', async () => {
+  const store = open();
+  await sync(store, fakeSource(sheets()), { backfill: true });
+  const run = store.db.prepare("SELECT name, status, meta, summary FROM runs WHERE name = 'sync'").get();
+  assert.equal(run.status, 'ok');
+  assert.deepEqual(JSON.parse(run.meta), { backfill: true });
+  const summary = JSON.parse(run.summary);
+  assert.equal(summary.counts.health_metrics.upserted, 2);
+  assert.doesNotMatch(run.summary, /Dinner|Squat|fine/, 'no cell text in the run record');
+  store.close();
+});
+
+test('a failed sync is recorded as an error run and rethrown', async () => {
+  const store = open();
+  const data = sheets();
+  data.health_metrics.Sheet1[0] = ['When', 'HRV'];
+  await assert.rejects(sync(store, fakeSource(data), { backfill: true }), /no "Date\/Time" column/);
+  assert.equal(store.db.prepare("SELECT status FROM runs WHERE name = 'sync'").get().status, 'error');
+  store.close();
+});
