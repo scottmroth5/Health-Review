@@ -63,12 +63,15 @@ AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is
 exposing the server requires a login mode in server/auth.js first. Check-in and drinking scales are 1 to 10 to match
 v1 history. CBD drinks are stored in drinking_days.cbd and never counted as alcohol. Prompt sections live in
 prompt_sections (edited on the Prompt tab; every save and delete copies the old row to prompt_section_versions);
-sensitive sections are left out of the weekly review by buildInstructions in agent/prompts.js.
+sensitive sections are included in the weekly review (WEEKLY_INCLUDES_SENSITIVE in agent/prompts.js) and badged in the UI;
+buildInstructions leaves them out unless a caller opts in.
 
 ## Hard rules
 All health data stays on this machine. Never add cloud storage, CI, or remote sync for /data.
 Send the Claude API computed summaries only, never raw exports.
-Include genetics or medication data only when a specific question requires it.
+Genetics and medication data (prompt sections marked sensitive) go to the Claude API only as part of the weekly review
+prompt, which includes them every week by the owner's choice (decided 2026-09-30); each run records which sensitive
+sections it sent (names only). Never send them to any other service, log their text, or put them in the summary.
 Metrics are computed in code, never by the model.
 Anything involving medications, abnormal labs, or symptoms is flagged for physician discussion, not turned into a recommendation.
 Never output em dashes, en dashes, or double hyphens in generated text.

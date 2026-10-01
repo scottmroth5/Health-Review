@@ -1,5 +1,5 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
-import { buildInstructions } from '../agent/prompts.js';
+import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
 export const BODY_FIELDS = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat'];
@@ -156,11 +156,14 @@ export function deleteSection(db, id) {
 /** The weekly review's instructions as the model would receive them (sensitive sections left out). */
 export function previewInstructions(db, today) {
   const sections = listSections(db);
-  const text = buildInstructions(sections, today);
+  const includeSensitive = WEEKLY_INCLUDES_SENSITIVE;
+  const text = buildInstructions(sections, today, { includeSensitive });
+  const sent = sections.filter((s) => includeSensitive || !s.sensitive);
   return {
     text,
     characters: text.length,
-    included: sections.filter((s) => !s.sensitive).map((s) => s.name),
-    leftOut: sections.filter((s) => s.sensitive).map((s) => s.name),
+    included: sent.map((s) => s.name),
+    sensitiveIncluded: sent.filter((s) => s.sensitive).map((s) => s.name),
+    leftOut: sections.filter((s) => !sent.includes(s)).map((s) => s.name),
   };
 }

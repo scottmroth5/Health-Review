@@ -12,9 +12,14 @@ export function sectionOrder(name) {
 }
 
 /**
- * The weekly review's instructions from stored prompt sections (prompt_sections rows), in
- * position order. Sensitive sections (medications, genetics) are left out unless a caller
- * that needs them for a specific question passes includeSensitive.
+ * The weekly review sends sensitive sections (medications, genetics) every week: the owner's
+ * decision of 2026-09-30, recorded in CLAUDE.md's hard rules. Each run logs their names.
+ */
+export const WEEKLY_INCLUDES_SENSITIVE = true;
+
+/**
+ * Instructions from stored prompt sections (prompt_sections rows), in position order.
+ * Sensitive sections are left out unless the caller opts in with includeSensitive.
  *
  * @param {Array<{position: number, name: string, text: string, sensitive: number|boolean}>} sections
  * @param {string} today  run date as yyyy-MM-dd

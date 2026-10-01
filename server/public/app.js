@@ -389,7 +389,7 @@ function sectionCard(section) {
   check.className = 'check';
   const checkInput = document.createElement('input');
   Object.assign(checkInput, { type: 'checkbox', name: 'sensitive', checked: Boolean(section.sensitive) });
-  check.append(checkInput, document.createTextNode('Sensitive (medications, genetics): left out of the weekly review'));
+  check.append(checkInput, document.createTextNode('Sensitive (medications, genetics): sent with the weekly review and named in the run log'));
 
   const textLabel = document.createElement('label');
   textLabel.textContent = 'Text';
@@ -479,7 +479,8 @@ async function showPreview() {
   const p = await api('GET', '/api/prompt/preview');
   $('#preview').hidden = false;
   const parts = [`${p.characters.toLocaleString()} characters`, `included: ${p.included.join(', ') || 'none'}`];
-  if (p.leftOut.length) parts.push(`left out (sensitive): ${p.leftOut.join(', ')}`);
+  if (p.sensitiveIncluded.length) parts.push(`sensitive, sent every week: ${p.sensitiveIncluded.join(', ')}`);
+  if (p.leftOut.length) parts.push(`left out: ${p.leftOut.join(', ')}`);
   $('#preview-meta').textContent = parts.join(' · ');
   $('#preview-text').textContent = p.text || '(empty)';
 }

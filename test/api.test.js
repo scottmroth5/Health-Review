@@ -108,16 +108,24 @@ test('prompt sections: create, edit keeps the previous version, delete keeps a c
   await done();
 });
 
-test('prompt preview: position order, {{TODAY}} filled in, sensitive sections left out', async () => {
+test('prompt preview: position order, {{TODAY}} filled in, sensitive sections sent every week and named', async () => {
   const { app, done } = await setup();
   await post(app, '/api/prompt/sections', { position: 10, name: 'rules', text: 'Rules.' });
   await post(app, '/api/prompt/sections', { position: 2, name: 'medical', text: 'Medications.', sensitive: true });
   await post(app, '/api/prompt/sections', { position: 1, name: 'profile', text: 'Profile on {{TODAY}}.' });
   const preview = (await app.inject('/api/prompt/preview')).json();
-  assert.equal(preview.text, 'Profile on 2026-03-09.\n\nRules.');
-  assert.deepEqual(preview.included, ['profile', 'rules']);
-  assert.deepEqual(preview.leftOut, ['medical']);
+  assert.equal(preview.text, 'Profile on 2026-03-09.\n\nMedications.\n\nRules.');
+  assert.deepEqual(preview.included, ['profile', 'medical', 'rules']);
+  assert.deepEqual(preview.sensitiveIncluded, ['medical']);
+  assert.deepEqual(preview.leftOut, []);
   await done();
+});
+
+test('buildInstructions leaves sensitive sections out unless the caller opts in', async () => {
+  const { buildInstructions } = await import('../agent/prompts.js');
+  const sections = [{ position: 1, name: 'profile', text: 'P' }, { position: 2, name: 'genetics', text: 'G', sensitive: 1 }];
+  assert.equal(buildInstructions(sections, '2026-03-09'), 'P');
+  assert.equal(buildInstructions(sections, '2026-03-09', { includeSensitive: true }), 'P\n\nG');
 });
 
 test('prompt sections: names are restricted and a body is required', async () => {
