@@ -16,6 +16,7 @@ export function fakeSource(tabs) {
   return {
     tabs,
     reads,
+    has: (source) => source in tabs,
     async listTabs(source) {
       return Object.keys(tabs[source] ?? {});
     },

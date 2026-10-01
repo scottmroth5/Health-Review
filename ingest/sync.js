@@ -16,6 +16,7 @@ import {
   parseWorkoutLogTab,
   parseDrinkingLog,
   parseWeeklyCheckins,
+  parseLabSheet,
 } from './parsers.js';
 
 const RAW_TAB = 'Sheet1';
@@ -48,6 +49,7 @@ export async function runSync({ store, source, backfill = false, now = new Date(
       write: upsertWorkoutSessions(store.db, stamp),
     });
     counts.workout_log = await syncWorkoutLog({ store, source, backfill, now, warnings });
+    counts.lab_results = await syncLabs({ store, source, warnings, stamp });
     if (backfill) {
       counts.drinking_log = await importOnce({ store, source, key: 'drinking_log', parse: parseDrinkingLog, write: upsertDrinkingDays(store.db, stamp), warnings });
       counts.weekly_checkin = await importOnce({ store, source, key: 'weekly_checkin', parse: parseWeeklyCheckins, write: upsertCheckins(store.db, stamp), warnings });
@@ -130,6 +132,74 @@ async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
   }
   return result;
 }
+
+/**
+ * The lab sheet is small, so it is read whole every time and only written when its content changed.
+ * Sheet results are replaced together (edits and removed columns are picked up); results entered
+ * in the app are never touched, and the app's value wins when both have the same test and date.
+ */
+async function syncLabs({ store, source, warnings, stamp }) {
+  if (!source.has?.('lab_results')) return { skipped: 'LAB_RESULTS_SHEET_ID is not set in .env' };
+  // The tab whose A1 is "Lab Test", else the first tab.
+  let tab = null;
+  let data = null;
+  for (const t of await source.listTabs('lab_results')) {
+    const d = await source.readRows('lab_results', t);
+    if (!data) [tab, data] = [t, d];
+    if (cleanCell(d.header[0]) === 'lab test') {
+      [tab, data] = [t, d];
+      break;
+    }
+  }
+  if (!data) return { skipped: 'the lab spreadsheet has no tabs' };
+  const contentHash = hash([data.header, data.rows]);
+  if (getState(store.db, 'lab_results', tab)?.content_hash === contentHash) return { tab, changed: false };
+
+  const { tests, results, warnings: w } = parseLabSheet({ ...data, tab });
+  warnings.push(...w);
+  const { db } = store;
+  let keptFromApp = 0;
+  store.tx(() => {
+    const findTest = db.prepare('SELECT id FROM lab_tests WHERE name = ?');
+    const insertTest = db.prepare('INSERT INTO lab_tests (name, panel, position, created_at) VALUES (?, ?, ?, ?)');
+    const updateTest = db.prepare('UPDATE lab_tests SET panel = ?, position = ? WHERE id = ?');
+    const ids = new Map();
+    for (const t of tests) {
+      const found = findTest.get(t.name);
+      if (found) updateTest.run(t.panel, t.position, found.id);
+      ids.set(t.name.toLowerCase(), found?.id ?? Number(insertTest.run(t.name, t.panel, t.position, stamp).lastInsertRowid));
+    }
+    db.prepare("DELETE FROM lab_results WHERE source = 'sheet'").run();
+    // An app row wins: one added in the app on the same date, or a correction of this sheet result
+    // (found by its original date, since a correction may have moved it).
+    const fromApp = db.prepare(`SELECT value_text, corrected_from_date FROM lab_results WHERE test_id = @test AND source = 'ui'
+      AND (drawn_on = @date OR corrected_from_date = @date)`);
+    const insert = db.prepare("INSERT INTO lab_results (test_id, drawn_on, value, value_text, source, updated_at) VALUES (?, ?, ?, ?, 'sheet', ?)");
+    for (const r of results) {
+      const testId = ids.get(r.test.toLowerCase());
+      const app = fromApp.get({ test: testId, date: r.drawn_on });
+      if (app) {
+        keptFromApp += 1;
+        // Corrections are expected to differ from the sheet; only a disagreeing app-added value is worth a warning.
+        if (!app.corrected_from_date && app.value_text !== r.value_text) {
+          warnings.push({ source: 'lab_results', tab, kind: 'app value kept over a different sheet value', detail: `${r.test} on ${r.drawn_on}` });
+        }
+        continue;
+      }
+      try {
+        insert.run(testId, r.drawn_on, r.value, r.value_text, stamp);
+      } catch (err) {
+        // A correction moved another result onto this date; the app's row stays.
+        if (!/UNIQUE/.test(err.message)) throw err;
+        keptFromApp += 1;
+      }
+    }
+    setState(db, 'lab_results', tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, contentHash });
+  });
+  return { tab, changed: true, tests: tests.length, draws: new Set(results.map((r) => r.drawn_on)).size, results: results.length - keptFromApp, keptFromApp };
+}
+
+const cleanCell = (v) => String(v ?? '').trim().toLowerCase();
 
 async function importOnce({ store, source, key, parse, write, warnings }) {
   const data = await source.readRows(key, RAW_TAB);

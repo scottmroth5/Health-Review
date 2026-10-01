@@ -57,11 +57,28 @@ strength looks back 28 days; correlations and next-morning comparisons use 90 da
 counts (3 per group, 10 pairs). Values are rounded in code to the precision the report prints, so the review can be
 checked for numbers that are not in the summary. Days without a row are unknown, never zero (drinking rates are per
 logged day). Zone 2 counts cardio sessions whose average heart rate is inside the range in settings (no per-minute HR).
+Medications (metrics/medications.js): each dose or timing period is a row in medication_periods; stopped_on is the first
+day it no longer applied, so a change closes one period and opens the next on the same date. Start, change and stop
+events are derived, never stored. Impact compares the 28 days before an event with days 7 to 34 after it (minimums 14
+days for daily metrics, 7 for check-ins; pending until the after window ends) and lists other events within 28 days.
+These are observational before and after averages; never present them as cause, and route them to physician discussion.
+A period with start_estimated (real start unknown; the owner's existing items count from 2026-01-01) is active from
+started_on but never produces a start event. Daily check-off (medication_doses): saving a day records every slot taken
+or skipped; a day with no rows is unknown, never missed. The weekly summary reports doses taken out of doses logged.
+A dose or timing change is a new dated period; a correction (fixing a typo) updates the current period in place and
+records no event. Each Meds card shows its dose history once there is more than one period.
 
 ## UI and API
 AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS rebinding);
 exposing the server requires a login mode in server/auth.js first. Check-in and drinking scales are 1 to 10 to match
-v1 history. CBD drinks are stored in drinking_days.cbd and never counted as alcohol. Prompt sections live in
+v1 history. CBD drinks are stored in drinking_days.cbd and never counted as alcohol. The Meds tab manages medications and
+supplements (add, change, stop, start again, delete for mistakes); the weekly review takes them from there, not from the
+medical prompt section. The Labs tab shows lab_tests and lab_results by panel. Results come from the lab sheet
+(LAB_RESULTS_SHEET_ID; the tab whose A1 is "Lab Test"; capitalized rows with no values are panel headings; one column
+per draw date), synced whole on every sync and replaced only when its content hash changes, or from the app (source
+'ui'), which sync never overwrites and which win a clash. Any result can be corrected in the app: a corrected sheet
+result becomes 'ui' with corrected_from and corrected_from_date (the sheet's original value and date), sync skips the
+sheet's copy, and undoing restores the original. Sheet results cannot be deleted in the app. Prompt sections live in
 prompt_sections (edited on the Prompt tab; every save and delete copies the old row to prompt_section_versions);
 sensitive sections are included in the weekly review (WEEKLY_INCLUDES_SENSITIVE in agent/prompts.js) and badged in the UI;
 buildInstructions leaves them out unless a caller opts in.
@@ -69,9 +86,13 @@ buildInstructions leaves them out unless a caller opts in.
 ## Hard rules
 All health data stays on this machine. Never add cloud storage, CI, or remote sync for /data.
 Send the Claude API computed summaries only, never raw exports.
-Genetics and medication data (prompt sections marked sensitive) go to the Claude API only as part of the weekly review
-prompt, which includes them every week by the owner's choice (decided 2026-09-30); each run records which sensitive
-sections it sent (names only). Never send them to any other service, log their text, or put them in the summary.
+Genetics and medication data (prompt sections marked sensitive, and the medications tracker) go to the Claude API only
+as part of the weekly review, which includes them every week by the owner's choice (decided 2026-09-30); each run
+records which sensitive sections it sent (names only). The summary's medications block (current list, changes, before
+and after averages) is the one place medication data enters the summary. Lab values enter only through the summary's labs
+block (latest value and change from the previous draw); there are no reference ranges by the owner's choice, so code
+never labels a value high, low or abnormal, and any interpretation of labs goes only to physician discussion. Never send any of it to another service or
+log its text.
 Metrics are computed in code, never by the model.
 Anything involving medications, abnormal labs, or symptoms is flagged for physician discussion, not turned into a recommendation.
 Never output em dashes, en dashes, or double hyphens in generated text.

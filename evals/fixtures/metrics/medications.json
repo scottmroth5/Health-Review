@@ -1,0 +1,694 @@
+{
+  "description": "Medications: current list at week end, changes this week, 90-day changes with before/after impact, settling days skipped, minimums, pending, overlap",
+  "notes": [
+    "Week ending 2026-06-06 (week 05-31..06-06). Magnesium: 200 mg from 03-01, changed to 400 mg on 04-01 (open). Medication X: 05-20 to 06-03 (stopped, side effects). Old Supplement in 2025 is outside 90 days.",
+    "Current at week end: Magnesium 400 mg only (Medication X stopped 06-03). This week: the 06-03 stop. Last 90 days (from 03-09): 04-01 change, 05-20 start, 06-03 stop.",
+    "Magnesium change 04-01: before 03-04..03-31 HRV 28 days of 50; after 04-08..05-05 HRV 28 days of 55: change +5. The settling days 04-01..04-07 hold HRV 99 and must be skipped. Complete (05-05 is before 06-06).",
+    "Resting HR: before has only 10 days (03-22..03-31, below 14) so before mean and change are null; after has 28 days of 58.",
+    "Readiness: 7 days of 6 before, 7 days of 7 after: +1. Energy: only 6 days before (below 7): null change; after mean 6.",
+    "Medication X start 05-20: before 04-22..05-19 has 14 days of HRV 55 (mean 55) and resting HR 58; after 05-27..06-23 has 11 days so far (HRV 52): no mean yet, pending. It overlaps the 06-03 stop (14 days apart).",
+    "Medication X stop 06-03: before 05-06..06-02 has 7 HRV days (below 14): null; after has 0 days; pending; overlaps the 05-20 start.",
+    "Check-off this week for Magnesium (before bed): saved on 05-31 taken, 06-01 taken, 06-02 skipped; 05-28 is before the week. Logged 3 days, 2 of 3 taken = 66.7% -> 67. The week has no other saved days, so they stay unknown."
+  ],
+  "weekEnd": "2026-06-06",
+  "input": {
+    "daily_metrics": [
+      {
+        "date": "2026-03-04",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-05",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-06",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-07",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-08",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-09",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-10",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-11",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-12",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-13",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-14",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-15",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-16",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-17",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-18",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-19",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-20",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-21",
+        "hrv_ms": 50
+      },
+      {
+        "date": "2026-03-22",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-23",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-24",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-25",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-26",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-27",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-28",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-29",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-30",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-03-31",
+        "hrv_ms": 50,
+        "resting_hr": 60
+      },
+      {
+        "date": "2026-04-01",
+        "hrv_ms": 99
+      },
+      {
+        "date": "2026-04-02",
+        "hrv_ms": 99
+      },
+      {
+        "date": "2026-04-03",
+        "hrv_ms": 99
+      },
+      {
+        "date": "2026-04-04",
+        "hrv_ms": 99
+      },
+      {
+        "date": "2026-04-05",
+        "hrv_ms": 99
+      },
+      {
+        "date": "2026-04-06",
+        "hrv_ms": 99
+      },
+      {
+        "date": "2026-04-07",
+        "hrv_ms": 99
+      },
+      {
+        "date": "2026-04-08",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-09",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-10",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-11",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-12",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-13",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-14",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-15",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-16",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-17",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-18",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-19",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-20",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-21",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-22",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-23",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-24",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-25",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-26",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-27",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-28",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-29",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-04-30",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-05-01",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-05-02",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-05-03",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-05-04",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-05-05",
+        "hrv_ms": 55,
+        "resting_hr": 58
+      },
+      {
+        "date": "2026-05-27",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-05-28",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-05-29",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-05-30",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-05-31",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-06-01",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-06-02",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-06-03",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-06-04",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-06-05",
+        "hrv_ms": 52
+      },
+      {
+        "date": "2026-06-06",
+        "hrv_ms": 52
+      }
+    ],
+    "checkins": [
+      {
+        "date": "2026-03-25",
+        "cadence": "daily",
+        "readiness": 6
+      },
+      {
+        "date": "2026-03-26",
+        "cadence": "daily",
+        "readiness": 6,
+        "energy": 5
+      },
+      {
+        "date": "2026-03-27",
+        "cadence": "daily",
+        "readiness": 6,
+        "energy": 5
+      },
+      {
+        "date": "2026-03-28",
+        "cadence": "daily",
+        "readiness": 6,
+        "energy": 5
+      },
+      {
+        "date": "2026-03-29",
+        "cadence": "daily",
+        "readiness": 6,
+        "energy": 5
+      },
+      {
+        "date": "2026-03-30",
+        "cadence": "daily",
+        "readiness": 6,
+        "energy": 5
+      },
+      {
+        "date": "2026-03-31",
+        "cadence": "daily",
+        "readiness": 6,
+        "energy": 5
+      },
+      {
+        "date": "2026-04-08",
+        "cadence": "daily",
+        "readiness": 7,
+        "energy": 6
+      },
+      {
+        "date": "2026-04-09",
+        "cadence": "daily",
+        "readiness": 7,
+        "energy": 6
+      },
+      {
+        "date": "2026-04-10",
+        "cadence": "daily",
+        "readiness": 7,
+        "energy": 6
+      },
+      {
+        "date": "2026-04-11",
+        "cadence": "daily",
+        "readiness": 7,
+        "energy": 6
+      },
+      {
+        "date": "2026-04-12",
+        "cadence": "daily",
+        "readiness": 7,
+        "energy": 6
+      },
+      {
+        "date": "2026-04-13",
+        "cadence": "daily",
+        "readiness": 7,
+        "energy": 6
+      },
+      {
+        "date": "2026-04-14",
+        "cadence": "daily",
+        "readiness": 7,
+        "energy": 6
+      }
+    ],
+    "medications": [
+      {
+        "id": 1,
+        "name": "Magnesium",
+        "kind": "supplement",
+        "purpose": "sleep",
+        "prescribed": 0
+      },
+      {
+        "id": 2,
+        "name": "Medication X",
+        "kind": "medication",
+        "purpose": "blood pressure",
+        "prescribed": 1
+      },
+      {
+        "id": 3,
+        "name": "Old Supplement",
+        "kind": "supplement",
+        "purpose": null,
+        "prescribed": 0
+      }
+    ],
+    "medication_periods": [
+      {
+        "id": 1,
+        "medication_id": 1,
+        "dose": "200 mg",
+        "timings": "[\"before_bed\"]",
+        "started_on": "2026-03-01",
+        "stopped_on": "2026-04-01",
+        "stop_reason": null
+      },
+      {
+        "id": 2,
+        "medication_id": 1,
+        "dose": "400 mg",
+        "timings": "[\"before_bed\"]",
+        "started_on": "2026-04-01",
+        "stopped_on": null,
+        "stop_reason": null
+      },
+      {
+        "id": 3,
+        "medication_id": 2,
+        "dose": "10 mg",
+        "timings": "[\"morning\"]",
+        "started_on": "2026-05-20",
+        "stopped_on": "2026-06-03",
+        "stop_reason": "side effects"
+      },
+      {
+        "id": 4,
+        "medication_id": 3,
+        "dose": "1 cap",
+        "timings": "[\"daily\"]",
+        "started_on": "2025-01-01",
+        "stopped_on": "2025-02-01",
+        "stop_reason": null
+      }
+    ],
+    "medication_doses": [
+      {
+        "date": "2026-05-28",
+        "medication_id": 1,
+        "timing": "before_bed",
+        "taken": 1
+      },
+      {
+        "date": "2026-05-31",
+        "medication_id": 1,
+        "timing": "before_bed",
+        "taken": 1
+      },
+      {
+        "date": "2026-06-01",
+        "medication_id": 1,
+        "timing": "before_bed",
+        "taken": 1
+      },
+      {
+        "date": "2026-06-02",
+        "medication_id": 1,
+        "timing": "before_bed",
+        "taken": 0
+      }
+    ]
+  },
+  "expected": {
+    "medications": {
+      "current": [
+        {
+          "name": "Magnesium",
+          "kind": "supplement",
+          "dose": "400 mg",
+          "timings": [
+            "before_bed"
+          ],
+          "since": "2026-04-01",
+          "purpose": "sleep",
+          "prescribed": false,
+          "sinceEstimated": false,
+          "week": {
+            "loggedDays": 3,
+            "dosesTaken": 2,
+            "dosesLogged": 3,
+            "takenPct": 67
+          }
+        }
+      ],
+      "changesThisWeek": [
+        {
+          "date": "2026-06-03",
+          "type": "stop",
+          "name": "Medication X",
+          "kind": "medication",
+          "from": {
+            "dose": "10 mg",
+            "timings": [
+              "morning"
+            ]
+          },
+          "to": null,
+          "reason": "side effects"
+        }
+      ],
+      "recentChanges90d": [
+        {
+          "date": "2026-04-01",
+          "type": "change",
+          "name": "Magnesium",
+          "from": {
+            "dose": "200 mg",
+            "timings": [
+              "before_bed"
+            ]
+          },
+          "to": {
+            "dose": "400 mg",
+            "timings": [
+              "before_bed"
+            ]
+          },
+          "impact": {
+            "status": "complete",
+            "before": {
+              "from": "2026-03-04",
+              "to": "2026-03-31"
+            },
+            "after": {
+              "from": "2026-04-08",
+              "to": "2026-05-05"
+            },
+            "overlapsWith": [],
+            "fields": {
+              "hrv_ms": {
+                "beforeDays": 28,
+                "beforeMean": 50,
+                "afterDays": 28,
+                "afterMean": 55,
+                "change": 5
+              },
+              "resting_hr": {
+                "beforeDays": 10,
+                "beforeMean": null,
+                "afterDays": 28,
+                "afterMean": 58,
+                "change": null
+              },
+              "sleep_total_hr": {
+                "beforeDays": 0,
+                "beforeMean": null,
+                "afterDays": 0,
+                "afterMean": null,
+                "change": null
+              },
+              "readiness": {
+                "beforeDays": 7,
+                "beforeMean": 6,
+                "afterDays": 7,
+                "afterMean": 7,
+                "change": 1
+              },
+              "energy": {
+                "beforeDays": 6,
+                "beforeMean": null,
+                "afterDays": 7,
+                "afterMean": 6,
+                "change": null
+              }
+            }
+          }
+        },
+        {
+          "date": "2026-05-20",
+          "type": "start",
+          "name": "Medication X",
+          "from": null,
+          "to": {
+            "dose": "10 mg",
+            "timings": [
+              "morning"
+            ]
+          },
+          "impact": {
+            "status": "pending",
+            "overlapsWith": [
+              {
+                "date": "2026-06-03",
+                "name": "Medication X",
+                "type": "stop"
+              }
+            ],
+            "fields": {
+              "hrv_ms": {
+                "beforeDays": 14,
+                "beforeMean": 55,
+                "afterDays": 11,
+                "afterMean": null,
+                "change": null
+              },
+              "resting_hr": {
+                "beforeDays": 14,
+                "beforeMean": 58,
+                "afterDays": 0,
+                "change": null
+              }
+            }
+          }
+        },
+        {
+          "date": "2026-06-03",
+          "type": "stop",
+          "name": "Medication X",
+          "reason": "side effects",
+          "impact": {
+            "status": "pending",
+            "overlapsWith": [
+              {
+                "date": "2026-05-20",
+                "name": "Medication X",
+                "type": "start"
+              }
+            ],
+            "fields": {
+              "hrv_ms": {
+                "beforeDays": 7,
+                "beforeMean": null,
+                "afterDays": 0,
+                "afterMean": null,
+                "change": null
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

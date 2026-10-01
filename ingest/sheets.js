@@ -7,6 +7,7 @@ export const SHEET_ENV = {
   workout_log: 'WORKOUT_LOG_SHEET_ID',
   drinking_log: 'DRINKING_LOG_SHEET_ID',
   weekly_checkin: 'WEEKLY_CHECKIN_SHEET_ID',
+  lab_results: 'LAB_RESULTS_SHEET_ID',
 };
 
 /**
@@ -34,6 +35,8 @@ export function createSheetsSource(auth, env = process.env) {
     })).data.values ?? [];
 
   return {
+    /** Whether a spreadsheet ID is configured for this source (optional sources are skipped without one). */
+    has: (source) => Boolean(env[SHEET_ENV[source]]),
     async listTabs(source) {
       const { data } = await api.spreadsheets.get({ spreadsheetId: idOf(source), fields: 'sheets.properties.title' });
       return (data.sheets ?? []).map((s) => s.properties.title);

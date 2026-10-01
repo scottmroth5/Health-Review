@@ -14,6 +14,8 @@
     <nav aria-label="Sections">
       <a href="#today">Today</a>
       <a href="#history">History</a>
+      <a href="#meds">Meds</a>
+      <a href="#labs">Labs</a>
       <a href="#reviews">Reviews</a>
       <a href="#prompt">Prompt</a>
     </nav>
@@ -47,6 +49,17 @@
         </div>
       </form>
 
+      <form id="doses" class="card">
+        <h2>Medications and supplements</h2>
+        <div id="dose-list"></div>
+        <div class="actions">
+          <button type="submit">Save</button>
+          <button type="button" class="ghost" id="doses-all">Check all</button>
+          <button type="button" class="ghost danger" id="doses-clear" hidden>Clear</button>
+          <span class="status" role="status"></span>
+        </div>
+      </form>
+
       <form id="drinking" class="card">
         <h2>Drinks</h2>
         <div id="drink-counters" class="counters"></div>
@@ -73,6 +86,76 @@
     </section>
 
     <!-- Reviews -->
+    <!-- Medications and supplements -->
+    <section id="view-meds" class="view" hidden>
+      <h2 class="section-title">Current</h2>
+      <div id="meds-current"></div>
+
+      <details class="card" id="med-add-card">
+        <summary><strong>Add a medication or supplement</strong></summary>
+        <form id="med-add">
+          <div class="grid2">
+            <label>Name <input type="text" name="name" maxlength="100" required></label>
+            <label>Type
+              <select name="kind"><option value="supplement">Supplement</option><option value="medication">Medication</option></select>
+            </label>
+            <label>Dose <input type="text" name="dose" maxlength="100" placeholder="500 mg, 2 capsules"></label>
+            <label>Started on <input type="date" name="started_on" required></label>
+          </div>
+          <label class="check"><input type="checkbox" name="start_estimated"> I don't know when I started (count it from January 1 of this year)</label>
+          <fieldset class="timings" data-timings><legend>When you take it</legend></fieldset>
+          <label>Purpose <input type="text" name="purpose" maxlength="200" placeholder="Sleep, blood pressure, recovery"></label>
+          <label class="check"><input type="checkbox" name="prescribed"> Prescribed by a doctor</label>
+          <label>Notes <textarea name="notes" rows="2" maxlength="1000" placeholder="Take with food, brand, anything worth remembering"></textarea></label>
+          <details>
+            <summary>Already stopped? Record a past course</summary>
+            <div class="grid2">
+              <label>Stopped on <input type="date" name="stopped_on"></label>
+              <label>Why it stopped <input type="text" name="stop_reason" maxlength="200"></label>
+            </div>
+          </details>
+          <div class="actions">
+            <button type="submit">Add</button>
+            <span class="status" role="status"></span>
+          </div>
+        </form>
+      </details>
+
+      <h2 class="section-title">Past</h2>
+      <div id="meds-past"></div>
+
+      <h2 class="section-title">Changes and impact</h2>
+      <p class="muted small">Averages from the 28 days before each change against days 7 to 34 after it (the first week is skipped
+        while things settle). These are before and after numbers, not proof of cause. Discuss medication changes with your physician.</p>
+      <div id="meds-impact"></div>
+    </section>
+
+    <!-- Labs -->
+    <section id="view-labs" class="view" hidden>
+      <p class="muted small">Values as reported, with the change since each test's previous draw. No reference ranges are
+        applied, so nothing is marked high or low; discuss results with your physician. Tap a test for its history.</p>
+      <div id="labs-panels"></div>
+      <details class="card" id="lab-add-card">
+        <summary><strong>Add a result</strong> <span class="muted small">(for tests that are not in your lab sheet)</span></summary>
+        <form id="lab-add">
+          <div class="grid2">
+            <label>Draw date <input type="date" name="drawn_on" required></label>
+            <label>Test <select name="test_id"></select></label>
+          </div>
+          <div class="grid2" data-new-test hidden>
+            <label>New test name <input type="text" name="name" maxlength="100"></label>
+            <label>Panel <input type="text" name="panel" maxlength="100" placeholder="OTHER"></label>
+            <label>Unit <input type="text" name="unit" maxlength="40" placeholder="mg/dL"></label>
+          </div>
+          <label>Value <input type="text" name="value" maxlength="50" required placeholder="9.5 or &lt;0.5"></label>
+          <div class="actions">
+            <button type="submit">Add</button>
+            <span class="status" role="status"></span>
+          </div>
+        </form>
+      </details>
+    </section>
+
     <section id="view-reviews" class="view" hidden>
       <div id="reviews"></div>
     </section>
@@ -84,6 +167,8 @@
         <p class="muted small">Sections are joined in position order. <code>{{TODAY}}</code> becomes the run date.
           Sections marked sensitive (medications, genetics) are sent with every weekly review; each run records their names.
           Every save keeps the previous version.</p>
+        <p class="muted small">Medications and supplements now come from the <a href="#meds">Meds</a> tab. Remove that list from the
+          medical section so the review has one source; keep pharmacogenomics and other notes there.</p>
         <div class="actions">
           <button type="button" id="add-section">Add section</button>
           <button type="button" id="preview-prompt" class="ghost">Preview</button>

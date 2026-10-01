@@ -1,0 +1,48 @@
+{
+  "description": "Labs: latest value and change from the previous draw, decimals as reported, text values, a test missing from the latest draw, no ranges or flags",
+  "notes": [
+    "Week ending 2026-03-28 (week 03-22..03-28). Draws on 2025-09-15, 2026-03-23, and 2026-04-10 (after the week, ignored).",
+    "Latest draw 2026-03-23 is in the week: newThisWeek true, 5 days before the week end. Two draws up to the week end.",
+    "Cholesterol 180 -> 165: change -15. Creatinine 1.1 -> 1.0: change -0.1 (one decimal, as reported). Potassium 4.25 -> 4.6: change 0.35 (two decimals, the most either draw used).",
+    "PSA <0.5 (text) -> 0.6: no numeric change. Homocysteine only in the 2025 draw: latest is 2025-09-15, no previous. Cystatin C has no results: left out.",
+    "Order follows sheet position: Cholesterol, Potassium, Creatinine, PSA, Homocysteine."
+  ],
+  "weekEnd": "2026-03-28",
+  "input": {
+    "lab_tests": [
+      { "id": 1, "name": "Cholesterol", "panel": "LIPID PANEL", "unit": "mg/dL", "position": 1 },
+      { "id": 2, "name": "Potassium", "panel": "COMPREHENSIVE METABOLIC", "unit": null, "position": 2 },
+      { "id": 3, "name": "Creatinine", "panel": "COMPREHENSIVE METABOLIC", "unit": null, "position": 3 },
+      { "id": 4, "name": "PSA", "panel": "OTHER", "unit": null, "position": 4 },
+      { "id": 5, "name": "Homocysteine", "panel": "OTHER", "unit": null, "position": 5 },
+      { "id": 6, "name": "Cystatin C", "panel": "OTHER", "unit": null, "position": 6 }
+    ],
+    "lab_results": [
+      { "test_id": 1, "drawn_on": "2025-09-15", "value": 180, "value_text": "180" },
+      { "test_id": 1, "drawn_on": "2026-03-23", "value": 165, "value_text": "165" },
+      { "test_id": 1, "drawn_on": "2026-04-10", "value": 150, "value_text": "150" },
+      { "test_id": 2, "drawn_on": "2025-09-15", "value": 4.25, "value_text": "4.25" },
+      { "test_id": 2, "drawn_on": "2026-03-23", "value": 4.6, "value_text": "4.6" },
+      { "test_id": 3, "drawn_on": "2025-09-15", "value": 1.1, "value_text": "1.1" },
+      { "test_id": 3, "drawn_on": "2026-03-23", "value": 1.0, "value_text": "1.0" },
+      { "test_id": 4, "drawn_on": "2025-09-15", "value": null, "value_text": "<0.5" },
+      { "test_id": 4, "drawn_on": "2026-03-23", "value": 0.6, "value_text": "0.6" },
+      { "test_id": 5, "drawn_on": "2025-09-15", "value": 9.5, "value_text": "9.5" }
+    ]
+  },
+  "expected": {
+    "labs": {
+      "draws": 2,
+      "latestDraw": "2026-03-23",
+      "daysSinceLatestDraw": 5,
+      "newThisWeek": true,
+      "results": [
+        { "panel": "LIPID PANEL", "test": "Cholesterol", "unit": "mg/dL", "latest": { "date": "2026-03-23", "value": 165 }, "previous": { "date": "2025-09-15", "value": 180 }, "change": -15 },
+        { "panel": "COMPREHENSIVE METABOLIC", "test": "Potassium", "unit": null, "latest": { "date": "2026-03-23", "value": 4.6 }, "previous": { "date": "2025-09-15", "value": 4.25 }, "change": 0.35 },
+        { "panel": "COMPREHENSIVE METABOLIC", "test": "Creatinine", "latest": { "date": "2026-03-23", "value": 1 }, "previous": { "date": "2025-09-15", "value": 1.1 }, "change": -0.1 },
+        { "panel": "OTHER", "test": "PSA", "latest": { "date": "2026-03-23", "value": 0.6 }, "previous": { "date": "2025-09-15", "value": "<0.5" }, "change": null },
+        { "panel": "OTHER", "test": "Homocysteine", "latest": { "date": "2025-09-15", "value": 9.5 }, "previous": null, "change": null }
+      ]
+    }
+  }
+}

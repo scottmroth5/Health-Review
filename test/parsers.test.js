@@ -167,3 +167,37 @@ test('weekly check-ins: trailing space in the header is tolerated; rows are week
   assert.equal(records[0].weight_lbs, 180.5);
   assert.equal(records[0].body_measured_on, '2026-03-05');
 });
+
+// ---- lab sheet ----
+test('lab sheet: panels from capitalized rows, one result per draw column, text values kept, bad header dates warned', async () => {
+  const { parseLabSheet } = await import('../ingest/parsers.js');
+  const { tests, results, warnings } = parseLabSheet({
+    header: ['Lab Test', serial('2026-03-23'), '09/15/2025', 'next time'],
+    firstRowNumber: 2,
+    tab: 'Sheet1',
+    rows: [
+      ['LIPID PANEL'],
+      ['Cholesterol', 165, 180],
+      ['LDL Calculated', 84, ''],
+      [],
+      ['OTHER'],
+      ['PSA', '0.6', '<0.5'],
+      ['Homocysteine'],
+      ['psa', 1, 1],
+    ],
+  });
+  assert.deepEqual(tests, [
+    { name: 'Cholesterol', panel: 'LIPID PANEL', position: 1 },
+    { name: 'LDL Calculated', panel: 'LIPID PANEL', position: 2 },
+    { name: 'PSA', panel: 'OTHER', position: 3 },
+    { name: 'Homocysteine', panel: 'OTHER', position: 4 },
+  ]);
+  assert.deepEqual(results, [
+    { test: 'Cholesterol', drawn_on: '2026-03-23', value: 165, value_text: '165' },
+    { test: 'Cholesterol', drawn_on: '2025-09-15', value: 180, value_text: '180' },
+    { test: 'LDL Calculated', drawn_on: '2026-03-23', value: 84, value_text: '84' },
+    { test: 'PSA', drawn_on: '2026-03-23', value: 0.6, value_text: '0.6' },
+    { test: 'PSA', drawn_on: '2025-09-15', value: null, value_text: '<0.5' },
+  ]);
+  assert.deepEqual(warnings.map((w) => [w.row, w.kind]), [[1, 'header is not a date'], [9, 'duplicate test name (later row skipped)']]);
+});

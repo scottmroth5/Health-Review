@@ -6,6 +6,7 @@ import swagger from '@fastify/swagger';
 import fastifyStatic from '@fastify/static';
 import { registerAuth } from './auth.js';
 import * as q from './queries.js';
+import { TIMINGS } from '../metrics/medications.js';
 
 const nullable = (schema) => ({ ...schema, type: [schema.type, 'null'] });
 const scale = nullable({ type: 'integer', minimum: 1, maximum: 10 });
@@ -144,6 +145,157 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       syncing = false;
     }
   });
+
+  // ---- medications and supplements ----
+  const dateField = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
+  const timings = { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'string', enum: TIMINGS } };
+  const dose = text(100);
+  const medDetails = {
+    name: { type: 'string', minLength: 1, maxLength: 100 },
+    kind: { type: 'string', enum: ['medication', 'supplement'] },
+    purpose: text(200),
+    notes: text(1000),
+    prescribed: { type: 'boolean' },
+  };
+  const medList = { 200: { type: 'array', items: anyObject } };
+  const pastDate = (d) => requireNotFuture(requireDate(d));
+
+  app.get('/api/medications', { schema: { summary: 'Medications and supplements: current first, then stopped', response: medList } },
+    async () => q.listMedications(db));
+
+  app.post('/api/medications', {
+    schema: {
+      summary: 'Add a medication or supplement (a stop date records a past course)',
+      body: {
+        type: 'object', additionalProperties: false, required: ['name', 'kind', 'timings', 'started_on'],
+        properties: {
+          ...medDetails, dose, timings, started_on: dateField, stopped_on: nullable(dateField), stop_reason: text(200),
+          start_estimated: { type: 'boolean', description: 'Real start unknown: taken since at least started_on, with no start event' },
+        },
+      },
+      response: { 201: anyObject },
+    },
+  }, async (req, reply) => {
+    pastDate(req.body.started_on);
+    if (req.body.stopped_on) pastDate(req.body.stopped_on);
+    return reply.code(201).send(q.addMedication(db, req.body));
+  });
+
+  app.put('/api/medications/:id', {
+    schema: { summary: 'Edit name, type, purpose, prescribed or notes', params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: medDetails }, response: { 200: anyObject } },
+  }, async (req) => q.updateMedicationDetails(db, req.params.id, req.body));
+
+  app.post('/api/medications/:id/changes', {
+    schema: {
+      summary: 'Change dose or timing from a date (starts a new period), or correct the current one in place',
+      params: idParams,
+      body: {
+        type: 'object', additionalProperties: false, required: ['timings'],
+        properties: {
+          dose, timings, effective_on: dateField,
+          correction: { type: 'boolean', description: 'Fix a mistake in the current dose or timing; no change is recorded' },
+        },
+      },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.changeMedication(db, req.params.id, {
+    ...req.body,
+    effective_on: req.body.effective_on ? pastDate(req.body.effective_on) : undefined,
+  }));
+
+  app.post('/api/medications/:id/stop', {
+    schema: {
+      summary: 'Stop taking it',
+      params: idParams,
+      body: { type: 'object', additionalProperties: false, required: ['stopped_on'], properties: { stopped_on: dateField, reason: text(200) } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.stopMedication(db, req.params.id, { ...req.body, stopped_on: pastDate(req.body.stopped_on) }));
+
+  app.post('/api/medications/:id/start', {
+    schema: {
+      summary: 'Start taking it again',
+      params: idParams,
+      body: { type: 'object', additionalProperties: false, required: ['timings', 'started_on'], properties: { dose, timings, started_on: dateField } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.startMedication(db, req.params.id, { ...req.body, started_on: pastDate(req.body.started_on) }));
+
+  app.delete('/api/medications/:id', { schema: { summary: 'Remove an entry added by mistake, with all its history', params: idParams } }, async (req, reply) => {
+    if (!q.deleteMedication(db, req.params.id)) return reply.code(404).send({ error: 'Medication not found' });
+    return reply.code(204).send();
+  });
+
+  app.put('/api/doses/:date', {
+    schema: {
+      summary: "Save the day's check-off: every listed slot is recorded taken or not",
+      params: dateParams,
+      body: {
+        type: 'object', additionalProperties: false, required: ['doses'],
+        properties: {
+          doses: {
+            type: 'array', maxItems: 200,
+            items: {
+              type: 'object', additionalProperties: false, required: ['medication_id', 'timing', 'taken'],
+              properties: { medication_id: { type: 'integer', minimum: 1 }, timing: { type: 'string', enum: TIMINGS }, taken: { type: 'boolean' } },
+            },
+          },
+        },
+      },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.saveDoses(db, pastDate(req.params.date), req.body.doses));
+
+  app.delete('/api/doses/:date', { schema: { summary: "Clear the day's check-off (back to not logged)", params: dateParams } }, async (req, reply) => {
+    if (!q.clearDoses(db, requireDate(req.params.date))) return reply.code(404).send({ error: 'Nothing saved for that day' });
+    return reply.code(204).send();
+  });
+
+  app.get('/api/medications/impact', {
+    schema: { summary: 'Each start, change and stop with before and after averages (observational, not cause)', response: medList },
+  }, async () => q.medicationImpact(db, q.localDate(clock())));
+
+  // ---- labs ----
+  const labValueField = { type: ['string', 'number'], maxLength: 50 };
+  app.get('/api/labs', { schema: { summary: 'Lab tests by panel with their results, newest first', response: { 200: anyObject } } },
+    async () => q.listLabs(db));
+
+  app.post('/api/labs/results', {
+    schema: {
+      summary: 'Add a result entered in the app (existing test, or a new test by name)',
+      body: {
+        type: 'object', additionalProperties: false, required: ['drawn_on', 'value'],
+        properties: {
+          test_id: { type: 'integer', minimum: 1 }, name: { type: 'string', maxLength: 100 }, panel: text(100), unit: text(40),
+          drawn_on: dateField, value: labValueField,
+        },
+      },
+      response: { 201: anyObject },
+    },
+  }, async (req, reply) => reply.code(201).send(q.addLabResult(db, { ...req.body, drawn_on: pastDate(req.body.drawn_on) })));
+
+  app.put('/api/labs/results/:id', {
+    schema: {
+      summary: 'Correct a result (a sheet result becomes an app correction that sync keeps)',
+      params: idParams,
+      body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { drawn_on: dateField, value: labValueField } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.updateLabResult(db, req.params.id, { ...req.body, drawn_on: req.body.drawn_on ? pastDate(req.body.drawn_on) : undefined }));
+
+  app.delete('/api/labs/results/:id', { schema: { summary: 'Delete a result added in the app, or undo a correction (restores the sheet value)', params: idParams } }, async (req, reply) => {
+    q.deleteLabResult(db, req.params.id);
+    return reply.code(204).send();
+  });
+
+  app.put('/api/labs/tests/:id', {
+    schema: {
+      summary: "Set a test's unit or panel",
+      params: idParams,
+      body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { unit: text(40), panel: text(100) } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.updateLabTest(db, req.params.id, req.body));
 
   // ---- settings ----
   const bpm = nullable({ type: 'integer', minimum: 40, maximum: 220 });

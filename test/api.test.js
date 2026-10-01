@@ -158,6 +158,187 @@ test('settings: Zone 2 range saves, validates order and bounds, and clears with 
   await done();
 });
 
+// ---- medications ----
+const MAG = { name: 'Magnesium', kind: 'supplement', dose: '200 mg', timings: ['before_bed'], started_on: '2026-01-10', purpose: 'sleep', prescribed: false };
+
+test('medications: add, change (new period), stop, start again; history is kept', async () => {
+  const { app, done } = await setup();
+  const added = await post(app, '/api/medications', MAG);
+  assert.equal(added.statusCode, 201);
+  const { id } = added.json();
+
+  const changed = (await post(app, `/api/medications/${id}/changes`, { dose: '400 mg', timings: ['before_bed', 'morning'], effective_on: '2026-02-01' })).json();
+  assert.deepEqual(changed.periods.map((p) => [p.dose, p.started_on, p.stopped_on]), [['200 mg', '2026-01-10', '2026-02-01'], ['400 mg', '2026-02-01', null]]);
+  assert.deepEqual(changed.current.timings, ['before_bed', 'morning']);
+
+  const stopped = (await post(app, `/api/medications/${id}/stop`, { stopped_on: '2026-03-01', reason: 'Vivid dreams' })).json();
+  assert.equal(stopped.current, null);
+  assert.equal(stopped.periods[1].stop_reason, 'Vivid dreams');
+
+  const restarted = (await post(app, `/api/medications/${id}/start`, { dose: '200 mg', timings: ['before_bed'], started_on: '2026-03-05' })).json();
+  assert.equal(restarted.periods.length, 3);
+  assert.equal(restarted.current.started_on, '2026-03-05');
+
+  const list = (await app.inject('/api/medications')).json();
+  assert.deepEqual(list.map((m) => m.name), ['Magnesium']);
+  await done();
+});
+
+test('medications: a change dated on the current start day corrects it instead of adding a period', async () => {
+  const { app, done } = await setup();
+  const { id } = (await post(app, '/api/medications', MAG)).json();
+  const fixed = (await post(app, `/api/medications/${id}/changes`, { dose: '250 mg', timings: ['before_bed'], effective_on: '2026-01-10' })).json();
+  assert.equal(fixed.periods.length, 1);
+  assert.equal(fixed.current.dose, '250 mg');
+  await done();
+});
+
+test('medications: notes and the during-workout slot', async () => {
+  const { app, done } = await setup();
+  const added = (await post(app, '/api/medications', { name: 'Electrolytes', kind: 'supplement', dose: '1 packet', timings: ['during_workout'], started_on: '2026-03-01', notes: '  With 500 ml water  ' })).json();
+  assert.equal(added.notes, 'With 500 ml water');
+  assert.deepEqual(added.current.timings, ['during_workout']);
+  assert.equal((await put(app, `/api/medications/${added.id}`, { notes: 'Only on lifting days' })).json().notes, 'Only on lifting days');
+  assert.equal((await put(app, `/api/medications/${added.id}`, { notes: null })).json().notes, null);
+
+  const day = (await app.inject('/api/days/2026-03-09')).json().medications;
+  assert.deepEqual(day.items[0].slots.map((s) => s.timing), ['during_workout']);
+
+  // Re-adding a stopped one without notes leaves its other details alone.
+  await post(app, `/api/medications/${added.id}/stop`, { stopped_on: '2026-03-05' });
+  await put(app, `/api/medications/${added.id}`, { notes: 'Keep this' });
+  const again = (await post(app, '/api/medications', { name: 'Electrolytes', kind: 'supplement', timings: ['during_workout'], started_on: '2026-03-08' })).json();
+  assert.equal(again.notes, 'Keep this');
+  await done();
+});
+
+test('medications: a correction fixes the current dose in place on any day and records no change', async () => {
+  const { app, done } = await setup();
+  const { id } = (await post(app, '/api/medications', { ...MAG, started_on: '2026-01-01', start_estimated: true })).json();
+  const fixed = (await post(app, `/api/medications/${id}/changes`, { dose: '300 mg', timings: ['before_bed'], correction: true })).json();
+  assert.deepEqual(fixed.periods.map((p) => [p.dose, p.started_on, p.stopped_on]), [['300 mg', '2026-01-01', null]]);
+  assert.deepEqual((await app.inject('/api/medications/impact')).json(), []);
+  assert.match((await post(app, `/api/medications/${id}/changes`, { dose: '400 mg', timings: ['before_bed'] })).json().error, /date the change took effect/);
+  await done();
+});
+
+test('medications: duplicates, overlaps, bad dates and unknown timings are refused', async () => {
+  const { app, done } = await setup();
+  const { id } = (await post(app, '/api/medications', MAG)).json();
+  assert.equal((await post(app, '/api/medications', { ...MAG, name: 'magnesium' })).statusCode, 409, 'names are case-insensitive');
+  assert.equal((await post(app, '/api/medications', { ...MAG, name: 'X', timings: ['with lunch'] })).statusCode, 400);
+  assert.equal((await post(app, '/api/medications', { ...MAG, name: 'X', timings: [] })).statusCode, 400);
+  assert.match((await post(app, '/api/medications', { ...MAG, name: 'X', started_on: '2026-03-10' })).json().error, /future/);
+  assert.match((await post(app, `/api/medications/${id}/changes`, { timings: ['daily'], effective_on: '2026-01-01' })).json().error, /before the current period/);
+  assert.match((await post(app, `/api/medications/${id}/stop`, { stopped_on: '2026-01-01' })).json().error, /before it started/);
+  assert.equal((await post(app, `/api/medications/${id}/start`, { timings: ['daily'], started_on: '2026-03-01' })).statusCode, 409);
+  // A past course that overlaps the current one is refused; one before it is accepted.
+  assert.equal((await post(app, '/api/medications', { ...MAG, started_on: '2025-12-01', stopped_on: '2026-01-15' })).statusCode, 409);
+  const backfilled = (await post(app, '/api/medications', { ...MAG, started_on: '2025-10-01', stopped_on: '2025-11-01' })).json();
+  assert.deepEqual(backfilled.periods.map((p) => p.started_on), ['2025-10-01', '2026-01-10']);
+  await done();
+});
+
+test('medications: at most one open period per medication, enforced by the database', async () => {
+  const { app, db, done } = await setup();
+  const { id } = (await post(app, '/api/medications', MAG)).json();
+  assert.throws(() => db.prepare("INSERT INTO medication_periods (medication_id, timings, started_on, created_at) VALUES (?, '[\"daily\"]', '2026-02-01', 'x')").run(id), /UNIQUE/);
+  await done();
+});
+
+test('medications: details edit, delete removes all history, impact lists events newest first', async () => {
+  const { app, db, done } = await setup();
+  const { id } = (await post(app, '/api/medications', MAG)).json();
+  await post(app, `/api/medications/${id}/changes`, { dose: '400 mg', timings: ['before_bed'], effective_on: '2026-02-05' });
+  assert.equal((await put(app, `/api/medications/${id}`, { prescribed: true, purpose: 'sleep quality' })).json().prescribed, true);
+
+  const impact = (await app.inject('/api/medications/impact')).json();
+  assert.deepEqual(impact.map((e) => [e.date, e.type]), [['2026-02-05', 'change'], ['2026-01-10', 'start']]);
+  assert.equal(impact[0].impact.status, 'pending', 'the after window runs to Mar 11, past today (Mar 9)');
+  assert.equal(impact[1].impact.status, 'complete');
+  assert.equal(impact[0].impact.overlapsWith.length, 1);
+
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/medications/${id}` })).statusCode, 204);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM medication_periods').get().n, 0);
+  assert.equal((await post(app, `/api/medications/${id}/stop`, { stopped_on: '2026-03-01' })).statusCode, 404);
+  await done();
+});
+
+test('medications: an unknown start counts as active from that date but creates no start event', async () => {
+  const { app, done } = await setup();
+  const { id } = (await post(app, '/api/medications', { ...MAG, started_on: '2026-01-01', start_estimated: true })).json();
+  const [med] = (await app.inject('/api/medications')).json();
+  assert.equal(med.current.start_estimated, true);
+  assert.deepEqual((await app.inject('/api/medications/impact')).json(), []);
+  await post(app, `/api/medications/${id}/changes`, { dose: '400 mg', timings: ['before_bed'], effective_on: '2026-02-05' });
+  assert.deepEqual((await app.inject('/api/medications/impact')).json().map((e) => e.type), ['change'], 'later changes are real events');
+  await done();
+});
+
+test('daily check-off: lists slots in effect, saves taken and skipped, clears back to not logged', async () => {
+  const { app, done } = await setup();
+  const mag = (await post(app, '/api/medications', { ...MAG, timings: ['morning', 'before_bed'] })).json();
+  const rx = (await post(app, '/api/medications', { name: 'Sample Rx', kind: 'medication', timings: ['morning'], started_on: '2026-03-08', prescribed: true })).json();
+
+  let day = (await app.inject('/api/days/2026-03-07')).json().medications;
+  assert.deepEqual(day.items.map((m) => m.name), ['Magnesium'], 'not yet started on Mar 7');
+  day = (await app.inject('/api/days/2026-03-09')).json().medications;
+  assert.equal(day.saved, false);
+  assert.deepEqual(day.items.map((m) => [m.name, m.slots.map((s) => [s.timing, s.taken])]), [
+    ['Sample Rx', [['morning', null]]],
+    ['Magnesium', [['morning', null], ['before_bed', null]]],
+  ]);
+
+  const saved = (await put(app, '/api/doses/2026-03-09', { doses: [
+    { medication_id: mag.id, timing: 'morning', taken: true },
+    { medication_id: mag.id, timing: 'before_bed', taken: false },
+    { medication_id: rx.id, timing: 'morning', taken: true },
+  ] })).json();
+  assert.equal(saved.saved, true);
+  assert.deepEqual(saved.items[1].slots.map((s) => s.taken), [true, false]);
+
+  assert.equal((await put(app, '/api/doses/2026-03-07', { doses: [{ medication_id: rx.id, timing: 'morning', taken: true }] })).statusCode, 400, 'not in effect that day');
+  assert.equal((await put(app, '/api/doses/2026-03-09', { doses: [{ medication_id: mag.id, timing: 'afternoon', taken: true }] })).statusCode, 400, 'not one of its slots');
+  assert.equal((await put(app, '/api/doses/2026-03-10', { doses: [] })).statusCode, 400, 'no future days');
+
+  assert.equal((await app.inject({ method: 'DELETE', url: '/api/doses/2026-03-09' })).statusCode, 204);
+  assert.equal((await app.inject('/api/days/2026-03-09')).json().medications.saved, false);
+  await done();
+});
+
+test('labs: add results in the app (new and existing tests), edit, delete; sheet results are read-only here', async () => {
+  const { app, db, done } = await setup();
+  const created = await post(app, '/api/labs/results', { name: 'Homocysteine', panel: 'OTHER', unit: 'umol/L', drawn_on: '2026-03-01', value: '9.5' });
+  assert.equal(created.statusCode, 201);
+  assert.deepEqual([created.json().value, created.json().value_text, created.json().source], [9.5, '9.5', 'ui']);
+  const testId = created.json().test_id;
+
+  assert.equal((await post(app, '/api/labs/results', { test_id: testId, drawn_on: '2026-03-01', value: '10' })).statusCode, 409, 'one result per test and date');
+  const text = (await post(app, '/api/labs/results', { test_id: testId, drawn_on: '2026-02-01', value: '<5' })).json();
+  assert.deepEqual([text.value, text.value_text], [null, '<5']);
+  assert.equal((await post(app, '/api/labs/results', { test_id: testId, drawn_on: '2026-03-10', value: '1' })).statusCode, 400, 'no future dates');
+
+  assert.equal((await put(app, `/api/labs/results/${text.id}`, { value: '6.1' })).json().value, 6.1);
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/labs/results/${text.id}` })).statusCode, 204);
+
+  db.prepare("INSERT INTO lab_results (test_id, drawn_on, value, value_text, source, updated_at) VALUES (?, '2025-12-01', 8, '8', 'sheet', 'x')").run(testId);
+  const sheetId = db.prepare("SELECT id FROM lab_results WHERE source = 'sheet'").get().id;
+  assert.match((await app.inject({ method: 'DELETE', url: `/api/labs/results/${sheetId}` })).json().error, /return on the next sync/);
+  assert.equal((await post(app, '/api/labs/results', { test_id: testId, drawn_on: '2025-12-01', value: '1' })).json().error.includes('Google Sheet'), true);
+  const corrected = (await put(app, `/api/labs/results/${sheetId}`, { value: '7.5' })).json();
+  assert.deepEqual([corrected.value, corrected.source, corrected.corrected_from, corrected.corrected_from_date], [7.5, 'ui', '8', '2025-12-01']);
+  const again = (await put(app, `/api/labs/results/${sheetId}`, { value: '7.6' })).json();
+  assert.equal(again.corrected_from, '8', 'a second correction keeps the original sheet value');
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/labs/results/${sheetId}` })).statusCode, 204, 'undo the correction');
+  assert.deepEqual(db.prepare('SELECT value_text, source, corrected_from FROM lab_results WHERE id = ?').get(sheetId), { value_text: '8', source: 'sheet', corrected_from: null });
+
+  assert.equal((await put(app, `/api/labs/tests/${testId}`, { unit: 'µmol/L' })).json().unit, 'µmol/L');
+  const labs = (await app.inject('/api/labs')).json();
+  assert.deepEqual(labs.draws, ['2026-03-01', '2025-12-01']);
+  assert.deepEqual(labs.panels.map((p) => [p.panel, p.tests.map((t) => [t.name, t.results.length])]), [['OTHER', [['Homocysteine', 2]]]]);
+  await done();
+});
+
 test('status reports today and the last sync run', async () => {
   const { app, db, done } = await setup();
   db.prepare("INSERT INTO runs (name, status, started_at, finished_at, summary) VALUES ('sync', 'ok', '2026-03-09T12:00:00Z', '2026-03-09T12:00:03Z', '{\"counts\":{}}')").run();

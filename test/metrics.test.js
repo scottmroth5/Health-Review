@@ -8,6 +8,7 @@ import { computeWeek } from '../metrics/index.js';
 import { loadWeekData, loadMetricSettings } from '../metrics/load.js';
 import { round, mean, sd, pearson, lastWeekEnd, windows } from '../metrics/stats.js';
 import { sessionKind } from '../metrics/cardio.js';
+import { medicationEvents } from '../metrics/medications.js';
 import { openHealthStore } from '../db/store.js';
 import { saveSettings } from '../server/queries.js';
 
@@ -71,6 +72,27 @@ test('session kinds: strength and core, mobility, everything else is cardio', ()
   assert.equal(sessionKind('Functional Strength Training'), 'strength');
   assert.equal(sessionKind('Yoga'), 'mobility');
   for (const t of ['Outdoor Walk', 'Elliptical', 'High Intensity Interval Training', 'Hiking', 'Cross Training']) assert.equal(sessionKind(t), 'cardio');
+});
+
+test('medication events: start, change on the same day as a stop, stop, and a later restart', () => {
+  const meds = [{ id: 1, name: 'Creatine', kind: 'supplement' }];
+  const p = (id, dose, started_on, stopped_on = null) => ({ id, medication_id: 1, dose, timings: '["daily"]', started_on, stopped_on, stop_reason: null });
+  const events = medicationEvents(meds, [p(3, '5 g', '2026-05-01'), p(1, '3 g', '2026-01-01', '2026-02-01'), p(2, '5 g', '2026-02-01', '2026-03-01')]);
+  assert.deepEqual(events.map((e) => [e.date, e.type, e.from?.dose ?? null, e.to?.dose ?? null]), [
+    ['2026-01-01', 'start', null, '3 g'],
+    ['2026-02-01', 'change', '3 g', '5 g'],
+    ['2026-03-01', 'stop', '5 g', null],
+    ['2026-05-01', 'start', null, '5 g'],
+  ]);
+});
+
+test('medication events: an estimated start is not an event, but a later change is', () => {
+  const meds = [{ id: 1, name: 'Fish oil', kind: 'supplement' }];
+  const periods = [
+    { id: 1, medication_id: 1, dose: '1 g', timings: '["morning"]', started_on: '2026-01-01', stopped_on: '2026-04-01', start_estimated: 1 },
+    { id: 2, medication_id: 1, dose: '2 g', timings: '["morning"]', started_on: '2026-04-01', stopped_on: null, start_estimated: 0 },
+  ];
+  assert.deepEqual(medicationEvents(meds, periods).map((e) => [e.date, e.type]), [['2026-04-01', 'change']]);
 });
 
 test('without a Zone 2 range, Zone 2 is reported as unset rather than zero', () => {

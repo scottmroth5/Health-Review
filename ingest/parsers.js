@@ -280,6 +280,59 @@ export function parseDrinkingLog({ header, rows, firstRowNumber, tab }) {
   return { records, warnings };
 }
 
+// ---- Lab results (tests in rows, one column per draw date) ----
+
+/** Parses a lab cell: numbers (or numeric text) get a value; anything else is kept as text only. */
+export function parseLabValue(cell) {
+  if (isEmpty(cell)) return null;
+  const value_text = String(cell).trim();
+  if (!value_text) return null;
+  const n = toNumber(cell);
+  return { value: n === undefined ? null : n, value_text };
+}
+
+const LAB_HEADER_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The lab sheet: A1 "Lab Test", B1.. draw dates. A row with a name and no values is a panel heading
+ * when written in capitals (LIPID PANEL); otherwise it is a test with no results yet. Blank rows
+ * are skipped. Returns { tests: [{ name, panel, position }], results: [{ test, drawn_on, value, value_text }] }.
+ */
+export function parseLabSheet({ header, rows, firstRowNumber, tab }) {
+  const source = 'lab_results';
+  const warnings = [];
+  const dateCols = [];
+  header.forEach((cell, j) => {
+    if (j === 0 || isEmpty(cell)) return;
+    const date = typeof cell === 'number' ? serialToDate(cell) : LAB_HEADER_DATE.test(String(cell).trim()) ? String(cell).trim() : parseUsDate(cell);
+    if (date) dateCols.push({ j, date });
+    else warnings.push({ source, tab, row: 1, kind: 'header is not a date', detail: `column ${j + 1}` });
+  });
+
+  const tests = [];
+  const results = [];
+  const seen = new Set();
+  let panel = null;
+  rows.forEach((row, i) => {
+    const name = text(row?.[0]);
+    if (!name) return;
+    const values = dateCols.map(({ j, date }) => ({ date, parsed: parseLabValue(row[j]) })).filter((v) => v.parsed);
+    if (!values.length && name === name.toUpperCase() && /[A-Z]/.test(name)) {
+      panel = name;
+      return;
+    }
+    const key = name.toLowerCase();
+    if (seen.has(key)) {
+      warnings.push({ source, tab, row: firstRowNumber + i, kind: 'duplicate test name (later row skipped)' });
+      return;
+    }
+    seen.add(key);
+    tests.push({ name, panel, position: tests.length + 1 });
+    for (const { date, parsed } of values) results.push({ test: name, drawn_on: date, ...parsed });
+  });
+  return { tests, results, warnings };
+}
+
 // ---- Weekly Check-In (v1, one row per week) ----
 const CHECKIN_FIELDS = {
   date: 'Week Ending (Saturday)',

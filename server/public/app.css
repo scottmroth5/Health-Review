@@ -52,6 +52,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--surface-0); color: var(--text-primary); line-height: 1.45; }
 h1, h2 { margin: 0; font-weight: 600; }
 h1 { font-size: 1.05rem; }
@@ -62,8 +63,8 @@ code { font-size: 0.85em; }
 
 .top { position: sticky; top: 0; z-index: 2; background: var(--surface-1); border-bottom: 1px solid var(--border);
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 16px; }
-.top nav { display: flex; gap: 4px; }
-.top nav a { color: var(--text-secondary); text-decoration: none; padding: 6px 10px; border-radius: 999px; font-size: 0.92rem; }
+.top nav { display: flex; flex-wrap: wrap; gap: 2px; max-width: 100%; }
+.top nav a { color: var(--text-secondary); text-decoration: none; padding: 6px 9px; border-radius: 999px; font-size: 0.92rem; }
 .top nav a[aria-current="page"] { background: var(--accent); color: var(--accent-ink); }
 
 main { max-width: 760px; margin: 0 auto; padding: 16px; }
@@ -150,3 +151,60 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 #preview pre { white-space: pre-wrap; word-break: break-word; font-size: 0.85rem; background: var(--surface-0); padding: 12px;
   border-radius: 8px; max-height: 420px; overflow: auto; margin: 0; }
 .empty-state { color: var(--text-secondary); text-align: center; padding: 32px 16px; }
+
+/* Meds */
+.section-title { font-size: 0.95rem; margin: 20px 0 10px; color: var(--text-secondary); font-weight: 600; }
+.section-title:first-child { margin-top: 0; }
+fieldset.timings { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; padding: 8px 10px; }
+fieldset.timings legend { font-size: 0.9rem; color: var(--text-secondary); padding: 0 4px; }
+fieldset.timings .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+fieldset.timings label { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: 999px; color: var(--text-primary); background: var(--surface-0); cursor: pointer; }
+fieldset.timings input { width: auto; margin: 0; display: inline; }
+fieldset.timings label:has(input:checked) { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+label.check { display: flex; align-items: center; gap: 8px; }
+label.check input { width: auto; display: inline; margin: 0; }
+.med-card .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.med-card .head h3 { margin: 0; font-size: 1rem; }
+.pill { font-size: 0.75rem; border: 1px solid var(--border); color: var(--text-secondary); border-radius: 999px; padding: 1px 8px; }
+.pill.rx { border-color: var(--accent); color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.chip { font-size: 0.8rem; background: var(--surface-0); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
+.med-card .meta { font-size: 0.85rem; color: var(--text-secondary); margin: 2px 0; }
+.med-card .inline-form { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 4px; }
+.impact table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; margin-top: 8px; }
+.impact th, .impact td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--grid); }
+.impact th:first-child, .impact td:first-child { text-align: left; }
+.impact .n { color: var(--muted); font-size: 0.75rem; }
+.impact .what { font-weight: 600; }
+.impact .note { font-size: 0.82rem; color: var(--text-secondary); margin: 4px 0 0; }
+.table-wide { overflow-x: auto; }
+.impact .n { display: block; }
+.pill { white-space: nowrap; }
+.dose-group { margin: 8px 0 12px; }
+.dose-slot { font-size: 0.82rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+label.dose { margin: 0; padding: 8px 4px; border-bottom: 1px solid var(--grid); color: var(--text-primary); font-size: 0.95rem; }
+label.dose input { width: 20px; height: 20px; }
+.dose-history { margin: 6px 0 0; font-size: 0.85rem; }
+.dose-history summary { margin: 4px 0; }
+.dose-history ul { margin: 4px 0; padding-left: 18px; color: var(--text-secondary); }
+.dose-history strong { color: var(--text-primary); font-weight: 600; }
+.note-text { white-space: pre-wrap; font-style: italic; }
+
+/* Labs */
+.lab-panel table { width: 100%; border-collapse: collapse; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+.lab-panel th, .lab-panel td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+.lab-panel th:first-child, .lab-panel td:first-child { text-align: left; white-space: normal; }
+.lab-panel th { font-weight: 600; color: var(--text-secondary); font-size: 0.8rem; }
+.lab-panel td.from-app { font-style: italic; }
+button.link { background: none; border: none; padding: 0; color: var(--text-primary); text-align: left; font: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: var(--grid); text-underline-offset: 3px; }
+.lab-panel { min-width: 0; }
+.lab-detail-slot:not(:empty) { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 8px; }
+.lab-detail-head { display: flex; justify-content: space-between; align-items: center; }
+.lab-detail-head h3 { margin: 0; font-size: 0.95rem; }
+.lab-history { list-style: none; padding: 0; margin: 8px 0; font-size: 0.85rem; }
+.lab-history li { padding: 6px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border-bottom: 1px solid var(--grid); }
+.lab-actions { display: inline-flex; gap: 6px; }
+.small-btn { padding: 2px 8px; font-size: 0.8rem; }
+.lab-detail .actions input { width: 160px; margin: 0; }
+.lab-edit { flex-basis: 100%; border-top: 1px solid var(--grid); margin-top: 4px; padding-top: 4px; }

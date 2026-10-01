@@ -180,4 +180,96 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    id: '004-medications',
+    up: `
+      -- Medications and supplements. Each dose or timing period is its own row, so every start,
+      -- change and stop is dated; at most one period per medication is open (stopped_on null).
+      CREATE TABLE medications (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        kind TEXT NOT NULL CHECK (kind IN ('medication', 'supplement')),
+        purpose TEXT,
+        prescribed INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE medication_periods (
+        id INTEGER PRIMARY KEY,
+        medication_id INTEGER NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
+        dose TEXT,
+        timings TEXT NOT NULL, -- JSON array of morning, afternoon, before_bed, before_workout, after_workout, daily
+        started_on TEXT NOT NULL,
+        stopped_on TEXT,
+        stop_reason TEXT,
+        created_at TEXT NOT NULL,
+        CHECK (stopped_on IS NULL OR stopped_on >= started_on)
+      );
+      CREATE UNIQUE INDEX medication_periods_one_open ON medication_periods(medication_id) WHERE stopped_on IS NULL;
+      CREATE INDEX medication_periods_started ON medication_periods(started_on);
+    `,
+  },
+  {
+    id: '005-estimated-starts-and-doses',
+    up: `
+      -- A period whose real start date is unknown ("taking since at least started_on"). It counts as
+      -- active from started_on but never produces a start event or an impact comparison.
+      ALTER TABLE medication_periods ADD COLUMN start_estimated INTEGER NOT NULL DEFAULT 0;
+
+      -- Daily check-off: one row per medication and timing slot on a saved day. A saved day records
+      -- every slot (taken 1 or 0); a day with no rows is unknown, never counted as missed.
+      CREATE TABLE medication_doses (
+        date TEXT NOT NULL,
+        medication_id INTEGER NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
+        timing TEXT NOT NULL,
+        taken INTEGER NOT NULL CHECK (taken IN (0, 1)),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (date, medication_id, timing)
+      );
+    `,
+  },
+  {
+    id: '006-medication-notes',
+    up: `
+      -- Free-form notes per medication or supplement (for example "take with food"). Timings now also
+      -- allow during_workout; timings are validated in code, so that needs no schema change.
+      ALTER TABLE medications ADD COLUMN notes TEXT;
+    `,
+  },
+  {
+    id: '007-labs',
+    up: `
+      -- Lab tests (catalog) and results. No reference ranges by the owner's choice: values are stored
+      -- and trended, never marked out of range. Results come from the lab sheet (source 'sheet',
+      -- replaced on sync) or the app (source 'ui', never overwritten by sync).
+      CREATE TABLE lab_tests (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        panel TEXT,
+        unit TEXT,
+        position INTEGER NOT NULL DEFAULT 9999,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE lab_results (
+        id INTEGER PRIMARY KEY,
+        test_id INTEGER NOT NULL REFERENCES lab_tests(id) ON DELETE CASCADE,
+        drawn_on TEXT NOT NULL,
+        value REAL,
+        value_text TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('sheet', 'ui')),
+        updated_at TEXT NOT NULL,
+        UNIQUE (test_id, drawn_on)
+      );
+      CREATE INDEX lab_results_drawn_on ON lab_results(drawn_on);
+    `,
+  },
+  {
+    id: '008-lab-corrections',
+    up: `
+      -- A sheet result corrected in the app becomes source 'ui' (sync never overwrites it) and keeps
+      -- the sheet's original value and date, so the correction stays visible and sync does not
+      -- re-add the sheet's copy under the old date.
+      ALTER TABLE lab_results ADD COLUMN corrected_from TEXT;
+      ALTER TABLE lab_results ADD COLUMN corrected_from_date TEXT;
+    `,
+  },
 ];

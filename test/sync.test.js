@@ -161,3 +161,85 @@ test('a failed sync is recorded as an error run and rethrown', async () => {
   assert.equal(store.db.prepare("SELECT status FROM runs WHERE name = 'sync'").get().status, 'error');
   store.close();
 });
+
+// ---- labs ----
+const LAB = () => [
+  ['Lab Test', serial('2026-03-23'), serial('2025-09-15')],
+  ['LIPID PANEL'],
+  ['Cholesterol', 165, 180],
+  ['LDL Calculated', 84, 95],
+  [],
+  ['OTHER'],
+  ['PSA', 0.6, 0.7],
+];
+const withLabs = (lab) => ({ ...sheets(), lab_results: { Notes: [['Something else']], Labs: lab } });
+
+test('labs: imported from the tab headed "Lab Test"; unchanged sheets are not rewritten', async () => {
+  const store = open();
+  const source = fakeSource(withLabs(LAB()));
+  const { counts } = await sync(store, source);
+  assert.deepEqual(counts.lab_results, { tab: 'Labs', changed: true, tests: 3, draws: 2, results: 6, keptFromApp: 0 });
+  assert.deepEqual(store.db.prepare('SELECT name, panel, position FROM lab_tests ORDER BY position').all().map((t) => [t.name, t.panel, t.position]), [
+    ['Cholesterol', 'LIPID PANEL', 1], ['LDL Calculated', 'LIPID PANEL', 2], ['PSA', 'OTHER', 3],
+  ]);
+  assert.deepEqual((await sync(store, source)).counts.lab_results, { tab: 'Labs', changed: false });
+  store.close();
+});
+
+test('labs: edits and removed draw columns are reflected; app results are kept and win a clash', async () => {
+  const store = open();
+  const data = withLabs(LAB());
+  const source = fakeSource(data);
+  await sync(store, source);
+  const psa = store.db.prepare("SELECT id FROM lab_tests WHERE name = 'PSA'").get().id;
+  store.db.prepare("INSERT INTO lab_results (test_id, drawn_on, value, value_text, source, updated_at) VALUES (?, '2026-06-01', 0.9, '0.9', 'ui', 'x')").run(psa);
+  store.db.prepare("UPDATE lab_results SET value = 5, value_text = '5', source = 'ui' WHERE test_id = ? AND drawn_on = '2026-03-23'").run(psa);
+
+  data.lab_results.Labs = LAB().map((row) => row.slice(0, 2)); // drop the 2025 column
+  data.lab_results.Labs[2][1] = 170; // edit cholesterol
+  const { counts, warnings } = await sync(store, source);
+  assert.equal(counts.lab_results.keptFromApp, 1);
+  assert.deepEqual(warnings.map((w) => w.kind), ['app value kept over a different sheet value']);
+  const rows = store.db.prepare('SELECT t.name, r.drawn_on, r.value, r.source FROM lab_results r JOIN lab_tests t ON t.id = r.test_id ORDER BY t.position, r.drawn_on').all();
+  assert.deepEqual(rows.map((r) => [r.name, r.drawn_on, r.value, r.source]), [
+    ['Cholesterol', '2026-03-23', 170, 'sheet'],
+    ['LDL Calculated', '2026-03-23', 84, 'sheet'],
+    ['PSA', '2026-03-23', 5, 'ui'],
+    ['PSA', '2026-06-01', 0.9, 'ui'],
+  ]);
+  store.close();
+});
+
+test('labs: without a lab sheet ID the sync skips labs and carries on', async () => {
+  const store = open();
+  const { counts } = await sync(store, fakeSource(sheets()));
+  assert.match(counts.lab_results.skipped, /LAB_RESULTS_SHEET_ID/);
+  assert.equal(count(store, 'daily_metrics'), 2);
+  store.close();
+});
+
+test('labs: a sheet result corrected in the app (value or date) is kept by sync, with no duplicate and no warning', async () => {
+  const store = open();
+  const data = withLabs(LAB());
+  const source = fakeSource(data);
+  await sync(store, source);
+  const { updateLabResult, deleteLabResult } = await import('../server/queries.js');
+  const row = (name, date) => store.db.prepare('SELECT r.* FROM lab_results r JOIN lab_tests t ON t.id = r.test_id WHERE t.name = ? AND r.drawn_on = ?').get(name, date);
+
+  updateLabResult(store.db, row('PSA', '2026-03-23').id, { value: '0.9' }); // value fix
+  updateLabResult(store.db, row('Cholesterol', '2025-09-15').id, { drawn_on: '2025-09-16' }); // date fix
+  data.lab_results.Labs[2][1] = 171; // the sheet changes, so sync runs
+  const { counts, warnings } = await sync(store, source);
+  assert.deepEqual(warnings, []);
+  assert.equal(counts.lab_results.keptFromApp, 2);
+  assert.deepEqual([row('PSA', '2026-03-23').value_text, row('PSA', '2026-03-23').corrected_from], ['0.9', '0.6']);
+  assert.equal(row('Cholesterol', '2025-09-15'), undefined, 'the sheet copy is not re-added under the old date');
+  assert.equal(row('Cholesterol', '2025-09-16').corrected_from_date, '2025-09-15');
+
+  // Undoing a correction brings the sheet value back on the next sync.
+  deleteLabResult(store.db, row('PSA', '2026-03-23').id);
+  data.lab_results.Labs[2][1] = 165;
+  await sync(store, source);
+  assert.deepEqual([row('PSA', '2026-03-23').value_text, row('PSA', '2026-03-23').source], ['0.6', 'sheet']);
+  store.close();
+});

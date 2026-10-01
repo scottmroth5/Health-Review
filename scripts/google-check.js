@@ -3,14 +3,9 @@
 //   npm run google:check
 import { sheets as sheetsApi } from '@googleapis/sheets';
 import { getGoogleAuth } from '../tools/google/auth.js';
+import { SHEET_ENV } from '../ingest/sheets.js';
 
-const SHEET_ENV_KEYS = [
-  'HEALTH_METRICS_SHEET_ID',
-  'WORKOUT_SESSIONS_SHEET_ID',
-  'WORKOUT_LOG_SHEET_ID',
-  'DRINKING_LOG_SHEET_ID',
-  'WEEKLY_CHECKIN_SHEET_ID',
-];
+const SHEET_ENV_KEYS = Object.values(SHEET_ENV);
 
 async function main() {
   const configured = SHEET_ENV_KEYS.filter((key) => process.env[key]);

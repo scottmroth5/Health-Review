@@ -1,5 +1,8 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
+import { medicationEvents, eventImpact } from '../metrics/medications.js';
+import { loadMedications } from '../metrics/load.js';
+import { addDays } from '../metrics/stats.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
 export const BODY_FIELDS = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat'];
@@ -27,7 +30,7 @@ export function localDate(date = new Date()) {
 export function getDay(db, date) {
   const checkin = db.prepare('SELECT * FROM checkins WHERE date = ?').get(date) ?? null;
   const drinking = db.prepare('SELECT * FROM drinking_days WHERE date = ?').get(date) ?? null;
-  return { date, checkin, drinking: drinking && { ...drinking, alcohol: alcoholOf(drinking) } };
+  return { date, checkin, drinking: drinking && { ...drinking, alcohol: alcoholOf(drinking) }, medications: dayMedications(db, date) };
 }
 
 /** Saves the day's check-in from the UI (daily cadence). Body fields mark the day as measured. */
@@ -102,6 +105,287 @@ export function saveSettings(db, changes) {
     for (const [k, v] of Object.entries(changes)) (v === null ? remove.run(k) : upsert.run(k, String(v), now()));
   })();
   return getSettings(db);
+}
+
+// ---- medications and supplements ----
+// Each dose or timing period is a row; stopped_on is the first day it no longer applied.
+
+const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
+const asPeriod = (p) => ({ ...p, timings: JSON.parse(p.timings), start_estimated: Boolean(p.start_estimated) });
+const openPeriod = (db, id) => db.prepare('SELECT * FROM medication_periods WHERE medication_id = ? AND stopped_on IS NULL').get(id);
+
+function getMedication(db, id) {
+  const m = db.prepare('SELECT id, name, kind, purpose, prescribed, notes, created_at FROM medications WHERE id = ?').get(id);
+  if (!m) return null;
+  const periods = db.prepare('SELECT * FROM medication_periods WHERE medication_id = ? ORDER BY started_on, id').all(id).map(asPeriod);
+  return { ...m, prescribed: Boolean(m.prescribed), current: periods.find((p) => p.stopped_on === null) ?? null, periods };
+}
+
+function requireMedication(db, id) {
+  const m = getMedication(db, id);
+  if (!m) throw fail(404, 'Medication not found');
+  return m;
+}
+
+/** Current ones first (by name), then stopped ones (most recently stopped first). */
+export function listMedications(db) {
+  const all = db.prepare('SELECT id FROM medications').all().map((r) => getMedication(db, r.id));
+  const lastStop = (m) => m.periods.reduce((d, p) => (p.stopped_on > d ? p.stopped_on : d), '');
+  return [
+    ...all.filter((m) => m.current).sort((a, b) => a.name.localeCompare(b.name)),
+    ...all.filter((m) => !m.current).sort((a, b) => lastStop(b).localeCompare(lastStop(a)) || a.name.localeCompare(b.name)),
+  ];
+}
+
+/** Throws unless [start, stop) fits around the medication's existing periods. */
+function assertNoOverlap(db, id, start, stop) {
+  const periods = db.prepare('SELECT started_on, stopped_on FROM medication_periods WHERE medication_id = ?').all(id);
+  const clash = periods.find((p) => start < (p.stopped_on ?? '9999-12-31') && p.started_on < (stop ?? '9999-12-31'));
+  if (clash) throw fail(409, `Those dates overlap an existing period that started ${clash.started_on}`);
+}
+
+function insertPeriod(db, id, { dose, timings, started_on, stopped_on = null, stop_reason = null, start_estimated = false }) {
+  db.prepare(`INSERT INTO medication_periods (medication_id, dose, timings, started_on, stopped_on, stop_reason, start_estimated, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, dose?.trim() || null, JSON.stringify(timings), started_on, stopped_on, stop_reason?.trim() || null, start_estimated ? 1 : 0, now());
+}
+
+// ---- daily check-off ----
+
+/** Medications in effect on a date, each with its timing slots and what was saved for that day. */
+export function dayMedications(db, date) {
+  const rows = db.prepare(`SELECT m.id, m.name, m.kind, p.dose, p.timings FROM medication_periods p JOIN medications m ON m.id = p.medication_id
+    WHERE p.started_on <= ? AND (p.stopped_on IS NULL OR p.stopped_on > ?) ORDER BY m.kind, m.name`).all(date, date);
+  const saved = db.prepare('SELECT medication_id, timing, taken FROM medication_doses WHERE date = ?').all(date);
+  const takenOf = (id, timing) => saved.find((s) => s.medication_id === id && s.timing === timing)?.taken;
+  return {
+    saved: saved.length > 0,
+    items: rows.map((r) => {
+      const timings = JSON.parse(r.timings);
+      return { id: r.id, name: r.name, kind: r.kind, dose: r.dose, slots: timings.map((t) => ({ timing: t, taken: takenOf(r.id, t) === undefined ? null : Boolean(takenOf(r.id, t)) })) };
+    }),
+  };
+}
+
+/**
+ * Saves the day's check-off: every listed slot is recorded taken or not, replacing what was saved
+ * before. Each slot must belong to a medication in effect that day.
+ */
+export function saveDoses(db, date, doses) {
+  const expected = new Map(dayMedications(db, date).items.flatMap((m) => m.slots.map((s) => [`${m.id}|${s.timing}`, m.name])));
+  for (const d of doses) {
+    if (!expected.has(`${d.medication_id}|${d.timing}`)) throw fail(400, 'One of the checked items is not in effect on that day');
+  }
+  db.transaction(() => {
+    db.prepare('DELETE FROM medication_doses WHERE date = ?').run(date);
+    const ins = db.prepare('INSERT INTO medication_doses (date, medication_id, timing, taken, updated_at) VALUES (?, ?, ?, ?, ?)');
+    for (const d of doses) ins.run(date, d.medication_id, d.timing, d.taken ? 1 : 0, now());
+  })();
+  return dayMedications(db, date);
+}
+
+export const clearDoses = (db, date) => db.prepare('DELETE FROM medication_doses WHERE date = ?').run(date).changes;
+
+/**
+ * Adds a medication, or a new period for one that is not currently taken. A stopped_on date
+ * records a past course. Adding a name that is currently taken is a conflict.
+ */
+export function addMedication(db, body) {
+  if (body.stopped_on && body.stopped_on < body.started_on) throw fail(400, 'The stop date cannot be before the start date');
+  return db.transaction(() => {
+    const existing = db.prepare('SELECT id FROM medications WHERE name = ?').get(body.name.trim());
+    let id = existing?.id;
+    if (id) {
+      if (openPeriod(db, id) && !body.stopped_on) throw fail(409, `${body.name.trim()} is already in your current list; use Change instead`);
+      assertNoOverlap(db, id, body.started_on, body.stopped_on ?? null);
+      const sets = ['kind', 'purpose', 'prescribed', 'notes'].filter((k) => body[k] !== undefined);
+      if (sets.length) {
+        db.prepare(`UPDATE medications SET ${sets.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`)
+          .run({ id, kind: body.kind, purpose: body.purpose?.trim() || null, prescribed: body.prescribed ? 1 : 0, notes: body.notes?.trim() || null });
+      }
+    } else {
+      id = db.prepare('INSERT INTO medications (name, kind, purpose, prescribed, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(body.name.trim(), body.kind, body.purpose?.trim() || null, body.prescribed ? 1 : 0, body.notes?.trim() || null, now()).lastInsertRowid;
+    }
+    insertPeriod(db, id, body);
+    return getMedication(db, id);
+  })();
+}
+
+/**
+ * A dose or timing change from effective_on, kept as a new period. A correction (or a change on the
+ * current period's start day) fixes the current period in place instead, so no change is recorded.
+ */
+export function changeMedication(db, id, { dose, timings, effective_on, correction = false }) {
+  requireMedication(db, id);
+  return db.transaction(() => {
+    const open = openPeriod(db, id);
+    if (!open) throw fail(409, 'Not currently taken; use Start again');
+    if (!correction && !effective_on) throw fail(400, 'Choose the date the change took effect, or mark it as a correction');
+    if (!correction && effective_on < open.started_on) throw fail(400, `The change cannot be before the current period started (${open.started_on})`);
+    if (correction || effective_on === open.started_on) {
+      db.prepare('UPDATE medication_periods SET dose = ?, timings = ? WHERE id = ?').run(dose?.trim() || null, JSON.stringify(timings), open.id);
+    } else {
+      db.prepare('UPDATE medication_periods SET stopped_on = ? WHERE id = ?').run(effective_on, open.id);
+      insertPeriod(db, id, { dose, timings, started_on: effective_on });
+    }
+    return getMedication(db, id);
+  })();
+}
+
+export function stopMedication(db, id, { stopped_on, reason }) {
+  requireMedication(db, id);
+  const open = openPeriod(db, id);
+  if (!open) throw fail(409, 'Not currently taken');
+  if (stopped_on < open.started_on) throw fail(400, `The stop date cannot be before it started (${open.started_on})`);
+  db.prepare('UPDATE medication_periods SET stopped_on = ?, stop_reason = ? WHERE id = ?').run(stopped_on, reason?.trim() || null, open.id);
+  return getMedication(db, id);
+}
+
+export function startMedication(db, id, { dose, timings, started_on }) {
+  requireMedication(db, id);
+  return db.transaction(() => {
+    if (openPeriod(db, id)) throw fail(409, 'Already being taken; use Change instead');
+    assertNoOverlap(db, id, started_on, null);
+    insertPeriod(db, id, { dose, timings, started_on });
+    return getMedication(db, id);
+  })();
+}
+
+/** Label edits (name, type, purpose, prescribed, notes); these are not dated events. */
+export function updateMedicationDetails(db, id, changes) {
+  requireMedication(db, id);
+  const keys = ['name', 'kind', 'purpose', 'prescribed', 'notes'].filter((k) => changes[k] !== undefined);
+  const values = { id, ...changes, name: changes.name?.trim(), purpose: changes.purpose?.trim() || null, prescribed: changes.prescribed ? 1 : 0, notes: changes.notes?.trim() || null };
+  try {
+    db.prepare(`UPDATE medications SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`).run(values);
+  } catch (err) {
+    if (/UNIQUE/.test(err.message)) throw fail(409, 'Another entry already has that name');
+    throw err;
+  }
+  return getMedication(db, id);
+}
+
+export const deleteMedication = (db, id) => db.prepare('DELETE FROM medications WHERE id = ?').run(id).changes > 0;
+
+/** Every start, change and stop with its before and after averages, newest first. */
+export function medicationImpact(db, today) {
+  const { medications, medication_periods: periods } = loadMedications(db);
+  const events = medicationEvents(medications, periods).filter((e) => e.date <= today);
+  if (!events.length) return [];
+  const from = addDays(events[0].date, -28);
+  const metrics = db.prepare('SELECT date, hrv_ms, resting_hr, sleep_total_hr FROM daily_metrics WHERE date BETWEEN ? AND ?').all(from, today);
+  const checkins = db.prepare('SELECT date, readiness, energy, mood, stress FROM checkins WHERE date BETWEEN ? AND ?').all(from, today);
+  return events
+    .map((e) => ({ ...e, impact: eventImpact(e, metrics, checkins, today, events) }))
+    .reverse();
+}
+
+// ---- labs ----
+// Results come from the lab sheet (source 'sheet', replaced on sync) or the app (source 'ui').
+// Only app results can be edited or deleted here; sheet results are changed in the sheet.
+
+/** Tests grouped by panel in sheet order, each with its results newest first, plus all draw dates. */
+export function listLabs(db) {
+  const tests = db.prepare('SELECT id, name, panel, unit, position FROM lab_tests ORDER BY position, name').all();
+  const results = db.prepare('SELECT id, test_id, drawn_on, value, value_text, source, corrected_from, corrected_from_date FROM lab_results ORDER BY drawn_on DESC').all();
+  const panels = [];
+  for (const t of tests) {
+    const mine = results.filter((r) => r.test_id === t.id).map(({ test_id, ...r }) => r);
+    const name = t.panel ?? 'Other';
+    let p = panels.find((x) => x.panel === name);
+    if (!p) panels.push((p = { panel: name, tests: [] }));
+    p.tests.push({ ...t, results: mine });
+  }
+  return { draws: [...new Set(results.map((r) => r.drawn_on))], panels };
+}
+
+const labValue = (text) => {
+  const value_text = String(text).trim();
+  if (!value_text) throw fail(400, 'Enter a value');
+  return { value_text, value: /^-?\d+(\.\d+)?$/.test(value_text) ? Number(value_text) : null };
+};
+
+/** Adds an app-entered result for an existing test (test_id) or a new or existing test by name. */
+export function addLabResult(db, { test_id, name, panel, unit, drawn_on, value }) {
+  return db.transaction(() => {
+    let id = test_id;
+    if (!id) {
+      if (!name?.trim()) throw fail(400, 'Choose a test or enter a new test name');
+      id = db.prepare('SELECT id FROM lab_tests WHERE name = ?').get(name.trim())?.id;
+      id ??= Number(db.prepare('INSERT INTO lab_tests (name, panel, unit, created_at) VALUES (?, ?, ?, ?)')
+        .run(name.trim(), panel?.trim() || null, unit?.trim() || null, now()).lastInsertRowid);
+    } else if (!db.prepare('SELECT 1 FROM lab_tests WHERE id = ?').get(id)) {
+      throw fail(404, 'Test not found');
+    }
+    const existing = db.prepare('SELECT source FROM lab_results WHERE test_id = ? AND drawn_on = ?').get(id, drawn_on);
+    if (existing) {
+      throw fail(409, existing.source === 'sheet' ? 'That test already has a result from the Google Sheet on that date; change it in the sheet' : 'That test already has a result on that date; edit it instead');
+    }
+    const v = labValue(value);
+    const rid = db.prepare("INSERT INTO lab_results (test_id, drawn_on, value, value_text, source, updated_at) VALUES (?, ?, ?, ?, 'ui', ?)")
+      .run(id, drawn_on, v.value, v.value_text, now()).lastInsertRowid;
+    return db.prepare('SELECT * FROM lab_results WHERE id = ?').get(rid);
+  })();
+}
+
+function requireResult(db, id) {
+  const r = db.prepare('SELECT * FROM lab_results WHERE id = ?').get(id);
+  if (!r) throw fail(404, 'Result not found');
+  return r;
+}
+
+/**
+ * Corrects a result's value or date. A sheet result becomes an app correction: it keeps the sheet's
+ * original value and date, and sync never overwrites it or re-adds the sheet's copy.
+ */
+export function updateLabResult(db, id, { drawn_on, value }) {
+  const r = requireResult(db, id);
+  const v = value === undefined ? { value: r.value, value_text: r.value_text } : labValue(value);
+  const date = drawn_on ?? r.drawn_on;
+  if (v.value_text === r.value_text && date === r.drawn_on) return r;
+  const fromSheet = r.source === 'sheet';
+  try {
+    db.prepare(`UPDATE lab_results SET drawn_on = ?, value = ?, value_text = ?, source = 'ui', updated_at = ?,
+        corrected_from = ?, corrected_from_date = ? WHERE id = ?`)
+      .run(date, v.value, v.value_text, now(), fromSheet ? r.value_text : r.corrected_from, fromSheet ? r.drawn_on : r.corrected_from_date, id);
+  } catch (err) {
+    if (/UNIQUE/.test(err.message)) throw fail(409, 'That test already has a result on that date');
+    throw err;
+  }
+  return db.prepare('SELECT * FROM lab_results WHERE id = ?').get(id);
+}
+
+/**
+ * Deletes a result added in the app. Undoing a correction restores the sheet's original value and
+ * date right away. Sheet results cannot be deleted here, since the next sync would bring them back.
+ */
+export function deleteLabResult(db, id) {
+  const r = requireResult(db, id);
+  if (r.source === 'sheet') throw fail(409, 'This result comes from the Google Sheet and would return on the next sync; correct its value, or remove it from the sheet');
+  if (r.corrected_from_date) {
+    const original = labValue(r.corrected_from);
+    try {
+      db.prepare(`UPDATE lab_results SET drawn_on = ?, value = ?, value_text = ?, source = 'sheet', corrected_from = NULL,
+          corrected_from_date = NULL, updated_at = ? WHERE id = ?`).run(r.corrected_from_date, original.value, original.value_text, now(), id);
+    } catch (err) {
+      if (/UNIQUE/.test(err.message)) throw fail(409, 'Another result already sits on the original date; move or delete it first');
+      throw err;
+    }
+    return { restored: true };
+  }
+  db.prepare('DELETE FROM lab_results WHERE id = ?').run(id);
+  return { restored: false };
+}
+
+export function updateLabTest(db, id, { unit, panel }) {
+  if (!db.prepare('SELECT 1 FROM lab_tests WHERE id = ?').get(id)) throw fail(404, 'Test not found');
+  const sets = [];
+  const values = { id };
+  if (unit !== undefined) { sets.push('unit = @unit'); values.unit = unit?.trim() || null; }
+  if (panel !== undefined) { sets.push('panel = @panel'); values.panel = panel?.trim() || null; }
+  db.prepare(`UPDATE lab_tests SET ${sets.join(', ')} WHERE id = @id`).run(values);
+  return db.prepare('SELECT id, name, panel, unit, position FROM lab_tests WHERE id = ?').get(id);
 }
 
 // ---- prompt sections ----
