@@ -139,7 +139,7 @@ async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
  * in the app are never touched, and the app's value wins when both have the same test and date.
  */
 async function syncLabs({ store, source, warnings, stamp }) {
-  if (!source.has?.('lab_results')) return { skipped: 'LAB_RESULTS_SHEET_ID is not set in .env' };
+  if (!source.has?.('lab_results')) return { skipped: 'no lab sheet (labs are entered in the app)' };
   // The tab whose A1 is "Lab Test", else the first tab.
   let tab = null;
   let data = null;

@@ -698,7 +698,7 @@ async function loadLabs(openTestId) {
   const container = $('#labs-panels');
   container.replaceChildren(...(labsState.panels.length
     ? labsState.panels.map((p) => labPanel(p, draws))
-    : [h('p', { class: 'empty-state' }, 'No lab results yet. Add LAB_RESULTS_SHEET_ID to .env and run a sync, or add results below.')]));
+    : [h('p', { class: 'empty-state' }, 'No lab results yet. Add them below.')]));
   if (openTestId) $(`button.link[data-test="${openTestId}"]`)?.click();
 
   const form = $('#lab-add');

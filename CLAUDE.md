@@ -73,7 +73,8 @@ AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is
 exposing the server requires a login mode in server/auth.js first. Check-in and drinking scales are 1 to 10 to match
 v1 history. CBD drinks are stored in drinking_days.cbd and never counted as alcohol. The Meds tab manages medications and
 supplements (add, change, stop, start again, delete for mistakes); the weekly review takes them from there, not from the
-medical prompt section. The Labs tab shows lab_tests and lab_results by panel. Results come from the lab sheet
+medical prompt section. The Labs tab shows lab_tests and lab_results by panel. The owner enters labs in the app (the March
+2026 draw was imported once and marked as app results); syncing a lab sheet is supported but unused. Results can come from a lab sheet
 (LAB_RESULTS_SHEET_ID; the tab whose A1 is "Lab Test"; capitalized rows with no values are panel headings; one column
 per draw date), synced whole on every sync and replaced only when its content hash changes, or from the app (source
 'ui'), which sync never overwrites and which win a clash. Any result can be corrected in the app: a corrected sheet

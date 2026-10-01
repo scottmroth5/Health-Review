@@ -213,7 +213,7 @@ test('labs: edits and removed draw columns are reflected; app results are kept a
 test('labs: without a lab sheet ID the sync skips labs and carries on', async () => {
   const store = open();
   const { counts } = await sync(store, fakeSource(sheets()));
-  assert.match(counts.lab_results.skipped, /LAB_RESULTS_SHEET_ID/);
+  assert.match(counts.lab_results.skipped, /no lab sheet/);
   assert.equal(count(store, 'daily_metrics'), 2);
   store.close();
 });
