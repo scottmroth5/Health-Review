@@ -3,6 +3,7 @@ import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.j
 import { medicationEvents, eventImpact } from '../metrics/medications.js';
 import { loadMedications, loadStrengthSets } from '../metrics/load.js';
 import { trainingView } from '../metrics/volume.js';
+import { vo2maxReport } from '../metrics/vo2max.js';
 import { addDays } from '../metrics/stats.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
@@ -117,6 +118,12 @@ export function trainingDashboard(db, view, today) {
   const back = { week: 14, month: 60, year: 371 * 2, '2y': 31 * 48, '5y': 31 * 120 }[view];
   const from = back ? addDays(today, -back) : '0000-01-01';
   return trainingView(loadStrengthSets(db, from, today), view, today);
+}
+
+/** The VO2 max card for one view. Reads every reading: the tiles (best on record, change vs a year ago) need them all. */
+export function vo2max(db, view, today) {
+  const rows = db.prepare('SELECT date, vo2max FROM daily_metrics WHERE vo2max IS NOT NULL AND date <= ? ORDER BY date').all(today);
+  return vo2maxReport(rows, view, today);
 }
 
 // ---- medications and supplements ----

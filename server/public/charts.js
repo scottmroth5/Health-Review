@@ -130,7 +130,7 @@ export function lineChart(container, points, { from, to, format = String, gapDay
       focus.setAttribute('cx', x(best.date));
       focus.setAttribute('cy', y(best.value));
       focus.setAttribute('visibility', 'visible');
-      showTip(evt, best.date, `${label}: ${format(best.value)}`);
+      showTip(evt, best.date, `${label}: ${format(best.value)}`, best.label, best.details);
     });
     hit.addEventListener('pointerleave', () => {
       cross.setAttribute('visibility', 'hidden');

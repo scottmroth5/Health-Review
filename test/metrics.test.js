@@ -13,6 +13,7 @@ import { trainingView } from '../metrics/volume.js';
 import { exerciseKey, exerciseName } from '../metrics/exercises.js';
 import { volumeByExercise } from '../metrics/volume.js';
 import { strength } from '../metrics/strength.js';
+import { vo2maxReport } from '../metrics/vo2max.js';
 import { openHealthStore } from '../db/store.js';
 import { saveSettings } from '../server/queries.js';
 
@@ -216,4 +217,49 @@ test('exercise names: volume by exercise and the strength summary merge variant 
   const st = strength(sets, '2026-03-07');
   assert.equal(st.week.exercises, 3);
   assert.deepEqual(st.exercises.map((e) => [e.exercise, e.sessions]).sort(), [['Barbell Bench Press', 2], ['Barbell Deadlift', 2], ['Pull-ups', 1]]);
+});
+
+test('VO2 max: readings for short views; weekly and monthly averages for long ones; empty buckets left out', () => {
+  const R = (date, vo2max) => ({ date, vo2max });
+  const rows = [
+    R('2025-03-01', 40), R('2025-06-02', 42), R('2025-06-30', 44),
+    R('2026-02-20', 45), R('2026-02-21', 46), // same week (ends Sat Feb 21)
+    R('2026-03-02', 47), R('2026-03-04', 48), R('2026-03-05', null), R('2026-03-20', 50.04), R('2026-04-01', 99),
+  ];
+  const today = '2026-03-21';
+  const d90 = vo2maxReport(rows, '90d', today);
+  assert.equal(d90.bucket, 'reading');
+  assert.deepEqual(d90.range, { from: '2025-12-22', to: today });
+  assert.deepEqual(d90.points.map((p) => [p.date, p.value]), [['2026-02-20', 45], ['2026-02-21', 46], ['2026-03-02', 47], ['2026-03-04', 48], ['2026-03-20', 50]]);
+  assert.equal(d90.readings, 5);
+  assert.equal(d90.rangeAvg, 47.2);
+
+  const y2 = vo2maxReport(rows, '2y', today);
+  assert.equal(y2.bucket, 'week');
+  const feb = y2.points.find((p) => p.date === '2026-02-15');
+  assert.deepEqual([feb.value, feb.n, feb.label], [45.5, 2, 'Week ending Feb 21, 2026']);
+  assert.equal(y2.points.length, 6, 'one point per week with readings; empty weeks are not zeros');
+
+  const all = vo2maxReport(rows, 'all', today);
+  assert.equal(all.bucket, 'month');
+  assert.equal(all.range.from, '2025-03-01');
+  assert.deepEqual(all.points.map((p) => [p.date, p.value, p.n]), [
+    ['2025-03-01', 40, 1], ['2025-06-01', 43, 2], ['2026-02-01', 45.5, 2], ['2026-03-01', 48.3, 3],
+  ]);
+  assert.equal(all.points[0].label, 'Mar 2025');
+  assert.equal(vo2maxReport(rows, '5y', today).range.from, '2021-03-01');
+});
+
+test('VO2 max: latest, changes vs the nearest earlier reading within 30 days, and best on record', () => {
+  const R = (date, vo2max) => ({ date, vo2max });
+  const today = '2026-03-21';
+  const r = vo2maxReport([R('2025-03-01', 40), R('2025-12-10', 44), R('2026-03-20', 47), R('2026-03-30', 60)], '1y', today);
+  assert.deepEqual(r.latest, { date: '2026-03-20', value: 47 }, 'future readings are ignored');
+  assert.deepEqual(r.change90d, { value: 3, from: { date: '2025-12-10', value: 44 } }); // today-90 is 2025-12-21
+  assert.deepEqual(r.change1y, { value: 7, from: { date: '2025-03-01', value: 40 } }, 'the reading before 2025-03-21 is 20 days older: within 30 days');
+  assert.deepEqual(vo2maxReport([R('2025-02-01', 40), R('2026-03-20', 47)], '1y', today).change1y, null, 'more than 30 days older: none');
+  assert.deepEqual(r.best, { date: '2026-03-20', value: 47 });
+  assert.throws(() => vo2maxReport([], 'week', today));
+  const none = vo2maxReport([], '90d', today);
+  assert.deepEqual([none.latest, none.best, none.rangeAvg, none.points], [null, null, null, []]);
 });

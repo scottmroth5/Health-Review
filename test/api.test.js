@@ -362,6 +362,24 @@ test('training: each view returns its bars, totals and breakdowns; planned sets 
   await done();
 });
 
+test('VO2 max: each view returns its points and tiles; unknown views are refused', async () => {
+  const { app, db, done } = await setup();
+  const add = db.prepare("INSERT INTO daily_metrics (date, vo2max, updated_at) VALUES (?, ?, 'x')");
+  add.run('2025-03-05', 40); add.run('2026-03-01', 44); add.run('2026-03-02', 45); add.run('2026-03-10', 99); // last is after today
+  db.prepare("INSERT INTO daily_metrics (date, hrv_ms, updated_at) VALUES ('2026-03-03', 50, 'x')").run(); // no VO2 that day
+
+  const y1 = (await app.inject('/api/vo2max?view=1y')).json();
+  assert.deepEqual([y1.bucket, y1.points.length, y1.latest, y1.best.value], ['reading', 2, { date: '2026-03-02', value: 45 }, 45]);
+  assert.deepEqual(y1.change1y, { value: 5, from: { date: '2025-03-05', value: 40 } });
+  assert.equal(y1.change90d, null);
+  assert.equal((await app.inject('/api/vo2max?view=2y')).json().bucket, 'week');
+  const all = (await app.inject('/api/vo2max?view=all')).json();
+  assert.deepEqual([all.bucket, all.range.from, all.points.length], ['month', '2025-03-01', 2]);
+  assert.equal((await app.inject('/api/vo2max?view=week')).statusCode, 400);
+  assert.equal((await app.inject('/api/vo2max')).statusCode, 400);
+  await done();
+});
+
 test('status reports today and the last sync run', async () => {
   const { app, db, done } = await setup();
   db.prepare("INSERT INTO runs (name, status, started_at, finished_at, summary) VALUES ('sync', 'ok', '2026-03-09T12:00:00Z', '2026-03-09T12:00:03Z', '{\"counts\":{}}')").run();

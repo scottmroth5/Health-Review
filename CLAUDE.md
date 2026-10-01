@@ -90,6 +90,10 @@ day takes the nearest named program within 14 days either way. Edit PROGRAMS to 
 Exercise names (metrics/exercises.js): volume and strength group sets by exerciseKey, so spelling, plural, hyphen, typo
 and word-order variants are one lift; lifts that differ by a word ("Bench Press", "Barbell Bench") merge only when
 listed in MERGES, which the owner decides. The database keeps names as typed.
+VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
+views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
+left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and
+best on record. Values only, no fitness-for-age labels (same rule as labs).
 
 ## Review
 npm run review makes one structured-output call (REVIEW_MODEL, default claude-opus-5-5; REVIEW_EFFORT, default high;

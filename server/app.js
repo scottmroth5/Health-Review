@@ -8,6 +8,7 @@ import { registerAuth } from './auth.js';
 import * as q from './queries.js';
 import { TIMINGS } from '../metrics/medications.js';
 import { VIEWS } from '../metrics/volume.js';
+import { VO2_VIEWS } from '../metrics/vo2max.js';
 
 const nullable = (schema) => ({ ...schema, type: [schema.type, 'null'] });
 const scale = nullable({ type: 'integer', minimum: 1, maximum: 10 });
@@ -124,6 +125,14 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req) => q.trainingDashboard(db, req.query.view, q.localDate(clock())));
+
+  app.get('/api/vo2max', {
+    schema: {
+      summary: 'VO2 max readings (90 days, 1 year) or weekly and monthly averages (2 years, 5 years, all), with latest, changes and best',
+      querystring: { type: 'object', required: ['view'], properties: { view: { type: 'string', enum: VO2_VIEWS } } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.vo2max(db, req.query.view, q.localDate(clock())));
 
   // ---- history, reviews ----
   app.get('/api/history', {

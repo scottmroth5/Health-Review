@@ -29,7 +29,7 @@ function route() {
   const view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'today';
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
   $$('.top nav a').forEach((a) => (a.getAttribute('href') === `#${view}` ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-  ({ today: loadDay, training: loadTrainingTab, health: loadHistory, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections })[view]();
+  ({ today: loadDay, training: loadTrainingTab, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections })[view]();
 }
 
 // ---------------- 1 to 10 scales ----------------
@@ -320,6 +320,11 @@ function tableView(points, format) {
   scroll.append(table);
   details.append(summary, scroll);
   return details;
+}
+
+function loadHealthTab() {
+  loadVo2();
+  return loadHistory();
 }
 
 async function loadHistory() {
@@ -773,6 +778,45 @@ function programLines(b) {
   return lines;
 }
 
+// ---------------- VO2 max (Health tab) ----------------
+const VO2_VIEW_KEY = 'hr.vo2View';
+const VO2_UNIT = ' ml/kg/min';
+const vo2 = (v) => `${v.toFixed(1)}${VO2_UNIT}`;
+const signed = (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
+
+function vo2ViewChoice() {
+  try { return localStorage.getItem(VO2_VIEW_KEY) || '1y'; } catch { return '1y'; }
+}
+
+const vo2Tile = (label, value, note) => h('div', { class: 'tile' }, h('div', { class: 'tile-label' }, label),
+  h('div', { class: 'tile-value' }, value), note ? h('div', { class: 'tile-delta' }, note) : null);
+
+async function loadVo2(view = vo2ViewChoice()) {
+  try { localStorage.setItem(VO2_VIEW_KEY, view); } catch { /* storage unavailable: still works, just not remembered */ }
+  $$('[data-vview]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.vview === view)));
+  const r = await api('GET', `/api/vo2max?view=${view}`);
+  $('#vo2-range').textContent = `${niceDate(r.range.from)} to ${niceDate(r.range.to)}`;
+  const change = (c, span) => (c ? vo2Tile(`Change vs ${span}`, `${signed(c.value)}${VO2_UNIT}`, `from ${c.from.value.toFixed(1)} on ${niceDate(c.from.date)}`)
+    : vo2Tile(`Change vs ${span}`, 'No reading', `none within 30 days of ${span}`));
+  $('#vo2-tiles').replaceChildren(
+    r.latest ? vo2Tile('Latest', vo2(r.latest.value), niceDate(r.latest.date)) : vo2Tile('Latest', 'No readings'),
+    change(r.change90d, '90 days ago'),
+    change(r.change1y, '1 year ago'),
+    r.best ? vo2Tile('Best on record', vo2(r.best.value), niceDate(r.best.date)) : vo2Tile('Best on record', 'No readings'));
+
+  const points = r.points.map((p) => ({ ...p, details: p.n ? [`Average of ${plural(p.n, 'reading')}`] : [] }));
+  lineChart($('#vo2-chart'), points, {
+    // The unit goes in the label, not on each value, so the end-of-line label fits.
+    from: r.range.from, to: r.range.to, format: (v) => v.toFixed(1), label: `${r.bucket === 'reading' ? 'VO2 max' : 'Average VO2 max'} (ml/kg/min)`,
+    gapDays: r.bucket === 'month' ? 62 : 21,
+  });
+  const per = { reading: '', week: ', shown as weekly averages', month: ', shown as monthly averages' }[r.bucket];
+  $('#vo2-summary').textContent = r.readings
+    ? `Average ${vo2(r.rangeAvg)} over ${plural(r.readings, 'reading')} in this range${per}. Apple Watch estimates.`
+    : 'No readings in this range.';
+  $('#vo2-table').replaceChildren(tableView(points.map((p) => ({ date: p.label ?? p.date, value: p.value })), vo2));
+}
+
 async function loadTrainingTab() {
   if (!state.today) await loadStatus();
   return loadTraining();
@@ -1027,6 +1071,7 @@ initPrompt();
 initMeds();
 initLabs();
 $$('[data-tview]').forEach((b) => b.addEventListener('click', () => loadTraining(b.dataset.tview)));
+$$('[data-vview]').forEach((b) => b.addEventListener('click', () => loadVo2(b.dataset.vview)));
 $$('[data-range]').forEach((b) => b.addEventListener('click', () => {
   state.range = Number(b.dataset.range);
   loadHistory();
