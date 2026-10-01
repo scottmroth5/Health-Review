@@ -25,5 +25,7 @@ export function withFallbacks(sdk) {
 
 /** @param {{ apiKey?: string, client?: object }} [options]  client: a fake for tests */
 export function createReviewClaude({ apiKey, client } = {}) {
-  return createClaude({ client: client ?? withFallbacks(new Anthropic({ apiKey, maxRetries: 3 })) });
+  // An explicit timeout lets a large non-streaming max_tokens through (the SDK otherwise refuses
+  // anything it estimates could pass 10 minutes); 20 minutes covers a full 32k-token response.
+  return createClaude({ client: client ?? withFallbacks(new Anthropic({ apiKey, maxRetries: 3, timeout: 20 * 60 * 1000 })) });
 }

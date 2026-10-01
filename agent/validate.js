@@ -44,7 +44,16 @@ export function allowedNumbers(summary, instructions = '') {
   return allowed;
 }
 
-/** Numbers in the report that appear nowhere in the summary or instructions. */
+// Calendar dates (8/31, 3/23/2026) are not data values. Month 1-12 and day 1-31 only, so ratios
+// such as 20/120 are still checked.
+const DATE = /(?<![\w/])(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])(?:\/\d{2,4})?(?![\w/])/g;
+// Suggested targets are allowed when introduced by the word "target" ("target 75 sec",
+// "target of 130 or higher", "target 6 to 8 rounds"); the instructions tell the model to write them so.
+const TARGET = /\btargets?(?:\s+of)?\s+(?:about\s+|~)?-?\d[\d,]*(?:\.\d+)?(?:\s*(?:to|-)\s*\d[\d,]*(?:\.\d+)?)?/gi;
+
+const withoutExemptNumbers = (text) => text.replace(DATE, ' ').replace(TARGET, ' ');
+
+/** Numbers in the report that appear nowhere in the summary or instructions (dates and marked targets excepted). */
 export function ungroundedNumbers(report, allowed) {
   const texts = [
     ...report.sections.flatMap((s) => [s.title, s.body]),
@@ -52,7 +61,7 @@ export function ungroundedNumbers(report, allowed) {
   ];
   const missing = new Set();
   for (const t of texts) {
-    for (const m of t.match(NUMBER) ?? []) {
+    for (const m of withoutExemptNumbers(t).match(NUMBER) ?? []) {
       const n = toNumber(m);
       if (!allowed.has(n)) missing.add(m.replace(/^-/, ''));
     }
@@ -61,7 +70,8 @@ export function ungroundedNumbers(report, allowed) {
 }
 
 const SYMPTOMS = /\b(sick|illness|ill|injur(?:y|ies|ed)|pain(?:ful)?|symptoms?|dizz(?:y|iness)|nause(?:a|ous)|headaches?|fever|flu|covid)\b/i;
-const MEDICATION_WORDS = /\b(medications?|prescri(?:bed|ption)s?)\b/i;
+// "Prescribed" is left out: training programs prescribe sets ("hit every prescribed 5x5").
+const MEDICATION_WORDS = /\b(medications?|prescriptions?)\b/i;
 
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Short all-caps names (ALT, BUN, MCV) match case-sensitively; others ignore case. */
@@ -70,14 +80,22 @@ const nameMatcher = (name) => {
   return new RegExp(`(?<![\\w])${escape(name)}(?![\\w])`, short ? '' : 'i');
 };
 
+/** A lab name followed within the same clause (up to 25 characters) by a number. */
+const labValueMatcher = (name) => {
+  const short = name.length <= 4 && name === name.toUpperCase();
+  return new RegExp(`(?<![\\w])${escape(name)}(?![\\w])[^.;\\n\\d]{0,25}\\d`, short ? '' : 'i');
+};
+
 /**
- * Medication names, lab test names, and symptom words outside physicianDiscussion.
+ * Medication names, lab values, and symptom words outside physicianDiscussion.
  * @param {{ medicationNames: string[], labNames: string[] }} names
  */
 export function misroutedTopics(report, { medicationNames = [], labNames = [] }) {
   const matchers = [
     ...medicationNames.map((n) => ({ what: `medication "${n}"`, re: nameMatcher(n) })),
-    ...labNames.map((n) => ({ what: `lab test "${n}"`, re: nameMatcher(n) })),
+    // A lab name alone can be context ("sleep timing matters for glucose regulation"); a lab name
+    // with a value next to it ("Glucose 101", "ALT of 62") is a lab result and must be routed.
+    ...labNames.map((n) => ({ what: `lab value "${n}"`, re: labValueMatcher(n) })),
     { what: 'medication wording', re: MEDICATION_WORDS },
     { what: 'symptom wording', re: SYMPTOMS },
   ];
@@ -90,10 +108,20 @@ export function misroutedTopics(report, { medicationNames = [], labNames = [] })
   return problems;
 }
 
+/** The owner's rules ask for under 2,000 words; the check allows a wide margin, because a retry roughly doubles a
+ * review's cost and the eval showed drafts of up to about 2,540 words that were otherwise clean (raised from 2,200 to 3,000 by the owner). */
+export const MAX_WORDS = 3000;
+
+export const countWords = (report) =>
+  [...report.sections.map((s) => s.body), ...report.physicianDiscussion.map((p) => `${p.topic} ${p.detail}`)]
+    .join(' ').split(/\s+/).filter(Boolean).length;
+
 /** All checks; [] when the report passes. */
-export function checkReport(report, { allowed, medicationNames, labNames }) {
+export function checkReport(report, { allowed, medicationNames, labNames, maxWords = MAX_WORDS }) {
   const problems = [];
   if (!report.sections.length) problems.push('no sections');
+  const words = countWords(report);
+  if (words > maxWords) problems.push(`too long: ${words} words (keep it under 2,000; the limit is ${maxWords})`);
   problems.push(...findDashes(report));
   const numbers = ungroundedNumbers(report, allowed);
   if (numbers.length) problems.push(`numbers not in the summary: ${numbers.join(', ')}`);

@@ -1,0 +1,169 @@
+{
+  "description": "Weekly review contract eval. Real weeks are identified by date only: their data is read from the owner's local database at run time and never stored here. Synthetic cases add made-up data on top of a real week, in a throwaway in-memory copy of the database. Why each real week was chosen is kept locally in data/evals/review/real-weeks.md, since it describes the owner.",
+  "expectedSections": [
+    "Weekly Wins",
+    "Patterns Noticed",
+    "Cardiovascular Snapshot",
+    "Recovery Signals",
+    "Drinking Patterns",
+    "Watch Outs",
+    "This Week's Focus",
+    "Strength Progress",
+    "Check-In Summary"
+  ],
+  "cases": [
+    {
+      "id": "real-2026-09-26",
+      "weekEnd": "2026-09-26",
+      "tags": [
+        "real"
+      ],
+      "prompt": "Real week 1 (data read from the local database at run time; why it was chosen is noted in data/evals/review/real-weeks.md)"
+    },
+    {
+      "id": "real-2026-09-12",
+      "weekEnd": "2026-09-12",
+      "tags": [
+        "real"
+      ],
+      "prompt": "Real week 2 (data read from the local database at run time; why it was chosen is noted in data/evals/review/real-weeks.md)"
+    },
+    {
+      "id": "real-2026-09-05",
+      "weekEnd": "2026-09-05",
+      "tags": [
+        "real"
+      ],
+      "prompt": "Real week 3 (data read from the local database at run time; why it was chosen is noted in data/evals/review/real-weeks.md)"
+    },
+    {
+      "id": "real-2026-08-29",
+      "weekEnd": "2026-08-29",
+      "tags": [
+        "real"
+      ],
+      "prompt": "Real week 4 (data read from the local database at run time; why it was chosen is noted in data/evals/review/real-weeks.md)"
+    },
+    {
+      "id": "real-2026-08-08",
+      "weekEnd": "2026-08-08",
+      "tags": [
+        "real"
+      ],
+      "prompt": "Real week 5 (data read from the local database at run time; why it was chosen is noted in data/evals/review/real-weeks.md)"
+    },
+    {
+      "id": "real-2026-07-25",
+      "weekEnd": "2026-07-25",
+      "tags": [
+        "real"
+      ],
+      "prompt": "Real week 6 (data read from the local database at run time; why it was chosen is noted in data/evals/review/real-weeks.md)"
+    },
+    {
+      "id": "real-2026-06-27",
+      "weekEnd": "2026-06-27",
+      "tags": [
+        "real"
+      ],
+      "prompt": "Real week 7 (data read from the local database at run time; why it was chosen is noted in data/evals/review/real-weeks.md)"
+    },
+    {
+      "id": "real-2026-06-13",
+      "weekEnd": "2026-06-13",
+      "tags": [
+        "real"
+      ],
+      "prompt": "Real week 8 (data read from the local database at run time; why it was chosen is noted in data/evals/review/real-weeks.md)"
+    },
+    {
+      "id": "real-2025-02-15",
+      "weekEnd": "2025-02-15",
+      "tags": [
+        "real"
+      ],
+      "prompt": "Real week 9 (data read from the local database at run time; why it was chosen is noted in data/evals/review/real-weeks.md)"
+    },
+    {
+      "id": "synthetic-symptom-note",
+      "weekEnd": "2026-09-19",
+      "tags": [
+        "synthetic",
+        "symptom"
+      ],
+      "prompt": "Real week plus a made-up check-in note about a sore throat and fever",
+      "overlay": {
+        "checkinNote": {
+          "date": "2026-09-16",
+          "text": "Sore throat and a low fever Tuesday and Wednesday, skipped training"
+        }
+      },
+      "expects": {
+        "physicianItem": true
+      }
+    },
+    {
+      "id": "synthetic-lab-draw",
+      "weekEnd": "2026-09-19",
+      "tags": [
+        "synthetic",
+        "labs"
+      ],
+      "prompt": "Real week plus four made-up lab results drawn mid-week",
+      "overlay": {
+        "labDraw": {
+          "date": "2026-09-17",
+          "results": [
+            {
+              "test": "Cholesterol",
+              "value": "150"
+            },
+            {
+              "test": "Glucose",
+              "value": "92"
+            },
+            {
+              "test": "ALT",
+              "value": "30"
+            },
+            {
+              "test": "HGB A1C",
+              "value": "5.0"
+            }
+          ]
+        }
+      },
+      "expects": {
+        "physicianItem": true
+      }
+    },
+    {
+      "id": "synthetic-medication-change",
+      "weekEnd": "2026-09-19",
+      "tags": [
+        "synthetic",
+        "medication"
+      ],
+      "prompt": "Real week plus a made-up mid-week dose change to the first prescription medication",
+      "overlay": {
+        "medicationChange": {
+          "which": "first prescription",
+          "date": "2026-09-16",
+          "dose": "adjusted dose"
+        }
+      },
+      "expects": {
+        "physicianItem": true
+      }
+    },
+    {
+      "id": "synthetic-empty-week",
+      "weekEnd": "2017-12-30",
+      "tags": [
+        "synthetic",
+        "empty"
+      ],
+      "prompt": "A week before any data exists"
+    }
+  ]
+}

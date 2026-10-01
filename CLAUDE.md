@@ -20,7 +20,9 @@ Health specific logic stays in this repo; never add it to agent-core.
 /db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step)
-/evals              metric regression fixtures; fixtures/v1 holds v1 golden outputs (see its README)
+/evals              fixtures/metrics (metric regression), fixtures/v1 (v1 golden outputs, see its README), and the review
+                    contract eval: review-cases.json (real weeks by date only, synthetic overlays), grade-review.js
+                    (shared grading), run-review-eval.mjs (runner from the claude-api skill scaffold)
 /tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core)
 /scripts            command-line entry points
 /test               node:test suites with synthetic fixtures only
@@ -41,7 +43,9 @@ powershell -ExecutionPolicy Bypass -File scripts\register-review-task.ps1   (re)
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
 npm run prompts:import-v1         one-time import of data/v1-export/prompts into prompt_sections (-- --replace to overwrite)
 npm run metrics                   print the computed summary for last week (-- --week YYYY-MM-DD for another Saturday)
-npm run evals                     run eval suites and print results (not built yet)
+npm run evals                     free: metric fixtures, then a summary of saved review eval results
+npm run evals -- --regrade v1     free: re-apply the current checks to a variant's saved drafts
+npm run evals -- --live [--variant v2] [--cases a,b]   paid: run the review contract eval (about $0.35 per case)
 npm run review                    sync, then write the weekly review for the week ending last Saturday (-- --week YYYY-MM-DD,
                                   -- --dry-run to build and size the prompt without calling Claude, -- --no-sync)
 Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
@@ -78,11 +82,21 @@ records no event. Each Meds card shows its dose history once there is more than 
 npm run review makes one structured-output call (REVIEW_MODEL, default claude-opus-5-5; REVIEW_EFFORT, default high;
 refusal fallbacks on via the beta endpoint). The system prompt is CONTRACT in agent/instructions.js followed by the owner's
 prompt sections; the report format sections in those prompts were written for v1 raw data, and CONTRACT tells the model the
-summary replaces them. Output is checked in code: no em or en dashes or double hyphens, every number must appear in the
-summary or instructions (small counts and window lengths allowed), and medication names, lab test names and symptom words
-may appear only in physicianDiscussion. Failed checks get one retry listing the problems; dashes left after that are
+summary replaces them. Output is checked in code: no em or en dashes or double hyphens; every number must appear in the summary or
+instructions (small counts, window lengths and calendar dates allowed, and suggested targets written as "target N");
+medication names, lab values (a lab name with a number next to it) and symptom words only in physicianDiscussion; and
+at most 3,000 words (the owner's rules ask for under 2,000; the margin avoids paying for a retry over small overruns). Failed checks get one retry listing the problems; dashes left after that are
 replaced in code, and anything else is saved with the report as warnings. Runs record metadata only, including the names
 of sensitive sections sent; prompt and report text never go to logs or run records.
+
+## Eval
+The review contract eval runs the real pipeline on 13 cases (9 real weeks read from data/health.db by date, 4 synthetic
+edge cases layered on a throwaway in-memory copy) and grades the first draft in code: sections, dashes, grounding,
+routing, physician item when required, length. Results and traces live in data/evals/review (gitignored: traces hold the
+full prompt, including sensitive sections); variants are baseline, v1, v2, ... with a change.md each. A harness sha
+gate covers the runner, cases, grading and agent files: after changing any of them, the owner (never Claude) re-approves
+with --approve-harness. Every live run sends health data to the Claude API and costs money: ask before running one.
+Results so far: baseline 7/13 first drafts clean (9/13 re-graded), v1 9/13 (12/13 at the 3,000-word limit), 13/13 final.
 
 ## UI and API
 AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS rebinding);

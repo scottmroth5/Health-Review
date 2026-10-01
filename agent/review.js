@@ -9,7 +9,8 @@ import { buildSystem, REPORT_SCHEMA, renderReport } from './instructions.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
 import { DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from './claude.js';
 
-const MAX_TOKENS = 16000;
+// Room for adaptive thinking plus a ~2,000-word report: high effort has used 9.5k to over 16k tokens on the same week.
+const MAX_TOKENS = 32000;
 
 const userMessage = (summary, problems = []) =>
   [

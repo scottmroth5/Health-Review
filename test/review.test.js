@@ -31,15 +31,35 @@ test('grounding: numbers must come from the summary or instructions; dates, nega
   assert.deepEqual(ungroundedNumbers(bad, allowed), ['52', '8.3', '25']);
 });
 
-test('routing: medication names, lab names and symptoms only in physician discussion', () => {
+test('routing: medication names, lab values and symptoms only in physician discussion', () => {
   const names = { medicationNames: ['Sample Statin'], labNames: ['ALT', 'Glucose'] };
   const r = report(
-    [['Weekly Wins', 'Alternate days went well; altitude hike.'], ['Watch Outs', 'Glucose was mentioned; the Sample Statin dose; felt sick Tuesday.']],
-    [{ topic: 'Sample Statin and ALT', detail: 'Discuss with your physician.' }],
+    [
+      ['Weekly Wins', 'Alternate days went well; altitude hike; hit every prescribed 5x5.'],
+      ['Patterns Noticed', 'Sleep timing matters for glucose regulation.'],
+      ['Watch Outs', 'Glucose was 92; ALT of 30; the Sample Statin dose; felt sick Tuesday.'],
+    ],
+    [{ topic: 'Sample Statin and ALT', detail: 'ALT 30 and Glucose 92: discuss with your physician.' }],
   );
   const problems = misroutedTopics(r, names);
-  assert.equal(problems.length, 3);
-  assert.ok(problems.every((p) => p.includes('"Watch Outs"')), 'case-sensitive short names do not match ordinary words');
+  assert.deepEqual(problems.map((p) => p.split(' in ')[0]), ['medication "Sample Statin"', 'lab value "ALT"', 'lab value "Glucose"', 'symptom wording']);
+  assert.ok(problems.every((p) => p.includes('"Watch Outs"')),
+    'a lab name without a value, "prescribed" sets, and short names inside words are not flagged');
+});
+
+test('grounding: calendar dates and numbers marked as targets are exempt; ratios are not', () => {
+  const allowed = allowedNumbers({ easy: 90 }, '');
+  const r = report([['Cardiovascular Snapshot', 'Phase III starts 8/31 (or 8/31/2026). Trim easy intervals from 90 to target 75 sec; target of 130 bpm or higher; keep 20/120.']]);
+  assert.deepEqual(ungroundedNumbers(r, allowed), ['20', '120']);
+});
+
+test('length: reports over the limit fail the check (with a margin over the 2,000 the rules ask for)', async () => {
+  const { checkReport, countWords, MAX_WORDS } = await import('../agent/validate.js');
+  const long = report([['Weekly Wins', Array(MAX_WORDS).fill('word').join(' ')]], [{ topic: 'One', detail: 'more' }]);
+  assert.equal(countWords(long), MAX_WORDS + 2);
+  const checks = { allowed: new Set(), medicationNames: [], labNames: [] };
+  assert.match(checkReport(long, checks).join(' '), /too long: 3002 words/);
+  assert.deepEqual(checkReport(report([['Weekly Wins', Array(2900).fill('word').join(' ')]]), checks), [], '2,900 words is inside the margin');
 });
 
 // ---- instructions ----
