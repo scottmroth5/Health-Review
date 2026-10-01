@@ -9,6 +9,7 @@ import { loadWeekData, loadMetricSettings } from '../metrics/load.js';
 import { round, mean, sd, pearson, lastWeekEnd, windows } from '../metrics/stats.js';
 import { sessionKind } from '../metrics/cardio.js';
 import { medicationEvents } from '../metrics/medications.js';
+import { trainingView } from '../metrics/volume.js';
 import { openHealthStore } from '../db/store.js';
 import { saveSettings } from '../server/queries.js';
 
@@ -34,6 +35,12 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
   test(`fixture ${file}: ${fx.description}`, () => {
     const result = computeWeek({ ...EMPTY, ...fx.input }, { weekEnd: fx.weekEnd, ...fx.options });
     assertSubset(result, fx.expected);
+    // Dashboard views (training volume): expected values per view, and the number of bars.
+    for (const [view, expected] of Object.entries(fx.views ?? {})) {
+      const v = trainingView(fx.input.strength_sets, view, fx.today);
+      assertSubset(v, expected, view);
+      assert.equal(v.buckets.length, fx.viewBucketCounts[view], `${view} bucket count`);
+    }
   });
 }
 
@@ -121,4 +128,47 @@ test('from the database: settings, joined strength sets, and planned sets left o
   assert.deepEqual([result.strength.week.sets, result.strength.week.volumeLbs], [1, 525]);
   assert.equal(result.recovery.hrv_ms.mean, 50, 'the morning after the week is not part of the week');
   store.close();
+});
+
+test('programs: workout names map to programs; specific names win; notes and one-offs map to nothing', async () => {
+  const { programOf } = await import('../metrics/programs.js');
+  assert.equal(programOf('Anabolic Foundation 1 - Phase 3'), 'MAPS Anabolic');
+  assert.equal(programOf('MAPS Anabolic Advanced Phase 1 Day 1'), 'MAPS Anabolic Advanced');
+  assert.equal(programOf('Symmetry Foundation 1 - Performance Mobility Session 1'), 'MAPS Symmetry', 'not MAPS Performance');
+  assert.equal(programOf('HITT workout. 23 minutes'), 'HIIT');
+  assert.equal(programOf('Trigger Session'), null);
+  assert.equal(programOf('do 155'), null);
+  assert.equal(programOf(null), null);
+});
+
+test('programs: unnamed days take the program from up to 7 days before; Trigger Sessions also look ahead', async () => {
+  const { programsByDay } = await import('../metrics/programs.js');
+  const sets = [
+    { date: '2026-03-02', workout: 'Symmetry Foundation 1' },
+    { date: '2026-03-03', workout: null },
+    { date: '2026-03-12', workout: null }, // 10 days after the last named day: unknown
+    { date: '2026-04-01', workout: 'Trigger Session' }, // a program starts 3 days later
+    { date: '2026-04-04', workout: 'Anabolic Foundation 1 - Phase 1' },
+  ];
+  const byDay = programsByDay(sets, ['2026-03-02', '2026-03-03', '2026-03-12', '2026-04-01', '2026-04-04']);
+  assert.deepEqual(Object.fromEntries(byDay), {
+    '2026-03-02': 'MAPS Symmetry',
+    '2026-03-03': 'MAPS Symmetry',
+    '2026-03-12': null,
+    '2026-04-01': 'MAPS Anabolic',
+    '2026-04-04': 'MAPS Anabolic',
+  });
+});
+
+test('programs: each dashboard bar lists its programs by days, and the days with none', () => {
+  const S = (date, workout) => ({ date, exercise: 'Squat', workout, set_no: 1, weight_lbs: 100, per_hand: 0, reps: 5 });
+  const v = trainingView([S('2026-03-02', 'Symmetry Foundation 1'), S('2026-03-03', null), S('2026-03-05', 'In between programs'), S('2026-02-01', null)], 'month', '2026-03-07');
+  const week = v.buckets.filter((b) => b.programs.length || b.noProgramDays);
+  assert.deepEqual(week.map((b) => [b.start, b.programs, b.noProgramDays]), [
+    ['2026-03-02', [{ name: 'MAPS Symmetry', days: 1 }], 0],
+    ['2026-03-03', [{ name: 'MAPS Symmetry', days: 1 }], 0],
+    ['2026-03-05', [{ name: 'Between programs', days: 1 }], 0],
+  ]);
+  const year = trainingView([S('2026-03-02', 'Symmetry Foundation 1'), S('2026-03-03', null), S('2026-03-05', 'In between programs')], 'year', '2026-03-07');
+  assert.deepEqual(year.buckets.at(-1).programs, [{ name: 'MAPS Symmetry', days: 2 }, { name: 'Between programs', days: 1 }]);
 });

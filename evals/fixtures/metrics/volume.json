@@ -1,0 +1,533 @@
+{
+  "description": "Training volume: per-hand x2, unweighted work counted separately, planned and future sets left out, day/week/month buckets, previous periods, top exercises, review trend",
+  "notes": [
+    "Today is Thu 2026-03-12. Volume = reps x total load (per hand x2). Mar 13 squat has a weight but no reps: planned, excluded.",
+    "Week (Mar 6..12): squats 100x5 + 100x5 = 1000 (Mar 12); DB press 50ea x10 = 1000 and 50ea x8 = 800 (Mar 10) = 1800. Total 2800. Sets 8 (4 weighted): band row, pushup (bodyweight), plank (timed), curl 10/10 (other) add no volume. Reps 5+5+10+8+15+20 = 63. Lifting days Mar 9, 10, 12 = 3.",
+    "Previous week (Feb 27..Mar 5): squat 90x5 = 450, 1 set.",
+    "By exercise in the week: DB Press 1800 (2 sets; \"db press \" merges into the first spelling), Squat 1000 (2 sets); zero-volume exercises are left out.",
+    "Month (Feb 11..Mar 12): 2800 + 450 (Mar 4) + deadlift 200x3 = 600 (Feb 20) = 3850; sets 10; reps 63 + 5 + 3 = 71; lifting days 5. Previous (Jan 12..Feb 10): deadlift 180x3 = 540.",
+    "Month weekly totals (weeks end Saturday, clipped to the range): ending Feb 14: 0, Feb 21: 600, Feb 28: 0, Mar 7: 450, Mar 14 (Mar 8..12): 2800.",
+    "Year: 52 weeks ending Sat Mar 14, from Sun 2025-03-16: 3850 + 540 + squat 80x5 = 400 (2025-06-10) = 4790. Previous year (2024-03-17..2025-03-15): squat 70x5 = 350.",
+    "All: Nov 2023 through Mar 2026 = 29 months; total 300 + 350 + 400 + 540 + 600 + 450 + 2800 = 5440.",
+    "Review trend for week ending 2026-03-07: weeks ending Dec 20 .. Mar 7 (12), with Jan 17: 540, Feb 21: 600, Mar 7: 450. Months Apr 2025 .. Mar 2026 (12): Jun 2025 400, Jan 540, Feb 600, Mar 450 (partial, up to Mar 7).",
+    "2 years: the current month and 23 before it, Apr 2024 .. Mar 2026 (24 bars): everything except the Nov 2023 bench = 5440 - 300 = 5140. Previous 2 years (Apr 2022 .. Mar 2024): the bench, 300.",
+    "5 years: Apr 2021 .. Mar 2026 (60 bars): all 5440. Previous 5 years (Apr 2016 .. Mar 2021): nothing, 0."
+  ],
+  "weekEnd": "2026-03-07",
+  "today": "2026-03-12",
+  "input": {
+    "strength_sets": [
+      {
+        "date": "2023-11-20",
+        "exercise": "Bench",
+        "set_no": 1,
+        "weight_lbs": 60,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2024-05-01",
+        "exercise": "Squat",
+        "set_no": 1,
+        "weight_lbs": 70,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2025-06-10",
+        "exercise": "Squat",
+        "set_no": 1,
+        "weight_lbs": 80,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-01-15",
+        "exercise": "Deadlift",
+        "set_no": 1,
+        "weight_lbs": 180,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 3,
+        "reps_text": "3",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-02-20",
+        "exercise": "Deadlift",
+        "set_no": 1,
+        "weight_lbs": 200,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 3,
+        "reps_text": "3",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-04",
+        "exercise": "Squat",
+        "set_no": 1,
+        "weight_lbs": 90,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-09",
+        "exercise": "Pushup",
+        "set_no": 1,
+        "weight_lbs": null,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 1,
+        "reps": 20,
+        "reps_text": "20",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-09",
+        "exercise": "Plank",
+        "set_no": 1,
+        "weight_lbs": null,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": null,
+        "reps_text": ":60",
+        "duration_sec": 60,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-09",
+        "exercise": "Curl",
+        "set_no": 1,
+        "weight_lbs": 30,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": null,
+        "reps_text": "10/10",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-10",
+        "exercise": "DB Press",
+        "set_no": 1,
+        "weight_lbs": 50,
+        "per_hand": 1,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 10,
+        "reps_text": "10",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-10",
+        "exercise": "db press ",
+        "set_no": 2,
+        "weight_lbs": 50,
+        "per_hand": 1,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 8,
+        "reps_text": "8",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-10",
+        "exercise": "Band Row",
+        "set_no": 1,
+        "weight_lbs": null,
+        "per_hand": 0,
+        "band": "red",
+        "bodyweight": 0,
+        "reps": 15,
+        "reps_text": "15",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-12",
+        "exercise": "Squat",
+        "set_no": 1,
+        "weight_lbs": 100,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-12",
+        "exercise": "Squat",
+        "set_no": 2,
+        "weight_lbs": 100,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-13",
+        "exercise": "Squat",
+        "set_no": 1,
+        "weight_lbs": 120,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": null,
+        "reps_text": null,
+        "duration_sec": null,
+        "distance_yd": null
+      }
+    ]
+  },
+  "expected": {
+    "trainingVolume": {
+      "weeks": [
+        {
+          "weekEnding": "2025-12-20",
+          "volumeLbs": 0
+        },
+        {
+          "weekEnding": "2025-12-27",
+          "volumeLbs": 0
+        },
+        {
+          "weekEnding": "2026-01-03",
+          "volumeLbs": 0
+        },
+        {
+          "weekEnding": "2026-01-10",
+          "volumeLbs": 0
+        },
+        {
+          "weekEnding": "2026-01-17",
+          "volumeLbs": 540
+        },
+        {
+          "weekEnding": "2026-01-24",
+          "volumeLbs": 0
+        },
+        {
+          "weekEnding": "2026-01-31",
+          "volumeLbs": 0
+        },
+        {
+          "weekEnding": "2026-02-07",
+          "volumeLbs": 0
+        },
+        {
+          "weekEnding": "2026-02-14",
+          "volumeLbs": 0
+        },
+        {
+          "weekEnding": "2026-02-21",
+          "volumeLbs": 600
+        },
+        {
+          "weekEnding": "2026-02-28",
+          "volumeLbs": 0
+        },
+        {
+          "weekEnding": "2026-03-07",
+          "volumeLbs": 450
+        }
+      ],
+      "months": [
+        {
+          "month": "2025-04",
+          "volumeLbs": 0,
+          "partial": false
+        },
+        {
+          "month": "2025-05",
+          "volumeLbs": 0,
+          "partial": false
+        },
+        {
+          "month": "2025-06",
+          "volumeLbs": 400,
+          "partial": false
+        },
+        {
+          "month": "2025-07",
+          "volumeLbs": 0,
+          "partial": false
+        },
+        {
+          "month": "2025-08",
+          "volumeLbs": 0,
+          "partial": false
+        },
+        {
+          "month": "2025-09",
+          "volumeLbs": 0,
+          "partial": false
+        },
+        {
+          "month": "2025-10",
+          "volumeLbs": 0,
+          "partial": false
+        },
+        {
+          "month": "2025-11",
+          "volumeLbs": 0,
+          "partial": false
+        },
+        {
+          "month": "2025-12",
+          "volumeLbs": 0,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "volumeLbs": 540,
+          "partial": false
+        },
+        {
+          "month": "2026-02",
+          "volumeLbs": 600,
+          "partial": false
+        },
+        {
+          "month": "2026-03",
+          "volumeLbs": 450,
+          "partial": true
+        }
+      ]
+    }
+  },
+  "views": {
+    "week": {
+      "range": {
+        "from": "2026-03-06",
+        "to": "2026-03-12"
+      },
+      "totals": {
+        "volumeLbs": 2800,
+        "sets": 8,
+        "weightedSets": 4,
+        "reps": 63,
+        "liftingDays": 3
+      },
+      "previous": {
+        "totals": {
+          "volumeLbs": 450,
+          "sets": 1
+        }
+      },
+      "buckets": [
+        {
+          "start": "2026-03-06",
+          "end": "2026-03-06",
+          "volumeLbs": 0,
+          "sets": 0
+        },
+        {
+          "start": "2026-03-07",
+          "end": "2026-03-07",
+          "volumeLbs": 0,
+          "sets": 0
+        },
+        {
+          "start": "2026-03-08",
+          "end": "2026-03-08",
+          "volumeLbs": 0,
+          "sets": 0
+        },
+        {
+          "start": "2026-03-09",
+          "end": "2026-03-09",
+          "volumeLbs": 0,
+          "sets": 3
+        },
+        {
+          "start": "2026-03-10",
+          "end": "2026-03-10",
+          "volumeLbs": 1800,
+          "sets": 3
+        },
+        {
+          "start": "2026-03-11",
+          "end": "2026-03-11",
+          "volumeLbs": 0,
+          "sets": 0
+        },
+        {
+          "start": "2026-03-12",
+          "end": "2026-03-12",
+          "volumeLbs": 1000,
+          "sets": 2
+        }
+      ],
+      "byExercise": [
+        {
+          "exercise": "DB Press",
+          "volumeLbs": 1800,
+          "sets": 2
+        },
+        {
+          "exercise": "Squat",
+          "volumeLbs": 1000,
+          "sets": 2
+        }
+      ],
+      "unweighted": {
+        "band": 1,
+        "bodyweight": 1,
+        "timed": 1,
+        "other": 1
+      },
+      "weeklyTotals": null
+    },
+    "month": {
+      "range": {
+        "from": "2026-02-11",
+        "to": "2026-03-12"
+      },
+      "totals": {
+        "volumeLbs": 3850,
+        "sets": 10,
+        "reps": 71,
+        "liftingDays": 5
+      },
+      "previous": {
+        "totals": {
+          "volumeLbs": 540
+        }
+      },
+      "weeklyTotals": [
+        {
+          "label": "Week ending 2026-02-14",
+          "start": "2026-02-11",
+          "end": "2026-02-14",
+          "volumeLbs": 0
+        },
+        {
+          "label": "Week ending 2026-02-21",
+          "volumeLbs": 600
+        },
+        {
+          "label": "Week ending 2026-02-28",
+          "volumeLbs": 0
+        },
+        {
+          "label": "Week ending 2026-03-07",
+          "volumeLbs": 450
+        },
+        {
+          "label": "Week ending 2026-03-14",
+          "start": "2026-03-08",
+          "end": "2026-03-12",
+          "volumeLbs": 2800
+        }
+      ]
+    },
+    "year": {
+      "range": {
+        "from": "2025-03-16",
+        "to": "2026-03-12"
+      },
+      "totals": {
+        "volumeLbs": 4790
+      },
+      "previous": {
+        "range": {
+          "from": "2024-03-17",
+          "to": "2025-03-15"
+        },
+        "totals": {
+          "volumeLbs": 350
+        }
+      }
+    },
+    "all": {
+      "range": {
+        "from": "2023-11-01",
+        "to": "2026-03-12"
+      },
+      "totals": {
+        "volumeLbs": 5440
+      },
+      "previous": null
+    },
+    "2y": {
+      "range": {
+        "from": "2024-04-01",
+        "to": "2026-03-12"
+      },
+      "totals": {
+        "volumeLbs": 5140
+      },
+      "previous": {
+        "range": {
+          "from": "2022-04-01",
+          "to": "2024-03-31"
+        },
+        "totals": {
+          "volumeLbs": 300
+        }
+      }
+    },
+    "5y": {
+      "range": {
+        "from": "2021-04-01",
+        "to": "2026-03-12"
+      },
+      "totals": {
+        "volumeLbs": 5440
+      },
+      "previous": {
+        "range": {
+          "from": "2016-04-01",
+          "to": "2021-03-31"
+        },
+        "totals": {
+          "volumeLbs": 0,
+          "sets": 0
+        }
+      }
+    }
+  },
+  "viewBucketCounts": {
+    "week": 7,
+    "month": 30,
+    "year": 52,
+    "all": 29,
+    "2y": 24,
+    "5y": 60
+  }
+}

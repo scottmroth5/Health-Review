@@ -4,9 +4,9 @@
 // "95ea" is logged per hand: total load is twice the logged weight; both are reported.
 import { round, sum, inRange, windows } from './stats.js';
 
-const performed = (s) => s.reps != null || s.duration_sec != null || s.distance_yd != null || (s.reps_text ?? '') !== '';
-const totalLbs = (s) => (s.weight_lbs == null ? null : s.weight_lbs * (s.per_hand ? 2 : 1));
-const volumeOf = (sets) => sum(sets.filter((s) => s.reps != null && totalLbs(s) != null).map((s) => s.reps * totalLbs(s)));
+export const performed = (s) => s.reps != null || s.duration_sec != null || s.distance_yd != null || (s.reps_text ?? '') !== '';
+export const totalLbs = (s) => (s.weight_lbs == null ? null : s.weight_lbs * (s.per_hand ? 2 : 1));
+export const volumeOf = (sets) => sum(sets.filter((s) => s.reps != null && totalLbs(s) != null).map((s) => s.reps * totalLbs(s)));
 
 function sessionSummary(date, sets) {
   const weighted = sets.filter((s) => totalLbs(s) != null);

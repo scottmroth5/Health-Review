@@ -201,3 +201,12 @@ test('lab sheet: panels from capitalized rows, one result per draw column, text 
   ]);
   assert.deepEqual(warnings.map((w) => [w.row, w.kind]), [[1, 'header is not a date'], [9, 'duplicate test name (later row skipped)']]);
 });
+
+test('workout log: "12/12" typed into a set or weight cell (stored by Sheets as a date) is kept as that text, not a huge number', () => {
+  const dec12 = serial('2026-12-12');
+  assert.deepEqual(parseSet(dec12), { reps_text: '12/12', reps: null, duration_sec: null, distance_yd: null });
+  assert.deepEqual(parseWeight(dec12), { weight_text: '12/12', weight_lbs: null, per_hand: 0, band: null, bodyweight: 0 });
+  assert.equal(parseSet(serial('2018-03-05')).reps_text, '3/5');
+  assert.equal(parseSet(250).reps, 250, 'ordinary large counts are untouched');
+  assert.equal(parseWeight(495).weight_lbs, 495);
+});

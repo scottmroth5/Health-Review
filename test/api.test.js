@@ -339,6 +339,29 @@ test('labs: add results in the app (new and existing tests), edit, delete; sheet
   await done();
 });
 
+test('training: each view returns its bars, totals and breakdowns; planned sets are left out; unknown views are refused', async () => {
+  const { app, db, done } = await setup();
+  const ex = db.prepare("INSERT INTO strength_exercises (tab_year, row_no, date, exercise) VALUES (2026, ?, ?, ?)");
+  const set = db.prepare('INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, per_hand, reps, reps_text) VALUES (?, 1, ?, ?, ?, ?)');
+  set.run(ex.run(2, '2026-03-09', 'Squat').lastInsertRowid, 100, 0, 5, '5'); // today
+  set.run(ex.run(3, '2026-03-05', 'DB Press').lastInsertRowid, 50, 1, 10, '10');
+  set.run(ex.run(4, '2026-03-10', 'Squat').lastInsertRowid, 120, 0, null, null); // planned, after today
+
+  const week = (await app.inject('/api/training?view=week')).json();
+  assert.equal(week.buckets.length, 7);
+  assert.deepEqual([week.range.from, week.range.to], ['2026-03-03', '2026-03-09']);
+  assert.equal(week.totals.volumeLbs, 500 + 1000);
+  assert.deepEqual(week.byExercise.map((e) => e.exercise), ['DB Press', 'Squat']);
+  assert.equal((await app.inject('/api/training?view=month')).json().buckets.length, 30);
+  assert.equal((await app.inject('/api/training?view=year')).json().buckets.length, 52);
+  assert.equal((await app.inject('/api/training?view=2y')).json().buckets.length, 24);
+  assert.equal((await app.inject('/api/training?view=5y')).json().buckets.length, 60);
+  const all = (await app.inject('/api/training?view=all')).json();
+  assert.deepEqual([all.range.from, all.buckets.length, all.previous], ['2026-03-01', 1, null]);
+  assert.equal((await app.inject('/api/training?view=decade')).statusCode, 400);
+  await done();
+});
+
 test('status reports today and the last sync run', async () => {
   const { app, db, done } = await setup();
   db.prepare("INSERT INTO runs (name, status, started_at, finished_at, summary) VALUES ('sync', 'ok', '2026-03-09T12:00:00Z', '2026-03-09T12:00:03Z', '{\"counts\":{}}')").run();

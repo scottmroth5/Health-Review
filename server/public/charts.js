@@ -13,6 +13,7 @@ const el = (name, attrs = {}, parent) => {
 };
 const toMs = (date) => Date.parse(`${date}T00:00:00Z`);
 const shortDate = (date) => new Date(toMs(date)).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const monthYear = (date) => new Date(toMs(date)).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
 const longDate = (date) => new Date(toMs(date)).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 /** Clean tick values (1, 2, 5 steps) spanning min..max. */
@@ -29,15 +30,21 @@ function niceTicks(min, max, count = 3) {
 }
 
 const tooltip = () => document.getElementById('tooltip');
-function showTip(evt, date, value) {
+function showTip(evt, date, value, heading, details = []) {
   const tip = tooltip();
   tip.replaceChildren();
   const d = document.createElement('div');
   d.className = 't-date';
-  d.textContent = longDate(date);
+  d.textContent = heading ?? longDate(date);
   const v = document.createElement('div');
   v.textContent = value;
   tip.append(d, v);
+  for (const line of details) {
+    const extra = document.createElement('div');
+    extra.className = 't-detail';
+    extra.textContent = line;
+    tip.append(extra);
+  }
   tip.hidden = false;
   const x = Math.min(evt.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
   const y = Math.max(evt.clientY - tip.offsetHeight - 12, 8);
@@ -67,7 +74,8 @@ function frame(container, { from, to, yValues }) {
   }
   const mid = new Date(x0 + span / 2).toISOString().slice(0, 10);
   [[from, 'start'], [mid, 'middle'], [to, 'end']].forEach(([d, anchor]) => {
-    el('text', { x: x(d), y: height - 6, 'text-anchor': anchor }, axis).textContent = shortDate(d);
+    // Ranges past about 10 months label month and year ("Jul 2018"); shorter ones month and day.
+    el('text', { x: x(d), y: height - 6, 'text-anchor': anchor }, axis).textContent = span > 300 * DAY ? monthYear(d) : shortDate(d);
   });
   return { svg, x, y, plotW, plotH, width, height, ylo };
 }
@@ -135,19 +143,23 @@ export function lineChart(container, points, { from, to, format = String, gapDay
   observe(container, draw);
 }
 
-/** Column chart, one column per day. points: [{date, value}] (zero days included). */
-export function columnChart(container, points, { from, to, format = String, label = 'Value' }) {
+/**
+ * Column chart. points: [{date, value, label?, details?}] (zero buckets included). Each column covers
+ * bucketDays days starting at its date (1 for daily, 7 for weeks, about 30 for months); a point's
+ * label replaces the tooltip date ("Week ending Sep 26").
+ */
+export function columnChart(container, points, { from, to, format = String, label = 'Value', bucketDays = 1 }) {
   const draw = () => {
     container.replaceChildren();
     if (!points.length) return container.append(empty(container));
     const { svg, x, y, plotW } = frame(container, { from, to, yValues: [0, ...points.map((p) => p.value)] });
-    svg.setAttribute('aria-label', `${label}, ${points.length} days from ${shortDate(from)} to ${shortDate(to)}`);
+    svg.setAttribute('aria-label', `${label}, ${points.length} ${bucketDays === 1 ? 'days' : 'periods'} from ${shortDate(from)} to ${shortDate(to)}`);
     const days = Math.max(1, Math.round((toMs(to) - toMs(from)) / DAY) + 1);
-    const slot = plotW / days;
+    const slot = (plotW / days) * bucketDays;
     const w = Math.max(2, Math.min(24, slot > 6 ? slot - 2 : slot * 0.75)); // 2px surface gap once there is room
     const base = y(0);
     for (const p of points) {
-      const cx = x(p.date);
+      const cx = x(p.date) + ((bucketDays - 1) / 2) * (plotW / days); // centre of the bucket
       if (p.value > 0) {
         const top = y(p.value);
         const r = w >= 8 ? Math.min(4, (base - top) / 2) : 0; // 4px rounded data end, square at the baseline
@@ -161,7 +173,7 @@ export function columnChart(container, points, { from, to, format = String, labe
       const hit = el('rect', { x: cx - Math.max(slot, 6) / 2, y: 0, width: Math.max(slot, 6), height: base, fill: 'transparent' }, svg);
       hit.addEventListener('pointermove', (evt) => {
         svg.querySelector(`.bar[data-date="${p.date}"]`)?.classList.add('hover');
-        showTip(evt, p.date, `${label}: ${format(p.value)}`);
+        showTip(evt, p.date, `${label}: ${format(p.value)}`, p.label, p.details);
       });
       hit.addEventListener('pointerleave', () => {
         svg.querySelector(`.bar[data-date="${p.date}"]`)?.classList.remove('hover');

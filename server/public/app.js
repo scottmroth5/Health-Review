@@ -23,12 +23,13 @@ function setStatus(node, message, kind = '') {
 const state = { today: null, day: null, range: 30 };
 
 // ---------------- routing ----------------
-const VIEWS = ['today', 'history', 'meds', 'labs', 'reviews', 'prompt'];
+const VIEWS = ['today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt'];
 function route() {
+  if (location.hash === '#history') return location.replace('#health'); // the old name of the Health tab
   const view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'today';
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
   $$('.top nav a').forEach((a) => (a.getAttribute('href') === `#${view}` ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-  ({ today: loadDay, history: loadHistory, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections })[view]();
+  ({ today: loadDay, training: loadTrainingTab, health: loadHistory, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections })[view]();
 }
 
 // ---------------- 1 to 10 scales ----------------
@@ -323,7 +324,7 @@ function tableView(points, format) {
 
 async function loadHistory() {
   if (!state.today) await loadStatus();
-  $$('.filters button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.range) === state.range)));
+  $$('[data-range]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.range) === state.range)));
   const to = state.today;
   const from = addDays(to, -(state.range - 1));
   const data = await api('GET', `/api/history?from=${from}&to=${to}`);
@@ -731,6 +732,94 @@ function initLabs() {
   });
 }
 
+// ---------------- training volume ----------------
+const TRAINING_VIEW_KEY = 'hr.trainingView';
+const BUCKET_DAYS = { day: 1, week: 7, month: 30 };
+const PREVIOUS_LABEL = { week: 'previous 7 days', month: 'previous 30 days', year: 'previous 52 weeks', '2y': 'previous 2 years', '5y': 'previous 5 years' };
+const lbs = (v) => `${Math.round(v).toLocaleString()} lbs`;
+
+function trainingViewChoice() {
+  try { return localStorage.getItem(TRAINING_VIEW_KEY) || 'month'; } catch { return 'month'; }
+}
+
+/** "Week ending Sep 26, 2026" / "Sep 2026" / null (daily bars use the date itself). */
+function bucketLabel(b, bucket) {
+  if (bucket === 'week') return `Week ending ${niceDate(b.weekEnding)}`;
+  if (bucket === 'month') return b.label;
+  return null;
+}
+
+function tile(label, value, current, previous, view) {
+  let delta = '';
+  if (previous) {
+    if (previous === 0 && current === 0) delta = `same as ${PREVIOUS_LABEL[view]}`;
+    else if (previous === 0) delta = `none in the ${PREVIOUS_LABEL[view]}`;
+    else {
+      const pct = Math.round(((current - previous) / previous) * 100);
+      delta = `${pct > 0 ? '+' : ''}${pct}% vs ${PREVIOUS_LABEL[view]}`;
+    }
+  } else if (previous === 0) {
+    delta = current ? `none in the ${PREVIOUS_LABEL[view]}` : `same as ${PREVIOUS_LABEL[view]}`;
+  }
+  return h('div', { class: 'tile' }, h('div', { class: 'tile-label' }, label), h('div', { class: 'tile-value' }, value),
+    delta ? h('div', { class: 'tile-delta' }, delta) : null);
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+/** Tooltip lines for a bar: the programs trained in it, then days with no program logged. */
+function programLines(b) {
+  const lines = (b.programs ?? []).map((p) => `${p.name}: ${plural(p.days, 'day')}`);
+  if (b.noProgramDays) lines.push(`No program logged: ${plural(b.noProgramDays, 'day')}`);
+  return lines;
+}
+
+async function loadTrainingTab() {
+  if (!state.today) await loadStatus();
+  return loadTraining();
+}
+
+async function loadTraining(view = trainingViewChoice()) {
+  try { localStorage.setItem(TRAINING_VIEW_KEY, view); } catch { /* storage unavailable: still works, just not remembered */ }
+  $$('[data-tview]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tview === view)));
+  const t = await api('GET', `/api/training?view=${view}`);
+  const prev = t.previous?.totals ?? null;
+
+  $('#training-range').textContent = `${niceDate(t.range.from)} to ${niceDate(t.range.to)}`;
+  $('#training-tiles').replaceChildren(
+    tile('Volume', lbs(t.totals.volumeLbs), t.totals.volumeLbs, prev?.volumeLbs ?? (prev ? 0 : undefined), view),
+    tile('Sets', t.totals.sets.toLocaleString(), t.totals.sets, prev?.sets ?? (prev ? 0 : undefined), view),
+    tile('Reps', t.totals.reps.toLocaleString(), t.totals.reps, prev?.reps ?? (prev ? 0 : undefined), view),
+    tile('Lifting days', String(t.totals.liftingDays), t.totals.liftingDays, prev?.liftingDays ?? (prev ? 0 : undefined), view));
+
+  const points = t.buckets.map((b) => ({ date: b.start, value: b.volumeLbs, label: bucketLabel(b, t.bucket), details: programLines(b) }));
+  columnChart($('#training-chart'), points, {
+    from: t.range.from, to: t.range.to, format: lbs, label: 'Volume', bucketDays: BUCKET_DAYS[t.bucket],
+  });
+  $('#training-table').replaceChildren(tableView(points.map((p) => ({ date: p.label ?? p.date, value: p.value })), lbs));
+
+  const weekly = $('#training-weekly');
+  weekly.replaceChildren();
+  if (t.weeklyTotals) {
+    weekly.append(h('h3', { class: 'sub' }, 'Weekly totals'),
+      h('ul', { class: 'plain-list' }, [...t.weeklyTotals].reverse().map((w) =>
+        h('li', {}, h('span', {}, `Week ending ${niceDate(w.weekEnding)}${w.start !== addDays(w.weekEnding, -6) || w.end !== w.weekEnding ? ' (part of the week)' : ''}`), h('strong', {}, lbs(w.volumeLbs))))));
+  }
+
+  const max = Math.max(1, ...t.byExercise.map((e) => e.volumeLbs));
+  $('#training-exercises').replaceChildren(...(t.byExercise.length
+    ? t.byExercise.map((e) => h('div', { class: 'ex-row' },
+      h('div', { class: 'ex-name' }, e.exercise),
+      h('div', { class: 'ex-bar-track' }, h('div', { class: 'ex-bar', style: `width:${Math.max(2, (e.volumeLbs / max) * 100)}%` })),
+      h('div', { class: 'ex-value' }, `${lbs(e.volumeLbs)}, ${e.sets} set${e.sets === 1 ? '' : 's'}`)))
+    : [h('p', { class: 'muted small' }, 'No weighted sets in this range.')]));
+
+  const u = t.unweighted;
+  const parts = [['band', u.band], ['bodyweight', u.bodyweight], ['timed', u.timed], ['other', u.other]].filter(([, n]) => n);
+  $('#training-unweighted').textContent = parts.length
+    ? `Sets with no weight to count: ${parts.map(([k, n]) => `${k} ${n}`).join(', ')}.`
+    : '';
+}
+
 // ---------------- reviews ----------------
 function renderMarkdown(md, into) {
   // Minimal, safe subset: ## headings, - bullets, **bold**, paragraphs. Text only via textContent.
@@ -937,7 +1026,8 @@ buildTodayForms();
 initPrompt();
 initMeds();
 initLabs();
-$$('.filters button').forEach((b) => b.addEventListener('click', () => {
+$$('[data-tview]').forEach((b) => b.addEventListener('click', () => loadTraining(b.dataset.tview)));
+$$('[data-range]').forEach((b) => b.addEventListener('click', () => {
   state.range = Number(b.dataset.range);
   loadHistory();
 }));

@@ -13,7 +13,8 @@
     <h1>Health Review</h1>
     <nav aria-label="Sections">
       <a href="#today">Today</a>
-      <a href="#history">History</a>
+      <a href="#training">Training</a>
+      <a href="#health">Health</a>
       <a href="#meds">Meds</a>
       <a href="#labs">Labs</a>
       <a href="#reviews">Reviews</a>
@@ -75,8 +76,34 @@
       </form>
     </section>
 
-    <!-- History -->
-    <section id="view-history" class="view" hidden>
+    <!-- Training volume -->
+    <section id="view-training" class="view" hidden>
+      <div class="card training">
+        <div class="training-head">
+          <h2>Training volume</h2>
+          <div class="filters" role="group" aria-label="Training range">
+            <button type="button" data-tview="week">Week</button>
+            <button type="button" data-tview="month">Month</button>
+            <button type="button" data-tview="year">Year</button>
+            <button type="button" data-tview="2y">2 years</button>
+            <button type="button" data-tview="5y">5 years</button>
+            <button type="button" data-tview="all">All</button>
+          </div>
+        </div>
+        <p class="muted small" id="training-range"></p>
+        <div id="training-tiles" class="tiles"></div>
+        <div class="chart" id="training-chart"></div>
+        <div id="training-table"></div>
+        <div id="training-weekly"></div>
+        <h3 class="sub">Volume by exercise</h3>
+        <div id="training-exercises"></div>
+        <p class="muted small" id="training-unweighted"></p>
+      </div>
+
+    </section>
+
+    <!-- Health trends -->
+    <section id="view-health" class="view" hidden>
       <div class="filters" role="group" aria-label="Range">
         <button type="button" data-range="30">30 days</button>
         <button type="button" data-range="90">90 days</button>

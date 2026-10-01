@@ -78,6 +78,14 @@ or skipped; a day with no rows is unknown, never missed. The weekly summary repo
 A dose or timing change is a new dated period; a correction (fixing a typo) updates the current period in place and
 records no event. Each Meds card shows its dose history once there is more than one period.
 
+Training volume (metrics/volume.js): reps x total load (per-hand weights x2) over performed sets dated up to today;
+days without lifting are real zeros; band, bodyweight, timed and unparsed sets are counted as sets, not volume; weeks end
+on Saturday. GET /api/training?view=week|month|year|2y|5y|all feeds the Training tab, and computeWeek's
+trainingVolume (last 12 weeks and 12 months) goes to the weekly review.
+Each bar also lists its training programs (metrics/programs.js): Workout Log "Workout" names map to programs via
+PROGRAMS (first match wins); an unnamed lifting day takes the program from up to 7 days before, and a Trigger Session
+day takes the nearest named program within 14 days either way. Edit PROGRAMS to add or rename a program.
+
 ## Review
 npm run review makes one structured-output call (REVIEW_MODEL, default claude-opus-5-5; REVIEW_EFFORT, default high;
 refusal fallbacks on via the beta endpoint). The system prompt is CONTRACT in agent/instructions.js followed by the owner's

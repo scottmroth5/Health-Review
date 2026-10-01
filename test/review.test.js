@@ -187,3 +187,17 @@ test('dry run preparation needs no client and names the sensitive sections it wo
   assert.ok(prep.checks.allowed.has(48));
   store.close();
 });
+
+test('summary: the weekly review gets 12 weeks and 12 months of training volume, all grounded', () => {
+  const week = computeWeek({ daily_metrics: [], workout_sessions: [], drinking_days: [], checkins: [], strength_sets: [
+    { date: '2026-09-24', exercise: 'Squat', set_no: 1, weight_lbs: 150, per_hand: 0, reps: 5 },
+    { date: '2026-05-04', exercise: 'Squat', set_no: 1, weight_lbs: 140, per_hand: 0, reps: 5 },
+  ] }, { weekEnd: '2026-09-26' });
+  const s = buildSummary(week, [], { today: '2026-09-27' });
+  assert.equal(s.trainingVolume.weeks.length, 12);
+  assert.equal(s.trainingVolume.months.length, 12);
+  assert.deepEqual(s.trainingVolume.weeks.at(-1), { weekEnding: '2026-09-26', volumeLbs: 750, liftingDays: 1 });
+  assert.equal(s.trainingVolume.months.find((m) => m.month === '2026-05').volumeLbs, 700);
+  const allowed = allowedNumbers(s, '');
+  assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'Volume was 750 lbs this week and 700 in May.']]), allowed), []);
+});

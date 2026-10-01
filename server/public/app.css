@@ -210,3 +210,27 @@ button.link { background: none; border: none; padding: 0; color: var(--text-prim
 .lab-edit { flex-basis: 100%; border-top: 1px solid var(--grid); margin-top: 4px; padding-top: 4px; }
 .review-warnings { border: 1px solid var(--danger); border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 0.85rem; }
 .review-warnings ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* Training volume */
+.training-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.training-head h2 { margin: 0; }
+.training-head .filters { margin: 0; }
+.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 8px 0 4px; }
+@media (min-width: 640px) { .tiles { grid-template-columns: repeat(4, 1fr); } }
+.tile { background: var(--surface-0); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.tile-label { font-size: 0.8rem; color: var(--text-secondary); }
+.tile-value { font-size: 1.15rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile-delta { font-size: 0.75rem; color: var(--text-secondary); }
+h3.sub { font-size: 0.9rem; margin: 14px 0 6px; color: var(--text-secondary); font-weight: 600; }
+.plain-list { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.plain-list li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--grid); }
+.ex-row { display: grid; grid-template-columns: minmax(90px, 1fr) 2fr auto; align-items: center; gap: 8px; font-size: 0.85rem; padding: 3px 0; }
+.ex-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-bar-track { height: 10px; background: var(--surface-0); border-radius: 4px; overflow: hidden; }
+.ex-bar { height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; }
+.ex-value { color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 480px) { .ex-row { grid-template-columns: 1fr auto; } .ex-bar-track { grid-column: 1 / -1; grid-row: 2; } }
+.plain-list li strong { white-space: nowrap; }
+.training-head .filters { flex-wrap: wrap; gap: 4px; }
+.training-head .filters button { padding: 5px 10px; font-size: 0.9rem; }
+.tooltip .t-detail { color: var(--text-secondary); font-size: 0.78rem; }

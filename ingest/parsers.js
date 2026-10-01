@@ -135,8 +135,19 @@ export function parseWorkoutSessions({ header, rows, firstRowNumber, tab }) {
 const BAND_COLORS = ['black', 'red', 'purple', 'orange', 'gray', 'grey', 'blue', 'green', 'yellow'];
 const BAND = new RegExp(`^(?:band-?)?(${BAND_COLORS.join('|')})(?:band)?$`);
 
+// Typing "12/12" (reps per side) into a Workout Log cell makes Google Sheets store a date, which the
+// API returns as a serial number (about 43,000 to 47,000 for 2018 to 2028). No real weight or rep
+// count is that large, so such a number is turned back into the text that was typed, month/day.
+const DATE_SERIAL = { min: 36526, max: 73051 }; // 2000-01-01 .. 2099-12-31
+const typedAsDate = (cell) => typeof cell === 'number' && cell >= DATE_SERIAL.min && cell <= DATE_SERIAL.max;
+const asTypedText = (serial) => {
+  const [, m, d] = serialToDate(serial).split('-').map(Number);
+  return `${m}/${d}`;
+};
+
 /** Parses a Weight N cell: pounds, per-hand ("95ea"), a band color, or bodyweight ("bw"). */
 export function parseWeight(cell) {
+  if (typedAsDate(cell)) return { weight_text: asTypedText(cell), weight_lbs: null, per_hand: 0, band: null, bodyweight: 0 };
   const out = { weight_text: text(cell), weight_lbs: null, per_hand: 0, band: null, bodyweight: 0 };
   if (out.weight_text === null) return out;
   if (typeof cell === 'number') return { ...out, weight_lbs: cell };
@@ -151,6 +162,7 @@ export function parseWeight(cell) {
 
 /** Parses a Set N cell: reps, seconds (":30", "30 seconds", "2 minutes") or yards ("40 yards"). */
 export function parseSet(cell) {
+  if (typedAsDate(cell)) return { reps_text: asTypedText(cell), reps: null, duration_sec: null, distance_yd: null };
   const out = { reps_text: text(cell), reps: null, duration_sec: null, distance_yd: null };
   if (out.reps_text === null) return out;
   if (typeof cell === 'number') return Number.isInteger(cell) ? { ...out, reps: cell } : out;

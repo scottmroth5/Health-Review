@@ -7,6 +7,7 @@ import fastifyStatic from '@fastify/static';
 import { registerAuth } from './auth.js';
 import * as q from './queries.js';
 import { TIMINGS } from '../metrics/medications.js';
+import { VIEWS } from '../metrics/volume.js';
 
 const nullable = (schema) => ({ ...schema, type: [schema.type, 'null'] });
 const scale = nullable({ type: 'integer', minimum: 1, maximum: 10 });
@@ -114,6 +115,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!q.deleteDrinking(db, requireDate(req.params.date))) return reply.code(404).send({ error: 'No drinks logged for that day' });
     return reply.code(204).send();
   });
+
+  // ---- training volume ----
+  app.get('/api/training', {
+    schema: {
+      summary: 'Training volume (reps x total load) for the last 7 days, 30 days, 52 weeks, or all history',
+      querystring: { type: 'object', required: ['view'], properties: { view: { type: 'string', enum: VIEWS } } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.trainingDashboard(db, req.query.view, q.localDate(clock())));
 
   // ---- history, reviews ----
   app.get('/api/history', {

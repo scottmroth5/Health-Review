@@ -10,10 +10,8 @@ export function loadWeekData(db, weekEnd) {
     daily_metrics: db.prepare('SELECT * FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(from, nextMorning),
     workout_sessions: db.prepare('SELECT * FROM workout_sessions WHERE start >= ? AND start < ? ORDER BY start')
       .all(from, `${nextMorning}`),
-    strength_sets: db.prepare(`SELECT e.date, e.exercise, e.workout, s.set_no, s.weight_lbs, s.per_hand, s.band, s.bodyweight,
-        s.reps, s.reps_text, s.duration_sec, s.distance_yd
-      FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id
-      WHERE e.date BETWEEN ? AND ? ORDER BY e.date, e.row_no, s.set_no`).all(from, weekEnd),
+    // About 13 months, for the 12-month volume trend (the 28-day strength metrics filter their own window).
+    strength_sets: loadStrengthSets(db, addDays(weekEnd, -400), weekEnd),
     drinking_days: db.prepare('SELECT * FROM drinking_days WHERE date BETWEEN ? AND ? ORDER BY date').all(from, weekEnd),
     checkins: db.prepare('SELECT * FROM checkins WHERE date <= ? ORDER BY date').all(weekEnd),
     ...loadMedications(db),
@@ -38,6 +36,14 @@ export function loadWeekNotes(db, weekEnd) {
     ...db.prepare("SELECT date, 'workout log' AS source, text FROM workout_log_notes WHERE date BETWEEN ? AND ?").all(from, weekEnd),
   ];
   return rows.filter((r) => r.text?.trim()).sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source));
+}
+
+/** One row per Workout Log set (with its exercise and date) between two dates. */
+export function loadStrengthSets(db, from, to) {
+  return db.prepare(`SELECT e.date, e.exercise, e.workout, s.set_no, s.weight_lbs, s.per_hand, s.band, s.bodyweight,
+      s.reps, s.reps_text, s.duration_sec, s.distance_yd
+    FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id
+    WHERE e.date BETWEEN ? AND ? ORDER BY e.date, e.row_no, s.set_no`).all(from, to);
 }
 
 /** All medications and their periods (small tables, read whole). */

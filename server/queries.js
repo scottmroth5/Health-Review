@@ -1,7 +1,8 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact } from '../metrics/medications.js';
-import { loadMedications } from '../metrics/load.js';
+import { loadMedications, loadStrengthSets } from '../metrics/load.js';
+import { trainingView } from '../metrics/volume.js';
 import { addDays } from '../metrics/stats.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
@@ -106,6 +107,16 @@ export function saveSettings(db, changes) {
     for (const [k, v] of Object.entries(changes)) (v === null ? remove.run(k) : upsert.run(k, String(v), now()));
   })();
   return getSettings(db);
+}
+
+// ---- training volume ----
+
+/** The training dashboard for one view (week, month, year, all), ending today. Planned future sets are excluded. */
+export function trainingDashboard(db, view, today) {
+  // Enough history for the view and its previous period; 'all' reads everything.
+  const back = { week: 14, month: 60, year: 371 * 2, '2y': 31 * 48, '5y': 31 * 120 }[view];
+  const from = back ? addDays(today, -back) : '0000-01-01';
+  return trainingView(loadStrengthSets(db, from, today), view, today);
 }
 
 // ---- medications and supplements ----
