@@ -56,6 +56,12 @@ export function drinking(days, metrics, weekEnd) {
       cbdDrinks: sum(week.map((d) => d.cbd ?? 0)),
       moodBeforeMean: moods('mood_before'),
       moodAfterMean: moods('mood_after'),
+      // How often each setting came up on drinking days, most common first.
+      settings: Object.entries(drinkingDays.reduce((m, d) => {
+        const s = d.setting?.trim();
+        if (s) m[s] = (m[s] ?? 0) + 1;
+        return m;
+      }, {})).map(([setting, days]) => ({ setting, days })).sort((a, b) => b.days - a.days || a.setting.localeCompare(b.setting)),
     },
     baseline: {
       loggedDays: base.length,

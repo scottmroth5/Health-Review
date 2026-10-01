@@ -208,3 +208,5 @@ button.link { background: none; border: none; padding: 0; color: var(--text-prim
 .small-btn { padding: 2px 8px; font-size: 0.8rem; }
 .lab-detail .actions input { width: 160px; margin: 0; }
 .lab-edit { flex-basis: 100%; border-top: 1px solid var(--grid); margin-top: 4px; padding-top: 4px; }
+.review-warnings { border: 1px solid var(--danger); border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 0.85rem; }
+.review-warnings ul { margin: 4px 0 0; padding-left: 18px; }

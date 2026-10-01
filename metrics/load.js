@@ -24,6 +24,22 @@ export function loadWeekData(db, weekEnd) {
   };
 }
 
+/**
+ * The owner's own notes from the review week, oldest first: check-ins, drinking days, Workout Log
+ * comments and text typed in its date column. Sent to the review by the owner's choice (life context
+ * and symptoms); device data never takes this path.
+ */
+export function loadWeekNotes(db, weekEnd) {
+  const from = addDays(weekEnd, -6);
+  const rows = [
+    ...db.prepare("SELECT date, 'check-in' AS source, notes AS text FROM checkins WHERE date BETWEEN ? AND ? AND notes IS NOT NULL").all(from, weekEnd),
+    ...db.prepare("SELECT date, 'drinking' AS source, notes AS text FROM drinking_days WHERE date BETWEEN ? AND ? AND notes IS NOT NULL").all(from, weekEnd),
+    ...db.prepare("SELECT date, 'workout: ' || exercise AS source, comment AS text FROM strength_exercises WHERE date BETWEEN ? AND ? AND comment IS NOT NULL").all(from, weekEnd),
+    ...db.prepare("SELECT date, 'workout log' AS source, text FROM workout_log_notes WHERE date BETWEEN ? AND ?").all(from, weekEnd),
+  ];
+  return rows.filter((r) => r.text?.trim()).sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source));
+}
+
 /** All medications and their periods (small tables, read whole). */
 export function loadMedications(db) {
   return {

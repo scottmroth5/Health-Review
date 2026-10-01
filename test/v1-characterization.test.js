@@ -118,3 +118,21 @@ test('prompt: names without a numeric prefix are not sections', () => {
   const sections = [{ name: 'notes.md', text: 'ignored' }, { name: '01_profile.md', text: 'kept' }];
   assert.equal(assembleSections(sections, '2026-03-08'), 'kept');
 });
+
+// ---- Claude call ----
+const claudeCall = golden('claude-call');
+const { createClaude, ClaudeTruncatedError } = await import('@scottmroth5/agent-core');
+const viaAgentCore = (response) => createClaude({ client: { messages: { create: async () => ({ model: 'claude-haiku-4-5', usage: {}, ...response }) } } })
+  .send({ model: 'claude-haiku-4-5', maxTokens: 100, prompt: 'PROMPT' });
+
+test('claude: FIXED v1 bug: a response cut off at max_tokens was returned as complete; now it fails', async () => {
+  const c = claudeCall['BUG: a response cut off at max_tokens is returned as if complete'];
+  assert.equal(c.v1.text, '## Weekly Wins\npartial');
+  await assert.rejects(viaAgentCore(c.response), ClaudeTruncatedError);
+});
+
+test('claude: FIXED v1 bug: only the first content block was read; now every text block is kept', async () => {
+  const c = claudeCall['BUG: only the first content block is read'];
+  assert.equal(c.v1.text, 'first');
+  assert.equal((await viaAgentCore(c.response)).text, 'first\nsecond');
+});

@@ -8,7 +8,10 @@ Health specific logic stays in this repo; never add it to agent-core.
 
 
 ## Structure
-/agent              prompts, tools, and review logic
+/agent              the weekly review: summary.js (computeWeek trimmed for the model, plus the week's notes),
+                    instructions.js (fixed CONTRACT + owner prompt sections, output schema, rendering), validate.js
+                    (dashes, number grounding, physician routing), claude.js (agent-core client with refusal fallbacks),
+                    review.js (one call, one retry on failed checks, saved to reviews)
 /metrics            deterministic metric calculations: stats.js (windows, rounding, pearson), one module per report
                     area (recovery, cardio, strength, drinking, checkins), index.js computeWeek, load.js (SQL);
                     fixtures with hand-computed expectations in evals/fixtures/metrics, run by test/metrics.test.js
@@ -33,11 +36,14 @@ npm run sync                      copy new rows from the Sheets into data/health
 npm run sync -- --backfill        one-time full import, including the v1 drinking log and weekly check-ins
 powershell -ExecutionPolicy Bypass -File scripts\register-sync-task.ps1   (re)register the daily 7am sync task
                                   ("Health-Review daily sync"; runs scripts\sync-daily.cmd, logs to data\logs\sync.log)
+powershell -ExecutionPolicy Bypass -File scripts\register-review-task.ps1   (re)register the Sunday 8am review task
+                                  ("Health-Review weekly review"; runs scripts\review-weekly.cmd, logs to data\logs\review.log)
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
 npm run prompts:import-v1         one-time import of data/v1-export/prompts into prompt_sections (-- --replace to overwrite)
 npm run metrics                   print the computed summary for last week (-- --week YYYY-MM-DD for another Saturday)
 npm run evals                     run eval suites and print results (not built yet)
-npm run review                    generate the weekly health review (not built yet)
+npm run review                    sync, then write the weekly review for the week ending last Saturday (-- --week YYYY-MM-DD,
+                                  -- --dry-run to build and size the prompt without calling Claude, -- --no-sync)
 Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
 GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
@@ -68,6 +74,16 @@ or skipped; a day with no rows is unknown, never missed. The weekly summary repo
 A dose or timing change is a new dated period; a correction (fixing a typo) updates the current period in place and
 records no event. Each Meds card shows its dose history once there is more than one period.
 
+## Review
+npm run review makes one structured-output call (REVIEW_MODEL, default claude-opus-5-5; REVIEW_EFFORT, default high;
+refusal fallbacks on via the beta endpoint). The system prompt is CONTRACT in agent/instructions.js followed by the owner's
+prompt sections; the report format sections in those prompts were written for v1 raw data, and CONTRACT tells the model the
+summary replaces them. Output is checked in code: no em or en dashes or double hyphens, every number must appear in the
+summary or instructions (small counts and window lengths allowed), and medication names, lab test names and symptom words
+may appear only in physicianDiscussion. Failed checks get one retry listing the problems; dashes left after that are
+replaced in code, and anything else is saved with the report as warnings. Runs record metadata only, including the names
+of sensitive sections sent; prompt and report text never go to logs or run records.
+
 ## UI and API
 AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS rebinding);
 exposing the server requires a login mode in server/auth.js first. Check-in and drinking scales are 1 to 10 to match
@@ -86,7 +102,8 @@ buildInstructions leaves them out unless a caller opts in.
 
 ## Hard rules
 All health data stays on this machine. Never add cloud storage, CI, or remote sync for /data.
-Send the Claude API computed summaries only, never raw exports.
+Send the Claude API computed summaries only, never raw exports. The one exception is the owner's own notes from the review
+week (check-in, drinking, Workout Log comments and date-column notes), sent as written by the owner's choice (2026-10-01).
 Genetics and medication data (prompt sections marked sensitive, and the medications tracker) go to the Claude API only
 as part of the weekly review, which includes them every week by the owner's choice (decided 2026-09-30); each run
 records which sensitive sections it sent (names only). The summary's medications block (current list, changes, before

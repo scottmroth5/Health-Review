@@ -78,7 +78,8 @@ export function history(db, from, to) {
 }
 
 export function listReviews(db) {
-  return db.prepare('SELECT week_ending, report_md, created_at FROM reviews ORDER BY week_ending DESC').all();
+  return db.prepare('SELECT week_ending, report_md, created_at, model, warnings FROM reviews ORDER BY week_ending DESC').all()
+    .map((r) => ({ ...r, warnings: r.warnings ? JSON.parse(r.warnings) : [] }));
 }
 
 export function lastSync(db) {

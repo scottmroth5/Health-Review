@@ -778,13 +778,15 @@ async function loadReviews() {
   for (const r of reviews) {
     const card = document.createElement('article');
     card.className = 'card review';
-    const h = document.createElement('h2');
-    h.textContent = `Week ending ${r.week_ending}`;
-    const meta = document.createElement('p');
-    meta.className = 'meta';
-    meta.textContent = `Generated ${new Date(r.created_at).toLocaleString()}`;
-    card.append(h, meta);
+    card.append(h('h2', {}, `Week ending ${niceDate(r.week_ending)}`),
+      h('p', { class: 'meta' }, `Generated ${new Date(r.created_at).toLocaleString()}${r.model ? ` by ${r.model}` : ''}`));
+    if (r.warnings.length) {
+      card.append(h('div', { class: 'review-warnings' },
+        h('strong', {}, 'Checks that still failed after a retry:'),
+        h('ul', {}, r.warnings.map((w) => h('li', {}, w)))));
+    }
     renderMarkdown(r.report_md, card);
+    card.append(h('p', { class: 'meta' }, 'An analytical aid, not medical advice. Discuss medications, lab results and symptoms with your physician.'));
     container.append(card);
   }
 }

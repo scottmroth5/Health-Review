@@ -14,12 +14,14 @@
     "sync": "node --env-file=.env scripts/sync.js",
     "start": "node --env-file=.env server/index.js",
     "prompts:import-v1": "node scripts/import-v1-prompts.js",
-    "metrics": "node scripts/metrics.js"
+    "metrics": "node scripts/metrics.js",
+    "review": "node --env-file=.env scripts/review.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "@fastify/static": "^10.1.5",
     "@fastify/swagger": "^9.9.1",
     "@googleapis/sheets": "^18.0.1",

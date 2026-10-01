@@ -272,4 +272,14 @@ export const MIGRATIONS = [
       ALTER TABLE lab_results ADD COLUMN corrected_from_date TEXT;
     `,
   },
+  {
+    id: '009-review-details',
+    up: `
+      -- Which model wrote a review, problems the output checks could not resolve (shown with the
+      -- report), and the names of sensitive prompt sections it was sent (never their text).
+      ALTER TABLE reviews ADD COLUMN model TEXT;
+      ALTER TABLE reviews ADD COLUMN warnings TEXT;
+      ALTER TABLE reviews ADD COLUMN sensitive_sections TEXT;
+    `,
+  },
 ];

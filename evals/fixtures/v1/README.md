@@ -10,5 +10,5 @@ What the frozen v1 scripts in `/legacy` return for synthetic inputs. They were g
 | `consolidate-health.json`, `consolidate-workouts.json` | `Consolidate*.gs` (still running in Google) | `ingest/dedupe.js` removes v1's partial-day duplicates when syncing. Workout sessions match v1. |
 | `prompt.json` | `loadConfig`, `buildPrompt` | Section order and `{{TODAY}}` ported to `agent/prompts.js`. Appending raw rows is dropped: v2 sends computed summaries only (Phase 5). |
 | `email.json` | `formatEmailHtml` | Email delivery is dropped. Phase 3 renders reports in the UI. v1 replaced em and en dashes with `-` and left `--`; v2 rejects all three (Phase 5 validator). |
-| `claude-call.json` | `callClaudeAPI` | Replaced by agent-core `createClaude`. Phase 5 tests the two `BUG:` cases (truncation returned as complete, only the first text block read). |
+| `claude-call.json` | `callClaudeAPI` | Replaced by agent-core `createClaude`; the two `BUG:` cases (truncation returned as complete, only the first text block read) are tested as fixed. |
 | `run.json` | `runWeeklyHealthReport` | Error email becomes a failed run in agent-core's `runs` table. v1 doubled the prefix (`Error: Error: ...`). |
