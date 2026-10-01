@@ -34,7 +34,7 @@ npm test                          run unit tests, including metric fixtures
 node --test test/google.test.js   run one suite
 npm run google:login              one-time Google sign-in (read-only Sheets); saves data/google/token.json
 npm run google:check              verify read access to each *_SHEET_ID in .env (prints tab names and row counts only)
-npm run sync                      copy new rows from the Sheets into data/health.db (prints counts and warnings only)
+npm run sync                      copy the Sheets into data/health.db (prints counts and warnings only)
 npm run sync -- --backfill        one-time full import, including the v1 drinking log and weekly check-ins
 powershell -ExecutionPolicy Bypass -File scripts\register-sync-task.ps1   (re)register the daily 7am sync task
                                   ("Health-Review daily sync"; runs scripts\sync-daily.cmd, logs to data\logs\sync.log)
@@ -53,8 +53,10 @@ GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
 ## Data
 Sheets are read unformatted with dates as serial numbers and stored as local wall-clock text; no time zone conversion.
-Health metrics and workout sessions stay in Google Sheets (v1 consolidation scripts still feed them) and sync by
-watermark plus overlap; duplicate health days merge field by field. The Workout Log has one tab per year: normal syncs
+Health metrics and workout sessions stay in Google Sheets (v1 consolidation scripts still feed them, nightly 4 to 5am).
+Every sync reads the whole first tab of each (the consolidated tab, whatever it is named); the owner trims it into an
+Archive tab, so a row-number watermark could skip rows, and archived rows stay in the database. Duplicate health days
+merge field by field. The Workout Log has one tab per year: normal syncs
 read the current year (and last year in January), and a tab is replaced only when its content hash changes.
 Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI owns them now and imports never
 overwrite UI rows. The Workout Log can hold planned future workouts with weights but no reps: metrics count only sets
@@ -85,6 +87,9 @@ trainingVolume (last 12 weeks and 12 months) goes to the weekly review.
 Each bar also lists its training programs (metrics/programs.js): Workout Log "Workout" names map to programs via
 PROGRAMS (first match wins); an unnamed lifting day takes the program from up to 7 days before, and a Trigger Session
 day takes the nearest named program within 14 days either way. Edit PROGRAMS to add or rename a program.
+Exercise names (metrics/exercises.js): volume and strength group sets by exerciseKey, so spelling, plural, hyphen, typo
+and word-order variants are one lift; lifts that differ by a word ("Bench Press", "Barbell Bench") merge only when
+listed in MERGES, which the owner decides. The database keeps names as typed.
 
 ## Review
 npm run review makes one structured-output call (REVIEW_MODEL, default claude-opus-5-5; REVIEW_EFFORT, default high;

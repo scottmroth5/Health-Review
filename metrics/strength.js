@@ -3,6 +3,7 @@
 // later than the week's end (the log also holds planned workouts with weights but no reps).
 // "95ea" is logged per hand: total load is twice the logged weight; both are reported.
 import { round, sum, inRange, windows } from './stats.js';
+import { exerciseKey, exerciseName } from './exercises.js';
 
 export const performed = (s) => s.reps != null || s.duration_sec != null || s.distance_yd != null || (s.reps_text ?? '') !== '';
 export const totalLbs = (s) => (s.weight_lbs == null ? null : s.weight_lbs * (s.per_hand ? 2 : 1));
@@ -37,10 +38,9 @@ export function strength(sets, weekEnd) {
 
   const byExercise = new Map();
   for (const s of done) {
-    const key = s.exercise.trim().toLowerCase();
-    if (!byExercise.has(key)) byExercise.set(key, { names: new Map(), dates: new Map() });
+    const key = exerciseKey(s.exercise); // variant names of one lift merge (metrics/exercises.js)
+    if (!byExercise.has(key)) byExercise.set(key, { key, dates: new Map() });
     const e = byExercise.get(key);
-    if (!e.names.has(s.date)) e.names.set(s.date, s.exercise.trim()); // the first set's spelling names the session
     if (!e.dates.has(s.date)) e.dates.set(s.date, []);
     e.dates.get(s.date).push(s);
   }
@@ -51,7 +51,7 @@ export function strength(sets, weekEnd) {
     const last = sessionSummary(dates[dates.length - 1], e.dates.get(dates[dates.length - 1]));
     const two = dates.length >= 2;
     return {
-      exercise: e.names.get(dates[dates.length - 1]),
+      exercise: exerciseName(e.key, [...e.dates.values()].flat()),
       sessions: dates.length,
       inWeek: dates.some((d) => d >= w.week.from),
       first,
@@ -66,7 +66,7 @@ export function strength(sets, weekEnd) {
   return {
     week: {
       days: new Set(week.map((s) => s.date)).size,
-      exercises: new Set(week.map((s) => s.exercise.trim().toLowerCase())).size,
+      exercises: new Set(week.map((s) => exerciseKey(s.exercise))).size,
       sets: week.length,
       volumeLbs: round(weekVolume, 0),
       bandSets: week.filter((s) => s.band).length,

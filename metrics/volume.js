@@ -5,6 +5,7 @@
 import { addDays, inRange, round, sum } from './stats.js';
 import { performed, totalLbs, volumeOf } from './strength.js';
 import { programsByDay, programSummary } from './programs.js';
+import { exerciseKey, exerciseName } from './exercises.js';
 
 const isWeighted = (s) => s.reps != null && totalLbs(s) != null;
 
@@ -39,16 +40,16 @@ export function unweightedCounts(sets, range) {
   return counts;
 }
 
-/** Top exercises by volume in the range; spellings merge by trimmed, lowercased name. */
+/** Top exercises by volume in the range; variant names of one lift merge (metrics/exercises.js). */
 export function volumeByExercise(sets, range, top = 10) {
   const groups = new Map();
   for (const s of doneIn(sets, range)) {
-    const key = s.exercise.trim().toLowerCase();
-    if (!groups.has(key)) groups.set(key, { exercise: s.exercise.trim(), sets: [] });
-    groups.get(key).sets.push(s);
+    const key = exerciseKey(s.exercise);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
   }
-  return [...groups.values()]
-    .map((g) => ({ exercise: g.exercise, volumeLbs: round(volumeOf(g.sets), 0), sets: g.sets.length }))
+  return [...groups]
+    .map(([key, g]) => ({ exercise: exerciseName(key, g), volumeLbs: round(volumeOf(g), 0), sets: g.length }))
     .filter((e) => e.volumeLbs > 0)
     .sort((a, b) => b.volumeLbs - a.volumeLbs || a.exercise.localeCompare(b.exercise))
     .slice(0, top);

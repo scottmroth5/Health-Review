@@ -4,7 +4,7 @@
     "Today is Thu 2026-03-12. Volume = reps x total load (per hand x2). Mar 13 squat has a weight but no reps: planned, excluded.",
     "Week (Mar 6..12): squats 100x5 + 100x5 = 1000 (Mar 12); DB press 50ea x10 = 1000 and 50ea x8 = 800 (Mar 10) = 1800. Total 2800. Sets 8 (4 weighted): band row, pushup (bodyweight), plank (timed), curl 10/10 (other) add no volume. Reps 5+5+10+8+15+20 = 63. Lifting days Mar 9, 10, 12 = 3.",
     "Previous week (Feb 27..Mar 5): squat 90x5 = 450, 1 set.",
-    "By exercise in the week: DB Press 1800 (2 sets; \"db press \" merges into the first spelling), Squat 1000 (2 sets); zero-volume exercises are left out.",
+    "By exercise in the week: DB Press 1800 (2 sets; \"db press \" merges into the first spelling), Barbell Squat 1000 (2 sets; \"Squat\" is listed in MERGES); zero-volume exercises are left out.",
     "Month (Feb 11..Mar 12): 2800 + 450 (Mar 4) + deadlift 200x3 = 600 (Feb 20) = 3850; sets 10; reps 63 + 5 + 3 = 71; lifting days 5. Previous (Jan 12..Feb 10): deadlift 180x3 = 540.",
     "Month weekly totals (weeks end Saturday, clipped to the range): ending Feb 14: 0, Feb 21: 600, Feb 28: 0, Mar 7: 450, Mar 14 (Mar 8..12): 2800.",
     "Year: 52 weeks ending Sat Mar 14, from Sun 2025-03-16: 3850 + 540 + squat 80x5 = 400 (2025-06-10) = 4790. Previous year (2024-03-17..2025-03-15): squat 70x5 = 350.",
@@ -400,7 +400,7 @@
           "sets": 2
         },
         {
-          "exercise": "Squat",
+          "exercise": "Barbell Squat",
           "volumeLbs": 1000,
           "sets": 2
         }

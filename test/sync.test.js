@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
-import { runSync, OVERLAP_ROWS } from '../ingest/sync.js';
+import { runSync } from '../ingest/sync.js';
 import { fakeSource, serial, silentLogger } from './helpers.js';
 
 const HEALTH = ['Date/Time', 'Heart Rate Variability (ms)', 'Resting Heart Rate (bpm)', 'Step Count (steps)'];
@@ -48,20 +48,18 @@ test('backfill imports every source, all year tabs, and skips filtered and backu
   store.close();
 });
 
-test('an incremental sync reads only from the watermark minus the overlap', async () => {
+test('every sync reads the whole first tab, so new rows anywhere are picked up', async () => {
   const store = open();
   const data = sheets();
-  for (let i = 3; i <= 20; i++) data.health_metrics.Sheet1.push(day(`2026-02-${String(i).padStart(2, '0')}`, 40 + i, 60, 5000));
   const source = fakeSource(data);
   await sync(store, source, { backfill: true });
-  const rowsBefore = data.health_metrics.Sheet1.length;
 
   data.health_metrics.Sheet1.push(day('2026-03-03', 50, 54, 9000));
   source.reads.length = 0;
   const { counts } = await sync(store, source);
 
-  assert.deepEqual(source.reads.find((r) => r.source === 'health_metrics'), { source: 'health_metrics', tab: 'Sheet1', fromRow: rowsBefore + 1 - OVERLAP_ROWS });
-  assert.equal(counts.health_metrics.rowsRead, OVERLAP_ROWS + 1);
+  assert.deepEqual(source.reads.find((r) => r.source === 'health_metrics'), { source: 'health_metrics', tab: 'Sheet1', fromRow: 2 });
+  assert.equal(counts.health_metrics.rowsRead, 3);
   assert.equal(store.db.prepare("SELECT hrv_ms FROM daily_metrics WHERE date = '2026-03-03'").get().hrv_ms, 50);
   assert.equal(counts.drinking_log, undefined, 'drinking log is only read on backfill');
   store.close();
@@ -87,18 +85,22 @@ test('exact duplicate workout sessions are stored once', async () => {
   store.close();
 });
 
-test('a cleared or rebuilt sheet triggers a full re-read instead of trusting the watermark', async () => {
+test('rows archived off the tab stay in the database; a trimmed tab that grows again loses nothing', async () => {
   const store = open();
   const data = sheets();
   for (let i = 3; i <= 20; i++) data.health_metrics.Sheet1.push(day(`2026-02-${String(i).padStart(2, '0')}`, 40 + i, 60, 5000));
   const source = fakeSource(data);
   await sync(store, source, { backfill: true });
-  data.health_metrics.Sheet1 = [HEALTH, day('2026-03-05', 51, 53, 9500)]; // far shorter than the watermark
-  source.reads.length = 0;
+  const before = count(store, 'daily_metrics');
+
+  // Archived down to one row, then refilled past the old length before the next sync.
+  data.health_metrics.Sheet1 = [HEALTH, day('2026-03-05', 51, 53, 9500)];
+  for (let i = 1; i <= 25; i++) data.health_metrics.Sheet1.push(day(`2026-04-${String(i).padStart(2, '0')}`, 45, 55, 6000));
   await sync(store, source);
-  const watermarkRead = 21 + 1 - OVERLAP_ROWS; // 20 data rows plus the header were synced
-  assert.deepEqual(source.reads.filter((r) => r.source === 'health_metrics').map((r) => r.fromRow), [watermarkRead, 2]);
+
+  assert.equal(count(store, 'daily_metrics'), before + 26);
   assert.equal(store.db.prepare("SELECT hrv_ms FROM daily_metrics WHERE date = '2026-03-05'").get().hrv_ms, 51);
+  assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM daily_metrics WHERE date LIKE '2026-02-%'").get().n, 18, 'archived days kept');
   store.close();
 });
 
@@ -241,5 +243,44 @@ test('labs: a sheet result corrected in the app (value or date) is kept by sync,
   data.lab_results.Labs[2][1] = 165;
   await sync(store, source);
   assert.deepEqual([row('PSA', '2026-03-23').value_text, row('PSA', '2026-03-23').source], ['0.6', 'sheet']);
+  store.close();
+});
+
+test('raw sheets sync from the first tab, whatever it is named; other tabs are ignored', async () => {
+  const store = open();
+  const data = sheets();
+  data.health_metrics = {
+    'Consolidated Health': [HEALTH, day('2026-03-01', 45, 56, 7000), day('2026-03-02', 48, 55, 8000)],
+    Archive: [HEALTH, day('2025-01-01', 30, 70, 100)],
+    Last7Days: [HEALTH],
+  };
+  const source = fakeSource(data);
+  await sync(store, source);
+  assert.deepEqual([...new Set(source.reads.filter((r) => r.source === 'health_metrics').map((r) => r.tab))], ['Consolidated Health']);
+  assert.deepEqual(store.db.prepare('SELECT date FROM daily_metrics ORDER BY date').all().map((r) => r.date), ['2026-03-01', '2026-03-02']);
+  store.close();
+});
+
+test('a renamed first tab duplicates nothing and replaces the old sync state', async () => {
+  const store = open();
+  const data = sheets();
+  for (let i = 3; i <= 20; i++) data.health_metrics.Sheet1.push(day(`2026-02-${String(i).padStart(2, '0')}`, 40 + i, 60, 5000));
+  const source = fakeSource(data);
+  await sync(store, source, { backfill: true });
+  const daysBefore = count(store, 'daily_metrics');
+  const sessionsBefore = count(store, 'workout_sessions');
+
+  // The owner renames the data tabs and adds an archive after them.
+  const rename = (s, name) => { data[s] = { [name]: data[s].Sheet1, Archive: [data[s].Sheet1[0]] }; };
+  rename('health_metrics', 'Consolidated Health');
+  rename('workout_sessions', 'Consolidated Sessions');
+  data.health_metrics['Consolidated Health'].push(day('2026-03-03', 50, 54, 9000));
+
+  await sync(store, source);
+  await sync(store, source);
+  assert.equal(count(store, 'daily_metrics'), daysBefore + 1);
+  assert.equal(count(store, 'workout_sessions'), sessionsBefore);
+  assert.deepEqual(store.db.prepare("SELECT tab FROM sync_state WHERE source IN ('health_metrics', 'workout_sessions') ORDER BY source").all().map((r) => r.tab),
+    ['Consolidated Health', 'Consolidated Sessions']);
   store.close();
 });

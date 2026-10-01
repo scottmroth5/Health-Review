@@ -1,7 +1,8 @@
 // Copies the Google Sheets into the local database, adding only what is new.
-//  - Health metrics and workout sessions are append-only sheets: read from the last synced row
-//    minus a small overlap, upsert by natural key. Health days merge field by field (later
-//    non-empty values win), which removes v1's partial-day duplicates.
+//  - Health metrics and workout sessions: the whole first tab (the v1 scripts' consolidated tab,
+//    whatever it is named) is read every sync and upserted by natural key. Health days merge field
+//    by field (later non-empty values win), which removes v1's partial-day duplicates. Rows the
+//    owner archives off that tab stay in the database.
 //  - Workout Log: one tab per year. A tab is replaced only when its content hash changed, so
 //    edits and deletions in the sheet are picked up. Normal syncs read the current year (and
 //    last year during January); backfill reads every year tab.
@@ -19,8 +20,6 @@ import {
   parseLabSheet,
 } from './parsers.js';
 
-const RAW_TAB = 'Sheet1';
-export const OVERLAP_ROWS = 5;
 const V1_SOURCE = 'v1-sheet';
 
 const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -40,12 +39,12 @@ export async function runSync({ store, source, backfill = false, now = new Date(
   const warnings = [];
   const stamp = now.toISOString();
   try {
-    counts.health_metrics = await syncAppendOnly({
-      store, source, key: 'health_metrics', parse: parseHealthMetrics, full: backfill, warnings,
+    counts.health_metrics = await syncWholeTab({
+      store, source, key: 'health_metrics', parse: parseHealthMetrics, warnings,
       write: upsertDailyMetrics(store.db, stamp),
     });
-    counts.workout_sessions = await syncAppendOnly({
-      store, source, key: 'workout_sessions', parse: parseWorkoutSessions, full: backfill, warnings,
+    counts.workout_sessions = await syncWholeTab({
+      store, source, key: 'workout_sessions', parse: parseWorkoutSessions, warnings,
       write: upsertWorkoutSessions(store.db, stamp),
     });
     counts.workout_log = await syncWorkoutLog({ store, source, backfill, now, warnings });
@@ -74,23 +73,32 @@ function setState(db, sourceKey, tab, { rowCount, headerHash = null, contentHash
     .run(sourceKey, tab, rowCount, headerHash, contentHash, new Date().toISOString());
 }
 
-async function syncAppendOnly({ store, source, key, parse, full, write, warnings }) {
-  const state = full ? null : getState(store.db, key, RAW_TAB);
-  let fromRow = state ? Math.max(2, state.row_count + 1 - OVERLAP_ROWS) : 2;
-  let data = await source.readRows(key, RAW_TAB, fromRow);
-  // A changed header, or no rows where rows used to be (the sheet was cleared or rebuilt), means
-  // the watermark no longer lines up: read the whole sheet again.
-  if (fromRow > 2 && (hash(data.header) !== state.header_hash || data.rows.length === 0)) {
-    fromRow = 2;
-    data = await source.readRows(key, RAW_TAB, fromRow);
-  }
-  const { records, warnings: w } = parse({ ...data, tab: RAW_TAB });
+// The data is on each sheet's first tab (the v1 consolidation scripts write there), whatever it is named.
+async function dataTab(source, key) {
+  const [first] = await source.listTabs(key);
+  if (!first) throw new Error(`${key}: the sheet has no tabs`);
+  return first;
+}
+
+// Records what was read and drops state left under an earlier tab name.
+function saveState(db, key, tab, data) {
+  db.prepare('DELETE FROM sync_state WHERE source = ? AND tab <> ?').run(key, tab);
+  setState(db, key, tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, headerHash: hash(data.header) });
+}
+
+// The consolidated tabs are trimmed into an Archive tab from time to time, so a row-number watermark
+// could skip rows after the tab shrinks and grows again. Reading the whole tab is cheap and the
+// upserts are idempotent.
+async function syncWholeTab({ store, source, key, parse, write, warnings }) {
+  const tab = await dataTab(source, key);
+  const data = await source.readRows(key, tab);
+  const { records, warnings: w } = parse({ ...data, tab });
   warnings.push(...w);
   store.tx(() => {
     for (const r of records) write(r);
-    setState(store.db, key, RAW_TAB, { rowCount: data.firstRowNumber - 1 + data.rows.length, headerHash: hash(data.header) });
+    saveState(store.db, key, tab, data);
   });
-  return { rowsRead: data.rows.length, fromRow, upserted: records.length };
+  return { rowsRead: data.rows.length, upserted: records.length };
 }
 
 async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
@@ -202,13 +210,14 @@ async function syncLabs({ store, source, warnings, stamp }) {
 const cleanCell = (v) => String(v ?? '').trim().toLowerCase();
 
 async function importOnce({ store, source, key, parse, write, warnings }) {
-  const data = await source.readRows(key, RAW_TAB);
-  const { records, warnings: w } = parse({ ...data, tab: RAW_TAB });
+  const tab = await dataTab(source, key);
+  const data = await source.readRows(key, tab);
+  const { records, warnings: w } = parse({ ...data, tab });
   warnings.push(...w);
   let written = 0;
   store.tx(() => {
     for (const r of records) written += write(r);
-    setState(store.db, key, RAW_TAB, { rowCount: data.firstRowNumber - 1 + data.rows.length, headerHash: hash(data.header) });
+    saveState(store.db, key, tab, data);
   });
   return { rowsRead: data.rows.length, imported: written, keptFromUi: records.length - written };
 }

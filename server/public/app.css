@@ -224,12 +224,18 @@ button.link { background: none; border: none; padding: 0; color: var(--text-prim
 h3.sub { font-size: 0.9rem; margin: 14px 0 6px; color: var(--text-secondary); font-weight: 600; }
 .plain-list { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 .plain-list li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--grid); }
-.ex-row { display: grid; grid-template-columns: minmax(90px, 1fr) 2fr auto; align-items: center; gap: 8px; font-size: 0.85rem; padding: 3px 0; }
+/* One grid for the whole list so every bar starts and ends at the same place. */
+#training-exercises { display: grid; grid-template-columns: minmax(90px, 1fr) 2fr auto; align-items: center; gap: 6px 8px; font-size: 0.85rem; }
+#training-exercises > p { grid-column: 1 / -1; }
+.ex-row { display: contents; }
 .ex-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ex-bar-track { height: 10px; background: var(--surface-0); border-radius: 4px; overflow: hidden; }
 .ex-bar { height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; }
 .ex-value { color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
-@media (max-width: 480px) { .ex-row { grid-template-columns: 1fr auto; } .ex-bar-track { grid-column: 1 / -1; grid-row: 2; } }
+@media (max-width: 480px) {
+  #training-exercises { grid-template-columns: 1fr auto; grid-auto-flow: row dense; row-gap: 2px; }
+  .ex-bar-track { grid-column: 1 / -1; margin-bottom: 6px; }
+}
 .plain-list li strong { white-space: nowrap; }
 .training-head .filters { flex-wrap: wrap; gap: 4px; }
 .training-head .filters button { padding: 5px 10px; font-size: 0.9rem; }

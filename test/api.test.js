@@ -351,7 +351,7 @@ test('training: each view returns its bars, totals and breakdowns; planned sets 
   assert.equal(week.buckets.length, 7);
   assert.deepEqual([week.range.from, week.range.to], ['2026-03-03', '2026-03-09']);
   assert.equal(week.totals.volumeLbs, 500 + 1000);
-  assert.deepEqual(week.byExercise.map((e) => e.exercise), ['DB Press', 'Squat']);
+  assert.deepEqual(week.byExercise.map((e) => e.exercise), ['DB Press', 'Barbell Squat']);
   assert.equal((await app.inject('/api/training?view=month')).json().buckets.length, 30);
   assert.equal((await app.inject('/api/training?view=year')).json().buckets.length, 52);
   assert.equal((await app.inject('/api/training?view=2y')).json().buckets.length, 24);

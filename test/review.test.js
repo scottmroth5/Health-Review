@@ -85,7 +85,7 @@ test('summary: strength keeps only this week\'s exercises; empty metrics dropped
     { date: '2026-09-24', exercise: 'Squat', set_no: 1, weight_lbs: 150, per_hand: 0, reps: 5 },
   ], drinking_days: [], checkins: [] }, { weekEnd: '2026-09-26' });
   const s = buildSummary(week, [{ date: '2026-09-24', source: 'check-in', text: 'Slept badly' }], { today: '2026-09-27' });
-  assert.deepEqual(s.strength.exercises.map((e) => e.exercise), ['Squat']);
+  assert.deepEqual(s.strength.exercises.map((e) => e.exercise), ['Barbell Squat']);
   assert.equal(s.strength.otherExercisesIn28Days, 1);
   assert.ok(s.recovery.hrv_ms && !s.recovery.steps, 'metrics with no data at all are left out');
   assert.equal(s.notes.length, 1);

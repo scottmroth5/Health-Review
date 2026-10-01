@@ -3,7 +3,7 @@
   "notes": [
     "Window 2026-02-08..03-07; week 03-01..07. Feb 1 squat is before the window; Mar 10 squat is after it.",
     "Mar 6 deadlift has a weight but no reps: a planned set, not performed, so it is ignored.",
-    "Squat Feb 10: 135x5 + 155x5 = 1450; Mar 3: 155x5 + 175x3 = 1300. Top 155 -> 175 (+20), volume -150.",
+    "Squat (shown as Barbell Squat: listed in metrics/exercises.js MERGES) Feb 10: 135x5 + 155x5 = 1450; Mar 3: 155x5 + 175x3 = 1300. Top 155 -> 175 (+20), volume -150.",
     "DB Bench 50ea x10 = 100 total, 1000; Mar 5: 55ea x10 + 55ea x8 = 110 total, 1100 + 880 = 1980. Top +10, volume +980.",
     "Week: 2 days, 4 exercises, 6 sets, volume 1300 + 1980 = 3280; 1 band set, 1 timed set.",
     "Previous three weeks: (1450 + 1000) / 3 = 816.67 -> 817; change (3280 - 816.67) / 816.67 = 301.6% -> 302."
@@ -39,7 +39,7 @@
           "last": { "date": "2026-03-05", "sets": 2, "topLbs": 110, "topPerHandLbs": 55, "topReps": 10, "volumeLbs": 1980 } },
         { "exercise": "Plank", "sessions": 1, "inWeek": true, "topLbsChange": null, "volumeChangeLbs": null,
           "last": { "date": "2026-03-05", "sets": 1, "topLbs": null, "topReps": null, "volumeLbs": 0 } },
-        { "exercise": "Squat", "sessions": 2, "inWeek": true, "topLbsChange": 20, "volumeChangeLbs": -150,
+        { "exercise": "Barbell Squat", "sessions": 2, "inWeek": true, "topLbsChange": 20, "volumeChangeLbs": -150,
           "first": { "date": "2026-02-10", "sets": 2, "topLbs": 155, "topPerHandLbs": null, "topReps": 5, "volumeLbs": 1450 },
           "last": { "date": "2026-03-03", "sets": 2, "topLbs": 175, "topReps": 3, "volumeLbs": 1300 } }
       ]
