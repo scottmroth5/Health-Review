@@ -142,6 +142,9 @@ and after averages) is the one place medication data enters the summary. Lab val
 block (latest value and change from the previous draw); there are no reference ranges by the owner's choice, so code
 never labels a value high, low or abnormal, and any interpretation of labs goes only to physician discussion. Never send any of it to another service or
 log its text.
+The exercise-name assist (npm run log:unmapped -- --suggest) sends exercise names only (unmapped names and the
+dictionary's own names), and only after the owner types yes; never weights, dates, set counts or other log data
+(owner's choice, 2026-10-02). Its proposals reach the dictionary only through --accept.
 Metrics are computed in code, never by the model.
 Anything involving medications, abnormal labs, or symptoms is flagged for physician discussion, not turned into a recommendation.
 Never output em dashes, en dashes, or double hyphens in generated text.

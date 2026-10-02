@@ -74,3 +74,33 @@ test('dictionary: invalid files are refused with every problem listed', () => {
   });
   assert.throws(() => createDictionary({ version: 2, exercises: [] }), /version must be 1/);
 });
+
+test('suggest: the request holds exercise names only; kept proposals extend the dictionary and stay valid', async () => {
+  const { suggestMappings, suggestionPayload, applySuggestions } = await import('../agent/suggest-exercises.js');
+  const { createReviewClaude } = await import('../agent/claude.js');
+  const sent = [];
+  const reply = { suggestions: [
+    { name: 'Flat Barbell Press', action: 'existing', existing_id: 'barbell-bench-press', new_exercise: null, reason: 'same lift' },
+    { name: 'Cable Lateral Raise', action: 'new', existing_id: null, new_exercise: { id: 'cable-lateral-raise', name: 'Cable Lateral Raise', implement: 'cable', pattern: 'other', primary: false }, reason: 'new' },
+    { name: 'use blue band', action: 'ignore', existing_id: null, new_exercise: null, reason: 'a note' },
+    { name: 'Mystery Move', action: 'unsure', existing_id: null, new_exercise: null, reason: 'no implement' },
+  ] };
+  const fake = { messages: { create: async (p) => { sent.push(p); return {
+    id: 'msg_test', model: 'claude-sonnet-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(reply) }],
+    usage: { input_tokens: 10, output_tokens: 10 } }; } } };
+  const names = ['Flat Barbell Press', 'Cable Lateral Raise', 'use blue band', 'Mystery Move'];
+  const out = await suggestMappings({ claude: createReviewClaude({ client: fake }), names, dictionary: createDictionary(DICT) });
+  assert.equal(out.length, 4);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(JSON.parse(sent[0].messages[0].content), suggestionPayload(names, createDictionary(DICT)));
+  assert.deepEqual(Object.keys(JSON.parse(sent[0].messages[0].content)), ['unmapped_names', 'dictionary', 'implements', 'patterns']);
+  assert.deepEqual(Object.keys(JSON.parse(sent[0].messages[0].content).dictionary[0]), ['id', 'name', 'implement']);
+
+  const next = applySuggestions(DICT, out);
+  const d = createDictionary(next);
+  assert.equal(d.lookup('Flat Barbell Press').id, 'barbell-bench-press');
+  assert.equal(d.lookup('Cable Lateral Raise').id, 'cable-lateral-raise');
+  assert.equal(d.lookup('use blue band').status, 'ignored');
+  assert.equal(d.lookup('Mystery Move').status, 'unmapped');
+  assert.equal(DICT.exercises.length, 3, 'the input dictionary is not changed');
+});
