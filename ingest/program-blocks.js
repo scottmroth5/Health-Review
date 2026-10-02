@@ -66,3 +66,146 @@ export function sessionCoverage(db, today) {
   }
   return out;
 }
+
+// ---- review: list, confirm, edit, merge, split, unassign ----
+const STATUSES = ['completed', 'abandoned', 'in_progress'];
+const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d ?? '') && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+export class ReviewError extends Error {}
+
+/** A block by full id or a unique id prefix. */
+export function findBlock(db, ref) {
+  if (!ref) throw new ReviewError('Give a block id (the first characters are enough)');
+  const rows = db.prepare('SELECT * FROM program_blocks WHERE id LIKE ?').all(`${String(ref).toLowerCase()}%`);
+  if (rows.length === 0) throw new ReviewError(`No block ${ref}`);
+  if (rows.length > 1) throw new ReviewError(`${ref} matches ${rows.length} blocks; use more characters`);
+  return rows[0];
+}
+
+export function listBlocks(db, { unconfirmed = false } = {}) {
+  return db.prepare(`SELECT b.*, COUNT(s.id) AS sessions, MAX(s.date) AS last_session FROM program_blocks b
+    LEFT JOIN log_sessions s ON s.block_id = b.id ${unconfirmed ? "WHERE b.source = 'detected'" : ''}
+    GROUP BY b.id ORDER BY b.start_date`).all();
+}
+
+function assertNoOverlap(db, block) {
+  const other = db.prepare(`SELECT id, program, start_date FROM program_blocks WHERE source = 'confirmed' AND id <> ?
+    AND start_date <= ? AND COALESCE(end_date, '9999-12-31') >= ?`).get(block.id, block.end_date ?? '9999-12-31', block.start_date);
+  if (other) throw new ReviewError(`Overlaps confirmed block ${other.id.slice(0, 8)} (${other.program} from ${other.start_date})`);
+}
+
+/**
+ * Makes the sessions agree with a block: lifting days in its date range join it (except days held by
+ * another confirmed block or confirmed as unassigned), and its days outside the range become unassigned.
+ */
+function reassign(db, blockId, today, stamp) {
+  const b = db.prepare('SELECT * FROM program_blocks WHERE id = ?').get(blockId);
+  const end = b.end_date ?? today;
+  const source = b.source === 'confirmed' ? 'confirmed' : 'detected';
+  const upsert = db.prepare(`INSERT INTO log_sessions (id, date, block_id, assignment, program, week, source, updated_at)
+    VALUES (?, ?, ?, 'block', ?, ?, ?, ?)
+    ON CONFLICT (date) DO UPDATE SET block_id = excluded.block_id, assignment = 'block', program = excluded.program,
+      week = excluded.week, source = excluded.source, updated_at = excluded.updated_at`);
+  const held = new Set(db.prepare(`SELECT s.date FROM log_sessions s LEFT JOIN program_blocks o ON o.id = s.block_id
+    WHERE (o.source = 'confirmed' AND o.id <> ?) OR (s.assignment = 'unassigned' AND s.source = 'confirmed')`).all(blockId).map((r) => r.date));
+  for (const date of history(db, today).liftingDates) {
+    if (date < b.start_date || date > end || held.has(date)) continue;
+    upsert.run(sessionId(date), date, blockId, b.program, weekOf(b.start_date, date), source, stamp);
+  }
+  db.prepare(`UPDATE log_sessions SET block_id = NULL, assignment = 'unassigned', program = NULL, week = NULL,
+    source = 'detected', updated_at = ? WHERE block_id = ? AND (date < ? OR date > ?)`).run(stamp, blockId, b.start_date, end);
+}
+
+/** Confirms one block, or every detected block with 'all-detected'. Returns the number confirmed. */
+export function confirmBlocks(db, ref, { today, now = new Date() }) {
+  const stamp = now.toISOString();
+  const blocks = ref === 'all-detected'
+    ? db.prepare("SELECT * FROM program_blocks WHERE source = 'detected' ORDER BY start_date").all()
+    : [findBlock(db, ref)];
+  db.transaction(() => {
+    for (const b of blocks) {
+      assertNoOverlap(db, b);
+      db.prepare("UPDATE program_blocks SET source = 'confirmed', updated_at = ? WHERE id = ?").run(stamp, b.id);
+      reassign(db, b.id, today, stamp);
+    }
+  })();
+  return blocks.length;
+}
+
+/** Changes a block's fields; date changes move sessions in or out. */
+export function editBlock(db, ref, changes, { today, now = new Date() }) {
+  const b = findBlock(db, ref);
+  const next = { ...b };
+  for (const k of ['program', 'phase', 'notes']) if (changes[k] !== undefined) next[k] = changes[k] === '' ? null : changes[k];
+  if (changes.start !== undefined) next.start_date = changes.start;
+  if (changes.end !== undefined) next.end_date = changes.end === '' ? null : changes.end;
+  if (changes.status !== undefined) next.status = changes.status;
+  if (next.status === 'in_progress') next.end_date = null;
+  if (!next.program?.trim()) throw new ReviewError('A block needs a program');
+  if (!isDate(next.start_date)) throw new ReviewError(`Not a date: ${next.start_date}`);
+  if (next.end_date !== null && !isDate(next.end_date)) throw new ReviewError(`Not a date: ${next.end_date}`);
+  if (next.end_date && next.end_date < next.start_date) throw new ReviewError('The end is before the start');
+  if (!STATUSES.includes(next.status)) throw new ReviewError(`Status must be one of ${STATUSES.join(', ')}`);
+  if (!next.end_date && next.status !== 'in_progress') throw new ReviewError('Only an in-progress block can have no end date');
+  const stamp = now.toISOString();
+  db.transaction(() => {
+    if (next.source === 'confirmed') assertNoOverlap(db, next);
+    db.prepare(`UPDATE program_blocks SET program = ?, phase = ?, start_date = ?, end_date = ?, status = ?, notes = ?, updated_at = ?
+      WHERE id = ?`).run(next.program.trim(), next.phase, next.start_date, next.end_date, next.status, next.notes, stamp, b.id);
+    reassign(db, b.id, today, stamp);
+  })();
+  return db.prepare('SELECT * FROM program_blocks WHERE id = ?').get(b.id);
+}
+
+/** Merges the second block into the first: the earlier start, the later end, and all sessions. */
+export function mergeBlocks(db, refA, refB, { today, now = new Date() }) {
+  const a = findBlock(db, refA);
+  const b = findBlock(db, refB);
+  if (a.id === b.id) throw new ReviewError('Choose two different blocks');
+  const stamp = now.toISOString();
+  const end = a.end_date === null || b.end_date === null ? null : (a.end_date > b.end_date ? a.end_date : b.end_date);
+  db.transaction(() => {
+    db.prepare('UPDATE log_sessions SET block_id = ? WHERE block_id = ?').run(a.id, b.id);
+    db.prepare('DELETE FROM program_blocks WHERE id = ?').run(b.id);
+    db.prepare('UPDATE program_blocks SET start_date = ?, end_date = ?, status = ?, notes = ?, updated_at = ? WHERE id = ?')
+      .run(a.start_date < b.start_date ? a.start_date : b.start_date, end, end === null ? 'in_progress' : a.status,
+        [a.notes, b.notes].filter(Boolean).join('; ') || null, stamp, a.id);
+    const merged = db.prepare('SELECT * FROM program_blocks WHERE id = ?').get(a.id);
+    if (merged.source === 'confirmed') assertNoOverlap(db, merged);
+    reassign(db, a.id, today, stamp);
+  })();
+  return db.prepare('SELECT * FROM program_blocks WHERE id = ?').get(a.id);
+}
+
+/** Splits a block at a date: sessions from that date on move to a new block of the same program and source. */
+export function splitBlock(db, ref, date, { today, now = new Date() }) {
+  const b = findBlock(db, ref);
+  if (!isDate(date)) throw new ReviewError(`Not a date: ${date}`);
+  const before = db.prepare('SELECT MAX(date) AS d FROM log_sessions WHERE block_id = ? AND date < ?').get(b.id, date).d;
+  const after = db.prepare('SELECT MIN(date) AS d FROM log_sessions WHERE block_id = ? AND date >= ?').get(b.id, date).d;
+  if (!before || !after) throw new ReviewError(`${date} does not fall between two sessions of this block`);
+  const stamp = now.toISOString();
+  const id = randomUUID();
+  db.transaction(() => {
+    db.prepare(`INSERT INTO program_blocks (id, program, phase, start_date, end_date, status, source, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, b.program, b.phase, after, b.end_date, b.status, b.source, b.notes, stamp, stamp);
+    db.prepare("UPDATE program_blocks SET end_date = ?, status = CASE WHEN status = 'in_progress' THEN 'completed' ELSE status END, updated_at = ? WHERE id = ?")
+      .run(before, stamp, b.id);
+    db.prepare('UPDATE log_sessions SET block_id = ? WHERE block_id = ? AND date >= ?').run(id, b.id, date);
+    reassign(db, b.id, today, stamp);
+    reassign(db, id, today, stamp);
+  })();
+  return id;
+}
+
+/** Marks lifting days in a date range as confirmed unassigned (no block), creating session rows as needed. */
+export function unassignDays(db, from, to = from, { today, now = new Date() }) {
+  if (!isDate(from) || !isDate(to) || to < from) throw new ReviewError('Give a date, or a from and a to date');
+  const stamp = now.toISOString();
+  const upsert = db.prepare(`INSERT INTO log_sessions (id, date, block_id, assignment, program, week, source, updated_at)
+    VALUES (?, ?, NULL, 'unassigned', NULL, NULL, 'confirmed', ?)
+    ON CONFLICT (date) DO UPDATE SET block_id = NULL, assignment = 'unassigned', program = NULL, week = NULL,
+      source = 'confirmed', updated_at = excluded.updated_at`);
+  const days = history(db, today).liftingDates.filter((d) => d >= from && d <= to);
+  db.transaction(() => { for (const d of days) upsert.run(sessionId(d), d, stamp); })();
+  return days.length;
+}
