@@ -11,12 +11,16 @@ Health specific logic stays in this repo; never add it to agent-core.
 /agent              the weekly review: summary.js (computeWeek trimmed for the model, plus the week's notes),
                     instructions.js (fixed CONTRACT + owner prompt sections, output schema, rendering), validate.js
                     (dashes, number grounding, physician routing), claude.js (agent-core client with refusal fallbacks),
-                    review.js (one call, one retry on failed checks, saved to reviews)
+                    review.js (one call, one retry on failed checks, saved to reviews), suggest-exercises.js (the
+                    optional exercise-name assist)
 /metrics            deterministic metric calculations: stats.js (windows, rounding, pearson), one module per report
-                    area (recovery, cardio, strength, drinking, checkins), index.js computeWeek, load.js (SQL);
+                    area (recovery, cardio, strength, drinking, checkins), index.js computeWeek, load.js (SQL),
+                    dictionary.js (exercise dictionary loader), blocks.js (program block detection);
                     fixtures with hand-computed expectations in evals/fixtures/metrics, run by test/metrics.test.js
 /ingest             Google Sheets to SQLite: sheets.js (read-only client, fakeable), parsers.js (one per sheet), sync.js;
-                    the only code touching raw source rows
+                    the only code touching raw source rows; normalize.js (dictionary onto the Workout Log) and
+                    program-blocks.js (blocks, sessions, review operations)
+/config             exercise-dictionary.json: canonical exercises and name variants (names only; see README.md)
 /db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step)
@@ -40,6 +44,11 @@ powershell -ExecutionPolicy Bypass -File scripts\register-sync-task.ps1   (re)re
                                   ("Health-Review daily sync"; runs scripts\sync-daily.cmd, logs to data\logs\sync.log)
 powershell -ExecutionPolicy Bypass -File scripts\register-review-task.ps1   (re)register the Sunday 8am review task
                                   ("Health-Review weekly review"; runs scripts\review-weekly.cmd, logs to data\logs\review.log)
+npm run log:normalize             apply config/exercise-dictionary.json to all Workout Log history (prints coverage)
+npm run log:unmapped              names with no dictionary entry, with set counts (-- --suggest asks Claude, names only;
+                                  -- --accept data/exercise-proposals.json adds the kept proposals)
+npm run programs:detect           propose program blocks from history (-- --write saves them as detected)
+npm run programs:review -- list   confirm, edit, merge, split blocks and unassign days (see README.md)
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
 npm run prompts:import-v1         one-time import of data/v1-export/prompts into prompt_sections (-- --replace to overwrite)
 npm run metrics                   print the computed summary for last week (-- --week YYYY-MM-DD for another Saturday)
@@ -87,9 +96,19 @@ trainingVolume (last 12 weeks and 12 months) goes to the weekly review.
 Each bar also lists its training programs (metrics/programs.js): Workout Log "Workout" names map to programs via
 PROGRAMS (first match wins); an unnamed lifting day takes the program from up to 7 days before, and a Trigger Session
 day takes the nearest named program within 14 days either way. Edit PROGRAMS to add or rename a program.
-Exercise names (metrics/exercises.js): volume and strength group sets by exerciseKey, so spelling, plural, hyphen, typo
-and word-order variants are one lift; lifts that differ by a word ("Bench Press", "Barbell Bench") merge only when
-listed in MERGES, which the owner decides. The database keeps names as typed.
+Exercise normalization: config/exercise-dictionary.json maps every name variant to a canonical exercise with an
+implement, movement pattern and primary flag; ingest/normalize.js writes canonical_id, implement, movement_pattern,
+is_primary and map_status next to the raw strength_exercises row (raw names never change), and sync reruns it after
+replacing a tab. Names match by baseKey (spelling, plural, hyphen, typo and word order); same lifts named with
+different words merge only through dictionary variants, which the owner decides. Unknown names are flagged, never
+guessed ('inferred' only when one implement word names the implement). Volume and strength group by canonical
+exercise, so barbell and dumbbell versions are never combined; unmapped names fall back to baseKey.
+Program blocks: one block per program run (phases in notes); detected from workout names (metrics/blocks.js: 21-day
+gaps end a block, Between programs and Home workouts are blocks, HIIT and ab-program stretches inside a run join it),
+then confirmed by the owner. log_sessions holds one row per lifting day (UUID v5 of the date) with its block or an
+explicit unassigned; re-detection never touches confirmed blocks, owner-unassigned days or forward sessions. After a
+sync, new lifting days join the in-progress confirmed block with program and week (source 'forward').
+New tables use portable types (UUID text keys, UTC ISO timestamps, CHECK constraints) for a later PostgreSQL move.
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and
