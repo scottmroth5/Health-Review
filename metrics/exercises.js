@@ -23,7 +23,8 @@ function singular(word) {
   return word;
 }
 
-const baseKey = (name) => {
+/** Spelling, plural, hyphen, typo and word-order normalized key, before any owner merges. */
+export const baseKey = (name) => {
   let text = String(name ?? '').toLowerCase().replace(/\bw\//g, 'with ').replace(/[^a-z0-9]+/g, ' ');
   for (const [re, to] of JOINED) text = text.replace(re, to);
   return text.split(' ').filter(Boolean).map(singular).map((w) => TYPOS[w] ?? w).sort().join(' ');
