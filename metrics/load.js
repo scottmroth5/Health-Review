@@ -1,7 +1,9 @@
 // Reads what computeWeek needs from the database: about 120 days up to the week's end (90 days of
 // medication changes plus their 28-day before windows), plus the following morning for
 // next-morning recovery after the last day of the week.
+import { existsSync } from 'node:fs';
 import { addDays } from './stats.js';
+import { DICTIONARY_PATH, loadDictionary } from './dictionary.js';
 
 export function loadWeekData(db, weekEnd) {
   const from = addDays(weekEnd, -125);
@@ -39,11 +41,27 @@ export function loadWeekNotes(db, weekEnd) {
 }
 
 /** One row per Workout Log set (with its exercise and date) between two dates. */
+// Dictionary names by canonical id, read once per process (the file changes only between runs).
+let canonicalNames;
+function canonicalName(id) {
+  if (!id) return null;
+  if (canonicalNames === undefined) {
+    try {
+      canonicalNames = existsSync(DICTIONARY_PATH) ? new Map(loadDictionary().exercises.map((e) => [e.id, e.name])) : new Map();
+    } catch {
+      canonicalNames = new Map(); // an invalid dictionary is reported by sync and log:normalize
+    }
+  }
+  return canonicalNames.get(id) ?? null;
+}
+
+/** Performed and planned sets with their normalized exercise (canonical_id, canonical_name, implement). */
 export function loadStrengthSets(db, from, to) {
-  return db.prepare(`SELECT e.date, e.exercise, e.workout, s.set_no, s.weight_lbs, s.per_hand, s.band, s.bodyweight,
-      s.reps, s.reps_text, s.duration_sec, s.distance_yd
+  return db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, s.set_no, s.weight_lbs, s.per_hand,
+      s.band, s.bodyweight, s.reps, s.reps_text, s.duration_sec, s.distance_yd
     FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id
-    WHERE e.date BETWEEN ? AND ? ORDER BY e.date, e.row_no, s.set_no`).all(from, to);
+    WHERE e.date BETWEEN ? AND ? ORDER BY e.date, e.row_no, s.set_no`).all(from, to)
+    .map((s) => ({ ...s, canonical_name: canonicalName(s.canonical_id) }));
 }
 
 /** All medications and their periods (small tables, read whole). */

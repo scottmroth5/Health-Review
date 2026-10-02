@@ -38,7 +38,7 @@ export function strength(sets, weekEnd) {
 
   const byExercise = new Map();
   for (const s of done) {
-    const key = exerciseKey(s.exercise); // variant names of one lift merge (metrics/exercises.js)
+    const key = exerciseKey(s); // canonical exercise, or spelling variants when unmapped (metrics/exercises.js)
     if (!byExercise.has(key)) byExercise.set(key, { key, dates: new Map() });
     const e = byExercise.get(key);
     if (!e.dates.has(s.date)) e.dates.set(s.date, []);
@@ -51,7 +51,7 @@ export function strength(sets, weekEnd) {
     const last = sessionSummary(dates[dates.length - 1], e.dates.get(dates[dates.length - 1]));
     const two = dates.length >= 2;
     return {
-      exercise: exerciseName(e.key, [...e.dates.values()].flat()),
+      exercise: exerciseName([...e.dates.values()].flat()),
       sessions: dates.length,
       inWeek: dates.some((d) => d >= w.week.from),
       first,
@@ -66,7 +66,7 @@ export function strength(sets, weekEnd) {
   return {
     week: {
       days: new Set(week.map((s) => s.date)).size,
-      exercises: new Set(week.map((s) => exerciseKey(s.exercise))).size,
+      exercises: new Set(week.map(exerciseKey)).size,
       sets: week.length,
       volumeLbs: round(weekVolume, 0),
       bandSets: week.filter((s) => s.band).length,

@@ -3,7 +3,7 @@
   "notes": [
     "Window 2026-02-08..03-07; week 03-01..07. Feb 1 squat is before the window; Mar 10 squat is after it.",
     "Mar 6 deadlift has a weight but no reps: a planned set, not performed, so it is ignored.",
-    "Squat (shown as Barbell Squat: listed in metrics/exercises.js MERGES) Feb 10: 135x5 + 155x5 = 1450; Mar 3: 155x5 + 175x3 = 1300. Top 155 -> 175 (+20), volume -150.",
+    "Squat (normalized to the dictionary's Barbell Squat: the set rows carry canonical_id and canonical_name) Feb 10: 135x5 + 155x5 = 1450; Mar 3: 155x5 + 175x3 = 1300. Top 155 -> 175 (+20), volume -150.",
     "DB Bench 50ea x10 = 100 total, 1000; Mar 5: 55ea x10 + 55ea x8 = 110 total, 1100 + 880 = 1980. Top +10, volume +980.",
     "Week: 2 days, 4 exercises, 6 sets, volume 1300 + 1980 = 3280; 1 band set, 1 timed set.",
     "Previous three weeks: (1450 + 1000) / 3 = 816.67 -> 817; change (3280 - 816.67) / 816.67 = 301.6% -> 302."
@@ -11,37 +11,265 @@
   "weekEnd": "2026-03-07",
   "input": {
     "strength_sets": [
-      { "date": "2026-02-01", "exercise": "Squat", "set_no": 1, "weight_lbs": 100, "per_hand": 0, "band": null, "bodyweight": 0, "reps": 5, "reps_text": "5", "duration_sec": null, "distance_yd": null },
-      { "date": "2026-02-10", "exercise": "Squat", "set_no": 1, "weight_lbs": 135, "per_hand": 0, "band": null, "bodyweight": 0, "reps": 5, "reps_text": "5", "duration_sec": null, "distance_yd": null },
-      { "date": "2026-02-10", "exercise": "Squat", "set_no": 2, "weight_lbs": 155, "per_hand": 0, "band": null, "bodyweight": 0, "reps": 5, "reps_text": "5", "duration_sec": null, "distance_yd": null },
-      { "date": "2026-02-12", "exercise": "DB Bench", "set_no": 1, "weight_lbs": 50, "per_hand": 1, "band": null, "bodyweight": 0, "reps": 10, "reps_text": "10", "duration_sec": null, "distance_yd": null },
-      { "date": "2026-03-03", "exercise": "Squat", "set_no": 1, "weight_lbs": 155, "per_hand": 0, "band": null, "bodyweight": 0, "reps": 5, "reps_text": "5", "duration_sec": null, "distance_yd": null },
-      { "date": "2026-03-03", "exercise": "squat ", "set_no": 2, "weight_lbs": 175, "per_hand": 0, "band": null, "bodyweight": 0, "reps": 3, "reps_text": "3", "duration_sec": null, "distance_yd": null },
-      { "date": "2026-03-05", "exercise": "DB Bench", "set_no": 1, "weight_lbs": 55, "per_hand": 1, "band": null, "bodyweight": 0, "reps": 10, "reps_text": "10", "duration_sec": null, "distance_yd": null },
-      { "date": "2026-03-05", "exercise": "DB Bench", "set_no": 2, "weight_lbs": 55, "per_hand": 1, "band": null, "bodyweight": 0, "reps": 8, "reps_text": "8", "duration_sec": null, "distance_yd": null },
-      { "date": "2026-03-05", "exercise": "Plank", "set_no": 1, "weight_lbs": null, "per_hand": 0, "band": null, "bodyweight": 0, "reps": null, "reps_text": ":45", "duration_sec": 45, "distance_yd": null },
-      { "date": "2026-03-05", "exercise": "Band Pull Apart", "set_no": 1, "weight_lbs": null, "per_hand": 0, "band": "red", "bodyweight": 0, "reps": 15, "reps_text": "15", "duration_sec": null, "distance_yd": null },
-      { "date": "2026-03-06", "exercise": "Deadlift", "set_no": 1, "weight_lbs": 225, "per_hand": 0, "band": null, "bodyweight": 0, "reps": null, "reps_text": null, "duration_sec": null, "distance_yd": null },
-      { "date": "2026-03-10", "exercise": "Squat", "set_no": 1, "weight_lbs": 185, "per_hand": 0, "band": null, "bodyweight": 0, "reps": 5, "reps_text": "5", "duration_sec": null, "distance_yd": null }
+      {
+        "date": "2026-02-01",
+        "exercise": "Squat",
+        "set_no": 1,
+        "weight_lbs": 100,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null,
+        "canonical_id": "barbell-squat",
+        "canonical_name": "Barbell Squat"
+      },
+      {
+        "date": "2026-02-10",
+        "exercise": "Squat",
+        "set_no": 1,
+        "weight_lbs": 135,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null,
+        "canonical_id": "barbell-squat",
+        "canonical_name": "Barbell Squat"
+      },
+      {
+        "date": "2026-02-10",
+        "exercise": "Squat",
+        "set_no": 2,
+        "weight_lbs": 155,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null,
+        "canonical_id": "barbell-squat",
+        "canonical_name": "Barbell Squat"
+      },
+      {
+        "date": "2026-02-12",
+        "exercise": "DB Bench",
+        "set_no": 1,
+        "weight_lbs": 50,
+        "per_hand": 1,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 10,
+        "reps_text": "10",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-03",
+        "exercise": "Squat",
+        "set_no": 1,
+        "weight_lbs": 155,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null,
+        "canonical_id": "barbell-squat",
+        "canonical_name": "Barbell Squat"
+      },
+      {
+        "date": "2026-03-03",
+        "exercise": "squat ",
+        "set_no": 2,
+        "weight_lbs": 175,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 3,
+        "reps_text": "3",
+        "duration_sec": null,
+        "distance_yd": null,
+        "canonical_id": "barbell-squat",
+        "canonical_name": "Barbell Squat"
+      },
+      {
+        "date": "2026-03-05",
+        "exercise": "DB Bench",
+        "set_no": 1,
+        "weight_lbs": 55,
+        "per_hand": 1,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 10,
+        "reps_text": "10",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-05",
+        "exercise": "DB Bench",
+        "set_no": 2,
+        "weight_lbs": 55,
+        "per_hand": 1,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 8,
+        "reps_text": "8",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-05",
+        "exercise": "Plank",
+        "set_no": 1,
+        "weight_lbs": null,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": null,
+        "reps_text": ":45",
+        "duration_sec": 45,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-05",
+        "exercise": "Band Pull Apart",
+        "set_no": 1,
+        "weight_lbs": null,
+        "per_hand": 0,
+        "band": "red",
+        "bodyweight": 0,
+        "reps": 15,
+        "reps_text": "15",
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-06",
+        "exercise": "Deadlift",
+        "set_no": 1,
+        "weight_lbs": 225,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": null,
+        "reps_text": null,
+        "duration_sec": null,
+        "distance_yd": null
+      },
+      {
+        "date": "2026-03-10",
+        "exercise": "Squat",
+        "set_no": 1,
+        "weight_lbs": 185,
+        "per_hand": 0,
+        "band": null,
+        "bodyweight": 0,
+        "reps": 5,
+        "reps_text": "5",
+        "duration_sec": null,
+        "distance_yd": null,
+        "canonical_id": "barbell-squat",
+        "canonical_name": "Barbell Squat"
+      }
     ]
   },
   "expected": {
     "strength": {
-      "week": { "days": 2, "exercises": 4, "sets": 6, "volumeLbs": 3280, "bandSets": 1, "bodyweightSets": 0, "timedSets": 1 },
+      "week": {
+        "days": 2,
+        "exercises": 4,
+        "sets": 6,
+        "volumeLbs": 3280,
+        "bandSets": 1,
+        "bodyweightSets": 0,
+        "timedSets": 1
+      },
       "previous3WeeksAvgVolumeLbs": 817,
       "volumeChangeVsPrevious3WeeksPct": 302,
       "days28": 4,
       "exercises": [
-        { "exercise": "Band Pull Apart", "sessions": 1, "inWeek": true, "topLbsChange": null, "volumeChangeLbs": null,
-          "last": { "date": "2026-03-05", "sets": 1, "topLbs": null, "topPerHandLbs": null, "topReps": null, "volumeLbs": 0 } },
-        { "exercise": "DB Bench", "sessions": 2, "inWeek": true, "topLbsChange": 10, "volumeChangeLbs": 980,
-          "first": { "date": "2026-02-12", "sets": 1, "topLbs": 100, "topPerHandLbs": 50, "topReps": 10, "volumeLbs": 1000 },
-          "last": { "date": "2026-03-05", "sets": 2, "topLbs": 110, "topPerHandLbs": 55, "topReps": 10, "volumeLbs": 1980 } },
-        { "exercise": "Plank", "sessions": 1, "inWeek": true, "topLbsChange": null, "volumeChangeLbs": null,
-          "last": { "date": "2026-03-05", "sets": 1, "topLbs": null, "topReps": null, "volumeLbs": 0 } },
-        { "exercise": "Barbell Squat", "sessions": 2, "inWeek": true, "topLbsChange": 20, "volumeChangeLbs": -150,
-          "first": { "date": "2026-02-10", "sets": 2, "topLbs": 155, "topPerHandLbs": null, "topReps": 5, "volumeLbs": 1450 },
-          "last": { "date": "2026-03-03", "sets": 2, "topLbs": 175, "topReps": 3, "volumeLbs": 1300 } }
+        {
+          "exercise": "Band Pull Apart",
+          "sessions": 1,
+          "inWeek": true,
+          "topLbsChange": null,
+          "volumeChangeLbs": null,
+          "last": {
+            "date": "2026-03-05",
+            "sets": 1,
+            "topLbs": null,
+            "topPerHandLbs": null,
+            "topReps": null,
+            "volumeLbs": 0
+          }
+        },
+        {
+          "exercise": "DB Bench",
+          "sessions": 2,
+          "inWeek": true,
+          "topLbsChange": 10,
+          "volumeChangeLbs": 980,
+          "first": {
+            "date": "2026-02-12",
+            "sets": 1,
+            "topLbs": 100,
+            "topPerHandLbs": 50,
+            "topReps": 10,
+            "volumeLbs": 1000
+          },
+          "last": {
+            "date": "2026-03-05",
+            "sets": 2,
+            "topLbs": 110,
+            "topPerHandLbs": 55,
+            "topReps": 10,
+            "volumeLbs": 1980
+          }
+        },
+        {
+          "exercise": "Plank",
+          "sessions": 1,
+          "inWeek": true,
+          "topLbsChange": null,
+          "volumeChangeLbs": null,
+          "last": {
+            "date": "2026-03-05",
+            "sets": 1,
+            "topLbs": null,
+            "topReps": null,
+            "volumeLbs": 0
+          }
+        },
+        {
+          "exercise": "Barbell Squat",
+          "sessions": 2,
+          "inWeek": true,
+          "topLbsChange": 20,
+          "volumeChangeLbs": -150,
+          "first": {
+            "date": "2026-02-10",
+            "sets": 2,
+            "topLbs": 155,
+            "topPerHandLbs": null,
+            "topReps": 5,
+            "volumeLbs": 1450
+          },
+          "last": {
+            "date": "2026-03-03",
+            "sets": 2,
+            "topLbs": 175,
+            "topReps": 3,
+            "volumeLbs": 1300
+          }
+        }
       ]
     }
   }

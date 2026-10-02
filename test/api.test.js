@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { assertSafeBinding } from '../server/auth.js';
+import { normalizeAll } from '../ingest/normalize.js';
+import { loadDictionary } from '../metrics/dictionary.js';
 
 const TODAY = new Date(2026, 2, 9, 12, 0); // local 2026-03-09
 
@@ -346,6 +348,7 @@ test('training: each view returns its bars, totals and breakdowns; planned sets 
   set.run(ex.run(2, '2026-03-09', 'Squat').lastInsertRowid, 100, 0, 5, '5'); // today
   set.run(ex.run(3, '2026-03-05', 'DB Press').lastInsertRowid, 50, 1, 10, '10');
   set.run(ex.run(4, '2026-03-10', 'Squat').lastInsertRowid, 120, 0, null, null); // planned, after today
+  normalizeAll(db, loadDictionary()); // the real dictionary: Squat is Barbell Squat; DB Press has no entry
 
   const week = (await app.inject('/api/training?view=week')).json();
   assert.equal(week.buckets.length, 7);

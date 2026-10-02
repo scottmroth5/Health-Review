@@ -177,46 +177,46 @@ test('programs: each dashboard bar lists its programs by days, and the days with
   assert.deepEqual(year.buckets.at(-1).programs, [{ name: 'MAPS Symmetry', days: 2 }, { name: 'Between programs', days: 1 }]);
 });
 
-test('exercise names: spelling, plural, hyphen, typo and word-order variants share a key', () => {
-  const same = (...names) => assert.equal(new Set(names.map(exerciseKey)).size, 1, names.join(' / '));
-  const differ = (a, b) => assert.notEqual(exerciseKey(a), exerciseKey(b), `${a} vs ${b}`);
+test('exercise names: unmapped names group by spelling, plural, hyphen, typo and word-order variants', () => {
+  const key = (exercise) => exerciseKey({ exercise });
+  const same = (...names) => assert.equal(new Set(names.map(key)).size, 1, names.join(' / '));
+  const differ = (a, b) => assert.notEqual(key(a), key(b), `${a} vs ${b}`);
   same('Pullups', 'Pull ups', 'Pull-ups', 'Pullup', ' pull  UP ');
   same('Dumbell Shrugs', 'Dumbbell Shrug');
   same('Decline Sit-ups', 'Decline Situps', 'decline sit up');
   same('Incline Dumbbell Press', 'Dumbbell Incline Press');
   same('Dumbbell Flyes', 'Dumbbell Fly', 'Dumbbell Flys', 'Dumbbell Flies');
-  same('Reverse Crunches', 'Reverse Crunch');
   same('Handcuff w/ Rotation', 'handcuff with rotation');
-  assert.equal(exerciseKey('Press'), 'press', 'a double s is not a plural');
-  differ('Barbell Front Squat', 'Front Squat');
-  differ('Dumbbell Shoulder Press', 'Barbell Shoulder Press');
+  assert.equal(key('Press'), 'press', 'a double s is not a plural');
+  differ('Barbell Curl', 'Dumbbell Curl');
+  differ('Bench Press', 'Barbell Bench'); // word-level merges come only from the dictionary
 });
 
-test('exercise names: listed lifts merge under one name; others show their most used spelling', () => {
-  const same = (...names) => assert.equal(new Set(names.map(exerciseKey)).size, 1, names.join(' / '));
-  same('Barbell Bench Press', 'Bench Press', 'Barbell Bench');
-  same('Barbell Squat', 'Barbell Squats', 'Barbell Back Squat', 'Squats');
-  same('Barbell Deadlift', 'Barbell Deadlifts', 'Deadlift', 'Deadlifts');
-  same('Barbell Z Press', 'Barbell Z-Press', 'Z Press', 'Z-Press');
-  same('Incline Barbell Bench Press', 'Incline Bench', 'Barbell Incline Bench Press', 'Incline Press', 'Barbell Incline Chest Press');
-  assert.equal(exerciseName(exerciseKey('Bench Press'), [{ exercise: 'Bench Press', date: '2026-03-01' }]), 'Barbell Bench Press');
-  const rows = [
-    { exercise: 'Pull-ups', date: '2026-01-01' }, { exercise: 'Pullups', date: '2026-02-01' },
-    { exercise: 'Pullups', date: '2026-02-02' }, { exercise: 'Pull ups', date: '2026-03-01' },
+test('exercise names: normalized sets group by canonical exercise and show its dictionary name', () => {
+  const row = (exercise, canonical_id, canonical_name, date = '2026-03-01') => ({ exercise, canonical_id, canonical_name, date });
+  assert.equal(exerciseKey(row('Bench Press', 'barbell-bench-press', 'Barbell Bench Press')), exerciseKey(row('Barbell Bench', 'barbell-bench-press', 'Barbell Bench Press')));
+  assert.equal(exerciseName([row('Bench Press', 'barbell-bench-press', 'Barbell Bench Press')]), 'Barbell Bench Press');
+  const rows = [{ exercise: 'Pull-ups', date: '2026-01-01' }, { exercise: 'Pullups', date: '2026-02-01' },
+    { exercise: 'Pullups', date: '2026-02-02' }, { exercise: 'Pull ups', date: '2026-03-01' }];
+  assert.equal(exerciseName(rows), 'Pullups', 'unmapped: the most used spelling');
+  assert.equal(exerciseName(rows.slice(0, 2).concat(rows.slice(3))), 'Pull ups', 'a tie goes to the latest');
+});
+
+test('exercise names: volume and strength merge one canonical exercise and never combine barbell with dumbbell', () => {
+  const S = (date, exercise, canonical_id, canonical_name, weight, reps) => ({ date, exercise, canonical_id, canonical_name, set_no: 1, weight_lbs: weight, per_hand: 0, reps });
+  const sets = [
+    S('2026-03-02', 'Bench Press', 'barbell-bench-press', 'Barbell Bench Press', 100, 5),
+    S('2026-03-04', 'Barbell Bench', 'barbell-bench-press', 'Barbell Bench Press', 100, 5),
+    S('2026-03-04', 'DB Bench', 'dumbbell-bench-press', 'Dumbbell Bench Press', 60, 10),
+    S('2026-03-06', 'Pull-ups', null, null, 0, 8),
+    S('2026-03-07', 'Deadlifts', 'barbell-deadlift', 'Barbell Deadlift', 200, 5),
   ];
-  assert.equal(exerciseName(exerciseKey('Pullups'), rows), 'Pullups');
-  assert.equal(exerciseName(exerciseKey('Pullups'), rows.slice(0, 2).concat(rows.slice(3))), 'Pull ups', 'a tie goes to the latest');
-});
-
-test('exercise names: volume by exercise and the strength summary merge variant names', () => {
-  const S = (date, exercise, weight, reps) => ({ date, exercise, set_no: 1, weight_lbs: weight, per_hand: 0, reps });
-  const sets = [S('2026-03-02', 'Bench Press', 100, 5), S('2026-03-04', 'Barbell Bench', 100, 5), S('2026-03-06', 'Pull-ups', 0, 8),
-    S('2026-03-06', 'Deadlifts', 200, 5), S('2026-03-07', 'Barbell Deadlift', 200, 5)];
   const byEx = volumeByExercise(sets, { from: '2026-03-01', to: '2026-03-07' });
-  assert.deepEqual(byEx.map((e) => [e.exercise, e.volumeLbs, e.sets]), [['Barbell Deadlift', 2000, 2], ['Barbell Bench Press', 1000, 2]]);
+  assert.deepEqual(byEx.map((e) => [e.exercise, e.volumeLbs, e.sets]), [['Barbell Bench Press', 1000, 2], ['Barbell Deadlift', 1000, 1], ['Dumbbell Bench Press', 600, 1]]);
   const st = strength(sets, '2026-03-07');
-  assert.equal(st.week.exercises, 3);
-  assert.deepEqual(st.exercises.map((e) => [e.exercise, e.sessions]).sort(), [['Barbell Bench Press', 2], ['Barbell Deadlift', 2], ['Pull-ups', 1]]);
+  assert.equal(st.week.exercises, 4);
+  assert.deepEqual(st.exercises.map((e) => [e.exercise, e.sessions]).sort(),
+    [['Barbell Bench Press', 2], ['Barbell Deadlift', 1], ['Dumbbell Bench Press', 1], ['Pull-ups', 1]]);
 });
 
 test('VO2 max: readings for short views; weekly and monthly averages for long ones; empty buckets left out', () => {

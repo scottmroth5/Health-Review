@@ -40,16 +40,16 @@ export function unweightedCounts(sets, range) {
   return counts;
 }
 
-/** Top exercises by volume in the range; variant names of one lift merge (metrics/exercises.js). */
+/** Top exercises by volume in the range, one row per canonical exercise (metrics/exercises.js). */
 export function volumeByExercise(sets, range, top = 10) {
   const groups = new Map();
   for (const s of doneIn(sets, range)) {
-    const key = exerciseKey(s.exercise);
+    const key = exerciseKey(s);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(s);
   }
   return [...groups]
-    .map(([key, g]) => ({ exercise: exerciseName(key, g), volumeLbs: round(volumeOf(g), 0), sets: g.length }))
+    .map(([, g]) => ({ exercise: exerciseName(g), volumeLbs: round(volumeOf(g), 0), sets: g.length }))
     .filter((e) => e.volumeLbs > 0)
     .sort((a, b) => b.volumeLbs - a.volumeLbs || a.exercise.localeCompare(b.exercise))
     .slice(0, top);
