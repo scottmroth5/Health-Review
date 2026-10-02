@@ -69,7 +69,7 @@ Each lifting day (session) belongs to a program block or is explicitly unassigne
 of a program. Its phases are listed in its notes.
 
 1. **Detect.** `npm run programs:detect` previews blocks found from the workout names, and `-- --write` saves them as *detected*.
-   - **Gaps:** a gap of 21 or more days between lifting days ends a block.
+   - **Breaks:** the same program before and after a break, or after days with no program name, is one block. Only a different program in between starts a new one.
    - **Non-program stretches:** "Between programs" and home-workout stretches are blocks of their own.
    - **Add-ons:** short HIIT or ab-program stretches inside a run join that run.
    - **Unnamed days:** these join a block only between that block's own days.

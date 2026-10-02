@@ -37,16 +37,21 @@ test('blocks: a synthetic history splits into its known program runs, phases in 
   assert.deepEqual(d.unassigned, []);
 });
 
-test('blocks: a gap of 21 days or more ends a block; shorter breaks do not', () => {
+test('blocks: a break or unassigned days between two runs of the same program make one block; another program in between splits', () => {
   const rows = [
     ...run('2025-01-06', 6, 'Aesthetic Foundation - Phase 1'),
-    { date: '2025-01-30', workout: 'Aesthetic Foundation - Phase 2' }, // 14 days after the last session: same block
-    { date: '2025-02-25', workout: 'Aesthetic Foundation - Phase 1' }, // 26 days later: a new run
+    { date: '2025-01-30', workout: 'Getting back at it' }, // unnamed, 14 days on
+    { date: '2025-03-25', workout: 'Aesthetic Foundation - Phase 3' }, // 54 days later, same program: same block
+    { date: '2025-04-01', workout: 'Anabolic Foundation 1 - Phase 1' },
+    { date: '2025-06-01', workout: 'Aesthetic Foundation - Phase 1' }, // after another program: a new run
   ];
   const d = detectBlocks(rows, datesOf(rows), '2025-12-31');
-  assert.deepEqual(d.blocks.map((b) => [b.program, b.start_date, b.sessions.length]), [
-    ['MAPS Aesthetic', '2025-01-06', 7], ['MAPS Aesthetic', '2025-02-25', 1],
+  assert.deepEqual(d.blocks.map((b) => [b.program, b.start_date, b.sessions.length, b.notes]), [
+    ['MAPS Aesthetic', '2025-01-06', 8, 'Phases: Phase 1, Phase 3'],
+    ['MAPS Anabolic', '2025-04-01', 1, 'Phases: Phase 1'],
+    ['MAPS Aesthetic', '2025-06-01', 1, 'Phases: Phase 1'],
   ]);
+  assert.deepEqual(d.unassigned, []);
 });
 
 test('blocks: unnamed days join a block only between its own days; others are unassigned; trigger sessions follow the program', () => {

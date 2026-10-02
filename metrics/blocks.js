@@ -1,14 +1,16 @@
 // Program block detection from Workout Log history (pure). A block is one run of a program: consecutive
 // lifting days on the same program, with its phases listed in notes (owner's choice: one block per run).
 // Each lifting day's program comes from programsByDay (workout names, 7-day back-fill, Trigger Sessions
-// ±14 days). A day with no program between two days of the same block joins it; otherwise it is left
-// unassigned. A gap of GAP_DAYS or more between lifting days always ends a block. Non-program stretches
+// ±14 days). Days with no program, and breaks of any length, between two days of the same program join that
+// block as long as no other program comes in between (owner's rule, 2026-10-02: one block per program run,
+// whatever the phases); unnamed days with no same-program day after them are left unassigned. Non-program stretches
 // ("Between programs", "Home workouts") are blocks of their own; a short add-on stretch (HIIT, ab programs)
 // between two parts of one block joins it. Phases are listed once each, in order. Status: in progress when the last session is
 // within IN_PROGRESS_DAYS of today, otherwise completed; "abandoned" is only ever set by the owner.
 import { daysBetween } from './stats.js';
 import { programsByDay } from './programs.js';
 
+// An add-on stretch farther than this from the block around it is kept as its own block.
 export const GAP_DAYS = 21;
 export const IN_PROGRESS_DAYS = 14;
 // Short add-on programs done alongside another one: a stretch of them between two parts of the same block
@@ -65,7 +67,6 @@ export function detectBlocks(sets, liftingDates, today) {
   const unassigned = [];
   let current = null;
   let pending = []; // days with no program since the current block's last known day
-  let prev = null;
   const close = () => {
     unassigned.push(...pending);
     pending = [];
@@ -73,8 +74,6 @@ export function detectBlocks(sets, liftingDates, today) {
     current = null;
   };
   for (const date of dates) {
-    if (prev && daysBetween(prev, date) >= GAP_DAYS) close();
-    prev = date;
     const program = byDay.get(date);
     if (!program) {
       if (current) pending.push(date); else unassigned.push(date);
