@@ -66,12 +66,12 @@ Each sync re-applies the dictionary when Workout Log rows change.
 ## Program blocks
 
 Each lifting day (session) belongs to a program block or is explicitly unassigned. A block is one run
-of a program. Its phases are listed in its notes.
+of a program, named by the program only (phases are ignored).
 
 1. **Detect.** `npm run programs:detect` previews blocks found from the workout names, and `-- --write` saves them as *detected*.
    - **Breaks:** the same program before and after a break, or after days with no program name, is one block. Only a different program in between starts a new one.
    - **Non-program stretches:** "Between programs" and home-workout stretches are blocks of their own.
-   - **Add-ons:** short HIIT or ab-program stretches inside a run join that run.
+   - **Inside a run:** a Between programs, HIIT or ab-program stretch with the same program on both sides joins that run, and the block's notes count it.
    - **Unnamed days:** these join a block only between that block's own days.
 2. **Review** with `npm run programs:review -- <command>`. Name a block by the first characters of its id, as shown by `list`.
 

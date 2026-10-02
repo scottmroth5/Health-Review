@@ -1,21 +1,20 @@
 // Program block detection from Workout Log history (pure). A block is one run of a program: consecutive
-// lifting days on the same program, with its phases listed in notes (owner's choice: one block per run).
+// lifting days on the same program, named by the program only (owner's choice: one block per run, phases ignored).
 // Each lifting day's program comes from programsByDay (workout names, 7-day back-fill, Trigger Sessions
 // ±14 days). Days with no program, and breaks of any length, between two days of the same program join that
 // block as long as no other program comes in between (owner's rule, 2026-10-02: one block per program run,
 // whatever the phases); unnamed days with no same-program day after them are left unassigned. Non-program stretches
-// ("Between programs", "Home workouts") are blocks of their own; a short add-on stretch (HIIT, ab programs)
-// between two parts of one block joins it. Phases are listed once each, in order. Status: in progress when the last session is
+// ("Between programs", "Home workouts") are blocks of their own, but a Between programs, HIIT or ab-program
+// stretch between two parts of one program's run joins that run (counted in its notes). Phases are kept on the
+// detection result only; blocks show the program name. Status: in progress when the last session is
 // within IN_PROGRESS_DAYS of today, otherwise completed; "abandoned" is only ever set by the owner.
 import { daysBetween } from './stats.js';
 import { programsByDay } from './programs.js';
 
-// An add-on stretch farther than this from the block around it is kept as its own block.
-export const GAP_DAYS = 21;
 export const IN_PROGRESS_DAYS = 14;
-// Short add-on programs done alongside another one: a stretch of them between two parts of the same block
-// joins that block (and is counted in its notes) instead of splitting it.
-export const ADDONS = ['HIIT', 'No BS 6-Pack'];
+// Stretches that never split a run: add-on programs done alongside another one, and time between programs.
+// A stretch of them between two parts of the same program joins that block (counted in its notes).
+export const ADDONS = ['HIIT', 'No BS 6-Pack', 'Between programs'];
 
 const ROMAN = { i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
 /** "Phase 2" from "... Phase II Day 3", "Deload" from a deload week, or null. */
@@ -27,13 +26,11 @@ export function phaseOf(workoutName) {
   return `Phase ${ROMAN[m[1].toLowerCase()] ?? Number(m[1])}`;
 }
 
-/** Joins add-on stretches (HIIT, ab programs) sandwiched between two parts of the same block into it. */
+/** Joins Between programs, HIIT and ab-program stretches sandwiched between two parts of the same program into it. */
 function mergeAddons(blocks) {
   for (let i = 1; i < blocks.length - 1; i++) {
     const [before, addon, after] = [blocks[i - 1], blocks[i], blocks[i + 1]];
-    if (!ADDONS.includes(addon.program) || before.program !== after.program || ADDONS.includes(before.program)) continue;
-    const span = [before.sessions[before.sessions.length - 1], addon.sessions[0], addon.sessions[addon.sessions.length - 1], after.sessions[0]];
-    if (daysBetween(span[0], span[1]) >= GAP_DAYS || daysBetween(span[2], span[3]) >= GAP_DAYS) continue;
+    if (!ADDONS.includes(addon.program) || before.program !== after.program) continue;
     before.sessions.push(...addon.sessions, ...after.sessions);
     for (const ph of after.phases) if (!before.phases.includes(ph)) before.phases.push(ph);
     before.addons = { ...before.addons };
@@ -99,8 +96,7 @@ export function detectBlocks(sets, liftingDates, today) {
       return {
         program: b.program,
         phases: b.phases,
-        notes: [b.phases.length ? `Phases: ${b.phases.join(', ')}` : null,
-          ...Object.entries(b.addons ?? {}).map(([name, n]) => `includes ${n} ${name} session${n === 1 ? '' : 's'}`)].filter(Boolean).join('; ') || null,
+        notes: Object.entries(b.addons ?? {}).map(([name, n]) => `includes ${n} ${name} session${n === 1 ? '' : 's'}`).join('; ') || null,
         start_date: b.sessions[0],
         end_date: inProgress ? null : last,
         last_session: last,

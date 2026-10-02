@@ -103,9 +103,10 @@ replacing a tab. Names match by baseKey (spelling, plural, hyphen, typo and word
 different words merge only through dictionary variants, which the owner decides. Unknown names are flagged, never
 guessed ('inferred' only when one implement word names the implement). Volume and strength group by canonical
 exercise, so barbell and dumbbell versions are never combined; unmapped names fall back to baseKey.
-Program blocks: one block per program run (phases in notes); detected from workout names (metrics/blocks.js: the
+Program blocks: one block per program run, named by program only (phases ignored); detected from workout names (metrics/blocks.js: the
 same program before and after unassigned days or a break of any length is one block unless another program comes
-between; Between programs and Home workouts are blocks; HIIT and ab-program stretches inside a run join it),
+between; Between programs and Home workouts are blocks, but a Between programs, HIIT or ab-program stretch with the
+same program on both sides joins that run),
 then confirmed by the owner. log_sessions holds one row per lifting day (UUID v5 of the date) with its block or an
 explicit unassigned; re-detection never touches confirmed blocks, owner-unassigned days or forward sessions. After a
 sync, new lifting days join the in-progress confirmed block with program and week (source 'forward').

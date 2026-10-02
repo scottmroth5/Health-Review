@@ -30,9 +30,9 @@ test('blocks: a synthetic history splits into its known program runs, phases in 
   ];
   const d = detectBlocks(rows, datesOf(rows), '2025-12-31');
   assert.deepEqual(d.blocks.map((b) => [b.program, b.start_date, b.end_date, b.sessions.length, b.notes, b.status]), [
-    ['MAPS Symmetry', '2025-01-06', '2025-02-21', 24, 'Phases: Phase 1, Phase 2', 'completed'],
+    ['MAPS Symmetry', '2025-01-06', '2025-02-21', 24, null, 'completed'],
     ['Between programs', '2025-02-23', '2025-03-01', 4, null, 'completed'],
-    ['MAPS Anabolic', '2025-03-03', '2025-03-31', 15, 'Phases: Phase 1', 'completed'],
+    ['MAPS Anabolic', '2025-03-03', '2025-03-31', 15, null, 'completed'],
   ]);
   assert.deepEqual(d.unassigned, []);
 });
@@ -47,9 +47,9 @@ test('blocks: a break or unassigned days between two runs of the same program ma
   ];
   const d = detectBlocks(rows, datesOf(rows), '2025-12-31');
   assert.deepEqual(d.blocks.map((b) => [b.program, b.start_date, b.sessions.length, b.notes]), [
-    ['MAPS Aesthetic', '2025-01-06', 8, 'Phases: Phase 1, Phase 3'],
-    ['MAPS Anabolic', '2025-04-01', 1, 'Phases: Phase 1'],
-    ['MAPS Aesthetic', '2025-06-01', 1, 'Phases: Phase 1'],
+    ['MAPS Aesthetic', '2025-01-06', 8, null],
+    ['MAPS Anabolic', '2025-04-01', 1, null],
+    ['MAPS Aesthetic', '2025-06-01', 1, null],
   ]);
   assert.deepEqual(d.unassigned, []);
 });
@@ -65,7 +65,7 @@ test('blocks: unnamed days join a block only between its own days; others are un
   ];
   const d = detectBlocks(rows, datesOf(rows), '2025-12-31');
   assert.deepEqual(d.blocks.map((b) => [b.program, b.sessions, b.notes]), [
-    ['MAPS Powerlift', ['2025-01-20', '2025-01-23', '2025-02-04', '2025-02-06'], 'Phases: Phase 1, Phase 2'],
+    ['MAPS Powerlift', ['2025-01-20', '2025-01-23', '2025-02-04', '2025-02-06'], null],
   ]);
   assert.deepEqual(d.unassigned, ['2025-01-01', '2025-02-16']);
 });
@@ -102,7 +102,7 @@ test('blocks: saving a detection twice adds nothing; confirmed blocks and their 
   writeDetected(db, detect(db, today));
   assert.deepEqual(db.prepare('SELECT program, source, notes FROM program_blocks ORDER BY start_date').all(), [
     { program: 'MAPS Symmetry', source: 'confirmed', notes: 'kept' },
-    { program: 'MAPS Anabolic', source: 'detected', notes: 'Phases: Phase 1' },
+    { program: 'MAPS Anabolic', source: 'detected', notes: null },
   ]);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM log_sessions WHERE block_id = ?").get(first).n, 6);
   assert.deepEqual(sessionCoverage(db, today), { liftingDays: 13, confirmed: 6, unassigned: 1, detected: 6, missing: 0 });
@@ -123,7 +123,7 @@ test('blocks: add-on stretches (HIIT) between two parts of one block join it and
     { date: '2026-06-05', workout: 'In between programs' },
     { date: '2026-06-08', workout: 'HIIT' }, { date: '2026-06-09', workout: 'HIIT' },
     { date: '2026-06-10', workout: 'In between programs' },
-    { date: '2026-07-20', workout: 'HIIT' }, // 40 days on: its own block
+    { date: '2026-07-20', workout: 'HIIT' }, // after the last Between programs day, before a different program: its own block
     ...run('2026-08-03', 6, 'Symmetry Foundation 1 - Phase 1'), { date: '2026-08-20', workout: 'Symmetry Foundation 1 - Phase 2' },
     { date: '2026-08-22', workout: 'Symmetry Foundation 1 - Phase 1' },
   ];
@@ -131,6 +131,22 @@ test('blocks: add-on stretches (HIIT) between two parts of one block join it and
   assert.deepEqual(d.blocks.map((b) => [b.program, b.sessions.length, b.notes]), [
     ['Between programs', 7, 'includes 3 HIIT sessions'],
     ['HIIT', 1, null],
-    ['MAPS Symmetry', 8, 'Phases: Phase 1, Phase 2'],
+    ['MAPS Symmetry', 8, null],
+  ]);
+});
+
+test('blocks: a Between programs stretch between two runs of the same program joins them; between two programs it stays', () => {
+  const rows = [
+    ...run('2024-01-01', 6, 'MAPS Anabolic Advanced Phase 1 Day 1'),
+    ...run('2024-01-15', 4, 'In between programs'),
+    ...run('2024-01-25', 6, 'MAPS Anabolic Advanced Deload'),
+    ...run('2024-02-08', 3, 'In between programs'),
+    ...run('2024-02-15', 6, 'Aesthetic Foundation - Phase 3'),
+  ];
+  const d = detectBlocks(rows, datesOf(rows), '2025-12-31');
+  assert.deepEqual(d.blocks.map((b) => [b.program, b.start_date, b.sessions.length, b.notes]), [
+    ['MAPS Anabolic Advanced', '2024-01-01', 16, 'includes 4 Between programs sessions'],
+    ['Between programs', '2024-02-08', 3, null],
+    ['MAPS Aesthetic', '2024-02-15', 6, null],
   ]);
 });
