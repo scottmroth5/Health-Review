@@ -20,6 +20,7 @@ import {
   parseLabSheet,
 } from './parsers.js';
 import { normalizeAll } from './normalize.js';
+import { assignForward } from './program-blocks.js';
 import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
 import { existsSync } from 'node:fs';
 
@@ -52,7 +53,10 @@ export async function runSync({ store, source, backfill = false, now = new Date(
       write: upsertWorkoutSessions(store.db, stamp),
     });
     counts.workout_log = await syncWorkoutLog({ store, source, backfill, now, warnings });
-    if (counts.workout_log.tabsReplaced) counts.normalized = normalizeLog(store.db, dictionary, now, warnings);
+    if (counts.workout_log.tabsReplaced) {
+      counts.normalized = normalizeLog(store.db, dictionary, now, warnings);
+      counts.sessions = assignForward(store.db, localDay(now), { now });
+    }
     counts.lab_results = await syncLabs({ store, source, warnings, stamp });
     if (backfill) {
       counts.drinking_log = await importOnce({ store, source, key: 'drinking_log', parse: parseDrinkingLog, write: upsertDrinkingDays(store.db, stamp), warnings });
@@ -226,6 +230,8 @@ async function importOnce({ store, source, key, parse, write, warnings }) {
   });
   return { rowsRead: data.rows.length, imported: written, keptFromUi: records.length - written };
 }
+
+const localDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 // Replaced Workout Log rows lose their normalized columns, so they are rewritten from the dictionary.
 // A missing or broken dictionary is a warning, never a failed sync.

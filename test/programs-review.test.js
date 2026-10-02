@@ -86,3 +86,33 @@ test('review: unassigned days are confirmed, survive re-detection, and are not p
   assert.equal(sessionCoverage(db, TODAY).unassigned, 3);
   store.close();
 });
+
+test('forward: new lifting days join the in-progress confirmed block with program and week; nothing without one', async () => {
+  const { runSync } = await import('../ingest/sync.js');
+  const { assignForward } = await import('../ingest/program-blocks.js');
+  const { fakeSource, serial, silentLogger } = await import('./helpers.js');
+  const store = openHealthStore(':memory:');
+  const db = store.db;
+  const LOG = ['Date', 'Prime', 'Exercise', 'Weight 1', 'Set 1', 'Workout'];
+  const data = {
+    health_metrics: { Sheet1: [['Date/Time']] }, workout_sessions: { Sheet1: [['Type', 'Start', 'End']] },
+    workout_log: { 2026: [LOG, [serial('2026-03-02'), '', 'Squat', 100, 5, 'Symmetry Foundation 1 - Phase 1']] },
+  };
+  const source = fakeSource(data);
+  const sync = (date) => runSync({ store, source, now: new Date(`${date}T07:00:00`), logger: silentLogger, dictionary: null });
+  await sync('2026-03-03');
+  assert.deepEqual(assignForward(db, '2026-03-03'), { assigned: 0, block: null }, 'no confirmed block yet');
+
+  writeDetected(db, detect(db, '2026-03-03'));
+  confirmBlocks(db, 'all-detected', { today: '2026-03-03' });
+  data.workout_log[2026].push([serial('2026-03-10'), '', 'Squat', 100, 5, ''], [serial('2026-03-17'), '', 'Squat', 100, 5, '']);
+  const { counts } = await sync('2026-03-17');
+  assert.deepEqual(counts.sessions, { assigned: 2, block: 'MAPS Symmetry' });
+  assert.deepEqual(db.prepare("SELECT date, program, week, source FROM log_sessions WHERE source = 'forward' ORDER BY date").all(), [
+    { date: '2026-03-10', program: 'MAPS Symmetry', week: 2, source: 'forward' },
+    { date: '2026-03-17', program: 'MAPS Symmetry', week: 3, source: 'forward' },
+  ]);
+  writeDetected(db, detect(db, '2026-03-17'));
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM log_sessions WHERE source = 'forward'").get().n, 2, 're-detection keeps forward sessions');
+  store.close();
+});

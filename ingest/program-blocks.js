@@ -67,6 +67,23 @@ export function sessionCoverage(db, today) {
   return out;
 }
 
+/**
+ * New lifting days (no session row yet) from the start of the in-progress confirmed block join it with its
+ * program and week number, so future sessions never need detection. Without such a block nothing happens.
+ */
+export function assignForward(db, today, { now = new Date() } = {}) {
+  const block = db.prepare(`SELECT * FROM program_blocks WHERE source = 'confirmed' AND status = 'in_progress'
+    ORDER BY start_date DESC LIMIT 1`).get();
+  if (!block) return { assigned: 0, block: null };
+  const known = new Set(db.prepare('SELECT date FROM log_sessions WHERE date >= ?').all(block.start_date).map((r) => r.date));
+  const insert = db.prepare(`INSERT INTO log_sessions (id, date, block_id, assignment, program, week, source, updated_at)
+    VALUES (?, ?, ?, 'block', ?, ?, 'forward', ?)`);
+  const days = history(db, today).liftingDates.filter((d) => d >= block.start_date && !known.has(d));
+  const stamp = now.toISOString();
+  db.transaction(() => { for (const d of days) insert.run(sessionId(d), d, block.id, block.program, weekOf(block.start_date, d), stamp); })();
+  return { assigned: days.length, block: block.program };
+}
+
 // ---- review: list, confirm, edit, merge, split, unassign ----
 const STATUSES = ['completed', 'abandoned', 'in_progress'];
 const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d ?? '') && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
