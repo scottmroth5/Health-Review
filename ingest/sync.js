@@ -19,6 +19,9 @@ import {
   parseWeeklyCheckins,
   parseLabSheet,
 } from './parsers.js';
+import { normalizeAll } from './normalize.js';
+import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
+import { existsSync } from 'node:fs';
 
 const V1_SOURCE = 'v1-sheet';
 
@@ -30,10 +33,11 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
  * @param {ReturnType<import('./sheets.js').createSheetsSource>} options.source
  * @param {boolean} [options.backfill]   read everything and import the drinking log and check-ins
  * @param {Date} [options.now]
+ * @param {object|null} [options.dictionary]  exercise dictionary; defaults to config/exercise-dictionary.json when present
  * @param {object} [options.logger]
  * @returns {Promise<{ counts: object, warnings: object[] }>}
  */
-export async function runSync({ store, source, backfill = false, now = new Date(), logger = console }) {
+export async function runSync({ store, source, backfill = false, now = new Date(), logger = console, dictionary }) {
   const run = createTracer({ store, logger }).startRun('sync', { backfill });
   const counts = {};
   const warnings = [];
@@ -48,6 +52,7 @@ export async function runSync({ store, source, backfill = false, now = new Date(
       write: upsertWorkoutSessions(store.db, stamp),
     });
     counts.workout_log = await syncWorkoutLog({ store, source, backfill, now, warnings });
+    if (counts.workout_log.tabsReplaced) counts.normalized = normalizeLog(store.db, dictionary, now, warnings);
     counts.lab_results = await syncLabs({ store, source, warnings, stamp });
     if (backfill) {
       counts.drinking_log = await importOnce({ store, source, key: 'drinking_log', parse: parseDrinkingLog, write: upsertDrinkingDays(store.db, stamp), warnings });
@@ -220,6 +225,22 @@ async function importOnce({ store, source, key, parse, write, warnings }) {
     saveState(store.db, key, tab, data);
   });
   return { rowsRead: data.rows.length, imported: written, keptFromUi: records.length - written };
+}
+
+// Replaced Workout Log rows lose their normalized columns, so they are rewritten from the dictionary.
+// A missing or broken dictionary is a warning, never a failed sync.
+function normalizeLog(db, dictionary, now, warnings) {
+  let dict = dictionary;
+  if (dict === undefined) {
+    if (!existsSync(DICTIONARY_PATH)) return { skipped: 'no exercise dictionary' };
+    try { dict = loadDictionary(); } catch (err) {
+      warnings.push({ source: 'exercise_dictionary', kind: 'invalid dictionary, normalization skipped', detail: err.problems?.length ? `${err.problems.length} problems; run npm run log:normalize` : err.message });
+      return { skipped: 'invalid exercise dictionary' };
+    }
+  }
+  if (!dict) return { skipped: 'no exercise dictionary' };
+  const { sets, mappedPct } = normalizeAll(db, dict, { now });
+  return { sets, mappedPct };
 }
 
 // ---- writers: each returns a function(record) ----

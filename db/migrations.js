@@ -282,4 +282,47 @@ export const MIGRATIONS = [
       ALTER TABLE reviews ADD COLUMN sensitive_sections TEXT;
     `,
   },
+  {
+    id: '010-normalization-and-blocks',
+    up: `
+      -- Normalized values next to the raw logged ones (exercise stays as typed). Rewritten by every
+      -- normalize run, so changing the dictionary and rerunning is always safe.
+      ALTER TABLE strength_exercises ADD COLUMN canonical_id TEXT;
+      ALTER TABLE strength_exercises ADD COLUMN implement TEXT;
+      ALTER TABLE strength_exercises ADD COLUMN movement_pattern TEXT;
+      ALTER TABLE strength_exercises ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1));
+      ALTER TABLE strength_exercises ADD COLUMN map_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (map_status IN ('pending', 'mapped', 'inferred', 'unmapped', 'ignored'));
+      ALTER TABLE strength_exercises ADD COLUMN normalized_at TEXT;
+      CREATE INDEX strength_exercises_canonical ON strength_exercises(canonical_id);
+
+      -- New tables use portable types only (UUIDs as TEXT, UTC ISO timestamps, CHECK instead of enums)
+      -- so they move to PostgreSQL cleanly. Dates are local wall-clock YYYY-MM-DD like the rest of the log.
+      CREATE TABLE program_blocks (
+        id TEXT PRIMARY KEY,
+        program TEXT NOT NULL,
+        phase TEXT,
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        status TEXT NOT NULL CHECK (status IN ('completed', 'abandoned', 'in_progress')),
+        source TEXT NOT NULL CHECK (source IN ('detected', 'confirmed')),
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      -- One session per lifting day (the log has no session ids); the id is a UUID derived from the date.
+      CREATE TABLE log_sessions (
+        id TEXT PRIMARY KEY,
+        date TEXT NOT NULL UNIQUE,
+        block_id TEXT REFERENCES program_blocks(id) ON DELETE SET NULL,
+        assignment TEXT NOT NULL CHECK (assignment IN ('block', 'unassigned')),
+        program TEXT,
+        week INTEGER,
+        source TEXT NOT NULL CHECK (source IN ('detected', 'confirmed', 'forward')),
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX log_sessions_block ON log_sessions(block_id);
+    `,
+  },
 ];

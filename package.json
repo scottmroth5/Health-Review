@@ -16,7 +16,9 @@
     "prompts:import-v1": "node scripts/import-v1-prompts.js",
     "metrics": "node scripts/metrics.js",
     "review": "node --env-file=.env scripts/review.js",
-    "evals": "node scripts/evals.js"
+    "evals": "node scripts/evals.js",
+    "log:normalize": "node scripts/log-normalize.js",
+    "log:unmapped": "node scripts/log-unmapped.js"
   },
   "keywords": [],
   "author": "",
