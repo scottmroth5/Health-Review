@@ -18,7 +18,8 @@
     "review": "node --env-file=.env scripts/review.js",
     "evals": "node scripts/evals.js",
     "log:normalize": "node scripts/log-normalize.js",
-    "log:unmapped": "node scripts/log-unmapped.js"
+    "log:unmapped": "node scripts/log-unmapped.js",
+    "programs:detect": "node scripts/programs-detect.js"
   },
   "keywords": [],
   "author": "",
