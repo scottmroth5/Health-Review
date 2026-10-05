@@ -89,7 +89,7 @@ test('normalize: sync rewrites the normalized columns after a Workout Log tab is
     workout_log: { 2026: [LOG, [serial('2026-03-02'), '', 'Squats', 100, 5]] },
   };
   const source = fakeSource(data);
-  const sync = () => runSync({ store, source, now: new Date(2026, 2, 9), logger: silentLogger, dictionary: DICT });
+  const sync = () => runSync({ store, source, now: new Date(2026, 2, 9), logger: silentLogger, dictionary: DICT, catalog: null });
   const first = await sync();
   assert.equal(first.counts.normalized.mappedPct, 100);
   data.workout_log[2026].push([serial('2026-03-04'), '', 'Dumbbell Row', 50, 8]);

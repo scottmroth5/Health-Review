@@ -9,8 +9,9 @@
 //   npm run programs:review -- unassign <date> [<to date>]
 import { openHealthStore } from '../db/store.js';
 import {
-  ReviewError, confirmBlocks, editBlock, listBlocks, mergeBlocks, sessionCoverage, splitBlock, unassignDays,
+  ReviewError, blockStatus, confirmBlocks, editBlock, listBlocks, mergeBlocks, refreshPhases, sessionCoverage, splitBlock, unassignDays,
 } from '../ingest/program-blocks.js';
+import { loadCatalog } from '../metrics/catalog.js';
 import { localDate } from '../server/queries.js';
 
 const [command, ...rest] = process.argv.slice(2);
@@ -25,13 +26,20 @@ const today = localDate();
 const opts = { today };
 const store = openHealthStore();
 const db = store.db;
+const catalog = loadCatalog();
+const shortDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 function printList(unconfirmed) {
   const blocks = listBlocks(db, { unconfirmed });
   for (const b of blocks) {
     const end = b.end_date ?? 'in progress';
+    const st = blockStatus(db, b, today, catalog);
+    const progress = !st.program_weeks ? ''
+      : b.status === 'in_progress'
+        ? `  [${st.beyond_program ? 'past the program' : st.phase}, week ${st.week} of ${st.program_weeks}${st.deload_week ? ', deload week' : ''}${st.failure_week ? ', failure week' : ''}, ends ~${shortDate(st.expected_end)}]`
+        : `  [${st.program_weeks}-week program, reached ${st.percent}%]`;
     console.log(`${b.id.slice(0, 8)}  ${b.source === 'confirmed' ? 'confirmed' : 'detected '}  ${b.start_date} to ${end.padEnd(11)}  `
-      + `${String(b.sessions).padStart(3)} sessions  ${b.status.padEnd(11)}  ${b.program}${b.phase ? ` ${b.phase}` : ''}${b.notes ? `  (${b.notes})` : ''}`);
+      + `${String(b.sessions).padStart(3)} sessions  ${b.status.padEnd(11)}  ${b.program}${b.phase ? ` ${b.phase}` : ''}${progress}${b.notes ? `  (${b.notes})` : ''}`);
   }
   if (!blocks.length) console.log(unconfirmed ? 'No detected blocks left to review.' : 'No blocks yet. Run npm run programs:detect -- --write first.');
 }
@@ -70,7 +78,10 @@ try {
       console.log('Commands: list [--unconfirmed] | confirm <id|all-detected> | edit <id> --field value | merge <id> <id> | split <id> <date> | unassign <date> [<to date>]');
       process.exitCode = command ? 1 : 0;
   }
-  if (command && command !== 'list') printCoverage();
+  if (command && command !== 'list') {
+    refreshPhases(db, catalog);
+    printCoverage();
+  }
 } catch (err) {
   if (!(err instanceof ReviewError)) throw err;
   console.error(err.message);

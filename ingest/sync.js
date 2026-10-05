@@ -20,7 +20,8 @@ import {
   parseLabSheet,
 } from './parsers.js';
 import { normalizeAll } from './normalize.js';
-import { assignForward } from './program-blocks.js';
+import { assignForward, refreshPhases } from './program-blocks.js';
+import { loadCatalog } from '../metrics/catalog.js';
 import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
 import { existsSync } from 'node:fs';
 
@@ -34,11 +35,12 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
  * @param {ReturnType<import('./sheets.js').createSheetsSource>} options.source
  * @param {boolean} [options.backfill]   read everything and import the drinking log and check-ins
  * @param {Date} [options.now]
+ * @param {object|null} [options.catalog]  MAPS program catalog; defaults to data/maps/programs.json when present
  * @param {object|null} [options.dictionary]  exercise dictionary; defaults to config/exercise-dictionary.json when present
  * @param {object} [options.logger]
  * @returns {Promise<{ counts: object, warnings: object[] }>}
  */
-export async function runSync({ store, source, backfill = false, now = new Date(), logger = console, dictionary }) {
+export async function runSync({ store, source, backfill = false, now = new Date(), logger = console, dictionary, catalog }) {
   const run = createTracer({ store, logger }).startRun('sync', { backfill });
   const counts = {};
   const warnings = [];
@@ -56,6 +58,9 @@ export async function runSync({ store, source, backfill = false, now = new Date(
     if (counts.workout_log.tabsReplaced) {
       counts.normalized = normalizeLog(store.db, dictionary, now, warnings);
       counts.sessions = assignForward(store.db, localDay(now), { now });
+      try { refreshPhases(store.db, catalog === undefined ? loadCatalog() : catalog); } catch (err) {
+        warnings.push({ source: 'program_catalog', kind: 'invalid catalog, phases not updated', detail: err.problems?.length ? `${err.problems.length} problems; run npm run programs:catalog` : err.message });
+      }
     }
     counts.lab_results = await syncLabs({ store, source, warnings, stamp });
     if (backfill) {

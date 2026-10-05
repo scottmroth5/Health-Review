@@ -29,7 +29,7 @@ function sheets() {
 }
 
 const open = () => openHealthStore(':memory:');
-const sync = (store, source, opts = {}) => runSync({ store, source, now: NOW, logger: silentLogger, ...opts });
+const sync = (store, source, opts = {}) => runSync({ store, source, now: NOW, logger: silentLogger, catalog: null, ...opts });
 const count = (store, table) => store.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 
 test('backfill imports every source, all year tabs, and skips filtered and backup tabs', async () => {

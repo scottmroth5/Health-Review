@@ -2,7 +2,8 @@
 //   npm run programs:detect              show the proposal
 //   npm run programs:detect -- --write   save it (replaces earlier detected blocks; confirmed ones are kept)
 import { openHealthStore } from '../db/store.js';
-import { detect, writeDetected, sessionCoverage } from '../ingest/program-blocks.js';
+import { detect, writeDetected, sessionCoverage, refreshPhases } from '../ingest/program-blocks.js';
+import { loadCatalog } from '../metrics/catalog.js';
 import { weekOf } from '../metrics/blocks.js';
 import { localDate } from '../server/queries.js';
 
@@ -20,6 +21,7 @@ try {
   console.log(`\n${d.unassigned.length} lifting days with no program would be marked unassigned.`);
   if (write) {
     writeDetected(store.db, d);
+    refreshPhases(store.db, loadCatalog());
     const c = sessionCoverage(store.db, today);
     console.log(`Saved. Lifting days: ${c.liftingDays}; in confirmed blocks ${c.confirmed}, in detected blocks ${c.detected}, unassigned ${c.unassigned}, missing ${c.missing}.`);
     console.log('Next: npm run programs:review -- list');

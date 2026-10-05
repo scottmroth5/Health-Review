@@ -325,4 +325,13 @@ export const MIGRATIONS = [
       CREATE INDEX log_sessions_block ON log_sessions(block_id);
     `,
   },
+  {
+    id: '011-session-phase',
+    up: `
+      -- Phase of each session and the length of each block's program, from the MAPS catalog
+      -- (data/maps/programs.json); recomputed by refreshPhases, NULL when the program is not in the catalog.
+      ALTER TABLE log_sessions ADD COLUMN phase TEXT;
+      ALTER TABLE program_blocks ADD COLUMN program_weeks INTEGER;
+    `,
+  },
 ];
