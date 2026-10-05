@@ -267,3 +267,8 @@ h3.sub { font-size: 0.9rem; margin: 14px 0 6px; color: var(--text-secondary); fo
 .activity-grid > * { min-width: 0; }
 table.calls th, table.calls td { white-space: nowrap; padding: 4px 8px; text-align: right; }
 table.calls th:nth-child(-n+3), table.calls td:nth-child(-n+3) { text-align: left; }
+
+/* Demo mode: drinking data is hidden on screen (see demo.js). */
+.demo-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 0.85rem; color: var(--text-secondary); white-space: nowrap; }
+body.demo #drinking { display: none; }
+body.demo .demo-toggle { color: var(--accent); font-weight: 600; }

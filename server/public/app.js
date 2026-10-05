@@ -1,4 +1,5 @@
 import { lineChart, columnChart } from './charts.js';
+import { DEMO_KEY, demoFromLocation, redactReview, isDrinkingChart } from './demo.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -20,7 +21,33 @@ function setStatus(node, message, kind = '') {
   node.className = `status ${kind}`;
 }
 
-const state = { today: null, day: null, range: 30 };
+const state = { today: null, day: null, range: 30, demo: false };
+
+// ---------------- demo mode ----------------
+// Hides drinking data on screen for showing the app to others (see demo.js). Saved in this browser only.
+function applyDemo(on) {
+  state.demo = on;
+  document.body.classList.toggle('demo', on);
+  $('#demo-mode').checked = on;
+}
+function setupDemo() {
+  let storage = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    // storage blocked: demo mode starts off unless ?demo=1
+  }
+  applyDemo(demoFromLocation(location.search, storage));
+  $('#demo-mode').addEventListener('change', (e) => {
+    applyDemo(e.target.checked);
+    try {
+      localStorage.setItem(DEMO_KEY, e.target.checked ? '1' : '0');
+    } catch {
+      // private browsing: the switch still works until the page is closed
+    }
+    route();
+  });
+}
 
 // ---------------- routing ----------------
 const VIEWS = ['today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity'];
@@ -336,7 +363,7 @@ async function loadHistory() {
   const data = await api('GET', `/api/history?from=${from}&to=${to}`);
   const container = $('#charts');
   container.replaceChildren();
-  for (const c of CHARTS) {
+  for (const c of CHARTS.filter((x) => !(state.demo && isDrinkingChart(x)))) {
     const points = data[c.from].filter((r) => r[c.key] !== null && r[c.key] !== undefined).map((r) => ({ date: r.date, value: r[c.key] }));
     const card = document.createElement('div');
     card.className = 'chart-card';
@@ -958,7 +985,7 @@ async function loadReviews() {
         h('strong', {}, 'Checks that still failed after a retry:'),
         h('ul', {}, r.warnings.map((w) => h('li', {}, w)))));
     }
-    renderMarkdown(r.report_md, card);
+    renderMarkdown(state.demo ? redactReview(r.report_md) : r.report_md, card);
     card.append(h('p', { class: 'meta' }, 'An analytical aid, not medical advice. Discuss medications, lab results and symptoms with your physician.'));
     container.append(card);
   }
@@ -1191,5 +1218,6 @@ $$('[data-range]').forEach((b) => b.addEventListener('click', () => {
   state.range = Number(b.dataset.range);
   loadHistory();
 }));
+setupDemo();
 window.addEventListener('hashchange', route);
 route();
