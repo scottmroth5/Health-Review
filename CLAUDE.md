@@ -163,6 +163,8 @@ sheet's copy, and undoing restores the original. Sheet results cannot be deleted
 prompt_sections (edited on the Prompt tab; every save and delete copies the old row to prompt_section_versions);
 sensitive sections are included in the weekly review (WEEKLY_INCLUDES_SENSITIVE in agent/prompts.js) and badged in the UI;
 buildInstructions leaves them out unless a caller opts in.
+The Activity tab lists runs (GET /api/runs, /api/runs/:id: the tracer's runs and run_calls, metadata only) and the scheduled
+tasks' logs (GET /api/logs/sync|review, the last lines of data/logs; only those two names can be read).
 
 ## Hard rules
 All health data stays on this machine. Never add cloud storage, CI, or remote sync for /data.

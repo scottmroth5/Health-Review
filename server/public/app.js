@@ -23,13 +23,13 @@ function setStatus(node, message, kind = '') {
 const state = { today: null, day: null, range: 30 };
 
 // ---------------- routing ----------------
-const VIEWS = ['today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt'];
+const VIEWS = ['today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity'];
 function route() {
   if (location.hash === '#history') return location.replace('#health'); // the old name of the Health tab
   const view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'today';
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
   $$('.top nav a').forEach((a) => (a.getAttribute('href') === `#${view}` ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-  ({ today: loadDay, training: loadTrainingTab, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections })[view]();
+  ({ today: loadDay, training: loadTrainingTab, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
 }
 
 // ---------------- 1 to 10 scales ----------------
@@ -282,6 +282,7 @@ async function syncNow() {
     $('#sync-status').textContent = `Sync failed: ${err.message}`;
   } finally {
     btn.disabled = false;
+    if (location.hash === '#activity') loadActivity();
   }
 }
 
@@ -361,6 +362,9 @@ async function loadHistory() {
 
 // ---------------- medications and supplements ----------------
 /** Small element builder: h('div', { class: 'x' }, 'text', child). Text goes in as text nodes. */
+/** replaceChildren that skips null and false (replaceChildren itself would print "null"). */
+const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false));
+
 function h(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -850,7 +854,7 @@ async function loadProgram() {
     finish,
     p.days_left !== null ? vo2Tile('Days left', `${p.days_left}+`, 'to the earliest finish') : null,
   ].filter(Boolean);
-  body.replaceChildren(
+  fill(body,
     h('div', { class: 'program-title' }, h('strong', {}, p.program), ` since ${niceDate(p.start_date)}`, ...flags),
     p.percent !== null ? h('div', { class: 'ex-bar-track program-track', role: 'img', 'aria-label': `${p.percent}% of the program` },
       h('div', { class: 'ex-bar', style: `width:${Math.max(2, p.percent)}%` })) : null,
@@ -1101,6 +1105,80 @@ function initPrompt() {
   $('#settings').addEventListener('submit', saveSettings);
 }
 
+// ---------------- activity ----------------
+const RUN_LABELS = { sync: 'Sync', review: 'Weekly review', 'review-eval': 'Review eval' };
+const runLabel = (name) => RUN_LABELS[name] ?? name;
+const RUN_STATUS = { running: 'running', ok: 'finished', error: 'failed', failed: 'failed' };
+const when = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+const seconds = (ms) => (ms == null ? '' : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60000)} min`);
+const usd = (v) => (v ? `$${v.toFixed(4)}` : '');
+const activity = { selected: null, log: 'sync', timer: null };
+
+/** A run's summary as label: value lines (nested objects flattened to "source rows read"). */
+function summaryLines(obj, prefix = '') {
+  if (!obj || typeof obj !== 'object') return [];
+  return Object.entries(obj).flatMap(([k, v]) => {
+    const label = `${prefix}${k.replace(/_/g, ' ')}`;
+    if (v && typeof v === 'object' && !Array.isArray(v)) return summaryLines(v, `${label} `);
+    return [[label, Array.isArray(v) ? v.join(', ') : String(v)]];
+  });
+}
+
+async function loadActivity() {
+  clearTimeout(activity.timer);
+  const runs = await api('GET', '/api/runs?limit=100');
+  const list = $('#activity-list');
+  if (!runs.length) {
+    list.replaceChildren(h('p', { class: 'muted small' }, 'Nothing has run yet. Syncs run every morning at 7, and the review on Sunday at 8.'));
+    $('#activity-detail').replaceChildren();
+  } else {
+    if (!runs.some((r) => r.id === activity.selected)) activity.selected = runs[0].id;
+    list.replaceChildren(...runs.map((r) => {
+      const a = h('a', { href: '#activity', class: r.id === activity.selected ? 'on' : '' },
+        h('span', { class: `dot ${r.status}`, 'aria-hidden': 'true' }),
+        h('span', {}, h('b', {}, runLabel(r.name)),
+          h('span', { class: 'muted small' }, ` ${when(r.started_at)}, ${RUN_STATUS[r.status] ?? r.status}${r.duration_ms != null ? `, ${seconds(r.duration_ms)}` : ''}${r.cost_usd ? `, ${usd(r.cost_usd)}` : ''}`)));
+      a.addEventListener('click', (e) => { e.preventDefault(); activity.selected = r.id; loadActivity(); });
+      return a;
+    }));
+    await showRun(activity.selected);
+  }
+  await showLog(activity.log);
+  // Follow a run that is still going.
+  if (runs.some((r) => r.status === 'running') && location.hash === '#activity') activity.timer = setTimeout(loadActivity, 3000);
+}
+
+async function showRun(id) {
+  const r = await api('GET', `/api/runs/${id}`);
+  const lines = summaryLines(r.summary);
+  const shown = new Set(lines.map(([k]) => k));
+  const metaLines = summaryLines(r.meta).filter(([k]) => !shown.has(k)); // what the summary already lists is not repeated
+  const detail = $('#activity-detail');
+  fill(detail,
+    h('div', { class: 'activity-head' }, h('b', {}, runLabel(r.name)),
+      h('span', { class: 'muted small' }, ` started ${when(r.started_at)}${r.finished_at ? `, ${RUN_STATUS[r.status] ?? r.status} after ${seconds(r.duration_ms)}` : ', still running'}`)),
+    r.summary?.error ? h('p', { class: 'error' }, String(r.summary.error)) : null,
+    metaLines.length ? h('p', { class: 'muted small' }, metaLines.map(([k, v]) => `${k}: ${v}`).join('; ')) : null,
+    lines.length
+      ? h('ul', { class: 'plain-list' }, ...lines.filter(([k]) => k !== 'error').map(([k, v]) => h('li', {}, h('span', {}, k), h('strong', {}, v))))
+      : h('p', { class: 'muted small' }, 'No counts recorded.'),
+    r.calls.length ? h('div', { class: 'table-scroll' }, h('table', { class: 'calls' },
+      h('thead', {}, h('tr', {}, ...['Call', 'Model', 'Stop', 'In', 'Out', 'Cache read', 'Cost', 'Time'].map((t) => h('th', {}, t)))),
+      h('tbody', {}, ...r.calls.map((c) => h('tr', {},
+        h('td', {}, c.label ?? ''), h('td', {}, c.model ?? ''), h('td', {}, c.error_name ?? c.stop_reason ?? ''),
+        h('td', {}, c.input_tokens.toLocaleString()), h('td', {}, c.output_tokens.toLocaleString()),
+        h('td', {}, c.cache_read_tokens.toLocaleString()), h('td', {}, usd(c.cost_usd)), h('td', {}, seconds(c.duration_ms))))))) : null);
+}
+
+async function showLog(name) {
+  activity.log = name;
+  $$('[data-log]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.log === name)));
+  const { lines } = await api('GET', `/api/logs/${name}?lines=200`);
+  const box = $('#activity-log');
+  box.replaceChildren(...(lines.length ? lines : ['No log yet.']).map((l) => h('div', { class: `console-line${/^====/.test(l) ? ' run-start' : ''}${/failed|\berror:|\[\w+\] error|\b[1-9]\d* errors\b/i.test(l) ? ' bad' : ''}` }, l)));
+  box.scrollTop = box.scrollHeight;
+}
+
 // ---------------- start ----------------
 buildTodayForms();
 initPrompt();
@@ -1108,6 +1186,7 @@ initMeds();
 initLabs();
 $$('[data-tview]').forEach((b) => b.addEventListener('click', () => loadTraining(b.dataset.tview)));
 $$('[data-vview]').forEach((b) => b.addEventListener('click', () => loadVo2(b.dataset.vview)));
+$$('[data-log]').forEach((b) => b.addEventListener('click', () => showLog(b.dataset.log)));
 $$('[data-range]').forEach((b) => b.addEventListener('click', () => {
   state.range = Number(b.dataset.range);
   loadHistory();

@@ -244,3 +244,26 @@ h3.sub { font-size: 0.9rem; margin: 14px 0 6px; color: var(--text-secondary); fo
 .program-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; }
 .program-track { margin: 10px 0 4px; }
 .program-title .badge { border-color: var(--text-secondary); color: var(--text-secondary); margin-left: 0; }
+
+/* Activity */
+.activity-grid { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 12px; align-items: start; }
+@media (max-width: 720px) { .activity-grid { grid-template-columns: 1fr; } }
+.activity-list { display: flex; flex-direction: column; gap: 2px; max-height: 480px; overflow-y: auto; padding: 8px; }
+.activity-list a { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; color: inherit; text-decoration: none; }
+.activity-list a:hover { background: var(--surface-0); }
+.activity-list a.on { background: var(--surface-0); outline: 1px solid var(--series-1); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-secondary); transform: translateY(-1px); }
+.dot.ok { background: var(--series-1); }
+.dot.running { background: var(--series-1); animation: pulse 1.2s ease-in-out infinite; }
+.dot.error, .dot.failed { background: var(--danger); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .dot.running { animation: none; } }
+.activity-head { margin-bottom: 8px; }
+.activity-output .plain-list { margin-bottom: 8px; }
+.console { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.8rem; line-height: 1.45; background: var(--surface-0);
+  border-radius: 8px; padding: 8px 10px; max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; }
+.console-line.run-start { color: var(--text-secondary); margin-top: 6px; }
+.console-line.bad { color: var(--danger); }
+.activity-grid > * { min-width: 0; }
+table.calls th, table.calls td { white-space: nowrap; padding: 4px 8px; text-align: right; }
+table.calls th:nth-child(-n+3), table.calls td:nth-child(-n+3) { text-align: left; }

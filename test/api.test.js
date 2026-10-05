@@ -403,6 +403,36 @@ test('VO2 max: each view returns its points and tiles; unknown views are refused
   await done();
 });
 
+test('activity: runs newest first with counts and Claude calls; logs read by name only', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const logDir = mkdtempSync(join(tmpdir(), 'hr-logs-'));
+  writeFileSync(join(logDir, 'sync.log'), ['==== Mon 10/05/2026  7:00:01', '[sync] ok: 0 calls', 'health_metrics: {"rowsRead":35}', ''].join('\n'));
+  const store = openHealthStore(':memory:');
+  const app = await buildApp({ store, clock: () => TODAY, logDir });
+  const run = store.db.prepare(`INSERT INTO runs (name, meta, status, started_at, finished_at, duration_ms, calls, cost_usd, summary)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  run.run('sync', '{"backfill":false}', 'ok', '2026-03-08T12:00:00Z', '2026-03-08T12:00:03Z', 3000, 0, null, '{"counts":{"health_metrics":{"rowsRead":35}},"warnings":1}');
+  const reviewId = run.run('review', '{"weekEnd":"2026-03-07"}', 'ok', '2026-03-09T13:00:00Z', '2026-03-09T13:02:00Z', 120000, 1, 0.37, '{"sections":9,"attempts":1}').lastInsertRowid;
+  store.db.prepare(`INSERT INTO run_calls (run_id, label, model, stop_reason, input_tokens, output_tokens, cost_usd, duration_ms, created_at)
+    VALUES (?, 'review', 'claude-opus-5-5', 'end_turn', 9000, 3000, 0.37, 110000, '2026-03-09T13:02:00Z')`).run(reviewId);
+
+  const runs = (await app.inject('/api/runs')).json();
+  assert.deepEqual(runs.map((r) => r.name), ['review', 'sync']);
+  assert.equal(runs[0].summary, undefined, 'the list carries no summaries');
+  const detail = (await app.inject(`/api/runs/${reviewId}`)).json();
+  assert.deepEqual([detail.meta, detail.summary, detail.calls.length, detail.calls[0].model], [{ weekEnd: '2026-03-07' }, { sections: 9, attempts: 1 }, 1, 'claude-opus-5-5']);
+  assert.equal((await app.inject('/api/runs/999')).statusCode, 404);
+
+  assert.deepEqual((await app.inject('/api/logs/sync?lines=2')).json(), { name: 'sync', lines: ['[sync] ok: 0 calls', 'health_metrics: {"rowsRead":35}'] });
+  assert.deepEqual((await app.inject('/api/logs/review')).json(), { name: 'review', lines: [] }, 'no review log yet');
+  assert.equal((await app.inject('/api/logs/..%2F.env')).statusCode, 400, 'only the named logs can be read');
+  assert.equal((await app.inject('/api/logs/health')).statusCode, 400);
+  await app.close();
+  store.close();
+});
+
 test('status reports today and the last sync run', async () => {
   const { app, db, done } = await setup();
   db.prepare("INSERT INTO runs (name, status, started_at, finished_at, summary) VALUES ('sync', 'ok', '2026-03-09T12:00:00Z', '2026-03-09T12:00:03Z', '{\"counts\":{}}')").run();

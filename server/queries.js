@@ -1,4 +1,6 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact } from '../metrics/medications.js';
 import { loadMedications, loadStrengthSets } from '../metrics/load.js';
@@ -82,6 +84,38 @@ export function history(db, from, to) {
 export function listReviews(db) {
   return db.prepare('SELECT week_ending, report_md, created_at, model, warnings FROM reviews ORDER BY week_ending DESC').all()
     .map((r) => ({ ...r, warnings: r.warnings ? JSON.parse(r.warnings) : [] }));
+}
+
+// ---- activity: runs recorded by the tracer and the scheduled tasks' logs (metadata only by the hard rules) ----
+const parseJson = (text) => { try { return text ? JSON.parse(text) : null; } catch { return null; } };
+const RUN_COLUMNS = 'id, name, status, started_at, finished_at, duration_ms, calls, errors, input_tokens, output_tokens, cost_usd';
+
+/** Recent runs, newest first. */
+export function listRuns(db, limit = 100) {
+  return db.prepare(`SELECT ${RUN_COLUMNS} FROM runs ORDER BY id DESC LIMIT ?`).all(limit);
+}
+
+/** One run with its parsed meta and summary and its Claude calls, or null. */
+export function getRun(db, id) {
+  const run = db.prepare(`SELECT ${RUN_COLUMNS}, cache_read_tokens, cache_write_tokens, meta, summary FROM runs WHERE id = ?`).get(id);
+  if (!run) return null;
+  return {
+    ...run,
+    meta: parseJson(run.meta),
+    summary: parseJson(run.summary),
+    calls: db.prepare(`SELECT id, label, model, stop_reason, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+      cost_usd, duration_ms, error_name, error_message, created_at FROM run_calls WHERE run_id = ? ORDER BY id`).all(id),
+  };
+}
+
+export const LOG_NAMES = ['sync', 'review'];
+
+/** The last lines of a scheduled task's log (data/logs/<name>.log); empty when it does not exist yet. */
+export function readLog(dir, name, lines = 200) {
+  if (!LOG_NAMES.includes(name)) throw new Error(`Unknown log ${name}`);
+  const path = join(dir, `${name}.log`);
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf8').split(/\r?\n/).filter((l, i, all) => l !== '' || i < all.length - 1).slice(-lines);
 }
 
 export function lastSync(db) {

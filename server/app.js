@@ -9,6 +9,7 @@ import * as q from './queries.js';
 import { TIMINGS } from '../metrics/medications.js';
 import { VIEWS } from '../metrics/volume.js';
 import { VO2_VIEWS } from '../metrics/vo2max.js';
+import { repoPath } from '../tools/paths.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { currentProgram } from '../ingest/program-blocks.js';
 
@@ -62,7 +63,7 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  * @param {string} [ctx.authMode]
  * @param {() => Date} [ctx.clock]
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, logDir = repoPath('data', 'logs') }) {
   const app = Fastify({ logger });
   const { db } = store;
   let syncing = false;
@@ -88,6 +89,28 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   };
 
   app.get('/api/openapi.json', { schema: { hide: true } }, async () => app.swagger());
+
+  // ---- activity ----
+  app.get('/api/runs', {
+    schema: {
+      summary: 'Recent syncs, reviews and other runs, newest first (metadata only)',
+      querystring: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 } } },
+      response: { 200: { type: 'array', items: anyObject } },
+    },
+  }, async (req) => q.listRuns(db, req.query.limit));
+
+  app.get('/api/runs/:id', {
+    schema: { summary: 'One run with its counts and Claude calls (metadata only)', params: idParams, response: { 200: anyObject } },
+  }, async (req, reply) => q.getRun(db, req.params.id) ?? reply.code(404).send({ error: 'Run not found' }));
+
+  app.get('/api/logs/:name', {
+    schema: {
+      summary: 'The last lines of a scheduled task log (sync or review)',
+      params: { type: 'object', required: ['name'], properties: { name: { type: 'string', enum: q.LOG_NAMES } } },
+      querystring: { type: 'object', properties: { lines: { type: 'integer', minimum: 1, maximum: 2000, default: 200 } } },
+      response: { 200: { type: 'object', properties: { name: { type: 'string' }, lines: { type: 'array', items: { type: 'string' } } } } },
+    },
+  }, async (req) => ({ name: req.params.name, lines: q.readLog(logDir, req.params.name, req.query.lines) }));
 
   app.get('/api/status', { schema: { summary: 'Today and the last sync', response: { 200: anyObject } } }, async () => ({
     today: q.localDate(clock()),
