@@ -29,10 +29,12 @@ test('demo mode drops the drinking section and every line about drinking, and ke
   assert.doesNotMatch(out, /## Discuss with your physician/, 'a section left empty is dropped');
 });
 
-test('reviews with nothing about drinking are unchanged; CBD is not treated as alcohol', () => {
-  const plain = '## Weekly Wins\n- Slept 8 hours\n## Focus\nKeep the CBD routine in the evening.';
+test('reviews with nothing to hide are unchanged; CBD lines are hidden like drinking', () => {
+  const plain = '## Weekly Wins\n- Slept 8 hours\n## Focus\nKeep the evening stretch routine.';
   assert.equal(redactReview(plain), plain);
   assert.equal(redactReview(''), '');
+  const withCbd = '## Weekly Wins\n- Slept 8 hours\n- Two evenings with CBD\n## Patterns Noticed\nSleep was longer after cannabidiol.\nHRV held steady.';
+  assert.equal(redactReview(withCbd), '## Weekly Wins\n- Slept 8 hours\n## Patterns Noticed\nHRV held steady.');
 });
 
 test('the switch: ?demo=1 or ?demo=0 wins, else the saved choice; blocked storage means off', () => {

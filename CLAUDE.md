@@ -26,7 +26,7 @@ Health specific logic stays in this repo; never add it to agent-core.
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Demo mode (header checkbox, or ?demo=1 / ?demo=0; saved per browser, server/public/demo.js) hides
-                    drinking on screen only: the Drinks box, the alcohol chart, and drinking lines in reviews
+                    drinking and CBD on screen only: the Drinks box, the alcohol chart, and drinking or CBD lines in reviews
 /evals              fixtures/metrics (metric regression), fixtures/v1 (v1 golden outputs, see its README), and the review
                     contract eval: review-cases.json (real weeks by date only, synthetic overlays), grade-review.js
                     (shared grading), run-review-eval.mjs (runner from the claude-api skill scaffold)

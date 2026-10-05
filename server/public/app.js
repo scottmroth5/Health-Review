@@ -24,7 +24,7 @@ function setStatus(node, message, kind = '') {
 const state = { today: null, day: null, range: 30, demo: false };
 
 // ---------------- demo mode ----------------
-// Hides drinking data on screen for showing the app to others (see demo.js). Saved in this browser only.
+// Hides drinking and CBD on screen for showing the app to others (see demo.js). Saved in this browser only.
 function applyDemo(on) {
   state.demo = on;
   document.body.classList.toggle('demo', on);

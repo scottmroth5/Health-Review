@@ -1,11 +1,12 @@
-// Demo mode: a per-browser switch for showing the app to other people. It hides drinking data on screen only
-// (the Drinks box on Today, the alcohol chart on Health, and drinking in review text); nothing stored changes.
+// Demo mode: a per-browser switch for showing the app to other people. It hides drinking and CBD on screen only
+// (the Drinks box on Today, the alcohol chart on Health, and drinking or CBD in review text); nothing stored changes.
 // No DOM here, so the review filter is tested with node:test.
 
 export const DEMO_KEY = 'healthReview.demoMode';
 
-// Words that mark a line as about drinking. CBD is logged in the Drinks box but is not alcohol, so it stays.
-const DRINKING = /\b(drinks?|drinking|drank|alcohol(ic)?|beers?|wines?|bourbon|whiskey|liquor|cocktails?|booze|hangovers?|sober|sobriety)\b/i;
+// Words that mark a line as one to hide: drinking, and CBD (logged in the same Drinks box; not alcohol, but the
+// owner hides it in demo mode too).
+const DRINKING = /\b(drinks?|drinking|drank|alcohol(ic)?|beers?|wines?|bourbon|whiskey|liquor|cocktails?|booze|hangovers?|sober|sobriety|cbd|cannabidiol)\b/i;
 
 /** True when demo mode is on: ?demo=1 in the address turns it on (and ?demo=0 off), else the saved choice. */
 export function demoFromLocation(search, storage) {
