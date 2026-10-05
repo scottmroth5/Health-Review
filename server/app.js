@@ -9,6 +9,8 @@ import * as q from './queries.js';
 import { TIMINGS } from '../metrics/medications.js';
 import { VIEWS } from '../metrics/volume.js';
 import { VO2_VIEWS } from '../metrics/vo2max.js';
+import { loadCatalog } from '../metrics/catalog.js';
+import { currentProgram } from '../ingest/program-blocks.js';
 
 const nullable = (schema) => ({ ...schema, type: [schema.type, 'null'] });
 const scale = nullable({ type: 'integer', minimum: 1, maximum: 10 });
@@ -60,7 +62,7 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  * @param {string} [ctx.authMode]
  * @param {() => Date} [ctx.clock]
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog }) {
   const app = Fastify({ logger });
   const { db } = store;
   let syncing = false;
@@ -125,6 +127,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req) => q.trainingDashboard(db, req.query.view, q.localDate(clock())));
+
+  // The MAPS catalog is read per request when not injected, so edits to data/maps/programs.json show without a restart.
+  const programCatalog = () => (catalog === undefined ? loadCatalog() : catalog);
+  app.get('/api/program', {
+    schema: {
+      summary: 'The confirmed in-progress program block: week, phase, deload or failure week, expected end (program is null when none)',
+      response: { 200: { type: 'object', properties: { program: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: true }] } } } },
+    },
+  }, async () => ({ program: currentProgram(db, q.localDate(clock()), programCatalog()) }));
 
   app.get('/api/vo2max', {
     schema: {

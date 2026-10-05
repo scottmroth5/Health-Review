@@ -365,6 +365,23 @@ test('training: each view returns its bars, totals and breakdowns; planned sets 
   await done();
 });
 
+test('program: the confirmed in-progress block with week and phase from the catalog; null when there is none', async () => {
+  const { createCatalog } = await import('../metrics/catalog.js');
+  const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 3, phases: [
+    { name: 'Phase 1', weeks: [1, 1] }, { name: 'Phase 2', weeks: [2, 3], special_weeks: { failure: [2] } }] }] }, { programs: ['MAPS Symmetry'] });
+  const store = openHealthStore(':memory:');
+  const app = await buildApp({ store, clock: () => TODAY, catalog });
+  assert.deepEqual((await app.inject('/api/program')).json(), { program: null });
+  const now = new Date().toISOString();
+  store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
+    VALUES ('b1', 'MAPS Symmetry', '2026-03-01', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
+  const { program } = (await app.inject('/api/program')).json(); // today is 2026-03-09: week 2
+  assert.deepEqual([program.program, program.week, program.phase, program.failure_week, program.expected_end, program.days_left],
+    ['MAPS Symmetry', 2, 'Phase 2', true, '2026-03-21', 12]);
+  await app.close();
+  store.close();
+});
+
 test('VO2 max: each view returns its points and tiles; unknown views are refused', async () => {
   const { app, db, done } = await setup();
   const add = db.prepare("INSERT INTO daily_metrics (date, vo2max, updated_at) VALUES (?, ?, 'x')");

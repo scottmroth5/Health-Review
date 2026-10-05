@@ -819,7 +819,32 @@ async function loadVo2(view = vo2ViewChoice()) {
 
 async function loadTrainingTab() {
   if (!state.today) await loadStatus();
+  loadProgram();
   return loadTraining();
+}
+
+/** The "Current program" card: the confirmed in-progress block, with phase and week from the MAPS catalog. */
+async function loadProgram() {
+  const body = $('#program-body');
+  const { program: p } = await api('GET', '/api/program');
+  if (!p) {
+    body.className = 'muted small';
+    body.textContent = 'No program in progress. Confirm your current block with npm run programs:review.';
+    return;
+  }
+  body.className = '';
+  const flags = [p.deload_week && 'Deload week', p.failure_week && 'Failure week', p.beyond_program && 'Past the end of the program']
+    .filter(Boolean).map((f) => h('span', { class: 'badge' }, f));
+  const tiles = p.program_weeks
+    ? [vo2Tile('Phase', p.phase ?? 'Finished'), vo2Tile('Week', `${p.week} of ${p.program_weeks}`),
+      vo2Tile('Expected end', niceDate(p.expected_end)), vo2Tile('Days left', String(p.days_left))]
+    : [vo2Tile('Week', String(p.week)), vo2Tile('Program length', 'Not in the catalog')];
+  body.replaceChildren(
+    h('div', { class: 'program-title' }, h('strong', {}, p.program), ` since ${niceDate(p.start_date)}`, ...flags),
+    p.program_weeks ? h('div', { class: 'ex-bar-track program-track', role: 'img', 'aria-label': `${p.percent}% of the program` },
+      h('div', { class: 'ex-bar', style: `width:${Math.max(2, p.percent)}%` })) : null,
+    h('div', { class: 'tiles' }, ...tiles),
+    h('p', { class: 'muted small' }, `${plural(p.sessions, 'session')} logged in this block.`));
 }
 
 async function loadTraining(view = trainingViewChoice()) {

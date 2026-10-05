@@ -240,3 +240,7 @@ h3.sub { font-size: 0.9rem; margin: 14px 0 6px; color: var(--text-secondary); fo
 .training-head .filters { flex-wrap: wrap; gap: 4px; }
 .training-head .filters button { padding: 5px 10px; font-size: 0.9rem; }
 .tooltip .t-detail { color: var(--text-secondary); font-size: 0.78rem; }
+.program-card h2 { margin: 0 0 8px; }
+.program-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; }
+.program-track { margin: 10px 0 4px; }
+.program-title .badge { border-color: var(--text-secondary); color: var(--text-secondary); margin-left: 0; }
