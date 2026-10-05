@@ -365,7 +365,7 @@ test('training: each view returns its bars, totals and breakdowns; planned sets 
   await done();
 });
 
-test('program: the confirmed in-progress block with week and phase from the catalog; null when there is none', async () => {
+test('program: the confirmed in-progress block with phase from the logged workout names; null when there is none', async () => {
   const { createCatalog } = await import('../metrics/catalog.js');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 3, phases: [
     { name: 'Phase 1', weeks: [1, 1] }, { name: 'Phase 2', weeks: [2, 3], special_weeks: { failure: [2] } }] }] }, { programs: ['MAPS Symmetry'] });
@@ -375,9 +375,12 @@ test('program: the confirmed in-progress block with week and phase from the cata
   const now = new Date().toISOString();
   store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES ('b1', 'MAPS Symmetry', '2026-03-01', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  const { program } = (await app.inject('/api/program')).json(); // today is 2026-03-09: week 2
-  assert.deepEqual([program.program, program.week, program.phase, program.failure_week, program.expected_end, program.days_left],
-    ['MAPS Symmetry', 2, 'Phase 2', true, '2026-03-21', 12]);
+  const ex = store.db.prepare('INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise) VALUES (2026, ?, ?, ?, ?)');
+  ex.run(2, '2026-03-01', 'Symmetry Foundation 1 - Phase 1', 'Squat');
+  ex.run(3, '2026-03-06', 'Symmetry Foundation 1 - Phase 2', 'Squat');
+  const { program } = (await app.inject('/api/program')).json(); // today is 2026-03-09
+  assert.deepEqual([program.phase, program.phase_started, program.phase_week, program.week, program.failure_week, program.earliest_finish, program.days_left, program.estimated],
+    ['Phase 2', '2026-03-06', 1, 2, true, '2026-03-19', 10, false]);
   await app.close();
   store.close();
 });

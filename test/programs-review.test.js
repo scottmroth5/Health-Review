@@ -117,30 +117,25 @@ test('forward: new lifting days join the in-progress confirmed block with progra
   store.close();
 });
 
-test('phases: sessions and blocks take phase and program length from the catalog; status reports week, phase and expected end', async () => {
+test('phases: sessions take the logged phase; status reports phase week, program week and finish from the names', async () => {
   const { createCatalog } = await import('../metrics/catalog.js');
   const { refreshPhases, blockStatus, currentProgram } = await import('../ingest/program-blocks.js');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 4, phases: [
     { name: 'Phase 1', weeks: [1, 2] }, { name: 'Phase 2', weeks: [3, 4], special_weeks: { deload: [4] } }] }] }, { programs: ['MAPS Symmetry', 'MAPS Anabolic'] });
-  const { store, db, sym, ana } = setup(); // Symmetry Jan 6 to Jan 20 (3 weeks), Anabolic Jan 27 to Feb 10
+  const { store, db, sym, ana } = setup(); // Symmetry Jan 6 to Jan 20, every name "Phase 1"; Anabolic Jan 27 to Feb 10
   refreshPhases(db, catalog);
-  assert.deepEqual(db.prepare('SELECT date, phase FROM log_sessions WHERE block_id = ? ORDER BY date').all(sym).map((r) => r.phase),
-    ['Phase 1', 'Phase 1', 'Phase 1', 'Phase 1', 'Phase 1', 'Phase 1', 'Phase 1', 'Phase 2']);
+  assert.ok(db.prepare('SELECT phase FROM log_sessions WHERE block_id = ?').all(sym).every((r) => r.phase === 'Phase 1'), 'named Phase 1 throughout');
   assert.equal(db.prepare('SELECT program_weeks FROM program_blocks WHERE id = ?').get(sym).program_weeks, 4);
   assert.equal(db.prepare('SELECT program_weeks FROM program_blocks WHERE id = ?').get(ana).program_weeks, null, 'not in the catalog');
-  assert.ok(db.prepare('SELECT phase FROM log_sessions WHERE block_id = ?').all(ana).every((r) => r.phase === null));
 
   const done = blockStatus(db, findBlock(db, sym), TODAY, catalog);
-  assert.deepEqual([done.week, done.program_weeks, done.percent, done.phase, done.days_left], [3, 4, 75, 'Phase 2', null]);
+  assert.deepEqual([done.phase, done.phase_week, done.week, done.percent, done.earliest_finish], ['Phase 1', 3, 2, 50, null]);
 
-  // Make Symmetry the confirmed in-progress block and look at it on a day in its last week.
-  editBlock(db, sym, { status: 'in_progress' }, { today: '2025-01-30' });
-  confirmBlocks(db, sym, { today: '2025-01-30' });
-  const now = currentProgram(db, '2025-01-30', catalog);
-  assert.deepEqual([now.program, now.week, now.phase, now.deload_week, now.expected_end, now.days_left, now.percent],
-    ['MAPS Symmetry', 4, 'Phase 2', true, '2025-02-02', 3, 100]);
-  const past = currentProgram(db, '2025-02-10', catalog);
-  assert.deepEqual([past.week, past.phase, past.beyond_program, past.days_left], [6, null, true, 0]);
-  assert.equal(currentProgram(db, '2025-01-30', null).phase, null, 'no catalog: no phase, everything else still works');
+  editBlock(db, sym, { status: 'in_progress' }, { today: '2025-01-21' });
+  confirmBlocks(db, sym, { today: '2025-01-21' });
+  const now = currentProgram(db, '2025-01-21', catalog);
+  assert.deepEqual([now.phase, now.phase_started, now.week, now.earliest_finish, now.days_left], ['Phase 1', '2025-01-06', 2, '2025-02-02', 12]);
+  const noCatalog = currentProgram(db, '2025-01-21', null);
+  assert.deepEqual([noCatalog.phase, noCatalog.week, noCatalog.earliest_finish], ['Phase 1', null, null], 'names still give the phase');
   store.close();
 });

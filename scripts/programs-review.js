@@ -34,10 +34,13 @@ function printList(unconfirmed) {
   for (const b of blocks) {
     const end = b.end_date ?? 'in progress';
     const st = blockStatus(db, b, today, catalog);
+    const finish = st.earliest_finish
+      ? `, finish ~${shortDate(st.earliest_finish)}${st.pace_finish && st.pace_finish !== st.earliest_finish ? ` to ${shortDate(st.pace_finish)}` : ''}` : '';
     const progress = !st.program_weeks ? ''
       : b.status === 'in_progress'
-        ? `  [${st.beyond_program ? 'past the program' : st.phase}, week ${st.week} of ${st.program_weeks}${st.deload_week ? ', deload week' : ''}${st.failure_week ? ', failure week' : ''}, ends ~${shortDate(st.expected_end)}]`
-        : `  [${st.program_weeks}-week program, reached ${st.percent}%]`;
+        ? `  [${st.phase ?? 'phase unknown'}${st.phase_started ? ` (since ${shortDate(st.phase_started)})` : ''}${st.estimated ? ' (calendar estimate)' : ''}`
+          + `${st.week ? `, week ${st.week} of ${st.program_weeks}` : ''}${st.deload_week ? ', deload week' : ''}${st.failure_week ? ', failure week' : ''}${finish}]`
+        : `  [${st.program_weeks}-week program, reached ${st.percent ?? '?'}%]`;
     console.log(`${b.id.slice(0, 8)}  ${b.source === 'confirmed' ? 'confirmed' : 'detected '}  ${b.start_date} to ${end.padEnd(11)}  `
       + `${String(b.sessions).padStart(3)} sessions  ${b.status.padEnd(11)}  ${b.program}${b.phase ? ` ${b.phase}` : ''}${progress}${b.notes ? `  (${b.notes})` : ''}`);
   }

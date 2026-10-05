@@ -150,3 +150,28 @@ test('blocks: a Between programs stretch between two runs of the same program jo
     ['MAPS Aesthetic', '2024-02-15', 6, null],
   ]);
 });
+
+test('progress: uneven logged phases give the real phase, program week and a finish range at the block pace', async () => {
+  const { programProgress } = await import('../metrics/blocks.js');
+  const { createCatalog } = await import('../metrics/catalog.js');
+  const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 11, phases: [
+    { name: 'Phase 1', weeks: [1, 2] }, { name: 'Phase 2', weeks: [3, 5] }, { name: 'Phase 3', weeks: [6, 8] }, { name: 'Phase 4', weeks: [9, 11] }] }] },
+  { programs: ['MAPS Symmetry'] });
+  const block = { program: 'MAPS Symmetry', start_date: '2026-01-05', status: 'in_progress' };
+  const rows = [
+    { date: '2026-01-05', workout: 'Symmetry Foundation - Phase 1' }, { date: '2026-01-09', workout: null },
+    { date: '2026-01-19', workout: 'Symmetry Foundation - Phase 2' }, // 2 weeks, as planned
+    { date: '2026-02-16', workout: 'Symmetry Foundation - Phase 3' }, // Phase 2 took 4 weeks of 3
+    { date: '2026-03-16', workout: 'Symmetry Foundation - Phase 4' }, // Phase 3 took 4 weeks of 3
+  ];
+  const p = programProgress(block, rows, catalog, '2026-03-16');
+  assert.deepEqual([p.phase, p.phaseStarted, p.phaseWeek, p.phaseWeeks, p.week, p.programWeeks, p.estimated],
+    ['Phase 4', '2026-03-16', 1, 3, 9, 11, false]);
+  assert.equal(p.earliestFinish, '2026-04-05', 'three planned weeks from the day Phase 4 started');
+  assert.equal(p.pace, 1.25, '10 actual weeks over 8 planned');
+  assert.equal(p.paceFinish, '2026-04-10');
+  const early = programProgress(block, rows.slice(0, 2), catalog, '2026-01-12');
+  assert.deepEqual([early.phase, early.week, early.pace, early.paceFinish], ['Phase 1', 2, null, null], 'no finished phase: no pace yet');
+  const none = programProgress(block, [{ date: '2026-01-20', workout: null }], catalog, '2026-01-20');
+  assert.deepEqual([none.estimated, none.phase, none.week], [true, 'Phase 2', 3], 'no names: the calendar, marked estimated');
+});

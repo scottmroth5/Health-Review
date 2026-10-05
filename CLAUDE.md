@@ -114,8 +114,12 @@ explicit unassigned; re-detection never touches confirmed blocks, owner-unassign
 sync, new lifting days join the in-progress confirmed block with program and week (source 'forward').
 MAPS catalog (metrics/catalog.js, data/maps/programs.json): each program's weeks, phases with week ranges, deload and
 failure weeks and prescriptions, transcribed from the owner's Mind Pump PDFs in data/MAPS Programs. refreshPhases
-(after detection, review commands and sync) stores each session's phase and each block's program_weeks; blockStatus
-gives week, phase, expected end and days left (status stays detected or owner-set; abandoned is never proposed).
+(after detection, review commands and sync) stores each session's phase and each block's program_weeks. Phases come
+from the logged workout names (the owner misses days, so calendar weeks drift); the catalog supplies phase lengths, and
+its calendar is only the fallback for a block with no phase names (marked estimated). blockStatus and programProgress
+(metrics/blocks.js) give the phase and when it started, week of phase and of program, the earliest finish (rest of
+the program at full speed from the current phase's start) and the finish at this block's pace (actual over planned
+weeks of its finished phases); status stays detected or owner-set, and abandoned is never proposed.
 GET /api/program feeds the Training tab's Current program card, and the weekly summary's program block carries the
 same facts. Everything works without the catalog (phases unknown).
 New tables use portable types (UUID text keys, UTC ISO timestamps, CHECK constraints) for a later PostgreSQL move.

@@ -8,6 +8,15 @@ import { loadCatalog } from './catalog.js';
 import { programAt } from './blocks.js';
 
 /** @param {{ catalog?: object|null }} [options]  MAPS catalog; defaults to data/maps/programs.json when present */
+// The confirmed program block the week ends in, with phase and finish from its logged workout names.
+function programForWeek(db, weekEnd, catalog) {
+  const block = db.prepare(`SELECT program, start_date, status FROM program_blocks WHERE source = 'confirmed'
+    AND start_date <= ? AND COALESCE(end_date, ?) >= ? ORDER BY start_date DESC LIMIT 1`).get(weekEnd, weekEnd, addDays(weekEnd, -6));
+  if (!block) return null;
+  const rows = db.prepare('SELECT date, workout FROM strength_exercises WHERE date BETWEEN ? AND ?').all(block.start_date, weekEnd);
+  return programAt(block, catalog, weekEnd, rows);
+}
+
 export function loadWeekData(db, weekEnd, { catalog } = {}) {
   const from = addDays(weekEnd, -125);
   const nextMorning = addDays(weekEnd, 1);
@@ -25,9 +34,7 @@ export function loadWeekData(db, weekEnd, { catalog } = {}) {
     medication_doses: db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses WHERE date BETWEEN ? AND ?')
       .all(addDays(weekEnd, -6), weekEnd),
     // The confirmed program block the week ends in, with its phase and week from the catalog.
-    program: programAt(db.prepare(`SELECT program, start_date, status FROM program_blocks WHERE source = 'confirmed'
-      AND start_date <= ? AND COALESCE(end_date, ?) >= ? ORDER BY start_date DESC LIMIT 1`).get(weekEnd, weekEnd, addDays(weekEnd, -6)) ?? null,
-      catalog === undefined ? loadCatalog() : catalog, weekEnd),
+    program: programForWeek(db, weekEnd, catalog === undefined ? loadCatalog() : catalog),
   };
 }
 

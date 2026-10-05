@@ -2,10 +2,10 @@
 // owner has confirmed are authoritative, and re-detection never touches them or their sessions.
 // Sessions are one per lifting day with a UUID derived from the date, so reruns update rather than add.
 import { createHash, randomUUID } from 'node:crypto';
-import { detectBlocks, weekOf } from '../metrics/blocks.js';
+import { detectBlocks, loggedPhases, phaseOnDay, programProgress, weekOf } from '../metrics/blocks.js';
 import { loadStrengthSets } from '../metrics/load.js';
 import { performed } from '../metrics/strength.js';
-import { addDays, daysBetween } from '../metrics/stats.js';
+import { daysBetween } from '../metrics/stats.js';
 
 // UUID v5 (RFC 9562) in a fixed namespace for this app's sessions.
 const SESSION_NAMESPACE = 'a3c1f6e2-5b8d-4f0a-9c7e-2d4b6a8e0f13';
@@ -87,38 +87,41 @@ export function assignForward(db, today, { now = new Date() } = {}) {
 
 // ---- phases and status from the program catalog ----
 
+// The block's Workout Log rows (date and workout name) from its start to a date.
+const blockRows = (db, block, to) => db.prepare('SELECT date, workout FROM strength_exercises WHERE date BETWEEN ? AND ? ORDER BY date, row_no')
+  .all(block.start_date, to);
+
 /**
- * Recomputes each block's program length and each session's phase from the catalog (metrics/catalog.js).
- * Run after any change to blocks or sessions; with no catalog, or a program not in it, both are NULL.
+ * Recomputes each block's program length and each session's phase. The phase comes from the workout names
+ * (the latest phase named on or before the day); the catalog's calendar is the fallback for days before any
+ * named phase. NULL when neither knows.
  */
 export function refreshPhases(db, catalog) {
-  const blocks = db.prepare('SELECT id, program, start_date FROM program_blocks').all();
+  const blocks = db.prepare('SELECT id, program, start_date, end_date FROM program_blocks').all();
   const setWeeks = db.prepare('UPDATE program_blocks SET program_weeks = ? WHERE id = ?');
   const setPhase = db.prepare('UPDATE log_sessions SET phase = ? WHERE id = ?');
   db.transaction(() => {
     db.prepare('UPDATE log_sessions SET phase = NULL WHERE block_id IS NULL').run();
     for (const b of blocks) {
       setWeeks.run(catalog?.programWeeks(b.program) ?? null, b.id);
-      for (const s of db.prepare('SELECT id, date FROM log_sessions WHERE block_id = ?').all(b.id)) {
-        const at = catalog?.phaseAt(b.program, weekOf(b.start_date, s.date));
-        setPhase.run(at ? (at.beyond ? 'Beyond program' : at.phase) : null, s.id);
-      }
+      const sessions = db.prepare('SELECT id, date FROM log_sessions WHERE block_id = ? ORDER BY date').all(b.id);
+      if (!sessions.length) continue;
+      const logged = loggedPhases(blockRows(db, b, sessions[sessions.length - 1].date));
+      for (const s of sessions) setPhase.run(phaseOnDay(b, logged, catalog, s.date), s.id);
     }
   })();
 }
 
 /**
- * Where a block stands: program length, week (today's for an in-progress block, the last session's otherwise),
- * phase, deload or failure week, expected end, days left and percent of the program reached. Facts only:
- * status stays what detection or the owner set.
+ * Where a block stands (today for an in-progress block, its last session otherwise): phase and when it started,
+ * week of the phase and of the program, deload or failure week, and the earliest and at-your-pace finish.
+ * Facts only: status stays what detection or the owner set.
  */
 export function blockStatus(db, block, today, catalog) {
   const sessions = db.prepare('SELECT COUNT(*) AS n, MAX(date) AS last FROM log_sessions WHERE block_id = ?').get(block.id);
   const inProgress = block.status === 'in_progress';
-  const week = weekOf(block.start_date, inProgress ? today : (sessions.last ?? block.start_date));
-  const weeks = catalog?.programWeeks(block.program) ?? null;
-  const at = catalog?.phaseAt(block.program, week) ?? null;
-  const expectedEnd = weeks ? addDays(block.start_date, weeks * 7 - 1) : null;
+  const asOf = inProgress ? today : (sessions.last ?? block.start_date);
+  const p = programProgress(block, blockRows(db, block, asOf), catalog, asOf);
   return {
     id: block.id,
     program: block.program,
@@ -128,15 +131,20 @@ export function blockStatus(db, block, today, catalog) {
     end_date: block.end_date,
     sessions: sessions.n,
     last_session: sessions.last,
-    week,
-    program_weeks: weeks,
-    phase: at ? (at.beyond ? null : at.phase) : null,
-    beyond_program: Boolean(at?.beyond),
-    deload_week: Boolean(at?.deload),
-    failure_week: Boolean(at?.failure),
-    expected_end: expectedEnd,
-    days_left: inProgress && expectedEnd ? Math.max(0, daysBetween(today, expectedEnd)) : null,
-    percent: weeks ? Math.min(100, Math.round((Math.min(week, weeks) / weeks) * 100)) : null,
+    phase: p.phase,
+    phase_started: p.phaseStarted,
+    phase_week: p.phaseWeek,
+    phase_weeks: p.phaseWeeks,
+    week: p.week,
+    program_weeks: p.programWeeks,
+    estimated: p.estimated,
+    beyond_program: p.pastProgramEnd,
+    deload_week: p.deloadWeek,
+    failure_week: p.failureWeek,
+    earliest_finish: inProgress ? p.earliestFinish : null,
+    pace_finish: inProgress ? p.paceFinish : null,
+    days_left: inProgress && p.earliestFinish ? Math.max(0, daysBetween(today, p.earliestFinish)) : null,
+    percent: p.week && p.programWeeks ? Math.min(100, Math.round((p.week / p.programWeeks) * 100)) : null,
   };
 }
 

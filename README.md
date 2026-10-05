@@ -111,9 +111,14 @@ phases, prescriptions and how many blueprint exercise names map to the exercise 
 the ones that don't).
 
 **Uses:**
-- **Phase and week:** a session's week counts from its block's first session, and the catalog gives its phase.
-  Weeks past the program's end are marked as past the end. To shift week 1, for example when a pre-phase week wasn't
-  logged, run `programs:review -- edit <id> --start <date>`.
+- **Phase:** taken from your workout names ("... Phase 3"). Each session gets the latest phase named on or before
+  it. The catalog's calendar is used only for a block whose names never mention a phase, and is marked as an
+  estimate.
+- **Program week:** the week of the program the current phase began in, plus the weeks since it began. Missed days
+  don't push you ahead.
+- **Finish:** a range.
+  - **Earliest:** the rest of the program at full speed, counted from the day the current phase started.
+  - **At your pace:** the same, stretched by how long this block's finished phases actually took compared with plan.
 - **Where you stand:** `programs:review list`, the Training tab's Current program card and the weekly review show
-  the program, phase, week of total, deload or failure week, expected end and days left.
+  the program, phase and when it started, program week, any deload or failure week, the finish range and days left.
 - **Status:** detection marks a block completed or in progress, and never abandoned. You set abandoned yourself.

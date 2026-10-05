@@ -202,7 +202,7 @@ test('summary: the weekly review gets 12 weeks and 12 months of training volume,
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'Volume was 750 lbs this week and 700 in May.']]), allowed), []);
 });
 
-test('summary: the current program block, its phase and week reach the review as grounded facts', async () => {
+test('summary: the current program block, its logged phase and finish reach the review as grounded facts', async () => {
   const { createCatalog } = await import('../metrics/catalog.js');
   const { loadWeekData } = await import('../metrics/load.js');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 11, phases: [
@@ -211,12 +211,15 @@ test('summary: the current program block, its phase and week reach the review as
   const now = new Date().toISOString();
   store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES ('b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  const data = loadWeekData(store.db, '2026-09-26', { catalog });
-  const s = buildSummary(computeWeek(data, { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
-  assert.deepEqual(s.program, { program: 'MAPS Symmetry', status: 'in_progress', week: 8, programWeeks: 11, phase: 'Phase 2',
-    pastProgramEnd: false, deloadWeek: false, failureWeek: false });
+  const ex = store.db.prepare('INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise) VALUES (2026, ?, ?, ?, ?)');
+  ex.run(2, '2026-08-03', 'Symmetry Foundation - Phase 1', 'Squat');
+  ex.run(3, '2026-09-14', 'Symmetry Foundation - Phase 2', 'Squat'); // Phase 1 took 6 weeks of a planned 5
+  const s = buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  assert.deepEqual(s.program, { program: 'MAPS Symmetry', status: 'in_progress', phase: 'Phase 2', phaseStarted: '2026-09-14', phaseWeek: 2,
+    phaseWeeks: 6, week: 7, programWeeks: 11, earliestFinish: '2026-10-25', paceFinish: '2026-11-02', pastProgramEnd: false,
+    deloadWeek: true, failureWeek: false, estimatedFromCalendar: false });
   const allowed = allowedNumbers(s, '');
-  assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'You are in week 8 of 11 of MAPS Symmetry, Phase 2.']]), allowed), []);
+  assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'You are in week 7 of 11 of MAPS Symmetry, Phase 2, week 2 of 6.']]), allowed), []);
   assert.equal(buildSummary(computeWeek(loadWeekData(store.db, '2026-07-25', { catalog }), { weekEnd: '2026-07-25' }), [], { today: '2026-07-26' }).program, null,
     'no block covers that week');
   store.close();

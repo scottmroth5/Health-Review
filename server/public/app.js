@@ -835,13 +835,24 @@ async function loadProgram() {
   body.className = '';
   const flags = [p.deload_week && 'Deload week', p.failure_week && 'Failure week', p.beyond_program && 'Past the end of the program']
     .filter(Boolean).map((f) => h('span', { class: 'badge' }, f));
-  const tiles = p.program_weeks
-    ? [vo2Tile('Phase', p.phase ?? 'Finished'), vo2Tile('Week', `${p.week} of ${p.program_weeks}`),
-      vo2Tile('Expected end', niceDate(p.expected_end)), vo2Tile('Days left', String(p.days_left))]
-    : [vo2Tile('Week', String(p.week)), vo2Tile('Program length', 'Not in the catalog')];
+  const short = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const phaseNote = p.phase_started
+    ? `${p.phase_weeks ? `week ${p.phase_week} of ${p.phase_weeks}, ` : ''}since ${short(p.phase_started)}`
+    : (p.estimated ? 'estimated from the calendar' : null);
+  const finish = !p.earliest_finish ? null
+    : p.pace_finish && p.pace_finish !== p.earliest_finish
+      ? vo2Tile('Finish', `${short(p.earliest_finish)} to ${p.pace_finish.slice(0, 7) === p.earliest_finish.slice(0, 7) ? Number(p.pace_finish.slice(8)) : short(p.pace_finish)}`,
+        'earliest, then at your pace this block')
+      : vo2Tile('Finish', niceDate(p.earliest_finish), 'at the earliest');
+  const tiles = [
+    vo2Tile('Phase', p.phase ?? (p.beyond_program ? 'Past the program' : 'Unknown'), phaseNote),
+    p.week && p.program_weeks ? vo2Tile('Program week', `${p.week} of ${p.program_weeks}`) : vo2Tile('Program length', 'Not in the catalog'),
+    finish,
+    p.days_left !== null ? vo2Tile('Days left', `${p.days_left}+`, 'to the earliest finish') : null,
+  ].filter(Boolean);
   body.replaceChildren(
     h('div', { class: 'program-title' }, h('strong', {}, p.program), ` since ${niceDate(p.start_date)}`, ...flags),
-    p.program_weeks ? h('div', { class: 'ex-bar-track program-track', role: 'img', 'aria-label': `${p.percent}% of the program` },
+    p.percent !== null ? h('div', { class: 'ex-bar-track program-track', role: 'img', 'aria-label': `${p.percent}% of the program` },
       h('div', { class: 'ex-bar', style: `width:${Math.max(2, p.percent)}%` })) : null,
     h('div', { class: 'tiles' }, ...tiles),
     h('p', { class: 'muted small' }, `${plural(p.sessions, 'session')} logged in this block.`));
