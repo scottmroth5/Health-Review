@@ -87,3 +87,33 @@ of a program, named by the program only (phases are ignored).
    Every command ends with a coverage line: lifting days in confirmed blocks, unassigned, and still to review.
 3. **Re-detect safely.** Running `programs:detect -- --write` again replaces only detected blocks. Confirmed blocks, days you marked unassigned, and later sessions are kept.
 4. **Going forward.** Confirm the block you're currently running with status `in_progress`. After each sync, new lifting days join it with its program and a week number, so they never need detection. When you start a new program, end the old block (`edit <id> --status completed --end ...`), then add the new one by detecting and confirming it.
+
+## MAPS program catalog
+
+`data/maps/programs.json` holds each MAPS program's structure, taken from your own copies of the blueprints and
+calendars in `data/MAPS Programs/`. Those are Mind Pump's copyrighted material, so both folders stay under
+`data/`: they're gitignored, never committed, and their text is never sent anywhere.
+
+```json
+{ "version": 1,
+  "programs": [
+    { "name": "Program name from metrics/programs.js", "weeks": 9, "focus": "...", "equipment": ["barbell"],
+      "phases": [
+        { "name": "Phase 1", "weeks": [1, 3], "workouts_per_week": 6, "sets": "3", "reps": "8-12", "rest": "60 seconds",
+          "special_weeks": { "deload": [], "failure": [2] },
+          "workouts": [{ "name": "Day 1", "exercises": [{ "name": "...", "sets": "3", "reps": "8-12" }] }] }
+      ] } ] }
+```
+
+**Validation:** phase week ranges must run from week 1 to the program's last week with no gaps or overlaps. `sets`
+and `reps` are a number or a range. `npm run programs:catalog` validates the file and prints each program's weeks,
+phases, prescriptions and how many blueprint exercise names map to the exercise dictionary (`-- --unmapped` lists
+the ones that don't).
+
+**Uses:**
+- **Phase and week:** a session's week counts from its block's first session, and the catalog gives its phase.
+  Weeks past the program's end are marked as past the end. To shift week 1, for example when a pre-phase week wasn't
+  logged, run `programs:review -- edit <id> --start <date>`.
+- **Where you stand:** `programs:review list`, the Training tab's Current program card and the weekly review show
+  the program, phase, week of total, deload or failure week, expected end and days left.
+- **Status:** detection marks a block completed or in progress, and never abandoned. You set abandoned yourself.

@@ -15,7 +15,8 @@ Health specific logic stays in this repo; never add it to agent-core.
                     optional exercise-name assist)
 /metrics            deterministic metric calculations: stats.js (windows, rounding, pearson), one module per report
                     area (recovery, cardio, strength, drinking, checkins), index.js computeWeek, load.js (SQL),
-                    dictionary.js (exercise dictionary loader), blocks.js (program block detection);
+                    dictionary.js (exercise dictionary loader), blocks.js (program block detection), catalog.js (MAPS
+                    program catalog loader);
                     fixtures with hand-computed expectations in evals/fixtures/metrics, run by test/metrics.test.js
 /ingest             Google Sheets to SQLite: sheets.js (read-only client, fakeable), parsers.js (one per sheet), sync.js;
                     the only code touching raw source rows; normalize.js (dictionary onto the Workout Log) and
@@ -49,6 +50,7 @@ npm run log:unmapped              names with no dictionary entry, with set count
                                   -- --accept data/exercise-proposals.json adds the kept proposals)
 npm run programs:detect           propose program blocks from history (-- --write saves them as detected)
 npm run programs:review -- list   confirm, edit, merge, split blocks and unassign days (see README.md)
+npm run programs:catalog          validate data/maps/programs.json and print each program's weeks and phases
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
 npm run prompts:import-v1         one-time import of data/v1-export/prompts into prompt_sections (-- --replace to overwrite)
 npm run metrics                   print the computed summary for last week (-- --week YYYY-MM-DD for another Saturday)
@@ -110,6 +112,12 @@ same program on both sides joins that run),
 then confirmed by the owner. log_sessions holds one row per lifting day (UUID v5 of the date) with its block or an
 explicit unassigned; re-detection never touches confirmed blocks, owner-unassigned days or forward sessions. After a
 sync, new lifting days join the in-progress confirmed block with program and week (source 'forward').
+MAPS catalog (metrics/catalog.js, data/maps/programs.json): each program's weeks, phases with week ranges, deload and
+failure weeks and prescriptions, transcribed from the owner's Mind Pump PDFs in data/MAPS Programs. refreshPhases
+(after detection, review commands and sync) stores each session's phase and each block's program_weeks; blockStatus
+gives week, phase, expected end and days left (status stays detected or owner-set; abandoned is never proposed).
+GET /api/program feeds the Training tab's Current program card, and the weekly summary's program block carries the
+same facts. Everything works without the catalog (phases unknown).
 New tables use portable types (UUID text keys, UTC ISO timestamps, CHECK constraints) for a later PostgreSQL move.
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
@@ -166,6 +174,8 @@ log its text.
 The exercise-name assist (npm run log:unmapped -- --suggest) sends exercise names only (unmapped names and the
 dictionary's own names), and only after the owner types yes; never weights, dates, set counts or other log data
 (owner's choice, 2026-10-02). Its proposals reach the dictionary only through --accept.
+The MAPS PDFs and anything transcribed from them (data/maps) are Mind Pump's copyrighted material: never commit them,
+put them in fixtures, or send their text anywhere; only computed facts (program, phase, week) leave this machine.
 Metrics are computed in code, never by the model.
 Anything involving medications, abnormal labs, or symptoms is flagged for physician discussion, not turned into a recommendation.
 Never output em dashes, en dashes, or double hyphens in generated text.
