@@ -263,3 +263,10 @@ test('VO2 max: latest, changes vs the nearest earlier reading within 30 days, an
   const none = vo2maxReport([], '90d', today);
   assert.deepEqual([none.latest, none.best, none.rangeAvg, none.points], [null, null, null, []]);
 });
+
+test('programs: MAPS 15 workouts are MAPS 15 Advanced, separate from MAPS Anabolic Advanced', async () => {
+  const { programOf } = await import('../metrics/programs.js');
+  assert.equal(programOf('MAPS 15 Advanced Phase II Day 3'), 'MAPS 15 Advanced');
+  assert.equal(programOf('MAPS 15 Phase 1 Day 2'), 'MAPS 15 Advanced');
+  assert.equal(programOf('MAPS Anabolic Advanced Phase 1 Day 1'), 'MAPS Anabolic Advanced');
+});

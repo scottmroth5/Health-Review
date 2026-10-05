@@ -10,7 +10,7 @@ export const PROGRAMS = [
   ['MAPS Aesthetic', /aesthetic/i],
   ['MAPS Split', /\bsplit\b/i],
   ['MAPS Symmetry', /symmetry/i],
-  ['MAPS 15', /maps 15/i],
+  ['MAPS 15 Advanced', /maps 15/i], // every MAPS 15 workout logged so far is Advanced (owner, 2026-10-05)
   ['No BS 6-Pack', /no bs/i],
   ['HIIT', /\bhiit\b|\bhitt\b/i],
   ['Between programs', /between programs/i],
