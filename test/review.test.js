@@ -201,3 +201,23 @@ test('summary: the weekly review gets 12 weeks and 12 months of training volume,
   const allowed = allowedNumbers(s, '');
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'Volume was 750 lbs this week and 700 in May.']]), allowed), []);
 });
+
+test('summary: the current program block, its phase and week reach the review as grounded facts', async () => {
+  const { createCatalog } = await import('../metrics/catalog.js');
+  const { loadWeekData } = await import('../metrics/load.js');
+  const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 11, phases: [
+    { name: 'Phase 1', weeks: [1, 5] }, { name: 'Phase 2', weeks: [6, 11], special_weeks: { deload: [7] } }] }] }, { programs: ['MAPS Symmetry'] });
+  const store = openHealthStore(':memory:');
+  const now = new Date().toISOString();
+  store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
+    VALUES ('b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
+  const data = loadWeekData(store.db, '2026-09-26', { catalog });
+  const s = buildSummary(computeWeek(data, { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  assert.deepEqual(s.program, { program: 'MAPS Symmetry', status: 'in_progress', week: 8, programWeeks: 11, phase: 'Phase 2',
+    pastProgramEnd: false, deloadWeek: false, failureWeek: false });
+  const allowed = allowedNumbers(s, '');
+  assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'You are in week 8 of 11 of MAPS Symmetry, Phase 2.']]), allowed), []);
+  assert.equal(buildSummary(computeWeek(loadWeekData(store.db, '2026-07-25', { catalog }), { weekEnd: '2026-07-25' }), [], { today: '2026-07-26' }).program, null,
+    'no block covers that week');
+  store.close();
+});

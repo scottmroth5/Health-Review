@@ -4,8 +4,11 @@
 import { existsSync } from 'node:fs';
 import { addDays } from './stats.js';
 import { DICTIONARY_PATH, loadDictionary } from './dictionary.js';
+import { loadCatalog } from './catalog.js';
+import { programAt } from './blocks.js';
 
-export function loadWeekData(db, weekEnd) {
+/** @param {{ catalog?: object|null }} [options]  MAPS catalog; defaults to data/maps/programs.json when present */
+export function loadWeekData(db, weekEnd, { catalog } = {}) {
   const from = addDays(weekEnd, -125);
   const nextMorning = addDays(weekEnd, 1);
   return {
@@ -21,6 +24,10 @@ export function loadWeekData(db, weekEnd) {
     lab_results: db.prepare('SELECT test_id, drawn_on, value, value_text FROM lab_results WHERE drawn_on <= ?').all(weekEnd),
     medication_doses: db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses WHERE date BETWEEN ? AND ?')
       .all(addDays(weekEnd, -6), weekEnd),
+    // The confirmed program block the week ends in, with its phase and week from the catalog.
+    program: programAt(db.prepare(`SELECT program, start_date, status FROM program_blocks WHERE source = 'confirmed'
+      AND start_date <= ? AND COALESCE(end_date, ?) >= ? ORDER BY start_date DESC LIMIT 1`).get(weekEnd, weekEnd, addDays(weekEnd, -6)) ?? null,
+      catalog === undefined ? loadCatalog() : catalog, weekEnd),
   };
 }
 

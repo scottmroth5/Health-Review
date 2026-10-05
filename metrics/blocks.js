@@ -45,6 +45,26 @@ function mergeAddons(blocks) {
 export const weekOf = (blockStart, date) => Math.floor(daysBetween(blockStart, date) / 7) + 1;
 
 /**
+ * Where a program block stands on a date, for the weekly review: program, week, and (with the catalog)
+ * program length, phase and deload or failure week. Computed facts only; never blueprint text.
+ */
+export function programAt(block, catalog, date) {
+  if (!block) return null;
+  const week = weekOf(block.start_date, date);
+  const at = catalog?.phaseAt(block.program, week) ?? null;
+  return {
+    program: block.program,
+    status: block.status,
+    week,
+    programWeeks: catalog?.programWeeks(block.program) ?? null,
+    phase: at && !at.beyond ? at.phase : null,
+    pastProgramEnd: Boolean(at?.beyond),
+    deloadWeek: Boolean(at?.deload),
+    failureWeek: Boolean(at?.failure),
+  };
+}
+
+/**
  * @param {Array<{date: string, workout?: string|null}>} sets  set rows (any order; planned rows are fine)
  * @param {string[]} liftingDates  days with performed sets, up to today
  * @param {string} today

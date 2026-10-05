@@ -22,6 +22,7 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
     cardio: cardio(data.workout_sessions, weekEnd, { zone2 }),
     strength: strength(data.strength_sets, weekEnd),
     trainingVolume: volumeTrend(data.strength_sets, weekEnd),
+    program: data.program ?? null,
     drinking: drinking(data.drinking_days, data.daily_metrics, weekEnd),
     checkins: checkins(data.checkins, data.daily_metrics, weekEnd),
     labs: labsSummary(data.lab_tests ?? [], data.lab_results ?? [], weekEnd),
