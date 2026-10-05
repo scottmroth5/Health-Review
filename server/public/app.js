@@ -1106,7 +1106,7 @@ function initPrompt() {
 }
 
 // ---------------- activity ----------------
-const RUN_LABELS = { sync: 'Sync', review: 'Weekly review', 'review-eval': 'Review eval' };
+const RUN_LABELS = { sync: 'Sync', review: 'Weekly review', 'review-eval': 'Review eval', backup: 'Encrypted backup' };
 const runLabel = (name) => RUN_LABELS[name] ?? name;
 const RUN_STATUS = { running: 'running', ok: 'finished', error: 'failed', failed: 'failed' };
 const when = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');

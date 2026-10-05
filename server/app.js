@@ -105,7 +105,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.get('/api/logs/:name', {
     schema: {
-      summary: 'The last lines of a scheduled task log (sync or review)',
+      summary: 'The last lines of a scheduled task log (sync, review or backup)',
       params: { type: 'object', required: ['name'], properties: { name: { type: 'string', enum: q.LOG_NAMES } } },
       querystring: { type: 'object', properties: { lines: { type: 'integer', minimum: 1, maximum: 2000, default: 200 } } },
       response: { 200: { type: 'object', properties: { name: { type: 'string' }, lines: { type: 'array', items: { type: 'string' } } } } },

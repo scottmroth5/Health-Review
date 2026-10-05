@@ -52,6 +52,12 @@ npm run programs:detect           propose program blocks from history (-- --writ
 npm run programs:review -- list   confirm, edit, merge, split blocks and unassign days (see README.md)
 npm run programs:catalog          validate data/maps/programs.json and print each program's weeks and phases
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
+npm run backup                    encrypted backup of data/health.db and data/maps/programs.json to the "Health-Review
+                                  backups" folder in Google Drive (-- --to <folder> writes it to a folder instead, such as
+                                  a USB drive; -- --check-passphrase checks HEALTH_BACKUP_PASSPHRASE in .env)
+npm run backup:restore -- --file latest --out data/restored.db   decrypt a backup into a NEW file (never over health.db)
+powershell -ExecutionPolicy Bypass -File scripts\register-backup-task.ps1   (re)register the 11pm nightly backup
+                                  ("Health-Review nightly backup"; runs scripts\backup-nightly.cmd, logs to data\logs\backup.log)
 powershell -ExecutionPolicy Bypass -File scripts\register-server-task.ps1   (re)register and start the server at sign-in
                                   ("Health-Review server"; runs scripts\server-start.cmd, logs to data\logs\server.log)
 npm run prompts:import-v1         one-time import of data/v1-export/prompts into prompt_sections (-- --replace to overwrite)
@@ -174,6 +180,11 @@ encrypted at rest and in transit (owner's choice, 2026-10-05): TLS for every tra
 the owner controls. For files in consumer cloud storage (Google Drive and the like), encrypt before upload, and never
 store the key or password with the data. Never store, sync or send it unencrypted, never put it in CI, and never
 commit it. This is about where data is kept; what may be sent to the Claude API is governed by the rules below.
+The approved off-machine copy is the nightly backup (tools/backup): an online SQLite snapshot that must pass its
+integrity check, packed with the MAPS catalog, gzipped, then AES-256-GCM with a scrypt key from
+HEALTH_BACKUP_PASSPHRASE (.env only, never uploaded or logged) and a fresh salt and nonce per file, verified by
+decrypting before it is uploaded over HTTPS with the drive.file scope (the app sees only files it created). Plaintext
+snapshots exist only in the OS temp folder and are deleted on every exit path. Kept: 7 nightly, 3 weekly, 1 monthly.
 Send the Claude API computed summaries only, never raw exports. The one exception is the owner's own notes from the review
 week (check-in, drinking, Workout Log comments and date-column notes), sent as written by the owner's choice (2026-10-01).
 Genetics and medication data (prompt sections marked sensitive, and the medications tracker) go to the Claude API only

@@ -3,8 +3,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { OAuth2Client } from 'google-auth-library';
 import { repoPath } from '../paths.js';
 
-/** Read the health spreadsheets. Nothing broader. */
-export const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+/**
+ * Read the health spreadsheets, and manage only the files this app creates in Google Drive (the encrypted
+ * nightly backups; drive.file cannot see anything else in Drive). Nothing broader.
+ */
+export const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/drive.file'];
 
 export const CLIENT_SECRET_PATH = repoPath('data', 'google', 'client_secret.json');
 export const TOKEN_PATH = repoPath('data', 'google', 'token.json');

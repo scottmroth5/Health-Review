@@ -21,7 +21,9 @@
     "log:unmapped": "node --env-file=.env scripts/log-unmapped.js",
     "programs:detect": "node scripts/programs-detect.js",
     "programs:review": "node scripts/programs-review.js",
-    "programs:catalog": "node scripts/programs-catalog.js"
+    "programs:catalog": "node scripts/programs-catalog.js",
+    "backup": "node --env-file=.env scripts/backup.js",
+    "backup:restore": "node --env-file=.env scripts/backup-restore.js"
   },
   "keywords": [],
   "author": "",

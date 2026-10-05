@@ -122,3 +122,34 @@ the ones that don't).
 - **Where you stand:** `programs:review list`, the Training tab's Current program card and the weekly review show
   the program, phase and when it started, program week, any deload or failure week, the finish range and days left.
 - **Status:** detection marks a block completed or in progress, and never abandoned. You set abandoned yourself.
+
+## Encrypted backups
+
+Every night at 11pm, `npm run backup` uploads an encrypted copy of `data/health.db` and your program catalog to a
+"Health-Review backups" folder in your Google Drive. It keeps 7 nightly, 3 weekly and 1 monthly copies.
+
+**How a backup is made:**
+1. Take a safe snapshot of the live database, even while the app is running, and check its integrity.
+2. Compress it, then encrypt it with AES-256-GCM using a key derived from your passphrase.
+3. Prove the file decrypts back to the same bytes.
+4. Upload it over HTTPS.
+
+Google stores only an unreadable file. The app's Drive permission (`drive.file`) can see only the files it created,
+nothing else in your Drive.
+
+**One-time setup:**
+1. **Passphrase:** add `HEALTH_BACKUP_PASSPHRASE=<a long passphrase>` to `.env`, and save the same passphrase in your
+   password manager. **Without it the backups can't be read by anyone, including you.** `npm run backup --
+   --check-passphrase` checks it's set.
+2. **Google permission:** in Google Cloud, add the `.../auth/drive.file` scope to the app's consent screen. Then run
+   `npm run google:login` again to grant it.
+3. **Schedule:** register the nightly task with
+   `powershell -ExecutionPolicy Bypass -File scripts\register-backup-task.ps1`.
+
+**USB copies:** `npm run backup -- --to E:\HealthBackups` writes the same encrypted file to a folder, with no upload.
+
+**Restoring:** `npm run backup:restore -- --file latest --out data/restored.db` downloads the newest backup (or give a
+file path instead of `latest`). It decrypts it, checks it and writes it to a new file. It never overwrites
+`data/health.db`, and it prints the steps to swap the restored file in.
+
+Runs appear on the Activity tab, with the Backup log.

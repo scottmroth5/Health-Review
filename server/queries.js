@@ -108,7 +108,7 @@ export function getRun(db, id) {
   };
 }
 
-export const LOG_NAMES = ['sync', 'review'];
+export const LOG_NAMES = ['sync', 'review', 'backup'];
 
 /** The last lines of a scheduled task's log (data/logs/<name>.log); empty when it does not exist yet. */
 export function readLog(dir, name, lines = 200) {
