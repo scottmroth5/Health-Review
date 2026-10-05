@@ -1,6 +1,6 @@
 # Health Review
 
-A local weekly health review agent. Health data stays on this machine (see [PRIVACY.md](PRIVACY.md));
+A weekly health review agent that runs on its owner's machine. Health data is kept locally, and anything stored off the machine must be encrypted at rest and in transit (see [PRIVACY.md](PRIVACY.md));
 [CLAUDE.md](CLAUDE.md) has the architecture, commands and rules. This page covers the training log's
 exercise dictionary and program blocks.
 

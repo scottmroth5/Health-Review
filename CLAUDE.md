@@ -52,6 +52,8 @@ npm run programs:detect           propose program blocks from history (-- --writ
 npm run programs:review -- list   confirm, edit, merge, split blocks and unassign days (see README.md)
 npm run programs:catalog          validate data/maps/programs.json and print each program's weeks and phases
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
+powershell -ExecutionPolicy Bypass -File scripts\register-server-task.ps1   (re)register and start the server at sign-in
+                                  ("Health-Review server"; runs scripts\server-start.cmd, logs to data\logs\server.log)
 npm run prompts:import-v1         one-time import of data/v1-export/prompts into prompt_sections (-- --replace to overwrite)
 npm run metrics                   print the computed summary for last week (-- --week YYYY-MM-DD for another Saturday)
 npm run evals                     free: metric fixtures, then a summary of saved review eval results
@@ -167,7 +169,11 @@ The Activity tab lists runs (GET /api/runs, /api/runs/:id: the tracer's runs and
 tasks' logs (GET /api/logs/sync|review, the last lines of data/logs; only those two names can be read).
 
 ## Hard rules
-All health data stays on this machine. Never add cloud storage, CI, or remote sync for /data.
+Health data may be stored or synced off this machine (cloud storage, backups, a future hosted deployment) only if it is
+encrypted at rest and in transit (owner's choice, 2026-10-05): TLS for every transfer, and encryption at rest with keys
+the owner controls. For files in consumer cloud storage (Google Drive and the like), encrypt before upload, and never
+store the key or password with the data. Never store, sync or send it unencrypted, never put it in CI, and never
+commit it. This is about where data is kept; what may be sent to the Claude API is governed by the rules below.
 Send the Claude API computed summaries only, never raw exports. The one exception is the owner's own notes from the review
 week (check-in, drinking, Workout Log comments and date-column notes), sent as written by the owner's choice (2026-10-01).
 Genetics and medication data (prompt sections marked sensitive, and the medications tracker) go to the Claude API only

@@ -12,6 +12,7 @@ When the operator signs in with their Google account, Health Review requests onl
 
 - Data is used only to produce the operator's own weekly health review.
 - Spreadsheet data is copied into a local database on the operator's own computer.
+- Any copy kept off that computer (for example a backup in cloud storage) is encrypted at rest and in transit, with keys only the operator holds.
 - Health metrics are calculated locally. Only computed summaries are sent to the Anthropic Claude API to write the review. Raw spreadsheet rows are never sent.
 - Data is not sold, shared with third parties, or used for advertising.
 - Use of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including its Limited Use requirements.
