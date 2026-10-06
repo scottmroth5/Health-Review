@@ -106,10 +106,26 @@ const SESSION_FIELDS = {
 };
 const SESSION_NUMBERS = Object.keys(SESSION_FIELDS).filter((f) => !['type', 'start', 'end', 'duration'].includes(f));
 
+// The sheet's Duration cells carry a 3-hour time zone shift from the v1 consolidation (every session since 2018: the
+// cell minus 3 hours is the active time, at most the start-to-end span, less when the workout was paused).
+// Migration 012 applies the same rule to stored rows.
+const DURATION_SHIFT_SEC = 3 * 3600;
+const SPAN_SLACK_SEC = 120; // start and end are whole minutes
+
+/**
+ * Active seconds of a session from the sheet's Duration (seconds) and its start and end serials: the shifted value
+ * repaired, an unshifted value kept, and null when neither fits inside the span (minutes then come from start to end).
+ */
+export function sessionDuration(rawSec, start, end) {
+  const span = Math.round((end - start) * 86400);
+  const fits = (s) => s > 0 && s <= span + SPAN_SLACK_SEC;
+  if (fits(rawSec - DURATION_SHIFT_SEC)) return rawSec - DURATION_SHIFT_SEC;
+  return fits(rawSec) ? rawSec : null;
+}
+
 export function parseWorkoutSessions({ header, rows, firstRowNumber, tab }) {
   const source = 'workout_sessions';
-  const { index, warnings } = columnIndex(header, SESSION_FIELDS, source);
-  for (const f of ['type', 'start', 'end']) if (index[f] < 0) throw new Error(`Workout sessions sheet has no "${SESSION_FIELDS[f]}" column`);
+  const { index, warnings } = columnIndex(header, SESSION_FIELDS, source);  for (const f of ['type', 'start', 'end']) if (index[f] < 0) throw new Error(`Workout sessions sheet has no "${SESSION_FIELDS[f]}" column`);
   const records = [];
   rows.forEach((row, i) => {
     if (isBlankRow(row)) return;
@@ -124,7 +140,7 @@ export function parseWorkoutSessions({ header, rows, firstRowNumber, tab }) {
       type,
       start: serialToDateTime(start),
       end: serialToDateTime(end),
-      duration_sec: typeof duration === 'number' ? serialToSeconds(duration) : null,
+      duration_sec: typeof duration === 'number' ? sessionDuration(serialToSeconds(duration), start, end) : null,
       ...numericFields(row, index, SESSION_NUMBERS, warn),
     });
   });

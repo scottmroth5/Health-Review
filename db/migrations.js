@@ -334,4 +334,18 @@ export const MIGRATIONS = [
       ALTER TABLE program_blocks ADD COLUMN program_weeks INTEGER;
     `,
   },
+  {
+    id: '012-session-duration-fix',
+    up: `
+      -- The sheet's Duration cells were 3 hours too long (a time zone shift in the v1 consolidation); repair stored
+      -- rows with the rule in ingest/parsers.js sessionDuration. Archived rows are no longer in the sheet, so a
+      -- resync cannot fix them. Values that fit neither way become NULL (minutes then come from start to end).
+      UPDATE workout_sessions SET duration_sec = CASE
+        WHEN duration_sec - 10800 > 0
+          AND duration_sec - 10800 <= (julianday(end) - julianday(start)) * 86400 + 120 THEN duration_sec - 10800
+        WHEN duration_sec > 0 AND duration_sec <= (julianday(end) - julianday(start)) * 86400 + 120 THEN duration_sec
+        ELSE NULL END
+      WHERE duration_sec IS NOT NULL;
+    `,
+  },
 ];

@@ -83,7 +83,9 @@ read the current year (and last year in January), and a tab is replaced only whe
 Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI owns them now and imports never
 overwrite UI rows. The Workout Log can hold planned future workouts with weights but no reps: metrics count only sets
 with reps, time, or distance, on dates up to today. Text in the log's date column (illness, injury, vacation) is kept
-in workout_log_notes; treat it as symptom data under the hard rules.
+in workout_log_notes; treat it as symptom data under the hard rules. The Workout Sessions sheet's Duration cells run 3 hours
+long (a time zone shift in the v1 consolidation): ingest/parsers.js sessionDuration removes it on import and migration
+012 repaired the stored rows; a value that fits neither way is NULL and minutes come from start to end.
 
 ## Metrics
 The review week is the 7 days ending on the most recent Saturday before today; the baseline is the 28 days before it;

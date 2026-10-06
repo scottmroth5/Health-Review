@@ -9,7 +9,10 @@ import {
   parseSet,
   parseDrinkingLog,
   parseWeeklyCheckins,
+  sessionDuration,
 } from '../ingest/parsers.js';
+import { openHealthStore } from '../db/store.js';
+import { MIGRATIONS } from '../db/migrations.js';
 import { serial } from './helpers.js';
 
 const at = (header, rows) => ({ header, rows, firstRowNumber: 2, tab: 'Sheet1' });
@@ -59,6 +62,32 @@ test('workout sessions keep full start and end times and convert duration to sec
     { type: records[0].type, start: records[0].start, end: records[0].end, duration_sec: records[0].duration_sec, avg_hr: records[0].avg_hr },
     { type: 'Outdoor Run', start: '2026-03-02T06:15:00', end: '2026-03-02T06:52:30', duration_sec: 2250, avg_hr: 148.2 },
   );
+});
+
+test('session duration: the 3-hour shift is removed, a paused workout stays shorter, a correct value is kept', () => {
+  const start = serial('2026-03-02', 6, 0);
+  const end = serial('2026-03-02', 7, 0); // 60-minute span
+  assert.equal(sessionDuration(2250 + 10800, start, end), 2250); // shifted cell, paused workout (37.5 of 60 minutes)
+  assert.equal(sessionDuration(3590 + 10800, start, end), 3590); // shifted cell, full span
+  assert.equal(sessionDuration(3590, start, end), 3590); // a fixed sheet: kept
+  assert.equal(sessionDuration(5 * 3600, start, end), null); // fits neither way: minutes come from start to end
+  const { records } = parseWorkoutSessions(at(['Type', 'Start', 'End', 'Duration'], [['Outdoor Walk', start, end, (2250 + 10800) / 86400]]));
+  assert.equal(records[0].duration_sec, 2250);
+});
+
+test('migration 012 repairs stored session durations with the same rule', () => {
+  const store = openHealthStore(':memory:');
+  try {
+    const add = store.db.prepare("INSERT INTO workout_sessions (type, start, end, duration_sec, updated_at) VALUES (?, ?, ?, ?, 'x')");
+    add.run('Outdoor Walk', '2026-03-02T06:00:00', '2026-03-02T07:00:00', 2250 + 10800);
+    add.run('Outdoor Run', '2026-03-03T06:00:00', '2026-03-03T06:30:00', 1790);
+    add.run('Hiking', '2026-03-04T06:00:00', '2026-03-04T06:30:00', 9 * 3600);
+    store.db.exec(MIGRATIONS.find((m) => m.id === '012-session-duration-fix').up);
+    const got = store.db.prepare('SELECT type, duration_sec FROM workout_sessions ORDER BY start').all();
+    assert.deepEqual(got.map((r) => r.duration_sec), [2250, 1790, null]);
+  } finally {
+    store.close();
+  }
 });
 
 // ---- workout log ----
