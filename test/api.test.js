@@ -385,6 +385,47 @@ test('program: the confirmed in-progress block with phase from the logged workou
   store.close();
 });
 
+test('advisor: ranks the catalog without the program run last; goal weights change the order; bad weights refused', async () => {
+  const { createCatalog } = await import('../metrics/catalog.js');
+  const { createDictionary } = await import('../metrics/dictionary.js');
+  const phase = (exercises, extra = {}) => [{ name: 'Phase 1', weeks: [1, 4], workouts_per_week: 3, workouts: [{ name: 'A', exercises }], ...extra }];
+  const names = ['MAPS Powerlift', 'HIIT', 'MAPS Symmetry'];
+  const catalog = createCatalog({ version: 1, programs: [
+    // Squat 5x3, rest 2 min: heavy 100% -> strength 1; joint 0.2; 0.75 x 5 + 2 x 5 = 13.75 -> 14 min x 3 -> time 1; vo2 0.
+    { name: 'MAPS Powerlift', weeks: 4, profile: { conditioning: 0, mobility: 0 }, phases: phase([{ name: 'Squat', sets: '5', reps: '3' }], { rest: '2 minutes' }) },
+    // Timed sprints: strength 0; joint 0.3 + 0.2 = 0.5; 20 min x 3 -> time 1; vo2 1.
+    { name: 'HIIT', weeks: 4, profile: { conditioning: 3, mobility: 3, minutes_per_session: 20 }, phases: phase([{ name: 'Sprints', sets: '6', reps: '30s' }]) },
+    { name: 'MAPS Symmetry', weeks: 4, phases: phase([{ name: 'Squat', sets: '2', reps: '10' }]) },
+  ] }, { programs: names });
+  const dictionary = createDictionary({ version: 1, exercises: [
+    { id: 'squat', name: 'Squat', implement: 'barbell', pattern: 'squat', primary: true },
+    { id: 'sprints', name: 'Sprints', implement: 'other', pattern: 'other', primary: false }] });
+  const store = openHealthStore(':memory:');
+  const app = await buildApp({ store, clock: () => TODAY, catalog, dictionary, substitutions: { avoid: [] } });
+  const now = new Date().toISOString();
+  store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
+    VALUES ('b1', 'MAPS Symmetry', '2026-03-01', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
+
+  const equal = (await app.inject('/api/advisor')).json();
+  assert.equal(equal.available, true);
+  assert.deepEqual(equal.weights, { strength: 1, joint: 1, time: 1, vo2: 1 });
+  assert.deepEqual(equal.excluded, [{ program: 'MAPS Symmetry', reason: 'run last' }]);
+  assert.deepEqual(equal.ranking.map((r) => [r.program, r.total]), [['HIIT', 0.63], ['MAPS Powerlift', 0.55]]);
+  assert.deepEqual(equal.ranking[1].scores, { strength: 1, joint: 0.2, time: 1, vo2: 0 });
+
+  const strength = (await app.inject('/api/advisor?strength=3')).json(); // Powerlift (3 + 0.2 + 1) / 6 = 0.7; HIIT 2.5 / 6 = 0.42
+  assert.deepEqual(strength.ranking.map((r) => [r.program, r.total]), [['MAPS Powerlift', 0.7], ['HIIT', 0.42]]);
+  for (const bad of ['time=4', 'vo2=-1', 'joint=x']) assert.equal((await app.inject(`/api/advisor?${bad}`)).statusCode, 400, bad);
+  await app.close();
+  store.close();
+
+  const bare = openHealthStore(':memory:');
+  const noCatalog = await buildApp({ store: bare, clock: () => TODAY, catalog: null });
+  assert.deepEqual((await noCatalog.inject('/api/advisor')).json(), { available: false });
+  await noCatalog.close();
+  bare.close();
+});
+
 test('VO2 max: each view returns its points and tiles; unknown views are refused', async () => {
   const { app, db, done } = await setup();
   const add = db.prepare("INSERT INTO daily_metrics (date, vo2max, updated_at) VALUES (?, ?, 'x')");

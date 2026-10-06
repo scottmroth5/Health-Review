@@ -1,6 +1,6 @@
 // The Health Review API and UI. Every route has a JSON schema; /api/openapi.json is the contract
 // the UI (and any future backend) follows.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
 import fastifyStatic from '@fastify/static';
@@ -11,6 +11,8 @@ import { VIEWS } from '../metrics/volume.js';
 import { VO2_VIEWS } from '../metrics/vo2max.js';
 import { repoPath } from '../tools/paths.js';
 import { loadCatalog } from '../metrics/catalog.js';
+import { loadDictionary } from '../metrics/dictionary.js';
+import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
 import { currentProgram } from '../ingest/program-blocks.js';
 
 const nullable = (schema) => ({ ...schema, type: [schema.type, 'null'] });
@@ -63,7 +65,7 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  * @param {string} [ctx.authMode]
  * @param {() => Date} [ctx.clock]
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, logDir = repoPath('data', 'logs') }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs') }) {
   const app = Fastify({ logger });
   const { db } = store;
   let syncing = false;
@@ -159,6 +161,22 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: { type: 'object', properties: { program: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: true }] } } } },
     },
   }, async () => ({ program: currentProgram(db, q.localDate(clock()), programCatalog()) }));
+
+  // The dictionary and substitutions are committed config, read per request (like the catalog) unless injected.
+  const goalWeight = { type: 'integer', minimum: 0, maximum: MAX_WEIGHT, default: 1 };
+  app.get('/api/advisor', {
+    schema: {
+      summary: 'Program Advisor ranking for the next block: goal scores (0 to 1), total, reasons and flags per program; '
+        + 'weights 0 to 3 per goal (default 1) change the total; available false without the MAPS catalog',
+      querystring: { type: 'object', properties: Object.fromEntries(GOALS.map((g) => [g, goalWeight])) },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.advisor(db, q.localDate(clock()), {
+    catalog: programCatalog(),
+    dictionary: dictionary ?? loadDictionary(),
+    substitutions: substitutions ?? JSON.parse(readFileSync(repoPath('config', 'substitutions.json'), 'utf8')),
+    weights: Object.fromEntries(GOALS.map((g) => [g, req.query[g]])),
+  }));
 
   app.get('/api/lifts', {
     schema: {

@@ -872,8 +872,85 @@ async function loadTrainingTab() {
     el.textContent = `Could not load this (${err.message}). If the app was just updated, restart the server.`;
   };
   loadProgram().catch(failed('#program-body'));
+  loadAdvisor().catch(failed('#advisor-body'));
   loadLifts().catch(failed('#lifts-body'));
   return loadTraining();
+}
+
+// ---------------- next program (Program Advisor) ----------------
+const ADVISOR_KEY = 'hr.advisorWeights';
+const GOAL_LABELS = { strength: 'Strength', joint: 'Joints and balance', time: 'Time', vo2: 'VO2 max' };
+const GOAL_SHORT = { strength: 'Strength', joint: 'Joints', time: 'Time', vo2: 'VO2 max' };
+const WEIGHT_LABELS = ['Off', '1x', '2x', '3x'];
+const EQUAL = { strength: 1, joint: 1, time: 1, vo2: 1 };
+
+function advisorWeights() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ADVISOR_KEY) ?? 'null');
+    if (saved && Object.keys(EQUAL).every((g) => [0, 1, 2, 3].includes(saved[g]))) return saved;
+  } catch { /* storage unavailable or bad value: equal weights */ }
+  return { ...EQUAL };
+}
+
+function renderAdvisorWeights(weights) {
+  const set = (next) => {
+    try { localStorage.setItem(ADVISOR_KEY, JSON.stringify(next)); } catch { /* not remembered, still works */ }
+    loadAdvisor().catch((err) => { $('#advisor-body').textContent = `Could not load this (${err.message}).`; });
+  };
+  const rows = Object.keys(EQUAL).map((g) => h('div', { class: 'weight-row' },
+    h('span', { class: 'weight-label', id: `w-${g}` }, GOAL_LABELS[g]),
+    h('div', { class: 'filters', role: 'group', 'aria-labelledby': `w-${g}` },
+      ...WEIGHT_LABELS.map((label, v) => h('button', { type: 'button', 'aria-pressed': String(weights[g] === v),
+        onclick: () => set({ ...weights, [g]: v }) }, label)))));
+  const equal = Object.keys(EQUAL).every((g) => weights[g] === 1);
+  fill($('#advisor-weights'), ...rows,
+    h('button', { type: 'button', class: 'ghost', disabled: equal, onclick: () => set({ ...EQUAL }) }, 'Reset to equal'));
+}
+
+/** One goal score as a labelled bar (the number is always shown as text too). */
+const scoreBar = (goal, value, weight) => h('div', { class: `score-row${weight ? '' : ' off'}` },
+  h('span', { class: 'score-label' }, GOAL_SHORT[goal]),
+  h('div', { class: 'ex-bar-track', role: 'img', 'aria-label': `${GOAL_LABELS[goal]} ${value.toFixed(2)}` },
+    h('div', { class: 'ex-bar', style: `width:${Math.max(2, value * 100)}%` })),
+  h('span', { class: 'score-value' }, value.toFixed(2)));
+
+async function loadAdvisor() {
+  const weights = advisorWeights();
+  renderAdvisorWeights(weights);
+  const qs = new URLSearchParams(Object.entries(weights).map(([g, v]) => [g, String(v)]));
+  const a = await api('GET', `/api/advisor?${qs}`);
+  const body = $('#advisor-body');
+  if (!a.available) {
+    body.className = 'muted small';
+    body.textContent = 'Needs the MAPS catalog (data/maps/programs.json).';
+    return;
+  }
+  body.className = '';
+  if (a.ranking.every((r) => r.total === null)) {
+    fill(body, h('p', { class: 'muted small' }, 'Every goal is off. Turn at least one on to rank the programs.'));
+    return;
+  }
+  const notes = (r) => [r.lessHistory && 'less history', r.minutesSource === 'estimate' && 'minutes estimated'].filter(Boolean);
+  const top = a.ranking.slice(0, 3).map((r, i) => h('div', { class: 'advisor-pick' },
+    h('div', { class: 'program-title' }, h('strong', {}, `${i + 1}. ${r.program}`), h('span', { class: 'advisor-total' }, r.total.toFixed(2)),
+      ...notes(r).map((n) => h('span', { class: 'badge neutral' }, n))),
+    r.focus ? h('p', { class: 'muted small' }, r.focus) : null,
+    h('div', { class: 'scores' }, ...Object.keys(EQUAL).map((g) => scoreBar(g, r.scores[g], a.weights[g]))),
+    h('ul', { class: 'reasons small' }, ...r.reasons.map((x) => h('li', {}, x)),
+      ...r.flags.map((x) => h('li', { class: 'flag' }, h('span', { 'aria-hidden': 'true' }, '⚠ '), x)))));
+  const cell = (v) => (v === null || v === undefined ? '' : String(v));
+  const table = h('details', {}, h('summary', { class: 'muted small' }, `Full ranking (${a.ranking.length} programs)`),
+    h('div', { class: 'table-scroll wide' }, h('table', {},
+      h('thead', {}, h('tr', {}, ...['Program', 'Total', 'Strength', 'Joints', 'Time', 'VO2 max', 'Reached', 'Min a week'].map((t) => h('th', {}, t)))),
+      h('tbody', {}, ...a.ranking.map((r) => h('tr', {},
+        h('td', {}, r.program), h('td', {}, r.total.toFixed(2)),
+        ...Object.keys(EQUAL).map((g) => h('td', {}, r.scores[g].toFixed(2))),
+        h('td', {}, r.completion === null ? '' : `${r.completion}%`), h('td', {}, cell(r.weeklyMinutes))))))));
+  const extras = [
+    ...a.excluded.map((x) => `Left out: ${x.program} (${x.reason}).`),
+    a.addons.length ? `Add-ons, not ranked: ${a.addons.map((x) => `${x.program} (${x.total === null ? 'n/a' : x.total.toFixed(2)})`).join(', ')}.` : null,
+  ].filter(Boolean);
+  fill(body, ...top, table, ...extras.map((t) => h('p', { class: 'muted small' }, t)));
 }
 
 // ---------------- lift progress (plateaus) ----------------

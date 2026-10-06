@@ -11,8 +11,9 @@
 //             prescription estimate times the owner's typical watch-to-estimate ratio
 //   vo2       conditioning (0 to 3), averaged with past runs' VO2 max change (first 4 weeks to last 4; +1 scores 1,
 //             -1 scores 0)
-// Total = mean of the chosen goals' scores x completion (0.5 + 0.5 x average share of the program reached on past
-// runs; 1 with no past runs). Goal scores are rounded to 2 places before the total. The program run last is left out;
+// Total = the goals' scores averaged by weight (whole numbers 0 to 3, default 1 each; 0 leaves a goal out) x completion
+// (0.5 + 0.5 x average share of the program reached on past runs; 1 with no past runs); null when every weight is 0.
+// Goal scores are rounded to 2 places before the total. The program run last is left out;
 // add-ons (profile.standalone false) are scored and listed apart. Reasons are facts from these numbers only.
 import { addDays, daysBetween, round } from './stats.js';
 import { totalLbs } from './strength.js';
@@ -20,6 +21,8 @@ import { epley, rangeOf } from './plateau.js';
 import { midpoint, parseReps, phaseStats } from './catalog.js';
 
 export const GOALS = ['strength', 'joint', 'time', 'vo2'];
+export const MAX_WEIGHT = 3;
+export const EQUAL_WEIGHTS = Object.freeze(Object.fromEntries(GOALS.map((g) => [g, 1])));
 export const HISTORY_WINDOW_DAYS = 14; // lift change: first and last 2 weeks of a run
 export const VO2_WINDOW_DAYS = 28; // VO2 max change: first and last 4 weeks of a run
 export const MIN_WATCH_SESSIONS = 10;
@@ -171,10 +174,15 @@ export function vo2Change(readings, start, end) {
  * @param {Array<{status: string, range: string|null, name: string}>} [input.lifts]  current lift progress
  * @param {string|null} input.lastProgram  the program run last (left out)
  * @param {string} input.asOf
- * @param {string[]} [input.goals]
+ * @param {{strength?: number, joint?: number, time?: number, vo2?: number}} [input.weights]  0 to 3 each, default 1
  */
 export function recommendPrograms({ programs, lookup, substitutions = {}, blocks = [], sets = [], vo2 = [], watchMinutes = [],
-  lifts = [], lastProgram = null, asOf, goals = GOALS }) {
+  lifts = [], lastProgram = null, asOf, weights = {} }) {
+  const w = Object.fromEntries(GOALS.map((g) => [g, weights[g] ?? 1]));
+  for (const g of GOALS) {
+    if (!Number.isInteger(w[g]) || w[g] < 0 || w[g] > MAX_WEIGHT) throw new RangeError(`weight for ${g} must be a whole number from 0 to ${MAX_WEIGHT}`);
+  }
+  const weightSum = GOALS.reduce((a, g) => a + w[g], 0);
   const avoid = new Set((substitutions.avoid ?? []).map((a) => a.exercise));
   const profiles = new Map(programs.map((p) => [p.name, programProfile(p, lookup, avoid)]));
 
@@ -217,9 +225,8 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
       time: round(clamp((360 - weeklyMinutes) / 240), 2),
       vo2: round(vo2History === null ? vo2Profile : (vo2Profile + clamp(0.5 + vo2History / 2)) / 2, 2),
     };
-    const chosen = goals.map((g) => scores[g]);
     const multiplier = completion === null ? 1 : 0.5 + (0.5 * completion) / 100;
-    const total = round(avg(chosen) * multiplier, 2);
+    const total = weightSum ? round((GOALS.reduce((a, g) => a + w[g] * scores[g], 0) / weightSum) * multiplier, 2) : null;
 
     const reasons = [];
     const lastLifts = runLifts.at(-1);
@@ -258,11 +265,11 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
     };
   };
 
-  const byTotal = (a, b) => b.total - a.total || a.program.localeCompare(b.program);
+  const byTotal = (a, b) => (b.total ?? 0) - (a.total ?? 0) || a.program.localeCompare(b.program);
   const standalone = programs.filter((p) => profiles.get(p.name).standalone);
   return {
     asOf,
-    goals,
+    weights: w,
     minutesRatio: ratio,
     excluded: lastProgram ? [{ program: lastProgram, reason: 'run last' }] : [],
     ranking: standalone.filter((p) => p.name !== lastProgram).map(score).sort(byTotal),

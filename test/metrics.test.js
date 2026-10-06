@@ -40,7 +40,10 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
   const fx = JSON.parse(readFileSync(`${dir}/${file}`, 'utf8'));
   test(`fixture ${file}: ${fx.description}`, () => {
     if (fx.kind === 'advisor') {
-      assertSubset(recommendPrograms({ ...fx.input, lookup: createDictionary(fx.dictionary).lookup }), fx.expected);
+      const lookup = createDictionary(fx.dictionary).lookup;
+      assertSubset(recommendPrograms({ ...fx.input, lookup }), fx.expected);
+      for (const v of fx.variants ?? []) assertSubset(recommendPrograms({ ...fx.input, lookup, weights: v.weights }), v.expected, JSON.stringify(v.weights));
+      assert.throws(() => recommendPrograms({ ...fx.input, lookup, weights: { time: 4 } }), RangeError);
       return;
     }
     const result = computeWeek({ ...EMPTY, ...fx.input }, { weekEnd: fx.weekEnd, ...fx.options });
