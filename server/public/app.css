@@ -272,3 +272,14 @@ table.calls th:nth-child(-n+3), table.calls td:nth-child(-n+3) { text-align: lef
 .demo-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 0.85rem; color: var(--text-secondary); white-space: nowrap; }
 body.demo #drinking { display: none; }
 body.demo .demo-toggle { color: var(--accent); font-weight: 600; }
+
+/* Lift progress */
+.lift { border-bottom: 1px solid var(--grid); }
+.lift > summary { display: grid; grid-template-columns: minmax(120px, 1.2fr) auto; gap: 2px 12px; padding: 8px 0; cursor: pointer; list-style: none; }
+.lift > summary::-webkit-details-marker { display: none; }
+.lift-name { font-weight: 600; }
+.lift-status { text-align: right; white-space: nowrap; font-size: 0.9rem; }
+.lift-detail { grid-column: 1 / -1; }
+.lift.regressing .lift-status { color: var(--danger); }
+.lift.progressing .lift-status { color: var(--series-1); }
+.lifts-idle { margin-top: 10px; }

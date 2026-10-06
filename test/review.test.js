@@ -224,3 +224,23 @@ test('summary: the current program block, its logged phase and finish reach the 
     'no block covers that week');
   store.close();
 });
+
+test('summary: lift plateau statuses reach the review grounded; lifts not trained recently are left out', async () => {
+  const { loadWeekData } = await import('../metrics/load.js');
+  const store = openHealthStore(':memory:');
+  const db = store.db;
+  const ex = db.prepare(`INSERT INTO strength_exercises (tab_year, row_no, date, exercise, canonical_id, implement, is_primary, map_status)
+    VALUES (?, ?, ?, ?, ?, 'barbell', 1, 'mapped')`);
+  const set = db.prepare("INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (?, 1, ?, 5, '5')");
+  let row = 2;
+  const add = (date, id, name, weight) => set.run(ex.run(Number(date.slice(0, 4)), row++, date, name, id).lastInsertRowid, weight);
+  for (const d of ['2026-07-25', '2026-08-08']) add(d, 'barbell-deadlift', 'Barbell Deadlift', 300);
+  for (const d of ['2026-08-22', '2026-09-05', '2026-09-12', '2026-09-19']) add(d, 'barbell-deadlift', 'Barbell Deadlift', 280);
+  add('2026-01-10', 'military-press', 'Military Press', 95);
+  const s = buildSummary(computeWeek(loadWeekData(db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  assert.deepEqual(s.lifts.map((l) => [l.id, l.status, l.changePct]), [['barbell-deadlift', 'regressing', -6.6]]);
+  assert.equal(s.lifts[0].trend, undefined, 'no trend points in the review');
+  const allowed = allowedNumbers(s, '');
+  assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'Deadlift is regressing: best estimated max 327 against 350, down 6.6%.']]), allowed), []);
+  store.close();
+});

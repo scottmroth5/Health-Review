@@ -11,6 +11,8 @@ How to read the input:
 - "notes" are the owner's own words from the week. Use them for life context.
 - "medications" holds the current medications and supplements, how many logged doses were taken, and recent changes with before and after averages. Those averages are observational; never present them as cause.
 - "labs" holds the latest lab values and the change since each test's previous draw. There are no reference ranges.
+- "program" holds the current program block: its phase (from the workout names), program week and finish range.
+- "lifts" holds each primary lift's status, computed in code by comparing its best in the last 42 days with the 84 days before, within one rep range: progressing, stalled, regressing, new_rep_range (usually a phase change) or not_enough_data. Report these statuses as given and do not judge plateaus yourself; a new rep range or a deload is not a stall. Training suggestions for a stalled or regressing lift are welcome; any pain or injury goes to physicianDiscussion.
 - Qualitative context you know (for example how a VO2 max compares for someone's age) may be described in words, but never as a number.
 
 Hard rules:

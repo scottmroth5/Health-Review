@@ -35,6 +35,8 @@ export function loadWeekData(db, weekEnd, { catalog } = {}) {
       .all(addDays(weekEnd, -6), weekEnd),
     // The confirmed program block the week ends in, with its phase and week from the catalog.
     program: programForWeek(db, weekEnd, catalog === undefined ? loadCatalog() : catalog),
+    primary_sets: loadPrimarySets(db, weekEnd),
+    session_phases: loadSessionPhases(db),
   };
 }
 
@@ -71,11 +73,25 @@ function canonicalName(id) {
 
 /** Performed and planned sets with their normalized exercise (canonical_id, canonical_name, implement). */
 export function loadStrengthSets(db, from, to) {
-  return db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, s.set_no, s.weight_lbs, s.per_hand,
+  return db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, e.is_primary, s.set_no, s.weight_lbs, s.per_hand,
       s.band, s.bodyweight, s.reps, s.reps_text, s.duration_sec, s.distance_yd
     FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id
     WHERE e.date BETWEEN ? AND ? ORDER BY e.date, e.row_no, s.set_no`).all(from, to)
     .map((s) => ({ ...s, canonical_name: canonicalName(s.canonical_id) }));
+}
+
+/** Every primary-lift set up to a date (records need the full history), with the dictionary name. */
+export function loadPrimarySets(db, to) {
+  return db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, e.is_primary, s.set_no, s.weight_lbs, s.per_hand,
+      s.band, s.bodyweight, s.reps, s.reps_text, s.duration_sec, s.distance_yd
+    FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id
+    WHERE e.is_primary = 1 AND e.date <= ? ORDER BY e.date, e.row_no, s.set_no`).all(to)
+    .map((s) => ({ ...s, canonical_name: canonicalName(s.canonical_id) }));
+}
+
+/** The stored phase of each session (log_sessions), as { date: phase }. */
+export function loadSessionPhases(db) {
+  return Object.fromEntries(db.prepare('SELECT date, phase FROM log_sessions WHERE phase IS NOT NULL').all().map((r) => [r.date, r.phase]));
 }
 
 /** All medications and their periods (small tables, read whole). */

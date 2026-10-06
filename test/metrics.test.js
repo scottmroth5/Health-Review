@@ -270,3 +270,11 @@ test('programs: MAPS 15 workouts are MAPS 15 Advanced, separate from MAPS Anabol
   assert.equal(programOf('MAPS 15 Phase 1 Day 2'), 'MAPS 15 Advanced');
   assert.equal(programOf('MAPS Anabolic Advanced Phase 1 Day 1'), 'MAPS Anabolic Advanced');
 });
+
+test('plateau: rep range edges and the Epley estimate', async () => {
+  const { rangeOf, epley } = await import('../metrics/plateau.js');
+  assert.deepEqual([1, 5, 6, 12, 13, 20].map(rangeOf), ['1-5', '1-5', '6-12', '6-12', '13+', '13+']);
+  assert.equal(epley(100, 10), 133);
+  assert.equal(epley(200, 1), 207);
+  assert.equal(epley(315, 3), 347);
+});

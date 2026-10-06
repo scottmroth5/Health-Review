@@ -851,7 +851,52 @@ async function loadVo2(view = vo2ViewChoice()) {
 async function loadTrainingTab() {
   if (!state.today) await loadStatus();
   loadProgram();
+  loadLifts();
   return loadTraining();
+}
+
+// ---------------- lift progress (plateaus) ----------------
+const LIFT_STATUS = {
+  regressing: ['▼', 'Regressing'], stalled: ['■', 'Stalled'], progressing: ['▲', 'Progressing'],
+  new_rep_range: ['○', 'New rep range'], not_enough_data: ['○', 'Not enough data'], not_trained: ['–', 'Not trained recently'],
+};
+const RANGE_LABEL = { '1-5': '1 to 5 reps', '6-12': '6 to 12 reps', '13+': '13+ reps', reps: 'reps per set' };
+/** A lift's measure as text: estimated max, heaviest load for 13+ reps, or reps. */
+function liftValue(l, v) {
+  if (v == null) return 'none';
+  if (l.measure === 'reps') return `${v} reps`;
+  return l.range === '13+' ? `${v} lb` : `${v} lb est. max`;
+}
+
+async function loadLifts() {
+  const lifts = await api('GET', '/api/lifts');
+  const body = $('#lifts-body');
+  body.className = '';
+  const trained = lifts.filter((l) => l.status !== 'not_trained');
+  const idle = lifts.filter((l) => l.status === 'not_trained');
+  const row = (l) => {
+    const [sym, label] = LIFT_STATUS[l.status];
+    const change = l.changePct == null ? '' : ` (${l.changePct > 0 ? '+' : ''}${l.changePct}%)`;
+    const compare = l.baselineBest == null ? liftValue(l, l.recentBest) : `${liftValue(l, l.recentBest)} vs ${liftValue(l, l.baselineBest)}${change}`;
+    const chart = h('div', { class: 'chart' });
+    const details = h('details', { class: `lift ${l.status}` },
+      h('summary', {},
+        h('span', { class: 'lift-name' }, l.name),
+        h('span', { class: 'lift-status' }, h('span', { 'aria-hidden': 'true' }, sym), ` ${label}`),
+        h('span', { class: 'lift-detail muted small' }, `${RANGE_LABEL[l.range] ?? ''}: ${compare}${l.record ? `; best ${liftValue(l, l.record.value)} on ${niceDate(l.record.date)}` : ''}`)),
+      chart,
+      tableView(l.trend.map((p) => ({ date: `Week of ${p.date}`, value: p.value })), (v) => liftValue(l, v)));
+    details.addEventListener('toggle', () => {
+      if (details.open && !chart.childElementCount) {
+        lineChart(chart, l.trend, { from: l.trend[0]?.date ?? state.today, to: state.today, format: (v) => liftValue(l, v), label: l.name, gapDays: 21 });
+      }
+    }, { once: false });
+    return details;
+  };
+  fill(body,
+    trained.length ? trained.map(row) : h('p', { class: 'muted small' }, 'No primary lifts trained in the last 6 weeks.'),
+    idle.length ? h('details', { class: 'lifts-idle' }, h('summary', { class: 'muted small' }, `Not trained in the last 6 weeks (${idle.length})`),
+      h('ul', { class: 'plain-list' }, ...idle.map((l) => h('li', {}, h('span', {}, l.name), h('span', { class: 'muted' }, `last ${niceDate(l.lastSession)}`))))) : null);
 }
 
 /** The "Current program" card: the confirmed in-progress block, with phase and week from the MAPS catalog. */

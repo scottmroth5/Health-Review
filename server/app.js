@@ -160,6 +160,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async () => ({ program: currentProgram(db, q.localDate(clock()), programCatalog()) }));
 
+  app.get('/api/lifts', {
+    schema: {
+      summary: 'Plateau status of each primary lift (last 42 days against the 84 before, within one rep range), with trend points',
+      response: { 200: { type: 'array', items: anyObject } },
+    },
+  }, async () => q.lifts(db, q.localDate(clock())));
+
   app.get('/api/vo2max', {
     schema: {
       summary: 'VO2 max readings (90 days, 1 year) or weekly and monthly averages (2 years, 5 years, all), with latest, changes and best',

@@ -433,6 +433,27 @@ test('activity: runs newest first with counts and Claude calls; logs read by nam
   store.close();
 });
 
+function seedLifts(db) {
+  const ex = db.prepare(`INSERT INTO strength_exercises (tab_year, row_no, date, exercise, canonical_id, implement, is_primary, map_status)
+    VALUES (?, ?, ?, ?, ?, 'barbell', 1, 'mapped')`);
+  const set = db.prepare("INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (?, 1, ?, 5, '5')");
+  let row = 2;
+  const add = (date, id, name, weight) => set.run(ex.run(Number(date.slice(0, 4)), row++, date, name, id).lastInsertRowid, weight);
+  for (const d of ['2025-12-20', '2026-01-03', '2026-01-17']) add(d, 'barbell-squat', 'Barbell Squat', 200);
+  for (const d of ['2026-01-31', '2026-02-07', '2026-02-14', '2026-02-21']) add(d, 'barbell-squat', 'Barbell Squat', 210);
+  add('2025-06-01', 'military-press', 'Military Press', 95);
+}
+
+test('lifts: each primary lift with its plateau status, most urgent first, untrained ones last', async () => {
+  const { app, db, done } = await setup(); // today is 2026-03-09
+  seedLifts(db);
+  const lifts = (await app.inject('/api/lifts')).json();
+  assert.deepEqual(lifts.map((l) => [l.id, l.status]), [['barbell-squat', 'progressing'], ['military-press', 'not_trained']]);
+  assert.deepEqual([lifts[0].range, lifts[0].recentBest, lifts[0].baselineBest, lifts[0].changePct], ['1-5', 245, 233, 5.2]);
+  assert.ok(lifts[0].trend.length > 0 && lifts[0].trend.every((p) => p.date && p.value));
+  await done();
+});
+
 test('status reports today and the last sync run', async () => {
   const { app, db, done } = await setup();
   db.prepare("INSERT INTO runs (name, status, started_at, finished_at, summary) VALUES ('sync', 'ok', '2026-03-09T12:00:00Z', '2026-03-09T12:00:03Z', '{\"counts\":{}}')").run();

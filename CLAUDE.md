@@ -133,6 +133,14 @@ weeks of its finished phases); status stays detected or owner-set, and abandoned
 GET /api/program feeds the Training tab's Current program card, and the weekly summary's program block carries the
 same facts. Everything works without the catalog (phases unknown).
 New tables use portable types (UUID text keys, UTC ISO timestamps, CHECK constraints) for a later PostgreSQL move.
+Plateaus (metrics/plateau.js): each primary lift (one canonical exercise and implement) is judged within one rep range,
+the range trained most in the last 42 days: 1-5 and 6-12 reps by the session best Epley estimated max (load x (1 + reps
+/ 30), per-hand x2), 13+ by the heaviest load for 13+ reps, and bodyweight lifts with no added load by reps per set.
+Deload sessions (stored phase or workout name) and a lift's first session back after 21+ days off are left out.
+Recent (42 days) against baseline (the 84 before): progressing at +2.5% or more, regressing at -5% or worse, stalled
+in between; fewer than 4 recent or 2 baseline sessions is not_enough_data; a range absent from the baseline is
+new_rep_range, never a stall. GET /api/lifts feeds the Training tab's Lift progress card; the weekly summary's
+lifts holds recently trained lifts only (no trend points), and CONTRACT tells the model to report these statuses as given.
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and

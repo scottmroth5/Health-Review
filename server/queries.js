@@ -3,9 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact } from '../metrics/medications.js';
-import { loadMedications, loadStrengthSets } from '../metrics/load.js';
+import { loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
 import { trainingView } from '../metrics/volume.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
+import { liftProgress } from '../metrics/plateau.js';
 import { addDays } from '../metrics/stats.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
@@ -152,6 +153,11 @@ export function trainingDashboard(db, view, today) {
   const back = { week: 14, month: 60, year: 371 * 2, '2y': 31 * 48, '5y': 31 * 120 }[view];
   const from = back ? addDays(today, -back) : '0000-01-01';
   return trainingView(loadStrengthSets(db, from, today), view, today);
+}
+
+/** Plateau status of every primary lift as of today, with 26 weeks of trend points (Training tab). */
+export function lifts(db, today) {
+  return liftProgress(loadPrimarySets(db, today), today, { phases: new Map(Object.entries(loadSessionPhases(db))) });
 }
 
 /** The VO2 max card for one view. Reads every reading: the tiles (best on record, change vs a year ago) need them all. */
