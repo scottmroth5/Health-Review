@@ -39,7 +39,7 @@ for (const p of catalog.programs) {
     const rx = [ph.sets && `${ph.sets} sets`, ph.reps && `${ph.reps} reps`, ph.rest && `rest ${ph.rest}`].filter(Boolean).join(', ');
     const st = phaseStats(ph, (n) => dictionary.lookup(n));
     const work = st.workouts
-      ? `\n${' '.repeat(17)}~${st.setsPerWorkout} sets/workout${st.setsPerWeek ? `, ~${st.setsPerWeek} sets/week` : ''}; strength range ${st.strengthPct}%, arm isolation ${st.armIsolationPct}%, one side at a time ${st.unilateralPct}%`
+      ? `\n${' '.repeat(17)}~${st.setsPerWorkout} sets/workout${st.setsPerWeek ? `, ~${st.setsPerWeek} sets/week` : ''}; heavy sets (5 reps or fewer) ${st.heavyPct}%, arm isolation ${st.armIsolationPct}%, one side at a time ${st.unilateralPct}%`
       : '';
     return `    ${ph.name.padEnd(12)} weeks ${ph.weeks[0]}-${ph.weeks[1]}${ph.workouts_per_week ? `, ${ph.workouts_per_week}/week` : ''}`
       + `${rx ? `, ${rx}` : ''}, ${workouts.length} workouts${special.length ? ` (${special.join(', ')})` : ''}${work}`;

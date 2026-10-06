@@ -74,8 +74,12 @@ test('catalog: timed holds, set midpoints, and per-phase prescribed work', async
     { name: 'A', exercises: [{ name: 'Squat', sets: '4-6', reps: '1-4' }, { name: 'Curl', sets: '2', reps: '8-12' }] },
     { name: 'B', exercises: [{ name: 'Single Arm Row', sets: '3', reps: '8-12' }, { name: 'Plank', sets: '2', reps: '30-60s' }] },
   ] }, lookup);
-  // Sets: 5 + 2 + 3 + 2 = 12 over 2 workouts = 6 per workout, 12 per week; strength 5/12, arms 2/12, one side 3/12.
-  assert.deepEqual(st, { workouts: 2, setsPerWorkout: 6, setsPerWeek: 12, strengthPct: 42, armIsolationPct: 17, unilateralPct: 25, unmapped: ['Plank'] });
+  // Sets: 5 + 2 + 3 + 2 = 12 over 2 workouts = 6 per workout, 12 per week; heavy 5/12, arms 2/12, one side 3/12.
+  assert.deepEqual(st, { workouts: 2, setsPerWorkout: 6, setsPerWeek: 12, heavyPct: 42, armIsolationPct: 17, unilateralPct: 25, unmapped: ['Plank'] });
+  // A range that straddles 5 counts in part: 3 sets of 4-8 = 3 x 2/5 = 1.2 heavy sets of 3 = 40%; 2 sets of 3-6 = 2 x 3/4 = 75%.
+  assert.equal(phaseStats({ workouts: [{ name: 'A', exercises: [{ name: 'Squat', sets: '3', reps: '4-8' }] }] }, lookup).heavyPct, 40);
+  assert.equal(phaseStats({ workouts: [{ name: 'A', exercises: [{ name: 'Squat', sets: '2', reps: '3-6' }] }] }, lookup).heavyPct, 75);
+  assert.equal(phaseStats({ workouts: [{ name: 'A', exercises: [{ name: 'Squat', sets: '2', reps: '6-10' }] }] }, lookup).heavyPct, 0);
   assert.throws(() => createCatalog({ version: 1, programs: [{ name: 'Test Program', weeks: 1, phases: [{ name: 'P1', weeks: [1, 1],
     workouts: [{ name: 'D', exercises: [{ name: 'Hold', reps: 'forever' }] }] }] }] }, { programs: PROGRAMS }), /not a number, range, or seconds/);
 });

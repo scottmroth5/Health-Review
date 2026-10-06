@@ -105,7 +105,8 @@ const UNILATERAL = /\b(single|one[- ]arm|one[- ]leg|alternating|lunges?|split sq
 
 /**
  * Prescribed work in one phase, from its workouts (estimates use the middle of each range):
- * workouts, sets per workout, sets per week, and the share of sets in the strength range (5 reps or fewer),
+ * workouts, sets per workout, sets per week, and the share of heavy sets (5 reps or fewer; a range that straddles
+ * 5 counts for the part of it at 5 or fewer, so "4-8" is 2 of 5 rep counts, 40% heavy),
  * on arm isolation (dictionary pattern "arms") and on one side at a time. Names with no dictionary entry are listed.
  * @param {object} phase  a catalog phase
  * @param {(name: string) => {status: string, pattern: string|null}} lookup  dictionary.lookup
@@ -113,7 +114,7 @@ const UNILATERAL = /\b(single|one[- ]arm|one[- ]leg|alternating|lunges?|split sq
 export function phaseStats(phase, lookup) {
   const workouts = phase.workouts ?? [];
   let sets = 0;
-  let strength = 0;
+  let heavy = 0;
   let arms = 0;
   let unilateral = 0;
   const unmapped = new Set();
@@ -123,7 +124,7 @@ export function phaseStats(phase, lookup) {
       const reps = parseReps(ex.reps ?? '');
       const m = lookup(ex.name);
       sets += n;
-      if (reps?.unit === 'reps' && reps.max <= 5) strength += n;
+      if (reps?.unit === 'reps' && reps.min <= 5) heavy += n * ((Math.min(reps.max, 5) - reps.min + 1) / (reps.max - reps.min + 1));
       if (m.pattern === 'arms') arms += n;
       if (UNILATERAL.test(ex.name)) unilateral += n;
       if (m.status !== 'mapped') unmapped.add(ex.name);
@@ -135,7 +136,7 @@ export function phaseStats(phase, lookup) {
     workouts: workouts.length,
     setsPerWorkout: Math.round(perWorkout),
     setsPerWeek: phase.workouts_per_week ? Math.round(perWorkout * phase.workouts_per_week) : null,
-    strengthPct: share(strength),
+    heavyPct: share(heavy),
     armIsolationPct: share(arms),
     unilateralPct: share(unilateral),
     unmapped: [...unmapped],
