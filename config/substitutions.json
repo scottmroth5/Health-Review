@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "equipment": {
+    "note": "Home gym since March 2020. No machines and no cable pulley: band, dumbbell or bodyweight versions stand in for cable and machine exercises.",
+    "have": ["barbell", "dumbbell", "band", "bodyweight", "kettlebell", "suspension", "landmine", "power tower"],
+    "lack": ["machine", "cable"]
+  },
+  "fill_rule": "A cable or machine slot is filled by a band, dumbbell or bodyweight exercise with the same movement pattern logged in the same session, even when no swap below names it.",
+  "swaps": [
+    { "prescribed": "standing-overhead-barbell-press", "use": ["barbell-z-press", "standing-dumbbell-shoulder-press", "dumbbell-overhead-press"], "reason": "my preference" },
+
+    { "prescribed": "alternating-cable-crossover", "use": ["alternating-band-crossover"], "reason": "no cable" },
+    { "prescribed": "alternating-cable-curls", "use": ["alternating-band-curls"], "reason": "no cable" },
+    { "prescribed": "alternating-cable-hammer-curls", "use": ["alternating-band-hammer-curls"], "reason": "no cable" },
+    { "prescribed": "alternating-lying-cable-curls", "use": ["band-curls", "alternating-band-curls"], "reason": "no cable" },
+    { "prescribed": "bentover-cable-pullover", "use": ["bentover-band-pullover"], "reason": "no cable" },
+    { "prescribed": "cable-lateral-raises", "use": ["band-lateral-raise", "dumbbell-lateral-raises"], "reason": "no cable" },
+    { "prescribed": "cable-reverse-lunge-to-balance", "use": ["band-reverse-lunge-to-balance"], "reason": "no cable" },
+    { "prescribed": "cable-sissy-squat", "use": ["band-sissy-squat", "sissy-squats"], "reason": "no cable" },
+    { "prescribed": "decline-alternating-cable-chest-fly", "use": ["decline-alternating-band-chest-fly"], "reason": "no cable" },
+    { "prescribed": "floor-cable-lateral-raise", "use": ["floor-band-lateral-raise"], "reason": "no cable" },
+    { "prescribed": "floor-seated-cable-pulldown", "use": ["floor-seated-band-pulldown", "floor-seated-badn-pulldowns", "box-seated-band-pulldown"], "reason": "no cable" },
+    { "prescribed": "single-arm-overhead-rope-extension", "use": ["single-arm-band-tricep-extensions", "one-arm-overhead-tricep-extension"], "reason": "no cable" },
+    { "prescribed": "rope-overhead-tricep-extension", "use": ["band-overhead-tricep-extensions", "dumbbell-overhead-tricep-extension"], "reason": "no cable" },
+    { "prescribed": "rear-single-arm-cable-fly", "use": ["rear-single-arm-dumbbell-fly"], "reason": "no cable" },
+    { "prescribed": "seated-single-arm-cable-row", "use": ["seated-single-arm-band-row"], "reason": "no cable" },
+    { "prescribed": "single-arm-cable-fly", "use": ["single-arm-band-fly"], "reason": "no cable" },
+    { "prescribed": "single-arm-cable-kickbacks", "use": ["single-arm-band-kickbacks"], "reason": "no cable" },
+    { "prescribed": "single-arm-cable-tricep-extension", "use": ["single-arm-band-tricep-extensions"], "reason": "no cable" },
+    { "prescribed": "single-arm-cable-upright-row", "use": ["single-arm-band-upright-row"], "reason": "no cable" },
+    { "prescribed": "single-arm-downward-cable-row", "use": ["single-arm-downward-band-rows"], "reason": "no cable" },
+    { "prescribed": "single-arm-low-cable-crossover", "use": ["single-arm-low-band-crossover"], "reason": "no cable" },
+    { "prescribed": "single-leg-cable-hinge", "use": ["single-leg-band-hinge"], "reason": "no cable" },
+    { "prescribed": "standing-cable-rear-fly", "use": ["standing-band-rear-fly"], "reason": "no cable" },
+    { "prescribed": "cable-pulldowns", "use": ["band-pulldowns", "floor-seated-band-pulldown", "pullups"], "reason": "no cable" },
+    { "prescribed": "cable-rows", "use": ["band-rows", "seated-single-arm-band-row"], "reason": "no cable" },
+    { "prescribed": "cable-crossover", "use": ["band-crossover"], "reason": "no cable" },
+    { "prescribed": "cable-rear-delt-flyes", "use": ["standing-band-rear-fly", "dumbbell-rear-delt-flyes"], "reason": "no cable" },
+    { "prescribed": "tricep-pressdown", "use": ["band-tricep-pressdowns", "band-pressdown", "pressdown"], "reason": "same band exercise logged under several names" },
+    { "prescribed": "rope-tricep-pressdown", "use": ["band-tricep-pressdowns", "band-pressdown"], "reason": "no cable" },
+    { "prescribed": "single-arm-pushdown", "use": ["single-arm-band-pressdown"], "reason": "same band exercise logged under two names" },
+
+    { "prescribed": "machine-alternating-incline-press", "use": ["incline-alternating-dumbbell-press"], "reason": "no machines" },
+    { "prescribed": "machine-iso-row", "use": ["single-arm-dumbbell-row"], "reason": "no machines" },
+    { "prescribed": "leg-extension", "use": ["band-sissy-squat", "sissy-squats"], "reason": "no machines" },
+    { "prescribed": "leg-press-calf-raises", "use": ["standing-calf-raises", "calf-raises"], "reason": "no machines" },
+    { "prescribed": "machine-preacher-curl", "use": ["dumbbell-preacher-curls"], "reason": "no machines" },
+    { "prescribed": "pec-deck-alternate-fly", "use": ["alternating-band-crossover", "dumbbell-flyes"], "reason": "no machines" },
+    { "prescribed": "pec-deck-rear-delt-fly", "use": ["dumbbell-rear-delt-flyes", "standing-band-rear-fly"], "reason": "no machines" },
+    { "prescribed": "reverse-hyper", "use": ["hip-bridge-hold", "single-leg-hip-bridges"], "reason": "no machines" },
+    { "prescribed": "single-leg-machine-curl", "use": ["single-leg-band-leg-curls"], "reason": "no machines" },
+    { "prescribed": "single-leg-press", "use": ["dumbbell-bulgarian-split-squat", "dumbbell-step-up"], "reason": "no machines" },
+    { "prescribed": "lying-leg-curls", "use": ["band-leg-curls", "stability-ball-leg-curl", "ball-leg-curls"], "reason": "no machines" },
+    { "prescribed": "leg-press", "use": ["dumbbell-bulgarian-split-squat", "goblet-squats"], "reason": "no machines" }
+  ],
+  "avoid": [
+    { "exercise": "circus-press", "reason": "paused for now (owner's choice)", "since": "2026-10-06", "temporary": true, "note": "I want to do them again later; remove this entry then" }
+  ]
+}

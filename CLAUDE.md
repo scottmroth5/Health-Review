@@ -21,7 +21,8 @@ Health specific logic stays in this repo; never add it to agent-core.
 /ingest             Google Sheets to SQLite: sheets.js (read-only client, fakeable), parsers.js (one per sheet), sync.js;
                     the only code touching raw source rows; normalize.js (dictionary onto the Workout Log) and
                     program-blocks.js (blocks, sessions, review operations)
-/config             exercise-dictionary.json: canonical exercises and name variants (names only; see README.md)
+/config             exercise-dictionary.json: canonical exercises and name variants (names only; see README.md);
+                    substitutions.json: home equipment, what fills a cable or machine slot, and the avoid list
 /db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).

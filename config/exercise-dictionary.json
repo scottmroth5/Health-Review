@@ -9,7 +9,11 @@
       "primary": true,
       "variants": [
         "Barbell Back Squat",
-        "Squats"
+        "Squats",
+        "Phase 1 Squat",
+        "Phase 2 Squat",
+        "Phase III Barbell Squat",
+        "Phase IV Barbell Squat"
       ]
     },
     {
@@ -19,7 +23,8 @@
       "pattern": "hinge",
       "primary": true,
       "variants": [
-        "Deadlift"
+        "Deadlift",
+        "Phase 1 Deadlift"
       ]
     },
     {
@@ -31,7 +36,9 @@
       "variants": [
         "Bench Press",
         "Barbell Chest Press",
-        "Barbell Bench"
+        "Barbell Bench",
+        "Barbell Flat Bench",
+        "Phase 1 Bench Press"
       ]
     },
     {
@@ -62,7 +69,8 @@
       "pattern": "vertical pull",
       "primary": true,
       "variants": [
-        "Bodyweight Pullups"
+        "Bodyweight Pullups",
+        "Assisted or Bodyweight Pull-Ups"
       ]
     },
     {
@@ -72,7 +80,8 @@
       "pattern": "other",
       "primary": false,
       "variants": [
-        "Lateral Raises"
+        "Lateral Raises",
+        "Seated Lateral"
       ]
     },
     {
@@ -174,7 +183,10 @@
       "name": "Dumbbell Shoulder Press",
       "implement": "dumbbell",
       "pattern": "vertical press",
-      "primary": true
+      "primary": true,
+      "variants": [
+        "Seated Dumbbell Press"
+      ]
     },
     {
       "id": "dumbbell-rear-delt-flyes",
@@ -225,7 +237,10 @@
       "name": "Dumbbell Supinated Curls",
       "implement": "dumbbell",
       "pattern": "arms",
-      "primary": true
+      "primary": true,
+      "variants": [
+        "Dumbbell Supinating Curls"
+      ]
     },
     {
       "id": "dumbbell-row",
@@ -268,9 +283,12 @@
     {
       "id": "tricep-pressdown",
       "name": "Tricep Pressdown",
-      "implement": "cable",
+      "implement": "band",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "V Bar Press Down"
+      ]
     },
     {
       "id": "dumbbell-chest-press",
@@ -387,7 +405,11 @@
       "pattern": "squat",
       "primary": false,
       "variants": [
-        "Bulgarian Split Squats"
+        "Bulgarian Split Squats",
+        "Bulgarian Split Stance Squat",
+        "Bulgarian Split-Stance Squat",
+        "Bulgarian Split Stance Squats",
+        "Dumbbell Bulgarian Split Stance Squat"
       ]
     },
     {
@@ -402,7 +424,10 @@
       "name": "Curl Bar Curls",
       "implement": "barbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Cambered Bar Curl"
+      ]
     },
     {
       "id": "t-bar-rows",
@@ -433,7 +458,10 @@
       "name": "Barbell Shoulder Press",
       "implement": "barbell",
       "pattern": "vertical press",
-      "primary": true
+      "primary": true,
+      "variants": [
+        "Shoulder Press"
+      ]
     },
     {
       "id": "crunches",
@@ -447,7 +475,11 @@
       "name": "Dumbbell Preacher Curls",
       "implement": "dumbbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Preacher Curl",
+        "Preacher Curls"
+      ]
     },
     {
       "id": "goblet-squats",
@@ -461,7 +493,10 @@
       "name": "Dumbbell Rear Lateral Raises",
       "implement": "dumbbell",
       "pattern": "other",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Rear Lateral Raise"
+      ]
     },
     {
       "id": "zottman-curls",
@@ -482,7 +517,10 @@
       "name": "Dumbbell Curls",
       "implement": "dumbbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Seated Dumbbell Curl"
+      ]
     },
     {
       "id": "band-pressdown",
@@ -635,7 +673,11 @@
       "name": "Standing Overhead Barbell Press",
       "implement": "barbell",
       "pattern": "vertical press",
-      "primary": true
+      "primary": true,
+      "variants": [
+        "Barbell Overhead Press",
+        "Overhead Press"
+      ]
     },
     {
       "id": "side-crunches",
@@ -689,7 +731,7 @@
     {
       "id": "cable-chop",
       "name": "Cable Chop",
-      "implement": "cable",
+      "implement": "band",
       "pattern": "core",
       "primary": false
     },
@@ -705,19 +747,22 @@
       "name": "Barbell Upright Row",
       "implement": "barbell",
       "pattern": "other",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Upright Row"
+      ]
     },
     {
       "id": "single-arm-lat-pulldowns",
       "name": "Single Arm Lat Pulldowns",
-      "implement": "cable",
+      "implement": "band",
       "pattern": "vertical pull",
       "primary": false
     },
     {
       "id": "pressdown",
       "name": "Pressdown",
-      "implement": "cable",
+      "implement": "band",
       "pattern": "arms",
       "primary": false
     },
@@ -786,7 +831,10 @@
       "name": "Seated Dumbbell Ovehead Tricep Ext",
       "implement": "dumbbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Seated Dumbbell Overhead Tricep Extensions"
+      ]
     },
     {
       "id": "ball-leg-curls",
@@ -926,7 +974,10 @@
       "name": "Wrist CARS Qaudruped",
       "implement": "other",
       "pattern": "mobility",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Wrist CARS Quadruped"
+      ]
     },
     {
       "id": "circus-press",
@@ -940,7 +991,10 @@
       "name": "Ab roller",
       "implement": "bodyweight",
       "pattern": "core",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Kneeling Ab Wheel Roll-Outs"
+      ]
     },
     {
       "id": "alternating-band-curls",
@@ -961,7 +1015,10 @@
       "name": "Alternating Supinated Curls",
       "implement": "dumbbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Alternating Supinating Curls"
+      ]
     },
     {
       "id": "suspension-skull-crusher",
@@ -1022,7 +1079,7 @@
     {
       "id": "cable-twists",
       "name": "Cable Twists",
-      "implement": "cable",
+      "implement": "band",
       "pattern": "core",
       "primary": false
     },
@@ -1066,14 +1123,21 @@
       "name": "Renegade Row to Push Ups",
       "implement": "dumbbell",
       "pattern": "horizontal pull",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Push-Up Renegade Row"
+      ]
     },
     {
       "id": "incline-alternating-dumbbell-press",
       "name": "Incline Alternating Dumbbell Press",
       "implement": "dumbbell",
       "pattern": "incline press",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Alternating Incline Dumbbell Chest Press",
+        "Elbows Tucked Incline Alternating Press"
+      ]
     },
     {
       "id": "downward-chop",
@@ -1157,7 +1221,10 @@
       "name": "Deadlift Speed Row",
       "implement": "barbell",
       "pattern": "hinge",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Deadlift Speed Pulls"
+      ]
     },
     {
       "id": "front-loaded-dumbbell-squats",
@@ -1178,7 +1245,10 @@
       "name": "Power Punch",
       "implement": "bodyweight",
       "pattern": "other",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "MAPS Power Punch"
+      ]
     },
     {
       "id": "push-up-with-rotation",
@@ -1255,7 +1325,10 @@
       "name": "Standing Alternating Supinated Dumbbell Curl",
       "implement": "dumbbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Standing Alternating Supinating Dumbbell Curl"
+      ]
     },
     {
       "id": "band-pull-a-parts",
@@ -1269,7 +1342,10 @@
       "name": "Barbell Curl 21's",
       "implement": "barbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Barbell Curl 21s"
+      ]
     },
     {
       "id": "dumbbell-lunges",
@@ -1283,7 +1359,10 @@
       "name": "Seated Alternating Supinated Curls",
       "implement": "dumbbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Seated Alternating Supinating Curls"
+      ]
     },
     {
       "id": "tricep-extension",
@@ -1360,7 +1439,10 @@
       "name": "Bodyweight Squats",
       "implement": "bodyweight",
       "pattern": "squat",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Body Weight Squats"
+      ]
     },
     {
       "id": "double-swings",
@@ -1395,7 +1477,10 @@
       "name": "Ketlebell Single Deadlift",
       "implement": "kettlebell",
       "pattern": "hinge",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Kettlebell Single Leg Deadlift"
+      ]
     },
     {
       "id": "pushups-with-depth",
@@ -1416,7 +1501,10 @@
       "name": "Rope Tricep Pressdown",
       "implement": "cable",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Rope Pressdown"
+      ]
     },
     {
       "id": "rotating-shoulder-press",
@@ -1493,7 +1581,10 @@
       "name": "Cable Rows",
       "implement": "cable",
       "pattern": "horizontal pull",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Seated Cable Row"
+      ]
     },
     {
       "id": "chest-supported-incline-dumbbell-row",
@@ -1528,7 +1619,10 @@
       "name": "One Arm Kettlebell Squat",
       "implement": "kettlebell",
       "pattern": "squat",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "One Arm Kettlebell Squat Press"
+      ]
     },
     {
       "id": "seated-single-arm-arnold-press",
@@ -1668,7 +1762,11 @@
       "name": "Cable Rear Delt Flyes",
       "implement": "cable",
       "pattern": "horizontal pull",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Rear Cable Flys",
+        "High to Low Rear Delt Cable Fly"
+      ]
     },
     {
       "id": "decline-alternating-band-chest-fly",
@@ -1715,9 +1813,12 @@
     {
       "id": "single-arm-pushdown",
       "name": "Single-Arm Pushdown",
-      "implement": "cable",
+      "implement": "band",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "One Arm Rope Push Down"
+      ]
     },
     {
       "id": "single-leg-get-up",
@@ -1740,7 +1841,8 @@
       "pattern": "vertical pull",
       "primary": false,
       "variants": [
-        "Pulldowns"
+        "Pulldowns",
+        "Lat Pulldowns"
       ]
     },
     {
@@ -1832,7 +1934,11 @@
       "name": "Chest Down Incline Real Fly",
       "implement": "dumbbell",
       "pattern": "horizontal pull",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Chest Down Fly",
+        "Chest Down Incline Rear Fly"
+      ]
     },
     {
       "id": "chest-down-incline-row",
@@ -1881,7 +1987,10 @@
       "name": "handcuff with rotation",
       "implement": "other",
       "pattern": "mobility",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "MAPS Handcuffs"
+      ]
     },
     {
       "id": "incline-dumbbell-chest",
@@ -2000,7 +2109,10 @@
       "name": "Dumbbell Step-up",
       "implement": "dumbbell",
       "pattern": "squat",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Weighted Step-Up"
+      ]
     },
     {
       "id": "lat-raises",
@@ -2028,7 +2140,10 @@
       "name": "Single-Leg Dumbbell Romanian Deadlifts",
       "implement": "dumbbell",
       "pattern": "hinge",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Single Leg Stiff Legged Deadlift"
+      ]
     },
     {
       "id": "close-grip-bench",
@@ -2119,12 +2234,15 @@
       "name": "Lying Leg Curls",
       "implement": "machine",
       "pattern": "hinge",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Leg Curl"
+      ]
     },
     {
       "id": "tricep-press-down",
       "name": "Tricep Press Down",
-      "implement": "cable",
+      "implement": "band",
       "pattern": "arms",
       "primary": false
     },
@@ -2140,7 +2258,10 @@
       "name": "Alternating Dumbbel Skull Crusher",
       "implement": "dumbbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Alternating Dumbbell Skull Crusher"
+      ]
     },
     {
       "id": "alternating-dumbbell-curls",
@@ -2227,7 +2348,10 @@
       "name": "Barbell Bent Over Row",
       "implement": "barbell",
       "pattern": "horizontal pull",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Bent Over Row"
+      ]
     },
     {
       "id": "bear-crawl",
@@ -2388,7 +2512,10 @@
       "name": "Rollover",
       "implement": "bodyweight",
       "pattern": "core",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "MAPS Rollover"
+      ]
     },
     {
       "id": "seated-alternating-arnold-press",
@@ -2416,7 +2543,10 @@
       "name": "Single Leg Band T-row",
       "implement": "band",
       "pattern": "horizontal pull",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "MAPS Single Leg Band T-Row"
+      ]
     },
     {
       "id": "eliptical",
@@ -2437,7 +2567,10 @@
       "name": "Acive Fish",
       "implement": "bodyweight",
       "pattern": "mobility",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Active Fish"
+      ]
     },
     {
       "id": "beast-position-dead-bug",
@@ -2458,21 +2591,30 @@
       "name": "Dumbbell Single Deadlift",
       "implement": "dumbbell",
       "pattern": "hinge",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Single Leg Deadlift"
+      ]
     },
     {
       "id": "dumbbell-skull-crusher-s-21-s",
       "name": "Dumbbell Skull Crusher's 21's",
       "implement": "dumbbell",
       "pattern": "arms",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Incline Skull Crusher 21s"
+      ]
     },
     {
       "id": "dumbbell-suitcase-carries",
       "name": "Dumbbell Suitcase Carries",
       "implement": "dumbbell",
       "pattern": "carry",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "MAPS Suitcase Carry"
+      ]
     },
     {
       "id": "extended-plank-with-rotation",
@@ -2493,14 +2635,20 @@
       "name": "High Tension Pushup (5-2-2)",
       "implement": "bodyweight",
       "pattern": "horizontal press",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "MAPS High Tension Push-Up"
+      ]
     },
     {
       "id": "high-tension-squat-5-2-2",
       "name": "High Tension Squat (5-2-2)",
       "implement": "bodyweight",
       "pattern": "squat",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "MAPS High Tension Squat"
+      ]
     },
     {
       "id": "iso-dead-bugs",
@@ -2542,7 +2690,10 @@
       "name": "Lying Straight Arm Band Pullover",
       "implement": "band",
       "pattern": "horizontal pull",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Laying Straight Arm Band Pullover"
+      ]
     },
     {
       "id": "matrix-lunges",
@@ -2652,7 +2803,7 @@
     {
       "id": "floor-seated-badn-pulldowns",
       "name": "Floor Seated Badn Pulldowns",
-      "implement": "cable",
+      "implement": "band",
       "pattern": "vertical pull",
       "primary": false
     },
@@ -2760,6 +2911,589 @@
       "implement": "other",
       "pattern": "other",
       "primary": false
+    },
+    {
+      "id": "ab-wheel-planks",
+      "name": "Ab Wheel Planks",
+      "implement": "bodyweight",
+      "pattern": "core",
+      "primary": false
+    },
+    {
+      "id": "angled-ab-wheel-rollouts",
+      "name": "Angled Ab Wheel Rollouts",
+      "implement": "bodyweight",
+      "pattern": "core",
+      "primary": false,
+      "variants": [
+        "Kneeling Angled Ab Wheel Roll-Outs"
+      ]
+    },
+    {
+      "id": "alternating-dumbbell-row",
+      "name": "Alternating Dumbbell Row",
+      "implement": "dumbbell",
+      "pattern": "horizontal pull",
+      "primary": false
+    },
+    {
+      "id": "alternating-dumbbell-snatch",
+      "name": "Alternating Dumbbell Snatch",
+      "implement": "dumbbell",
+      "pattern": "hinge",
+      "primary": false
+    },
+    {
+      "id": "alternating-dumbbell-spider-curls",
+      "name": "Alternating Dumbbell Spider Curls",
+      "implement": "dumbbell",
+      "pattern": "arms",
+      "primary": false,
+      "variants": [
+        "Alternating Spider Curls"
+      ]
+    },
+    {
+      "id": "assisted-pull-ups",
+      "name": "Assisted Pull-Ups",
+      "implement": "bodyweight",
+      "pattern": "vertical pull",
+      "primary": false,
+      "variants": [
+        "Assisted Pull-Up",
+        "Assisted Pull-Ups"
+      ]
+    },
+    {
+      "id": "dumbbell-backstep-lunge",
+      "name": "Dumbbell Backstep Lunge",
+      "implement": "dumbbell",
+      "pattern": "squat",
+      "primary": false,
+      "variants": [
+        "Backstep Lunge"
+      ]
+    },
+    {
+      "id": "barbell-pullover",
+      "name": "Barbell Pullover",
+      "implement": "barbell",
+      "pattern": "horizontal pull",
+      "primary": false
+    },
+    {
+      "id": "barbell-push-press",
+      "name": "Barbell Push Press",
+      "implement": "barbell",
+      "pattern": "vertical press",
+      "primary": false,
+      "variants": [
+        "Push Press"
+      ]
+    },
+    {
+      "id": "barbell-push-up",
+      "name": "Barbell Push-Up",
+      "implement": "bodyweight",
+      "pattern": "horizontal press",
+      "primary": false
+    },
+    {
+      "id": "barbell-walking-lunges",
+      "name": "Barbell Walking Lunges",
+      "implement": "barbell",
+      "pattern": "squat",
+      "primary": false
+    },
+    {
+      "id": "dumbbell-romanian-deadlift",
+      "name": "Dumbbell Romanian Deadlift",
+      "implement": "dumbbell",
+      "pattern": "hinge",
+      "primary": false
+    },
+    {
+      "id": "dunphy-squat",
+      "name": "Dunphy Squat",
+      "implement": "bodyweight",
+      "pattern": "squat",
+      "primary": false
+    },
+    {
+      "id": "front-loaded-kettlebell-squats",
+      "name": "Front Loaded Kettlebell Squats",
+      "implement": "kettlebell",
+      "pattern": "squat",
+      "primary": false,
+      "variants": [
+        "Front Loaded Squats"
+      ]
+    },
+    {
+      "id": "plank-to-downward-dog",
+      "name": "Plank to Downward Dog",
+      "implement": "bodyweight",
+      "pattern": "mobility",
+      "primary": false,
+      "variants": [
+        "Full Plank to Downward Dog"
+      ]
+    },
+    {
+      "id": "barbell-high-pull",
+      "name": "Barbell High Pull",
+      "implement": "barbell",
+      "pattern": "hinge",
+      "primary": false,
+      "variants": [
+        "High Pull"
+      ]
+    },
+    {
+      "id": "hollow-body-rocker",
+      "name": "Hollow Body Rocker",
+      "implement": "bodyweight",
+      "pattern": "core",
+      "primary": false
+    },
+    {
+      "id": "incline-dumbbell-curl",
+      "name": "Incline Dumbbell Curl",
+      "implement": "dumbbell",
+      "pattern": "arms",
+      "primary": false
+    },
+    {
+      "id": "dumbbell-lunge-matrix-press",
+      "name": "Dumbbell Lunge Matrix with Press",
+      "implement": "dumbbell",
+      "pattern": "squat",
+      "primary": false,
+      "variants": [
+        "Lunge Matrix with Press"
+      ]
+    },
+    {
+      "id": "band-external-rotation",
+      "name": "Band External Rotation",
+      "implement": "band",
+      "pattern": "other",
+      "primary": false,
+      "variants": [
+        "MAPS External Rotation"
+      ]
+    },
+    {
+      "id": "sprint-intervals",
+      "name": "Sprint Intervals",
+      "implement": "other",
+      "pattern": "other",
+      "primary": false,
+      "variants": [
+        "MAPS Instinctive Intervals (Treadmill)"
+      ]
+    },
+    {
+      "id": "posture-push-ups",
+      "name": "Posture Push-Ups",
+      "implement": "bodyweight",
+      "pattern": "horizontal press",
+      "primary": false,
+      "variants": [
+        "MAPS Posture Push-Ups"
+      ]
+    },
+    {
+      "id": "plank-shoulder-touch",
+      "name": "Plank Shoulder Touch",
+      "implement": "bodyweight",
+      "pattern": "core",
+      "primary": false
+    },
+    {
+      "id": "rear-delt-t-bar-row",
+      "name": "Rear Delt T-Bar Row",
+      "implement": "landmine",
+      "pattern": "horizontal pull",
+      "primary": false
+    },
+    {
+      "id": "single-arm-band-row",
+      "name": "Single Arm Band Row",
+      "implement": "band",
+      "pattern": "horizontal pull",
+      "primary": false
+    },
+    {
+      "id": "single-arm-supported-lateral-raise",
+      "name": "Single Arm Supported Lateral Raise",
+      "implement": "dumbbell",
+      "pattern": "other",
+      "primary": false,
+      "variants": [
+        "Single Arm Supported Lateral"
+      ]
+    },
+    {
+      "id": "single-leg-hip-bridges",
+      "name": "Single Leg Hip Bridges",
+      "implement": "bodyweight",
+      "pattern": "hinge",
+      "primary": false
+    },
+    {
+      "id": "stabilization-push-up",
+      "name": "Stabilization Push-Up",
+      "implement": "bodyweight",
+      "pattern": "horizontal press",
+      "primary": false
+    },
+    {
+      "id": "single-arm-dumbbell-push-press",
+      "name": "Single Arm Dumbbell Push Press",
+      "implement": "dumbbell",
+      "pattern": "vertical press",
+      "primary": false,
+      "variants": [
+        "Standing One Arm Supported Dumbbell Push Press"
+      ]
+    },
+    {
+      "id": "stationary-lunge",
+      "name": "Stationary Lunge",
+      "implement": "bodyweight",
+      "pattern": "squat",
+      "primary": false
+    },
+    {
+      "id": "alternating-supinated-dumbbell-row",
+      "name": "Alternating Supinated Dumbbell Row",
+      "implement": "dumbbell",
+      "pattern": "horizontal pull",
+      "primary": false,
+      "variants": [
+        "Supinated Alternating Bent Over Row"
+      ]
+    },
+    {
+      "id": "tuck-jumps",
+      "name": "Tuck Jumps",
+      "implement": "bodyweight",
+      "pattern": "other",
+      "primary": false
+    },
+    {
+      "id": "twisting-ball-crunch",
+      "name": "Twisting Stability Ball Crunch",
+      "implement": "other",
+      "pattern": "core",
+      "primary": false
+    },
+    {
+      "id": "v-ups",
+      "name": "V-Ups",
+      "implement": "bodyweight",
+      "pattern": "core",
+      "primary": false
+    },
+    {
+      "id": "alternating-cable-crossover",
+      "name": "Alternating Cable Crossover",
+      "implement": "cable",
+      "pattern": "horizontal press",
+      "primary": false
+    },
+    {
+      "id": "alternating-cable-curls",
+      "name": "Alternating Cable Curls",
+      "implement": "cable",
+      "pattern": "arms",
+      "primary": false
+    },
+    {
+      "id": "alternating-cable-hammer-curls",
+      "name": "Alternating Cable Hammer Curls",
+      "implement": "cable",
+      "pattern": "arms",
+      "primary": false
+    },
+    {
+      "id": "alternating-lying-cable-curls",
+      "name": "Alternating Lying Cable Curls",
+      "implement": "cable",
+      "pattern": "arms",
+      "primary": false
+    },
+    {
+      "id": "bentover-cable-pullover",
+      "name": "Bentover Cable Pullover",
+      "implement": "cable",
+      "pattern": "horizontal pull",
+      "primary": false
+    },
+    {
+      "id": "cable-lateral-raises",
+      "name": "Cable Lateral Raises",
+      "implement": "cable",
+      "pattern": "other",
+      "primary": false
+    },
+    {
+      "id": "cable-reverse-lunge-to-balance",
+      "name": "Cable Reverse Lunge to Balance",
+      "implement": "cable",
+      "pattern": "squat",
+      "primary": false
+    },
+    {
+      "id": "cable-sissy-squat",
+      "name": "Cable Sissy Squat",
+      "implement": "cable",
+      "pattern": "squat",
+      "primary": false
+    },
+    {
+      "id": "decline-alternating-cable-chest-fly",
+      "name": "Decline Alternating Cable Chest Fly",
+      "implement": "cable",
+      "pattern": "horizontal press",
+      "primary": false
+    },
+    {
+      "id": "floor-cable-lateral-raise",
+      "name": "Floor Cable Lateral Raise",
+      "implement": "cable",
+      "pattern": "other",
+      "primary": false
+    },
+    {
+      "id": "floor-seated-cable-pulldown",
+      "name": "Floor Seated Cable Pulldown",
+      "implement": "cable",
+      "pattern": "vertical pull",
+      "primary": false,
+      "variants": [
+        "Floor Seated Cable Pulldowns",
+        "Seated on Ground Alternating Cable Pulldown"
+      ]
+    },
+    {
+      "id": "single-arm-overhead-rope-extension",
+      "name": "Single Arm Overhead Rope Extension",
+      "implement": "cable",
+      "pattern": "arms",
+      "primary": false,
+      "variants": [
+        "One Arm Overhead Rope Extension"
+      ]
+    },
+    {
+      "id": "rope-overhead-tricep-extension",
+      "name": "Rope Overhead Tricep Extension",
+      "implement": "cable",
+      "pattern": "arms",
+      "primary": false,
+      "variants": [
+        "Standing Overhead Rope Tricep Extension"
+      ]
+    },
+    {
+      "id": "rear-single-arm-cable-fly",
+      "name": "Rear Single Arm Cable Fly",
+      "implement": "cable",
+      "pattern": "horizontal pull",
+      "primary": false
+    },
+    {
+      "id": "seated-single-arm-cable-row",
+      "name": "Seated Single-Arm Cable Row",
+      "implement": "cable",
+      "pattern": "horizontal pull",
+      "primary": false
+    },
+    {
+      "id": "single-arm-cable-fly",
+      "name": "Single-Arm Cable Fly",
+      "implement": "cable",
+      "pattern": "horizontal press",
+      "primary": false
+    },
+    {
+      "id": "single-arm-cable-kickbacks",
+      "name": "Single-Arm Cable Kickbacks",
+      "implement": "cable",
+      "pattern": "arms",
+      "primary": false
+    },
+    {
+      "id": "single-arm-cable-tricep-extension",
+      "name": "Single-Arm Cable Tricep Extension",
+      "implement": "cable",
+      "pattern": "arms",
+      "primary": false
+    },
+    {
+      "id": "single-arm-cable-upright-row",
+      "name": "Single-Arm Cable Upright Row",
+      "implement": "cable",
+      "pattern": "other",
+      "primary": false,
+      "variants": [
+        "Single-Arm Cable Upright Row Seated"
+      ]
+    },
+    {
+      "id": "single-arm-downward-cable-row",
+      "name": "Single-Arm Downward Cable Row",
+      "implement": "cable",
+      "pattern": "horizontal pull",
+      "primary": false,
+      "variants": [
+        "Single-Arm Downward Cable Rows"
+      ]
+    },
+    {
+      "id": "single-arm-low-cable-crossover",
+      "name": "Single-Arm Low Cable Crossover",
+      "implement": "cable",
+      "pattern": "horizontal press",
+      "primary": false
+    },
+    {
+      "id": "single-leg-cable-hinge",
+      "name": "Single-Leg Cable Hinge",
+      "implement": "cable",
+      "pattern": "hinge",
+      "primary": false
+    },
+    {
+      "id": "standing-cable-rear-fly",
+      "name": "Standing Cable Rear Fly",
+      "implement": "cable",
+      "pattern": "horizontal pull",
+      "primary": false
+    },
+    {
+      "id": "machine-alternating-incline-press",
+      "name": "Machine Alternating Incline Press",
+      "implement": "machine",
+      "pattern": "incline press",
+      "primary": false,
+      "variants": [
+        "Alternating Hammer Strength Incline Press"
+      ]
+    },
+    {
+      "id": "machine-iso-row",
+      "name": "Machine Iso Row",
+      "implement": "machine",
+      "pattern": "horizontal pull",
+      "primary": false,
+      "variants": [
+        "Hammer Strength Iso Row"
+      ]
+    },
+    {
+      "id": "leg-extension",
+      "name": "Leg Extension",
+      "implement": "machine",
+      "pattern": "squat",
+      "primary": false
+    },
+    {
+      "id": "leg-press-calf-raises",
+      "name": "Leg Press Calf Raises",
+      "implement": "machine",
+      "pattern": "other",
+      "primary": false
+    },
+    {
+      "id": "machine-preacher-curl",
+      "name": "Machine Preacher Curl",
+      "implement": "machine",
+      "pattern": "arms",
+      "primary": false
+    },
+    {
+      "id": "pec-deck-alternate-fly",
+      "name": "Pec Deck Alternate Fly",
+      "implement": "machine",
+      "pattern": "horizontal press",
+      "primary": false
+    },
+    {
+      "id": "pec-deck-rear-delt-fly",
+      "name": "Pec Deck Rear Delt Fly",
+      "implement": "machine",
+      "pattern": "horizontal pull",
+      "primary": false
+    },
+    {
+      "id": "reverse-hyper",
+      "name": "Reverse Hyper",
+      "implement": "machine",
+      "pattern": "hinge",
+      "primary": false,
+      "variants": [
+        "Reverse Hyper Machine"
+      ]
+    },
+    {
+      "id": "single-leg-machine-curl",
+      "name": "Single Leg Machine Curl",
+      "implement": "machine",
+      "pattern": "hinge",
+      "primary": false,
+      "variants": [
+        "Single Leg Curl"
+      ]
+    },
+    {
+      "id": "single-leg-press",
+      "name": "Single Leg Press",
+      "implement": "machine",
+      "pattern": "squat",
+      "primary": false
+    },
+    {
+      "id": "alternating-seated-dumbbell-rear-delt-row",
+      "name": "Alternating Seated Dumbbell Rear Delt Row",
+      "implement": "dumbbell",
+      "pattern": "horizontal pull",
+      "primary": false,
+      "variants": [
+        "Alternating Heavy Seated Rear Delt Row"
+      ]
+    },
+    {
+      "id": "landmine-high-low-press",
+      "name": "Landmine High/Low Press",
+      "implement": "landmine",
+      "pattern": "vertical press",
+      "primary": false,
+      "variants": [
+        "MAPS High/Low Press"
+      ]
+    },
+    {
+      "id": "dumbbell-strength-row",
+      "name": "Dumbbell Strength Row",
+      "implement": "dumbbell",
+      "pattern": "horizontal pull",
+      "primary": false,
+      "variants": [
+        "MAPS Strength Row"
+      ]
+    },
+    {
+      "id": "dumbbell-v-press",
+      "name": "Dumbbell V Press",
+      "implement": "dumbbell",
+      "pattern": "vertical press",
+      "primary": false,
+      "variants": [
+        "V Press"
+      ]
     }
   ],
   "ignore": [
