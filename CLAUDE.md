@@ -144,6 +144,13 @@ Recent (42 days) against baseline (the 84 before): progressing at +2.5% or more,
 in between; fewer than 4 recent or 2 baseline sessions is not_enough_data; a range absent from the baseline is
 new_rep_range, never a stall. GET /api/lifts feeds the Training tab's Lift progress card; the weekly summary's
 lifts holds recently trained lifts only (no trend points), and CONTRACT tells the model to report these statuses as given.
+Program Advisor (metrics/advisor.js, pure; fixture evals/fixtures/metrics/advisor.json): ranks the catalog's standalone
+programs (the one run last left out; add-ons such as No BS 6-Pack listed apart) on the owner's goals (strength, joint
+health and balance, time, VO2 max), each 0 to 1 from the prescription (heavy and 6-12 rep shares, one-side and arm
+isolation shares, the profile's judged conditioning and mobility, the avoid list in config/substitutions.json) and past
+runs (first vs last 2 weeks of primary lift estimated maxes, first vs last 4 weeks of VO2 max), times completion on
+past runs. Minutes per session are Apple Watch strength minutes on that program (10+ sessions) or the prescription
+estimate times the owner's watch-to-estimate ratio. The model never ranks; reasons are facts from these numbers.
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and

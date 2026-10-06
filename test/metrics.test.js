@@ -14,6 +14,8 @@ import { exerciseKey, exerciseName } from '../metrics/exercises.js';
 import { volumeByExercise } from '../metrics/volume.js';
 import { strength } from '../metrics/strength.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
+import { recommendPrograms } from '../metrics/advisor.js';
+import { createDictionary } from '../metrics/dictionary.js';
 import { openHealthStore } from '../db/store.js';
 import { saveSettings } from '../server/queries.js';
 
@@ -37,6 +39,10 @@ const dir = repoPath('evals', 'fixtures', 'metrics');
 for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
   const fx = JSON.parse(readFileSync(`${dir}/${file}`, 'utf8'));
   test(`fixture ${file}: ${fx.description}`, () => {
+    if (fx.kind === 'advisor') {
+      assertSubset(recommendPrograms({ ...fx.input, lookup: createDictionary(fx.dictionary).lookup }), fx.expected);
+      return;
+    }
     const result = computeWeek({ ...EMPTY, ...fx.input }, { weekEnd: fx.weekEnd, ...fx.options });
     assertSubset(result, fx.expected);
     // Dashboard views (training volume): expected values per view, and the number of bars.

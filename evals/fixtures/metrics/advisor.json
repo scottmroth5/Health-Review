@@ -1,0 +1,93 @@
+{
+  "kind": "advisor",
+  "description": "Program Advisor: goal scores, past-run lift and VO2 max history, deload exclusion, avoid list, completion, watch-minutes ratio, fresh stimulus, last program left out, add-on listed apart",
+  "notes": [
+    "Synthetic programs, one 4-week phase each, 3 sessions a week except Echo (2). Set shares come from phaseStats; minutes = 0.75 a set + rest per set (each exercise its own rest group).",
+    "Alpha: Squat 5x5, Curl 3x10, Single Leg Lunge 2x10, rest 2 minutes. 10 sets: heavy 5 = 50%, 6-12 reps 5 = 50%, arm 3 = 30%, one side 2 = 20%; main range tie 1-5 vs 6-12 (20 each) goes to 1-5. Minutes 7.5 + 2 x 10 = 27.5 -> 28.",
+    "Bravo: Sprints 6x30s, Single Leg Lunge 4x12, rest 60 seconds. 10 sets: heavy 0, 6-12 4 = 40%, arm 0, one side 4 = 40%, main range 6-12. Minutes 7.5 + 10 = 17.5 -> 18.",
+    "Charlie: Circus Press 4x8, Curl 2x15, rest 90 seconds. 6 sets: heavy 0, 6-12 4 = 66.7 -> 67%, arm 2 = 33.3 -> 33%, one side 0, main range 6-12 (16 vs 8). Minutes 4.5 + 1.5 x 6 = 13.5 -> 14. Circus Press is on the avoid list.",
+    "Echo (add-on): Curl 2x12, 2 a week, stated 10 minutes a session, 20 extra minutes a week. 2 sets: 6-12 100%, arm 100%.",
+    "Watch: Alpha has 10 sessions of 33 min (watch average 33); Bravo only 3 (estimate). Ratio = median(33 / 28) = 1.1786 -> 1.18. Bravo 18 x 1.18 = 21.24 -> 21; Charlie 14 x 1.18 = 16.52 -> 17; Echo 10 x 1.18 = 11.8 -> 12.",
+    "Alpha run 2025-01-05..2025-02-15 (41 days): squat early best 200x5 = 233.3 -> 233 (Jan 6), late 220x5 = 256.7 -> 257 (Feb 10); the Feb 12 Deload set (250x5) is left out. Change 24 / 233 = 10.3%. Too short (under 56 days) for VO2.",
+    "Bravo run 2025-03-01..2025-05-10 (70 days, 60% reached): VO2 first 28 days 40 and 41 = 40.5; last 28 days (from Apr 13) 42 and 43 = 42.5; change +2.0. No primary sets in it.",
+    "Current lifts: Squat stalled in 1-5, so programs whose main range is not 1-5 (Bravo, Charlie, Echo) get +0.1 strength.",
+    "Alpha: strength profile min(1, (50 + 25) / 50) = 1, history clamp(0.5 + 10.3 / 20) = 1 -> 1.00; joint 0.5 x 0.5 + 0.3 x 1/3 + 0.2 x (1 - 0.75) = 0.40; weekly 3 x 33 = 99 -> time 1; vo2 0; completion 100 -> x1; total (1 + 0.4 + 1 + 0) / 4 = 0.60.",
+    "Bravo: strength 20 / 50 = 0.4 + 0.1 = 0.50; joint 0.5 x 1 + 0.3 x 2/3 + 0.2 x 1 = 0.90; weekly 3 x 21 + 30 = 93 -> 1; vo2 (1 + clamp(0.5 + 2 / 2)) / 2 = 1; completion 60 -> x0.8; total 0.85 x 0.8 = 0.68.",
+    "Charlie: strength 33.5 / 50 = 0.67 + 0.1 = 0.77; joint (0 + 0.3 x 2/3 + 0.2 x (1 - 33/40)) x 0.75 = 0.235 x 0.75 = 0.17625 -> 0.18; weekly 51 -> 1; vo2 1/3 -> 0.33; no runs -> x1; total (0.77 + 0.18 + 1 + 0.33) / 4 = 0.57.",
+    "Echo: strength min(1, 50 / 50 + 0.1) = 1; joint 0; weekly 2 x 12 + 20 = 44 -> 1; vo2 0; total 0.50. Delta is the program run last: left out."
+  ],
+  "dictionary": {
+    "version": 1,
+    "exercises": [
+      { "id": "squat", "name": "Squat", "implement": "barbell", "pattern": "squat", "primary": true },
+      { "id": "curl", "name": "Curl", "implement": "dumbbell", "pattern": "arms", "primary": false },
+      { "id": "single-leg-lunge", "name": "Single Leg Lunge", "implement": "dumbbell", "pattern": "squat", "primary": false },
+      { "id": "circus-press", "name": "Circus Press", "implement": "dumbbell", "pattern": "vertical press", "primary": false },
+      { "id": "sprints", "name": "Sprints", "implement": "other", "pattern": "other", "primary": false }
+    ]
+  },
+  "input": {
+    "asOf": "2025-10-01",
+    "lastProgram": "Delta",
+    "substitutions": { "avoid": [{ "exercise": "circus-press" }] },
+    "programs": [
+      { "name": "Alpha", "weeks": 4, "profile": { "conditioning": 0, "mobility": 1, "extra_minutes_per_week": 0 },
+        "phases": [{ "name": "Phase 1", "weeks": [1, 4], "workouts_per_week": 3, "rest": "2 minutes", "workouts": [{ "name": "A", "exercises": [
+          { "name": "Squat", "sets": "5", "reps": "5" }, { "name": "Curl", "sets": "3", "reps": "10" }, { "name": "Single Leg Lunge", "sets": "2", "reps": "10" }] }] }] },
+      { "name": "Bravo", "weeks": 4, "profile": { "conditioning": 3, "mobility": 2, "extra_minutes_per_week": 30 },
+        "phases": [{ "name": "Phase 1", "weeks": [1, 4], "workouts_per_week": 3, "rest": "60 seconds", "workouts": [{ "name": "B", "exercises": [
+          { "name": "Sprints", "sets": "6", "reps": "30s" }, { "name": "Single Leg Lunge", "sets": "4", "reps": "12" }] }] }] },
+      { "name": "Charlie", "weeks": 4, "profile": { "conditioning": 1, "mobility": 2, "extra_minutes_per_week": 0 },
+        "phases": [{ "name": "Phase 1", "weeks": [1, 4], "workouts_per_week": 3, "rest": "90 seconds", "workouts": [{ "name": "C", "exercises": [
+          { "name": "Circus Press", "sets": "4", "reps": "8" }, { "name": "Curl", "sets": "2", "reps": "15" }] }] }] },
+      { "name": "Delta", "weeks": 4, "profile": { "conditioning": 0, "mobility": 0 },
+        "phases": [{ "name": "Phase 1", "weeks": [1, 4], "workouts_per_week": 3, "workouts": [{ "name": "D", "exercises": [{ "name": "Squat", "sets": "3", "reps": "5" }] }] }] },
+      { "name": "Echo", "weeks": 4, "profile": { "conditioning": 0, "mobility": 0, "extra_minutes_per_week": 20, "minutes_per_session": 10, "standalone": false },
+        "phases": [{ "name": "Phase 1", "weeks": [1, 4], "workouts_per_week": 2, "workouts": [{ "name": "E", "exercises": [{ "name": "Curl", "sets": "2", "reps": "12" }] }] }] }
+    ],
+    "blocks": [
+      { "program": "Alpha", "start_date": "2025-01-05", "end_date": "2025-02-15", "status": "completed", "percent": 100 },
+      { "program": "Bravo", "start_date": "2025-03-01", "end_date": "2025-05-10", "status": "completed", "percent": 60 },
+      { "program": "Delta", "start_date": "2025-09-01", "end_date": null, "status": "in_progress", "percent": 25 }
+    ],
+    "sets": [
+      { "date": "2025-01-06", "canonical_id": "squat", "canonical_name": "Squat", "is_primary": 1, "weight_lbs": 200, "per_hand": 0, "reps": 5, "workout": "Alpha" },
+      { "date": "2025-02-10", "canonical_id": "squat", "canonical_name": "Squat", "is_primary": 1, "weight_lbs": 220, "per_hand": 0, "reps": 5, "workout": "Alpha" },
+      { "date": "2025-02-12", "canonical_id": "squat", "canonical_name": "Squat", "is_primary": 1, "weight_lbs": 250, "per_hand": 0, "reps": 5, "workout": "Alpha Deload" }
+    ],
+    "vo2": [
+      { "date": "2025-03-05", "value": 40 }, { "date": "2025-03-20", "value": 41 },
+      { "date": "2025-04-20", "value": 42 }, { "date": "2025-05-05", "value": 43 }
+    ],
+    "watchMinutes": [
+      { "program": "Alpha", "minutes": 33 }, { "program": "Alpha", "minutes": 33 }, { "program": "Alpha", "minutes": 33 }, { "program": "Alpha", "minutes": 33 },
+      { "program": "Alpha", "minutes": 33 }, { "program": "Alpha", "minutes": 33 }, { "program": "Alpha", "minutes": 33 }, { "program": "Alpha", "minutes": 33 },
+      { "program": "Alpha", "minutes": 33 }, { "program": "Alpha", "minutes": 33 },
+      { "program": "Bravo", "minutes": 30 }, { "program": "Bravo", "minutes": 30 }, { "program": "Bravo", "minutes": 30 }
+    ],
+    "lifts": [{ "name": "Squat", "status": "stalled", "range": "1-5" }]
+  },
+  "expected": {
+    "minutesRatio": 1.18,
+    "excluded": [{ "program": "Delta", "reason": "run last" }],
+    "ranking": [
+      { "program": "Bravo", "total": 0.68, "scores": { "strength": 0.5, "joint": 0.9, "time": 1, "vo2": 1 }, "completion": 60, "runs": 1,
+        "lessHistory": false, "liftChangePct": null, "vo2Change": 2, "minutesPerSession": 21, "minutesSource": "estimate", "weeklyMinutes": 93,
+        "heavyPct": 0, "moderatePct": 40, "unilateralPct": 40, "armIsolationPct": 0, "mainRange": "6-12",
+        "reasons": ["VO2 max +2 during your 2025 run", "About 3 x 21 min a week plus 30 min of extra sessions", "You reached 60% of it on average (1 run)",
+          "Trains mostly 6-12 reps, a change for your stalled lifts"], "flags": [] },
+      { "program": "Alpha", "total": 0.6, "scores": { "strength": 1, "joint": 0.4, "time": 1, "vo2": 0 }, "completion": 100, "runs": 1,
+        "lessHistory": false, "liftChangePct": 10.3, "vo2Change": null, "minutesPerSession": 33, "minutesSource": "watch", "weeklyMinutes": 99,
+        "heavyPct": 50, "moderatePct": 50, "unilateralPct": 20, "armIsolationPct": 30, "mainRange": "1-5",
+        "reasons": ["Your Jan 2025 run: Squat +10.3%", "About 3 x 33 min a week", "You reached 100% of it on average (1 run)"], "flags": [] },
+      { "program": "Charlie", "total": 0.57, "scores": { "strength": 0.77, "joint": 0.18, "time": 1, "vo2": 0.33 }, "completion": null, "runs": 0,
+        "lessHistory": true, "minutesPerSession": 17, "minutesSource": "estimate", "weeklyMinutes": 51,
+        "heavyPct": 0, "moderatePct": 67, "unilateralPct": 0, "armIsolationPct": 33, "mainRange": "6-12",
+        "reasons": ["About 3 x 17 min a week", "Trains mostly 6-12 reps, a change for your stalled lifts"],
+        "flags": ["Prescribes Circus Press (Phase 1), on your avoid list"] }
+    ],
+    "addons": [
+      { "program": "Echo", "total": 0.5, "scores": { "strength": 1, "joint": 0, "time": 1, "vo2": 0 }, "minutesPerSession": 12, "weeklyMinutes": 44 }
+    ]
+  }
+}
