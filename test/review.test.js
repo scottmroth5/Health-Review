@@ -225,6 +225,46 @@ test('summary: the current program block, its logged phase and finish reach the 
   store.close();
 });
 
+test('summary: the Program Advisor ranking reaches the review only within 21 days of the block\'s earliest finish, grounded', async () => {
+  const { createCatalog } = await import('../metrics/catalog.js');
+  const { createDictionary } = await import('../metrics/dictionary.js');
+  const { loadWeekData } = await import('../metrics/load.js');
+  const { advisorDue } = await import('../metrics/advisor.js');
+  const one = (exercises, extra = {}) => [{ name: 'Phase 1', weeks: [1, 4], workouts_per_week: 3, workouts: [{ name: 'A', exercises }], ...extra }];
+  const catalog = createCatalog({ version: 1, programs: [
+    { name: 'MAPS Symmetry', weeks: 11, phases: [{ name: 'Phase 1', weeks: [1, 5] }, { name: 'Phase 2', weeks: [6, 11] }] },
+    { name: 'MAPS Powerlift', weeks: 4, profile: { conditioning: 0, mobility: 0 }, phases: one([{ name: 'Squat', sets: '5', reps: '3' }], { rest: '2 minutes' }) },
+    { name: 'HIIT', weeks: 4, profile: { conditioning: 3, mobility: 3, minutes_per_session: 20 }, phases: one([{ name: 'Sprints', sets: '6', reps: '30s' }]) },
+  ] }, { programs: ['MAPS Symmetry', 'MAPS Powerlift', 'HIIT'] });
+  const dictionary = createDictionary({ version: 1, exercises: [
+    { id: 'squat', name: 'Squat', implement: 'barbell', pattern: 'squat', primary: true },
+    { id: 'sprints', name: 'Sprints', implement: 'other', pattern: 'other', primary: false }] });
+  const store = openHealthStore(':memory:');
+  const now = new Date().toISOString();
+  store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
+    VALUES ('b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
+  store.db.prepare("INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise) VALUES (2026, 2, '2026-08-03', 'Symmetry - Phase 1', 'Squat')").run();
+  const week = (weekEnd) => buildSummary(computeWeek(loadWeekData(store.db, weekEnd, { catalog, dictionary, substitutions: { avoid: [] } }), { weekEnd }), [], { today: weekEnd });
+
+  // Earliest finish 2026-10-18 (11 weeks from Aug 3): 22 days after Sep 26, 15 after Oct 3.
+  assert.equal(week('2026-09-26').advisor, undefined);
+  const s = week('2026-10-03');
+  assert.deepEqual(s.advisor.leftOut, ['MAPS Symmetry (run last)']);
+  assert.deepEqual(s.advisor.weights, { strength: 1, joint: 1, time: 1, vo2: 1 });
+  assert.deepEqual(s.advisor.top.map((t) => [t.program, t.total]), [['HIIT', 0.63], ['MAPS Powerlift', 0.55]]);
+  assert.deepEqual(s.advisor.top[1].reasons, ['About 3 x 14 min a week']);
+  const allowed = allowedNumbers(s, '');
+  assert.deepEqual(ungroundedNumbers(report([['Strength Progress',
+    'Next block: HIIT ranks first at 0.63 (VO2 max 1, time 1). MAPS Powerlift follows at 0.55, about 3 x 14 min a week, strength 1.']]), allowed), []);
+  assert.ok(CONTRACT.includes('"advisor"'));
+  // Between blocks, after a block ends, or past the program's end: always due.
+  assert.equal(advisorDue(null, '2026-10-03'), true);
+  assert.equal(advisorDue({ status: 'completed', earliestFinish: null }, '2026-10-03'), true);
+  assert.equal(advisorDue({ status: 'in_progress', earliestFinish: null, pastProgramEnd: true }, '2026-10-03'), true);
+  assert.equal(advisorDue({ status: 'in_progress', earliestFinish: '2026-10-25', pastProgramEnd: false }, '2026-10-03'), false);
+  store.close();
+});
+
 test('summary: lift plateau statuses reach the review grounded; lifts not trained recently are left out', async () => {
   const { loadWeekData } = await import('../metrics/load.js');
   const store = openHealthStore(':memory:');

@@ -3,13 +3,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact } from '../metrics/medications.js';
-import { loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
+import { loadAdvisorInput, loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
 import { trainingView } from '../metrics/volume.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
 import { liftProgress } from '../metrics/plateau.js';
 import { addDays } from '../metrics/stats.js';
 import { recommendPrograms } from '../metrics/advisor.js';
-import { blockStatus } from '../ingest/program-blocks.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
 export const BODY_FIELDS = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat'];
@@ -168,28 +167,12 @@ export function vo2max(db, view, today) {
   return vo2maxReport(rows, view, today);
 }
 
-/**
- * The Program Advisor's ranking as of today (Training tab). Inputs: confirmed blocks with how far each got, every
- * primary-lift set, VO2 max readings, Apple Watch strength and HIIT minutes per lifting day by program, current lift
- * status, the dictionary and substitutions. The program run last is the in-progress confirmed block, else the latest.
- * @returns {{available: false} | object}  available false without the MAPS catalog
- */
+/** The Program Advisor's ranking as of today (Training tab); available false without the MAPS catalog. */
 export function advisor(db, today, { catalog, dictionary, substitutions, weights }) {
   if (!catalog) return { available: false };
-  const blocks = db.prepare("SELECT * FROM program_blocks WHERE source = 'confirmed' ORDER BY start_date").all()
-    .map((b) => ({ ...b, percent: blockStatus(db, b, today, catalog).percent }));
-  const last = blocks.filter((b) => b.status === 'in_progress').at(-1) ?? blocks.at(-1) ?? null;
-  const watchMinutes = db.prepare(`SELECT ls.program, w.minutes FROM log_sessions ls
-    JOIN (SELECT substr(start, 1, 10) AS day, SUM(duration_sec) / 60.0 AS minutes FROM workout_sessions
-      WHERE (type LIKE '%Strength%' OR type LIKE '%High Intensity%') AND duration_sec IS NOT NULL GROUP BY day) w ON w.day = ls.date
-    WHERE ls.program IS NOT NULL AND ls.date <= ?`).all(today);
-  const vo2 = db.prepare('SELECT date, vo2max AS value FROM daily_metrics WHERE vo2max IS NOT NULL AND date <= ? ORDER BY date').all(today);
   return {
     available: true,
-    ...recommendPrograms({
-      programs: catalog.programs, lookup: dictionary.lookup, substitutions, blocks, sets: loadPrimarySets(db, today), vo2,
-      watchMinutes, lifts: lifts(db, today), lastProgram: last?.program ?? null, asOf: today, weights,
-    }),
+    ...recommendPrograms({ ...loadAdvisorInput(db, today, catalog), programs: catalog.programs, lookup: dictionary.lookup, substitutions, weights }),
   };
 }
 

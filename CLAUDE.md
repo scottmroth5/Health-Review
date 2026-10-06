@@ -153,7 +153,10 @@ past runs. Minutes per session are Apple Watch strength minutes on that program 
 estimate times the owner's watch-to-estimate ratio. The model never ranks; reasons are facts from these numbers.
 Goal weights (0 to 3 each, default 1; 0 leaves a goal out) change the weighted average. GET /api/advisor?strength=&joint=&time=&vo2=
 feeds the Training tab's Next program card, whose weight buttons are saved per browser and change that view only;
-the weekly review uses equal weights.
+the weekly review uses equal weights. The weekly summary carries advisor (the top 3 at equal weights, the program
+left out and add-ons, no focus text) only when advisorDue: within 21 days of the block's earliest finish, after it
+ends, or between blocks; CONTRACT tells the model to explain the ranking, never re-rank it. loadAdvisorInput
+(metrics/load.js) gathers the input for both the API and the review.
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and

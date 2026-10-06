@@ -49,6 +49,7 @@ export function buildSummary(week, notes, { today }) {
     strength,
     trainingVolume: week.trainingVolume,
     program: week.program,
+    ...(week.advisor ? { advisor: week.advisor } : {}),
     lifts: week.lifts,
     drinking: week.drinking,
     checkins: week.checkins,

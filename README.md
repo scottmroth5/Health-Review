@@ -123,6 +123,61 @@ the ones that don't).
   the program, phase and when it started, program week, any deload or failure week, the finish range and days left.
 - **Status:** detection marks a block completed or in progress, and never abandoned. You set abandoned yourself.
 
+**Workouts and profiles:** each phase's `workouts` list its exercises with `sets` and `reps`:
+- Reps can be a number, a range, or seconds for holds and timed work (`"30-60s"`).
+- Superset partners share a `superset` number.
+- Trigger, focus, flow and mobility sessions are short rules under `extras`.
+
+Each program also has a `profile`, written as short summaries rather than copied from the blueprints:
+- `focus`: one line
+- `conditioning` and `mobility`: 0 to 3
+- `extra_minutes_per_week`: sessions on non-lifting days
+- `minutes_per_session`: only where the blueprint states it
+- `standalone: false`: an add-on, such as No BS 6-Pack
+
+## Substitutions and the avoid list
+
+`config/substitutions.json` is committed, so keep it free of health details. It holds:
+- **`equipment`:** your home gym. There are no machines or cable pulley, so band, dumbbell or bodyweight versions stand
+  in for those exercises.
+- **`swaps`:** which of your exercises fill a prescribed one. For example, the standing overhead barbell press is
+  filled by the Z press or a standing dumbbell press, and "Alternating Cable Crossover" by your alternating band
+  crossover.
+- **`fill_rule`:** any band, dumbbell or bodyweight exercise with the same movement in that session fills a cable or
+  machine slot, even if no swap names it.
+- **`avoid`:** exercises you've paused, such as circus press. A program that prescribes one is flagged, and its joint
+  health and balance score is cut. Delete the entry when you want it back. Exercise ids are the `id`s in
+  `config/exercise-dictionary.json`.
+
+## Program Advisor
+
+The Training tab's **Next program** card ranks the MAPS programs for your next block. The ranking is computed in
+code by `metrics/advisor.js`, never by the model. The program you ran last is left out, and add-ons are listed apart.
+
+Each program gets four goal scores from 0 to 1:
+- **Strength:** heavy sets (5 reps or fewer) plus half credit for sets of 6 to 12 reps, averaged with the median change
+  in your primary lifts' estimated max from the first 2 weeks to the last 2 on past runs. A program whose main rep
+  range differs from your stalled lifts' range gets a small bonus.
+- **Joints and balance:** one-arm or one-leg work, mobility, and little arm isolation, cut when the program prescribes
+  something on your avoid list.
+- **Time:** minutes a week, from 120 or less (full score) to 360 or more (zero). The minutes are your Apple Watch
+  average for that program once it has 10 or more sessions. Otherwise they're the prescription estimate scaled by how
+  much longer your sessions usually run.
+- **VO2 max:** the program's conditioning, averaged with your VO2 max change from the first 4 weeks to the last 4 on
+  past runs.
+
+The total averages the four by their weights, then scales by how much of the program you reached on past runs. Each
+pick lists its reasons as facts from these numbers, such as "Your Mar 2024 run: Barbell Squat +8%" or
+"About 3 x 45 min a week".
+
+**Weights:** Off, 1x, 2x or 3x for each goal re-ranks the card immediately. Your choice is remembered in that
+browser. The weights change only this view; the weekly review always uses equal weights.
+
+**In the weekly review:** the summary carries the top 3 only when your block is within 21 days of its earliest
+finish, or when no block is in progress. The model explains the ranking and doesn't re-rank it.
+
+**API:** `GET /api/advisor?strength=1&joint=1&time=1&vo2=1` (each 0 to 3, default 1).
+
 ## Encrypted backups
 
 Every night at 11pm, `npm run backup` uploads an encrypted copy of `data/health.db` and your program catalog to a

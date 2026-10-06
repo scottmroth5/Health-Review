@@ -1,6 +1,6 @@
 // The Health Review API and UI. Every route has a JSON schema; /api/openapi.json is the contract
 // the UI (and any future backend) follows.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
 import fastifyStatic from '@fastify/static';
@@ -12,6 +12,7 @@ import { VO2_VIEWS } from '../metrics/vo2max.js';
 import { repoPath } from '../tools/paths.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { loadDictionary } from '../metrics/dictionary.js';
+import { loadSubstitutions } from '../metrics/load.js';
 import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
 import { currentProgram } from '../ingest/program-blocks.js';
 
@@ -174,7 +175,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req) => q.advisor(db, q.localDate(clock()), {
     catalog: programCatalog(),
     dictionary: dictionary ?? loadDictionary(),
-    substitutions: substitutions ?? JSON.parse(readFileSync(repoPath('config', 'substitutions.json'), 'utf8')),
+    substitutions: substitutions ?? loadSubstitutions(),
     weights: Object.fromEntries(GOALS.map((g) => [g, req.query[g]])),
   }));
 

@@ -276,3 +276,28 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
     addons: programs.filter((p) => !profiles.get(p.name).standalone).map(score).sort(byTotal),
   };
 }
+
+export const REVIEW_DAYS_BEFORE_FINISH = 21;
+
+/**
+ * Whether the weekly review gets the ranking: no program block that week, a block that has ended or run past its
+ * program, or one within 21 days of its earliest finish.
+ * @param {{status?: string, earliestFinish?: string|null, pastProgramEnd?: boolean}|null} program  the week's block (programAt)
+ */
+export function advisorDue(program, weekEnd) {
+  if (!program || program.status !== 'in_progress' || program.pastProgramEnd) return true;
+  return Boolean(program.earliestFinish) && daysBetween(weekEnd, program.earliestFinish) <= REVIEW_DAYS_BEFORE_FINISH;
+}
+
+/** The review's copy of a ranking: the top 3 with scores, reasons and flags, the program left out and the add-ons. */
+export function advisorForReview(result, top = 3) {
+  return {
+    weights: result.weights,
+    leftOut: result.excluded.map((x) => `${x.program} (${x.reason})`),
+    top: result.ranking.slice(0, top).map((r) => ({
+      program: r.program, total: r.total, scores: r.scores, completionPct: r.completion, weeklyMinutes: r.weeklyMinutes,
+      lessHistory: r.lessHistory, reasons: r.reasons, flags: r.flags,
+    })),
+    addons: result.addons.map((r) => ({ program: r.program, total: r.total })),
+  };
+}

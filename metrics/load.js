@@ -2,12 +2,23 @@
 // medication changes plus their 28-day before windows), plus the following morning for
 // next-morning recovery after the last day of the week.
 import { existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { addDays } from './stats.js';
 import { DICTIONARY_PATH, loadDictionary } from './dictionary.js';
 import { loadCatalog } from './catalog.js';
-import { programAt } from './blocks.js';
+import { programAt, programProgress } from './blocks.js';
+import { liftProgress } from './plateau.js';
+import { advisorDue } from './advisor.js';
+import { repoPath } from '../tools/paths.js';
 
-/** @param {{ catalog?: object|null }} [options]  MAPS catalog; defaults to data/maps/programs.json when present */
+export const SUBSTITUTIONS_PATH = repoPath('config', 'substitutions.json');
+/** config/substitutions.json: home equipment, swaps and the avoid list. */
+export const loadSubstitutions = (path = SUBSTITUTIONS_PATH) => JSON.parse(readFileSync(path, 'utf8'));
+
+/**
+ * @param {{ catalog?: object|null, dictionary?: object, substitutions?: object }} [options]  MAPS catalog (defaults to
+ * data/maps/programs.json when present), exercise dictionary and substitutions (default to config/)
+ */
 // The confirmed program block the week ends in, with phase and finish from its logged workout names.
 function programForWeek(db, weekEnd, catalog) {
   const block = db.prepare(`SELECT program, start_date, status FROM program_blocks WHERE source = 'confirmed'
@@ -17,8 +28,15 @@ function programForWeek(db, weekEnd, catalog) {
   return programAt(block, catalog, weekEnd, rows);
 }
 
-export function loadWeekData(db, weekEnd, { catalog } = {}) {
+export function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions } = {}) {
   const from = addDays(weekEnd, -125);
+  const cat = catalog === undefined ? loadCatalog() : catalog;
+  const program = programForWeek(db, weekEnd, cat);
+  // The Program Advisor's input, only when the review should carry the ranking (near the end of a block or between).
+  const advisorInput = cat && advisorDue(program, weekEnd)
+    ? { ...loadAdvisorInput(db, weekEnd, cat), programs: cat.programs, lookup: (dictionary ?? loadDictionary()).lookup,
+      substitutions: substitutions ?? loadSubstitutions() }
+    : null;
   const nextMorning = addDays(weekEnd, 1);
   return {
     daily_metrics: db.prepare('SELECT * FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(from, nextMorning),
@@ -34,7 +52,8 @@ export function loadWeekData(db, weekEnd, { catalog } = {}) {
     medication_doses: db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses WHERE date BETWEEN ? AND ?')
       .all(addDays(weekEnd, -6), weekEnd),
     // The confirmed program block the week ends in, with its phase and week from the catalog.
-    program: programForWeek(db, weekEnd, catalog === undefined ? loadCatalog() : catalog),
+    program,
+    advisor_input: advisorInput,
     primary_sets: loadPrimarySets(db, weekEnd),
     session_phases: loadSessionPhases(db),
   };
@@ -92,6 +111,37 @@ export function loadPrimarySets(db, to) {
 /** The stored phase of each session (log_sessions), as { date: phase }. */
 export function loadSessionPhases(db) {
   return Object.fromEntries(db.prepare('SELECT date, phase FROM log_sessions WHERE phase IS NOT NULL').all().map((r) => [r.date, r.phase]));
+}
+
+/**
+ * What the Program Advisor ranks from, as of a date: confirmed blocks with the share of the program each reached
+ * (the in-progress one as of the date, others at their last session), every primary-lift set, VO2 max readings,
+ * Apple Watch strength and HIIT minutes per lifting day by program, the lifts' current status, and the program run
+ * last (the in-progress confirmed block, else the latest one started).
+ */
+export function loadAdvisorInput(db, asOf, catalog) {
+  const blocks = db.prepare(`SELECT b.program, b.start_date, b.end_date, b.status, (SELECT MAX(date) FROM log_sessions WHERE block_id = b.id) AS last
+    FROM program_blocks b WHERE b.source = 'confirmed' AND b.start_date <= ? ORDER BY b.start_date`).all(asOf)
+    .map((b) => {
+      const at = b.status === 'in_progress' ? asOf : (b.last ?? b.start_date);
+      const rows = db.prepare('SELECT date, workout FROM strength_exercises WHERE date BETWEEN ? AND ?').all(b.start_date, at);
+      const p = programProgress(b, rows, catalog, at);
+      return { program: b.program, start_date: b.start_date, end_date: b.end_date, status: b.status,
+        percent: p.week && p.programWeeks ? Math.min(100, Math.round((p.week / p.programWeeks) * 100)) : null };
+    });
+  const sets = loadPrimarySets(db, asOf);
+  return {
+    blocks,
+    sets,
+    vo2: db.prepare('SELECT date, vo2max AS value FROM daily_metrics WHERE vo2max IS NOT NULL AND date <= ? ORDER BY date').all(asOf),
+    watchMinutes: db.prepare(`SELECT ls.program, w.minutes FROM log_sessions ls
+      JOIN (SELECT substr(start, 1, 10) AS day, SUM(duration_sec) / 60.0 AS minutes FROM workout_sessions
+        WHERE (type LIKE '%Strength%' OR type LIKE '%High Intensity%') AND duration_sec IS NOT NULL GROUP BY day) w ON w.day = ls.date
+      WHERE ls.program IS NOT NULL AND ls.date <= ?`).all(asOf),
+    lifts: liftProgress(sets, asOf, { phases: new Map(Object.entries(loadSessionPhases(db))) }),
+    lastProgram: (blocks.filter((b) => b.status === 'in_progress').at(-1) ?? blocks.at(-1))?.program ?? null,
+    asOf,
+  };
 }
 
 /** All medications and their periods (small tables, read whole). */

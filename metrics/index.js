@@ -9,6 +9,7 @@ import { medicationsWeek } from './medications.js';
 import { labsSummary } from './labs.js';
 import { volumeTrend } from './volume.js';
 import { liftsForReview } from './plateau.js';
+import { advisorDue, advisorForReview, recommendPrograms } from './advisor.js';
 
 /**
  * @param {{ daily_metrics: object[], workout_sessions: object[], strength_sets: object[], drinking_days: object[], checkins: object[] }} data
@@ -24,6 +25,8 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
     strength: strength(data.strength_sets, weekEnd),
     trainingVolume: volumeTrend(data.strength_sets, weekEnd),
     program: data.program ?? null,
+    // Ranked at equal weights, only near the end of a block or between blocks.
+    advisor: data.advisor_input && advisorDue(data.program ?? null, weekEnd) ? advisorForReview(recommendPrograms(data.advisor_input)) : null,
     lifts: liftsForReview(data.primary_sets ?? [], weekEnd, { phases: new Map(Object.entries(data.session_phases ?? {})) }),
     drinking: drinking(data.drinking_days, data.daily_metrics, weekEnd),
     checkins: checkins(data.checkins, data.daily_metrics, weekEnd),
