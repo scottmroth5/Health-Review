@@ -850,8 +850,15 @@ async function loadVo2(view = vo2ViewChoice()) {
 
 async function loadTrainingTab() {
   if (!state.today) await loadStatus();
-  loadProgram();
-  loadLifts();
+  // A card whose data fails says so rather than showing "Loading..." forever (for example an old server
+  // still running after an update: restart it).
+  const failed = (sel) => (err) => {
+    const el = $(sel);
+    el.className = 'muted small';
+    el.textContent = `Could not load this (${err.message}). If the app was just updated, restart the server.`;
+  };
+  loadProgram().catch(failed('#program-body'));
+  loadLifts().catch(failed('#lifts-body'));
   return loadTraining();
 }
 
