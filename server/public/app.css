@@ -91,6 +91,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 .dayline { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .dayline label { margin: 0; }
+.daynav { display: flex; align-items: center; gap: 6px; }
+.daynav input { width: auto; }
+.daynav button { min-height: 44px; }
+.daynav button.icon { min-width: 44px; padding: 0; font-size: 1.4rem; line-height: 1; }
 .sync { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
 .sync button { padding: 4px 10px; font-size: 0.85rem; }
 

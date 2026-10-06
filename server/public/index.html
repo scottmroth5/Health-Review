@@ -28,7 +28,12 @@
     <!-- Today -->
     <section id="view-today" class="view" hidden>
       <div class="dayline">
-        <label>Day <input type="date" id="day"></label>
+        <div class="daynav" role="group" aria-label="Day">
+          <button type="button" class="ghost icon" id="day-prev" aria-label="Previous day">&lsaquo;</button>
+          <input type="date" id="day" aria-label="Day">
+          <button type="button" class="ghost icon" id="day-next" aria-label="Next day">&rsaquo;</button>
+          <button type="button" class="ghost" id="day-today">Today</button>
+        </div>
         <span class="sync"><span id="sync-status" class="muted"></span> <button type="button" id="sync-now" class="ghost">Sync now</button></span>
       </div>
 

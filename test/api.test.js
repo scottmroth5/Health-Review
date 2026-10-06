@@ -86,9 +86,9 @@ test('drinking: counts are validated and days can be deleted', async () => {
 
 test('history returns metrics, check-ins and drinks in the range', async () => {
   const { app, db, done } = await setup();
-  db.prepare("INSERT INTO daily_metrics (date, hrv_ms, resting_hr, sleep_total_hr, steps, updated_at) VALUES ('2026-03-02', 48, 55, 7.2, 8000, 'x'), ('2026-01-01', 40, 60, 6, 5000, 'x')").run();
+  db.prepare("INSERT INTO daily_metrics (date, hrv_ms, resting_hr, sleep_total_hr, steps, exercise_min, updated_at) VALUES ('2026-03-02', 48, 55, 7.2, 8000, 35, 'x'), ('2026-01-01', 40, 60, 6, 5000, 20, 'x')").run();
   const h = (await app.inject('/api/history?from=2026-03-01&to=2026-03-09')).json();
-  assert.deepEqual(h.metrics, [{ date: '2026-03-02', hrv_ms: 48, resting_hr: 55, sleep_total_hr: 7.2, steps: 8000 }]);
+  assert.deepEqual(h.metrics, [{ date: '2026-03-02', hrv_ms: 48, resting_hr: 55, sleep_total_hr: 7.2, steps: 8000, exercise_min: 35 }]);
   assert.equal((await app.inject('/api/history?from=2026-03-09&to=2026-03-01')).statusCode, 400);
   await done();
 });

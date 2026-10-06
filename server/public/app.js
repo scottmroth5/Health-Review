@@ -143,6 +143,9 @@ function buildTodayForms() {
   }
 
   $('#day').addEventListener('change', () => loadDay());
+  $('#day-prev').addEventListener('click', () => stepDay(-1));
+  $('#day-next').addEventListener('click', () => stepDay(1));
+  $('#day-today').addEventListener('click', () => { $('#day').value = state.today; loadDay(); });
   $('#checkin').addEventListener('submit', saveCheckin);
   $('#drinking').addEventListener('submit', saveDrinking);
   $$('[data-delete]').forEach((b) => b.addEventListener('click', () => deleteEntry(b.dataset.delete)));
@@ -221,9 +224,19 @@ async function loadStatus() {
     : 'Not synced yet';
 }
 
+/** Moves the Today tab back or forward by days, never past today. */
+function stepDay(n) {
+  const next = addDays($('#day').value || state.today, n);
+  if (next > state.today) return;
+  $('#day').value = next;
+  loadDay();
+}
+
 async function loadDay() {
   if (!state.today) await loadStatus();
   const date = $('#day').value || state.today;
+  $('#day-next').disabled = date >= state.today;
+  $('#day-today').disabled = date === state.today;
   const { checkin, drinking, medications } = await api('GET', `/api/days/${date}`);
   state.day = { checkin, drinking };
   renderDoses(medications);
@@ -322,6 +335,7 @@ const CHARTS = [
   { key: 'resting_hr', title: 'Resting heart rate', from: 'metrics', format: fmt(0, ' bpm') },
   { key: 'sleep_total_hr', title: 'Sleep', from: 'metrics', format: fmt(1, ' h') },
   { key: 'steps', title: 'Steps', from: 'metrics', format: fmt(0) },
+  { key: 'exercise_min', title: 'Exercise minutes', from: 'metrics', format: fmt(0, ' min'), columns: true },
   { key: 'readiness', title: 'Morning readiness (1 to 10)', from: 'checkins', format: fmt(0), gapDays: 8 },
   { key: 'alcohol', title: 'Alcoholic drinks per day', from: 'drinking', format: fmt(0), columns: true },
 ];

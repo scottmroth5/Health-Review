@@ -72,7 +72,7 @@ export const deleteDrinking = (db, date) => db.prepare('DELETE FROM drinking_day
 
 export function history(db, from, to) {
   return {
-    metrics: db.prepare(`SELECT date, hrv_ms, resting_hr, sleep_total_hr, steps FROM daily_metrics
+    metrics: db.prepare(`SELECT date, hrv_ms, resting_hr, sleep_total_hr, steps, exercise_min FROM daily_metrics
       WHERE date BETWEEN ? AND ? ORDER BY date`).all(from, to),
     checkins: db.prepare(`SELECT date, cadence, readiness, energy, mood, stress, nutrition, weight_lbs FROM checkins
       WHERE date BETWEEN ? AND ? ORDER BY date`).all(from, to),
