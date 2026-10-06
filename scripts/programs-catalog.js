@@ -3,7 +3,7 @@
 // names map to the exercise dictionary.
 //   npm run programs:catalog                 the summary
 //   npm run programs:catalog -- --unmapped   also list blueprint exercise names with no dictionary entry
-import { CATALOG_PATH, loadCatalog } from '../metrics/catalog.js';
+import { CATALOG_PATH, loadCatalog, phaseStats } from '../metrics/catalog.js';
 import { loadDictionary } from '../metrics/dictionary.js';
 
 let catalog;
@@ -37,8 +37,12 @@ for (const p of catalog.programs) {
       }
     }
     const rx = [ph.sets && `${ph.sets} sets`, ph.reps && `${ph.reps} reps`, ph.rest && `rest ${ph.rest}`].filter(Boolean).join(', ');
+    const st = phaseStats(ph, (n) => dictionary.lookup(n));
+    const work = st.workouts
+      ? `\n${' '.repeat(17)}~${st.setsPerWorkout} sets/workout${st.setsPerWeek ? `, ~${st.setsPerWeek} sets/week` : ''}; strength range ${st.strengthPct}%, arm isolation ${st.armIsolationPct}%, one side at a time ${st.unilateralPct}%`
+      : '';
     return `    ${ph.name.padEnd(12)} weeks ${ph.weeks[0]}-${ph.weeks[1]}${ph.workouts_per_week ? `, ${ph.workouts_per_week}/week` : ''}`
-      + `${rx ? `, ${rx}` : ''}, ${workouts.length} workouts${special.length ? ` (${special.join(', ')})` : ''}`;
+      + `${rx ? `, ${rx}` : ''}, ${workouts.length} workouts${special.length ? ` (${special.join(', ')})` : ''}${work}`;
   });
   console.log(`${p.name}: ${p.weeks} weeks${p.equipment?.length ? `, equipment ${p.equipment.join(', ')}` : ''}; exercises mapped ${mapped}/${names}`);
   console.log(lines.join('\n'));

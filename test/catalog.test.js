@@ -55,9 +55,27 @@ test('catalog: invalid files are refused with every problem listed', () => {
     assert.match(p, /P1: sets "lots" is not a number or range/);
     assert.match(p, /P2: starts at week 5, expected 4/);
     assert.match(p, /P2: deload week 2 is outside the phase/);
-    assert.match(p, /Row: reps "max" is not a number or range/);
+    assert.match(p, /Row: reps "max" is not a number, range, or seconds/);
     return true;
   });
   assert.throws(() => createCatalog({ version: 1, programs: [{ name: 'Test Program', weeks: 12, phases: [{ name: 'P1', weeks: [1, 10] }] }] }, { programs: PROGRAMS }),
     /phases cover weeks 1-10, but the program has 12/);
+});
+
+test('catalog: timed holds, set midpoints, and per-phase prescribed work', async () => {
+  const { parseReps, midpoint, phaseStats } = await import('../metrics/catalog.js');
+  assert.deepEqual(parseReps('30-60s'), { min: 30, max: 60, unit: 'seconds' });
+  assert.deepEqual(parseReps('8-12'), { min: 8, max: 12, unit: 'reps' });
+  assert.equal(parseReps('max'), null);
+  assert.equal(midpoint('4-6'), 5);
+  const patterns = { Squat: 'squat', Curl: 'arms', 'Single Arm Row': 'horizontal pull' };
+  const lookup = (n) => (patterns[n] ? { status: 'mapped', pattern: patterns[n] } : { status: 'unmapped', pattern: null });
+  const st = phaseStats({ workouts_per_week: 2, workouts: [
+    { name: 'A', exercises: [{ name: 'Squat', sets: '4-6', reps: '1-4' }, { name: 'Curl', sets: '2', reps: '8-12' }] },
+    { name: 'B', exercises: [{ name: 'Single Arm Row', sets: '3', reps: '8-12' }, { name: 'Plank', sets: '2', reps: '30-60s' }] },
+  ] }, lookup);
+  // Sets: 5 + 2 + 3 + 2 = 12 over 2 workouts = 6 per workout, 12 per week; strength 5/12, arms 2/12, one side 3/12.
+  assert.deepEqual(st, { workouts: 2, setsPerWorkout: 6, setsPerWeek: 12, strengthPct: 42, armIsolationPct: 17, unilateralPct: 25, unmapped: ['Plank'] });
+  assert.throws(() => createCatalog({ version: 1, programs: [{ name: 'Test Program', weeks: 1, phases: [{ name: 'P1', weeks: [1, 1],
+    workouts: [{ name: 'D', exercises: [{ name: 'Hold', reps: 'forever' }] }] }] }] }, { programs: PROGRAMS }), /not a number, range, or seconds/);
 });

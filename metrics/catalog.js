@@ -18,6 +18,19 @@ export function parseRange(text) {
   return max >= min ? { min, max } : null;
 }
 
+/** Prescribed reps: "8-12" -> { min: 8, max: 12, unit: 'reps' }; a timed hold "30-60s" -> unit 'seconds'. */
+export function parseReps(text) {
+  const timed = /^\s*(.+?)\s*s\s*$/.exec(String(text ?? ''));
+  const r = parseRange(timed ? timed[1] : text);
+  return r ? { ...r, unit: timed ? 'seconds' : 'reps' } : null;
+}
+
+/** The middle of a prescribed range, for estimates ("4-6" sets -> 5). */
+export const midpoint = (text) => {
+  const r = parseRange(text);
+  return r ? (r.min + r.max) / 2 : null;
+};
+
 const isInt = (n) => Number.isInteger(n) && n > 0;
 
 /**
@@ -54,7 +67,8 @@ export function createCatalog(json, { programs = PROGRAM_NAMES } = {}) {
         if (!wo?.name) problems.push(`${label}: every workout needs a name`);
         for (const ex of wo?.exercises ?? []) {
           if (!ex?.name) problems.push(`${label} ${wo?.name ?? ''}: every exercise needs a name`);
-          for (const key of ['sets', 'reps']) if (ex?.[key] !== undefined && !parseRange(ex[key])) problems.push(`${label} ${ex.name}: ${key} "${ex[key]}" is not a number or range`);
+          if (ex?.sets !== undefined && !parseRange(ex.sets)) problems.push(`${label} ${ex.name}: sets "${ex.sets}" is not a number or range`);
+          if (ex?.reps !== undefined && !parseReps(ex.reps)) problems.push(`${label} ${ex.name}: reps "${ex.reps}" is not a number, range, or seconds ("30-60s")`);
         }
       }
     }
@@ -84,6 +98,47 @@ export function createCatalog(json, { programs = PROGRAM_NAMES } = {}) {
         failure: (ph.special_weeks?.failure ?? []).includes(week),
       };
     },
+  };
+}
+
+const UNILATERAL = /\b(single|one[- ]arm|one[- ]leg|alternating|lunges?|split squats?|step[- ]?ups?|unilateral|bulgarian|suitcase|pistol|cossack)\b/i;
+
+/**
+ * Prescribed work in one phase, from its workouts (estimates use the middle of each range):
+ * workouts, sets per workout, sets per week, and the share of sets in the strength range (5 reps or fewer),
+ * on arm isolation (dictionary pattern "arms") and on one side at a time. Names with no dictionary entry are listed.
+ * @param {object} phase  a catalog phase
+ * @param {(name: string) => {status: string, pattern: string|null}} lookup  dictionary.lookup
+ */
+export function phaseStats(phase, lookup) {
+  const workouts = phase.workouts ?? [];
+  let sets = 0;
+  let strength = 0;
+  let arms = 0;
+  let unilateral = 0;
+  const unmapped = new Set();
+  for (const wo of workouts) {
+    for (const ex of wo.exercises ?? []) {
+      const n = midpoint(ex.sets ?? '1') ?? 1;
+      const reps = parseReps(ex.reps ?? '');
+      const m = lookup(ex.name);
+      sets += n;
+      if (reps?.unit === 'reps' && reps.max <= 5) strength += n;
+      if (m.pattern === 'arms') arms += n;
+      if (UNILATERAL.test(ex.name)) unilateral += n;
+      if (m.status !== 'mapped') unmapped.add(ex.name);
+    }
+  }
+  const perWorkout = workouts.length ? sets / workouts.length : 0;
+  const share = (x) => (sets ? Math.round((x / sets) * 100) : 0);
+  return {
+    workouts: workouts.length,
+    setsPerWorkout: Math.round(perWorkout),
+    setsPerWeek: phase.workouts_per_week ? Math.round(perWorkout * phase.workouts_per_week) : null,
+    strengthPct: share(strength),
+    armIsolationPct: share(arms),
+    unilateralPct: share(unilateral),
+    unmapped: [...unmapped],
   };
 }
 
