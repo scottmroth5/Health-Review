@@ -180,6 +180,40 @@ finish, or when no block is in progress. The model explains the ranking and does
 
 **API:** `GET /api/advisor?strength=1&joint=1&time=1&vo2=1` (each 0 to 3, default 1).
 
+## Sheets pipeline and data checks
+
+Apple Health and Apple Watch data reach the app through two Google Sheets. Health Auto Export on your phone writes
+files to a Drive folder, and v1 Apps Scripts consolidate those files into the sheets nightly. The app reads the sheets
+at 7am.
+
+**The fixed health consolidation script** is at `tools/apps-script/ConsolidateHealthMetrics.gs`. The v1 script keyed
+rows on Date/Time plus Active Energy, so a day exported partly done and again later got a second row. The fixed script
+keeps one row per day and replaces a day's row when a later export has more steps. To install it:
+1. Back up the sheet first: File > Make a copy.
+2. Open Extensions > Apps Script on the Consolidated Apple Health Metrics sheet.
+3. Replace the script with the file's contents, and put your Health Auto Export folder ID in `FOLDER_ID`.
+4. Run `consolidateHealthMetrics` once and check the log. It reports new days and days replaced by a fuller export.
+   The nightly trigger can stay as it is.
+5. Optionally, run `collapseDuplicateDays` once to remove the duplicate rows already in the sheet. The app merges
+   them correctly either way.
+
+The workout sessions script needs no change: it keys rows on type, start and end, and there are no duplicates.
+
+**Time zone:** the sheet is set to America/New_York. That causes the 3-hour shift in workout Duration cells and the
+03:00 stamps on health dates. Leave it as it is. The app corrects both, and changing it could move workout start times.
+
+**Data checks:** after every sync, the app checks the data. Problems show above the day on the Today tab and in the
+sync log (Activity tab). The checks look for:
+- **Apple Health data that stopped:** nothing after a given day. Today is never expected to be complete.
+- **Missing days:** gaps in the last 14 days.
+- **Partial days:** a day whose steps are under a quarter of your usual day, which is how a partial export looks.
+- **Lifting without a watch workout:** a Workout Log day with no Apple Watch strength workout. This one appears in the
+  sync log only, since you may simply not have worn the watch.
+- **A workout longer than its start-to-end time:** the Duration shift coming back.
+- **Impossible values.**
+
+The weekly review gets the week's missing and partial days, so it doesn't read them as bad days.
+
 ## Encrypted backups
 
 Every night at 11pm, `npm run backup` uploads an encrypted copy of `data/health.db` and your program catalog to a

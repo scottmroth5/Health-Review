@@ -7,7 +7,7 @@ import { openHealthStore } from '../db/store.js';
 import { createSheetsSource } from '../ingest/sheets.js';
 import { runSync } from '../ingest/sync.js';
 
-const DETAILED = new Set(['year corrected', 'unknown column']);
+const DETAILED = new Set(['year corrected', 'unknown column', 'several rows for one day']);
 
 async function main() {
   const backfill = process.argv.includes('--backfill');
@@ -25,8 +25,8 @@ async function main() {
     if (groups.size) console.log('\nWarnings:');
     for (const [key, list] of groups) {
       console.log(`  ${key} (${list.length})`);
-      if (DETAILED.has(list[0].kind)) {
-        for (const w of list) console.log(`    ${w.tab ? `${w.tab} row ${w.row}: ` : ''}${w.detail}`);
+      if (DETAILED.has(list[0].kind) || list[0].source === 'data_check') {
+        for (const w of list) console.log(`    ${w.tab && w.row ? `${w.tab} row ${w.row}: ` : w.tab ? `${w.tab}: ` : ''}${w.detail}`);
       }
     }
   } finally {

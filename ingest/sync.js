@@ -8,6 +8,8 @@
 //    last year during January); backfill reads every year tab.
 //  - Drinking log and weekly check-in are imported only on backfill: the UI owns them after
 //    that, and rows entered in the UI are never overwritten.
+import { dataChecks } from '../metrics/dataquality.js';
+import { loadDataCheckInput } from '../metrics/load.js';
 import { createHash } from 'node:crypto';
 import { createTracer } from '@scottmroth5/agent-core';
 import {
@@ -71,6 +73,10 @@ export async function runSync({ store, source, backfill = false, now = new Date(
       counts.drinking_log = await importOnce({ store, source, key: 'drinking_log', parse: parseDrinkingLog, write: upsertDrinkingDays(store.db, stamp), warnings });
       counts.weekly_checkin = await importOnce({ store, source, key: 'weekly_checkin', parse: parseWeeklyCheckins, write: upsertCheckins(store.db, stamp), warnings });
     }
+    // Data checks (stale or missing Apple Health days, partial days, workouts not exported, impossible values).
+    const checks = dataChecks(loadDataCheckInput(store.db, localDay(now)));
+    for (const c of checks) warnings.push({ source: 'data_check', kind: c.kind, detail: c.message, severity: c.severity });
+    counts.data_checks = { warn: checks.filter((c) => c.severity === 'warn').length, info: checks.filter((c) => c.severity === 'info').length };
     run.finish('ok', { counts, warnings: warnings.length });
     return { counts, warnings };
   } catch (err) {

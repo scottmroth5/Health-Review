@@ -10,6 +10,7 @@ import { labsSummary } from './labs.js';
 import { volumeTrend } from './volume.js';
 import { liftsForReview } from './plateau.js';
 import { advisorDue, advisorForReview, recommendPrograms } from './advisor.js';
+import { weekDataQuality } from './dataquality.js';
 
 /**
  * @param {{ daily_metrics: object[], workout_sessions: object[], strength_sets: object[], drinking_days: object[], checkins: object[] }} data
@@ -20,6 +21,8 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
   return {
     weekEnd,
     week: w.week,
+    // Days of the week with no Apple Health row, or that look like a partial export (dates only).
+    dataQuality: weekDataQuality(data.daily_metrics, w.week.from, w.week.to),
     recovery: recovery(data.daily_metrics, weekEnd),
     cardio: cardio(data.workout_sessions, weekEnd, { zone2 }),
     strength: strength(data.strength_sets, weekEnd),

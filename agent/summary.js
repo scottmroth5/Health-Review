@@ -44,6 +44,8 @@ export function buildSummary(week, notes, { today }) {
       units: 'hrv_ms in ms, resting_hr in bpm, sleep in hours, weights in lbs (total load; topPerHandLbs is per hand), durations in minutes unless named _sec',
       nullMeans: 'no data (not zero); a field missing from a list item also means no data',
     },
+    ...(week.dataQuality && (week.dataQuality.missingDays.length || week.dataQuality.suspectedPartialDays.length)
+      ? { dataQuality: week.dataQuality } : {}),
     recovery,
     cardio: week.cardio,
     strength,

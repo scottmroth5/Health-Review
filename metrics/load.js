@@ -144,6 +144,20 @@ export function loadAdvisorInput(db, asOf, catalog) {
   };
 }
 
+/** What the data checks (metrics/dataquality.js) read as of a date: 45 days of health rows, 30 days of workouts, and the
+ * Workout Log days with performed sets in the last 14 days. */
+export function loadDataCheckInput(db, today) {
+  return {
+    daily: db.prepare(`SELECT date, steps, resting_hr, sleep_total_hr, exercise_min FROM daily_metrics
+      WHERE date BETWEEN ? AND ? ORDER BY date`).all(addDays(today, -45), today),
+    sessions: db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE start >= ? ORDER BY start').all(addDays(today, -30)),
+    liftingDays: db.prepare(`SELECT DISTINCT e.date FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id
+      WHERE e.date BETWEEN ? AND ? AND (s.reps IS NOT NULL OR s.duration_sec IS NOT NULL OR s.distance_yd IS NOT NULL OR COALESCE(s.reps_text, '') <> '')`)
+      .all(addDays(today, -14), today).map((r) => r.date),
+    today,
+  };
+}
+
 /** All medications and their periods (small tables, read whole). */
 export function loadMedications(db) {
   return {

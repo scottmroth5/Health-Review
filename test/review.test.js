@@ -265,6 +265,20 @@ test('summary: the Program Advisor ranking reaches the review only within 21 day
   store.close();
 });
 
+test('summary: dataQuality lists the missing and partial days of the week (dates only), and is left out when there are none', () => {
+  const daily = [];
+  for (let i = 0; i < 40; i++) {
+    const date = new Date(Date.UTC(2026, 1, 1 + i)).toISOString().slice(0, 10); // Feb 1 to Mar 12
+    if (date !== '2026-03-05') daily.push({ date, steps: date === '2026-03-03' ? 900 : 8000 });
+  }
+  const week = (weekEnd, rows) => buildSummary(computeWeek({ daily_metrics: rows, workout_sessions: [], strength_sets: [], drinking_days: [], checkins: [] }, { weekEnd }), [], { today: weekEnd });
+  const s = week('2026-03-07', daily);
+  assert.deepEqual(s.dataQuality, { missingDays: ['2026-03-05'], suspectedPartialDays: ['2026-03-03'] });
+  assert.ok(CONTRACT.includes('"dataQuality"'));
+  const full = daily.filter((d) => d.date !== '2026-03-03').concat({ date: '2026-03-05', steps: 8000 }, { date: '2026-03-03', steps: 7000 });
+  assert.equal(week('2026-03-07', full).dataQuality, undefined);
+});
+
 test('summary: lift plateau statuses reach the review grounded; lifts not trained recently are left out', async () => {
   const { loadWeekData } = await import('../metrics/load.js');
   const store = openHealthStore(':memory:');

@@ -385,6 +385,19 @@ test('program: the confirmed in-progress block with phase from the logged workou
   store.close();
 });
 
+test('status: data check warnings as of today; none when Apple Health data is current', async () => {
+  const { app, db, done } = await setup(); // today is 2026-03-09
+  const add = db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES (?, 8000, 'x')");
+  for (let d = 1; d <= 6; d++) add.run(`2026-03-0${d}`);
+  const stale = (await app.inject('/api/status')).json().dataChecks;
+  assert.deepEqual(stale.map((c) => [c.kind, c.dates]), [['health_stale', ['2026-03-06']]]);
+  assert.equal(stale[0].message, 'No Apple Health data after Mar 6 (2 days missing so far). Check the Health Auto Export automation.');
+  add.run('2026-03-07');
+  add.run('2026-03-08');
+  assert.deepEqual((await app.inject('/api/status')).json().dataChecks, []);
+  await done();
+});
+
 test('advisor: ranks the catalog without the program run last; goal weights change the order; bad weights refused', async () => {
   const { createCatalog } = await import('../metrics/catalog.js');
   const { createDictionary } = await import('../metrics/dictionary.js');

@@ -83,6 +83,12 @@ export function parseHealthMetrics({ header, rows, firstRowNumber, tab }) {
     if (typeof when !== 'number') return warn('missing or text date');
     records.push({ date: serialToDate(when), ...numericFields(row, index, HEALTH_METRIC_COLUMNS, warn) });
   });
+  const counts = new Map();
+  for (const r of records) counts.set(r.date, (counts.get(r.date) ?? 0) + 1);
+  const several = [...counts].filter(([, n]) => n > 1).map(([d]) => d);
+  if (several.length) {
+    warnings.push({ source, tab, kind: 'several rows for one day', detail: `${several.length} day(s) had more than one row (the app keeps the fullest): ${several.join(', ')}` });
+  }
   return { records: mergeHealthDays(records), warnings };
 }
 

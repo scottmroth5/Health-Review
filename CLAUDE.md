@@ -31,7 +31,8 @@ Health specific logic stays in this repo; never add it to agent-core.
 /evals              fixtures/metrics (metric regression), fixtures/v1 (v1 golden outputs, see its README), and the review
                     contract eval: review-cases.json (real weeks by date only, synthetic overlays), grade-review.js
                     (shared grading), run-review-eval.mjs (runner from the claude-api skill scaffold)
-/tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core)
+/tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core);
+                    apps-script/ConsolidateHealthMetrics.gs (the fixed v1 consolidation the owner pastes into Apps Script)
 /scripts            command-line entry points
 /test               node:test suites with synthetic fixtures only
 /data               gitignored; local health datastore and exports; google/ holds the OAuth client_secret.json and token.json
@@ -80,7 +81,13 @@ Every sync reads the whole first tab of each (the consolidated tab, whatever it 
 Archive tab, so a row-number watermark could skip rows, and archived rows stay in the database. A health day can have
 several rows (the v1 consolidation appends one whenever Active Energy changed between exports, and an export made
 during the day is partial): ingest/parsers.js mergeHealthDays keeps the row with the most steps and fills its gaps
-from the others; --backfill also reads the Archive tab so a day split across tabs merges once. The Workout Log has one tab per year: normal syncs
+from the others; --backfill also reads the Archive tab so a day split across tabs merges once.
+Data checks (metrics/dataquality.js, pure; fixture evals/fixtures/metrics/dataquality.json) run after every sync and
+on GET /api/status: Apple Health data stale (nothing after a day before yesterday), gaps in the last 14 days, partial
+days (steps under a quarter of the 28-day median, at least 10 days of it), lifting days with no Apple Watch strength
+workout (info only), durations longer than their start-to-end span, and impossible values. Findings name dates and
+counts only; warnings show on the Today tab, all go to the sync log, and the weekly summary's dataQuality carries the
+week's missing and partial days (only when there are any), which CONTRACT says to treat as incomplete, never as bad days. The Workout Log has one tab per year: normal syncs
 read the current year (and last year in January), and a tab is replaced only when its content hash changes.
 Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI owns them now and imports never
 overwrite UI rows. The Workout Log can hold planned future workouts with weights but no reps: metrics count only sets

@@ -213,11 +213,18 @@ function setCount(field, value) {
   $('#drink-total').textContent = `${alcohol} alcoholic drink${alcohol === 1 ? '' : 's'}${counts.cbd ? `, ${counts.cbd} CBD (not counted as alcohol)` : ''}`;
 }
 
+/** Data check warnings under the day line (stale or missing Apple Health days, partial days); hidden when none. */
+function renderDataChecks(checks = []) {
+  $('#data-checks').hidden = !checks.length;
+  fill($('#data-checks'), checks.map((c) => h('li', {}, h('span', { 'aria-hidden': 'true' }, '⚠ '), c.message)));
+}
+
 async function loadStatus() {
   const s = await api('GET', '/api/status');
   state.today = s.today;
   $('#day').max = s.today;
   if (!$('#day').value) $('#day').value = s.today;
+  renderDataChecks(s.dataChecks);
   const last = s.lastSync;
   $('#sync-status').textContent = last
     ? `Last sync ${new Date(last.finished_at ?? last.started_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}${last.status === 'ok' ? '' : ` (${last.status})`}`
@@ -318,6 +325,7 @@ async function syncNow() {
     const r = await api('POST', '/api/sync');
     const added = (r.counts.health_metrics?.upserted ?? 0) + (r.counts.workout_sessions?.upserted ?? 0);
     $('#sync-status').textContent = `Synced (${added} rows checked${r.warnings ? `, ${r.warnings} warnings in the sync log` : ''})`;
+    renderDataChecks((await api('GET', '/api/status')).dataChecks);
   } catch (err) {
     $('#sync-status').textContent = `Sync failed: ${err.message}`;
   } finally {

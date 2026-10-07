@@ -115,10 +115,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req) => ({ name: req.params.name, lines: q.readLog(logDir, req.params.name, req.query.lines) }));
 
-  app.get('/api/status', { schema: { summary: 'Today and the last sync', response: { 200: anyObject } } }, async () => ({
-    today: q.localDate(clock()),
-    lastSync: q.lastSync(db),
-  }));
+  app.get('/api/status', { schema: { summary: 'Today, the last sync, and data check warnings as of today (stale or missing Apple Health days, partial days, impossible values)', response: { 200: anyObject } } }, async () => {
+    const today = q.localDate(clock());
+    return { today, lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today) };
+  });
 
   // ---- one day ----
   app.get('/api/days/:date', { schema: { summary: 'Check-in and drinks for a day', params: dateParams, response: { 200: anyObject } } },

@@ -12,6 +12,8 @@ const CHECKIN = ['Week Ending (Saturday) ', 'Morning Readiness (1-10)', 'Avg Ene
 
 const day = (d, hrv, rhr, steps) => [serial(d, 3), hrv, rhr, steps];
 const NOW = new Date(2026, 2, 9, 7, 0); // local 2026-03-09
+// The sparse fake sheets trip the post-sync data checks (their own tests are below); most tests look at import warnings only.
+const importWarnings = (warnings) => warnings.filter((w) => w.source !== 'data_check');
 
 function sheets() {
   return {
@@ -35,7 +37,7 @@ const count = (store, table) => store.db.prepare(`SELECT COUNT(*) AS n FROM ${ta
 test('backfill imports every source, all year tabs, and skips filtered and backup tabs', async () => {
   const store = open();
   const { counts, warnings } = await sync(store, fakeSource(sheets()), { backfill: true });
-  assert.deepEqual(warnings, []);
+  assert.deepEqual(importWarnings(warnings), []);
   assert.equal(count(store, 'daily_metrics'), 2);
   assert.equal(count(store, 'workout_sessions'), 1);
   assert.deepEqual(store.db.prepare('SELECT tab_year, COUNT(*) AS n FROM strength_exercises GROUP BY tab_year').all(), [
@@ -89,6 +91,20 @@ test('a partial export appended after the full day never replaces it (v1 duplica
   data.health_metrics.Sheet1.push(day('2026-03-04', 49, 55, 11000));
   await sync(store, fakeSource(data));
   assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-03-04'").get().steps, 11000);
+  store.close();
+});
+
+test('after a sync, data checks flag stale Apple Health data; days with several rows are noted by date', async () => {
+  const store = open();
+  const data = sheets(); // health rows end on 2026-03-02; the sync runs on 2026-03-09
+  data.health_metrics.Sheet1.push(day('2026-03-02', 52, 58, 400));
+  const { counts, warnings } = await sync(store, fakeSource(data));
+  const stale = warnings.find((w) => w.kind === 'health_stale');
+  assert.equal(stale.source, 'data_check');
+  assert.equal(stale.detail, 'No Apple Health data after Mar 2 (6 days missing so far). Check the Health Auto Export automation.');
+  assert.ok(counts.data_checks.warn >= 1);
+  const several = warnings.find((w) => w.kind === 'several rows for one day');
+  assert.equal(several.detail, '1 day(s) had more than one row (the app keeps the fullest): 2026-03-02');
   store.close();
 });
 
@@ -229,7 +245,7 @@ test('labs: edits and removed draw columns are reflected; app results are kept a
   data.lab_results.Labs[2][1] = 170; // edit cholesterol
   const { counts, warnings } = await sync(store, source);
   assert.equal(counts.lab_results.keptFromApp, 1);
-  assert.deepEqual(warnings.map((w) => w.kind), ['app value kept over a different sheet value']);
+  assert.deepEqual(importWarnings(warnings).map((w) => w.kind), ['app value kept over a different sheet value']);
   const rows = store.db.prepare('SELECT t.name, r.drawn_on, r.value, r.source FROM lab_results r JOIN lab_tests t ON t.id = r.test_id ORDER BY t.position, r.drawn_on').all();
   assert.deepEqual(rows.map((r) => [r.name, r.drawn_on, r.value, r.source]), [
     ['Cholesterol', '2026-03-23', 170, 'sheet'],
@@ -260,7 +276,7 @@ test('labs: a sheet result corrected in the app (value or date) is kept by sync,
   updateLabResult(store.db, row('Cholesterol', '2025-09-15').id, { drawn_on: '2025-09-16' }); // date fix
   data.lab_results.Labs[2][1] = 171; // the sheet changes, so sync runs
   const { counts, warnings } = await sync(store, source);
-  assert.deepEqual(warnings, []);
+  assert.deepEqual(importWarnings(warnings), []);
   assert.equal(counts.lab_results.keptFromApp, 2);
   assert.deepEqual([row('PSA', '2026-03-23').value_text, row('PSA', '2026-03-23').corrected_from], ['0.9', '0.6']);
   assert.equal(row('Cholesterol', '2025-09-15'), undefined, 'the sheet copy is not re-added under the old date');

@@ -3,12 +3,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact } from '../metrics/medications.js';
-import { loadAdvisorInput, loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
+import { loadAdvisorInput, loadDataCheckInput, loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
 import { trainingView } from '../metrics/volume.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
 import { liftProgress } from '../metrics/plateau.js';
 import { addDays } from '../metrics/stats.js';
 import { recommendPrograms } from '../metrics/advisor.js';
+import { dataChecks } from '../metrics/dataquality.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
 export const BODY_FIELDS = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat'];
@@ -123,6 +124,11 @@ export function readLog(dir, name, lines = 200) {
 export function lastSync(db) {
   const run = db.prepare("SELECT status, started_at, finished_at, summary FROM runs WHERE name = 'sync' ORDER BY id DESC LIMIT 1").get();
   return run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
+}
+
+/** Data check warnings as of today (info findings, such as a lifting day without a watch workout, stay in the sync log). */
+export function dataCheckWarnings(db, today) {
+  return dataChecks(loadDataCheckInput(db, today)).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }));
 }
 
 // ---- settings ----

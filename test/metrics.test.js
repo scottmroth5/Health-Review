@@ -16,6 +16,16 @@ import { strength } from '../metrics/strength.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
 import { recommendPrograms } from '../metrics/advisor.js';
 import { createDictionary } from '../metrics/dictionary.js';
+import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
+
+/** Expands a fixture's dailyFill (one row per day with the given values, minus skip, plus overrides). */
+function expandDaily({ from, to, skip = [], override = {}, ...values }) {
+  const rows = [];
+  for (let d = from; d <= to; d = new Date(Date.parse(`${d}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)) {
+    if (!skip.includes(d)) rows.push({ date: d, ...values, ...(override[d] ?? {}) });
+  }
+  return rows;
+}
 import { openHealthStore } from '../db/store.js';
 import { saveSettings } from '../server/queries.js';
 
@@ -39,6 +49,12 @@ const dir = repoPath('evals', 'fixtures', 'metrics');
 for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
   const fx = JSON.parse(readFileSync(`${dir}/${file}`, 'utf8'));
   test(`fixture ${file}: ${fx.description}`, () => {
+    if (fx.kind === 'dataquality') {
+      const daily = expandDaily(fx.input.dailyFill);
+      assertSubset(dataChecks({ ...fx.input, daily }), fx.expected);
+      assertSubset(weekDataQuality(daily, fx.week.from, fx.week.to), fx.week.expected, 'week');
+      return;
+    }
     if (fx.kind === 'advisor') {
       const lookup = createDictionary(fx.dictionary).lookup;
       assertSubset(recommendPrograms({ ...fx.input, lookup }), fx.expected);

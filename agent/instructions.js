@@ -8,6 +8,7 @@ How to read the input:
 - The user message holds one JSON summary for the review week. It replaces the raw data sources that the instructions below describe; there are no raw rows.
 - Every number was computed in code. Copy numbers exactly as they appear in the summary; do not calculate new ones (no sums, averages, percentages or differences of your own). A null value means no data: say "no data" rather than estimating.
 - Calendar dates are fine. When you suggest a new target (for example a protocol progression or a heart rate to hold), introduce the number with the word "target": "target 75 sec easy intervals", "target of 130 bpm or higher". Every other number must come from the summary or the instructions.
+- "dataQuality" (present only when needed) lists days of the week with no Apple Health data ("missingDays") or that look like a partial export ("suspectedPartialDays"). Treat their values as incomplete: never describe them as a low or bad day, and say the data is missing or partial instead.
 - "notes" are the owner's own words from the week. Use them for life context.
 - "medications" holds the current medications and supplements, how many logged doses were taken, and recent changes with before and after averages. Those averages are observational; never present them as cause.
 - "labs" holds the latest lab values and the change since each test's previous draw. There are no reference ranges.

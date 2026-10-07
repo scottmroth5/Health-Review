@@ -1,0 +1,35 @@
+{
+  "kind": "dataquality",
+  "description": "Data checks: stale Apple Health data, a missing day, a partial day against the 28-day median, a lifting day with no watch workout, a duration longer than its workout, an impossible value; the review week's missing and partial days",
+  "notes": [
+    "Today is 2026-03-20, so yesterday is 2026-03-19 and the checks look back 14 days, from 2026-03-06.",
+    "Daily rows run 2026-02-01 to 2026-03-17 with 8,000 steps (dailyFill), except: 2026-03-10 has no row, 2026-03-12 has 1,500 steps, 2026-03-14 has 2,500, and 2026-03-15 has a resting heart rate of 150.",
+    "Stale: the latest day is 2026-03-17; days missing up to yesterday = 2 (Mar 18, Mar 19).",
+    "Gap: 2026-03-10 is before the latest day and has no row.",
+    "Partial: Mar 12's 28 days before (Feb 12 to Mar 11, without Mar 10) are 27 days of 8,000, median 8,000, a quarter is 2,000; 1,500 is under it. Mar 14's median is still 8,000 (one 1,500 among 27 values), so 2,500 is not under 2,000.",
+    "Sessions: Mar 11 17:00 to 18:00 stored as 14,400 s (3,600 plus the 3-hour shift) is over its 3,600 s span plus 120; Mar 13 stored as 3,500 s is fine.",
+    "Lifting days Mar 11, 13, 16 and today (Mar 20, never checked): Mar 16 has no strength workout.",
+    "Order: warnings in check order (stale, gap, partial, duration, impossible value), then the info finding.",
+    "Review week Mar 8 to Mar 14: missing Mar 10, partial Mar 12."
+  ],
+  "input": {
+    "today": "2026-03-20",
+    "dailyFill": { "from": "2026-02-01", "to": "2026-03-17", "steps": 8000, "resting_hr": 55, "sleep_total_hr": 7, "exercise_min": 30,
+      "skip": ["2026-03-10"],
+      "override": { "2026-03-12": { "steps": 1500 }, "2026-03-14": { "steps": 2500 }, "2026-03-15": { "resting_hr": 150 } } },
+    "sessions": [
+      { "type": "Traditional Strength Training", "start": "2026-03-11T17:00:00", "end": "2026-03-11T18:00:00", "duration_sec": 14400 },
+      { "type": "Functional Strength Training", "start": "2026-03-13T17:00:00", "end": "2026-03-13T18:00:00", "duration_sec": 3500 }
+    ],
+    "liftingDays": ["2026-03-11", "2026-03-13", "2026-03-16", "2026-03-20"]
+  },
+  "expected": [
+    { "kind": "health_stale", "severity": "warn", "dates": ["2026-03-17"], "message": "No Apple Health data after Mar 17 (2 days missing so far). Check the Health Auto Export automation." },
+    { "kind": "health_gap", "severity": "warn", "dates": ["2026-03-10"], "message": "No Apple Health data on Mar 10." },
+    { "kind": "partial_day", "severity": "warn", "dates": ["2026-03-12"], "message": "Mar 12 looks like a partial Apple Health export (steps under a quarter of your usual day)." },
+    { "kind": "duration_over_span", "severity": "warn", "dates": ["2026-03-11"] },
+    { "kind": "implausible_value", "severity": "warn", "dates": ["2026-03-15"] },
+    { "kind": "workouts_missing", "severity": "info", "dates": ["2026-03-16"] }
+  ],
+  "week": { "from": "2026-03-08", "to": "2026-03-14", "expected": { "missingDays": ["2026-03-10"], "suspectedPartialDays": ["2026-03-12"] } }
+}
