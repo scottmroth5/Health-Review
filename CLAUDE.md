@@ -190,6 +190,9 @@ full prompt, including sensitive sections); variants are baseline, v1, v2, ... w
 gate covers the runner, cases, grading and agent files: after changing any of them, the owner (never Claude) re-approves
 with --approve-harness. Every live run sends health data to the Claude API and costs money: ask before running one.
 Results so far: baseline 7/13 first drafts clean (9/13 re-graded), v1 9/13 (12/13 at the 3,000-word limit), 13/13 final.
+v2 (Advisor and dataQuality blocks) 11/13 first drafts clean, 12/13 final: synthetic-empty-week failed routing because the
+advisor wording ("prescription") tripped the medication check; v4 reworded it to "calls for" and passed that case on
+the first draft (v3 was the same prompt as v2, a single lucky pass).
 
 ## UI and API
 AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS rebinding);
