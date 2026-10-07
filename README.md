@@ -145,6 +145,8 @@ Each program also has a `profile`, written as short summaries rather than copied
   crossover.
 - **`fill_rule`:** any band, dumbbell or bodyweight exercise with the same movement in that session fills a cable or
   machine slot, even if no swap names it.
+- **`not_ranked`:** programs the Advisor leaves out, each with a reason. MAPS Anywhere is listed, since you only run it
+  as a break from equipment. The card shows it as "Left out" with the reason. Delete the entry to rank it again.
 - **`avoid`:** exercises you've paused, such as circus press. A program that prescribes one is flagged, and its joint
   health and balance score is cut. Delete the entry when you want it back. Exercise ids are the `id`s in
   `config/exercise-dictionary.json`.

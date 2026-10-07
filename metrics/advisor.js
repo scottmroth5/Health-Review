@@ -13,8 +13,9 @@
 //             -1 scores 0)
 // Total = the goals' scores averaged by weight (whole numbers 0 to 3, default 1 each; 0 leaves a goal out) x completion
 // (0.5 + 0.5 x average share of the program reached on past runs; 1 with no past runs); null when every weight is 0.
-// Goal scores are rounded to 2 places before the total. The program run last is left out;
-// add-ons (profile.standalone false) are scored and listed apart. Reasons are facts from these numbers only.
+// Goal scores are rounded to 2 places before the total. The program run last, and programs the owner listed under
+// not_ranked in config/substitutions.json, are left out with their reason; add-ons (profile.standalone false) are
+// scored and listed apart. Reasons are facts from these numbers only.
 import { addDays, daysBetween, round } from './stats.js';
 import { totalLbs } from './strength.js';
 import { epley, rangeOf } from './plateau.js';
@@ -166,7 +167,7 @@ export function vo2Change(readings, start, end) {
  * @param {object} input
  * @param {Array<object>} input.programs  catalog programs
  * @param {(name: string) => object} input.lookup  dictionary lookup
- * @param {{avoid?: Array<{exercise: string}>}} [input.substitutions]
+ * @param {{avoid?: Array<{exercise: string}>, not_ranked?: Array<{program: string, reason: string}>}} [input.substitutions]
  * @param {Array<{program: string, start_date: string, end_date: string|null, status: string, percent: number|null}>} input.blocks
  * @param {Array<object>} input.sets  primary lift sets (date, canonical_id, canonical_name, weight_lbs, per_hand, reps, workout, is_primary)
  * @param {Array<{date: string, value: number}>} input.vo2  VO2 max readings
@@ -266,14 +267,20 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
   };
 
   const byTotal = (a, b) => (b.total ?? 0) - (a.total ?? 0) || a.program.localeCompare(b.program);
-  const standalone = programs.filter((p) => profiles.get(p.name).standalone);
+  const excluded = [
+    ...(lastProgram ? [{ program: lastProgram, reason: 'run last' }] : []),
+    ...(substitutions.not_ranked ?? []).filter((n) => n.program !== lastProgram && profiles.has(n.program))
+      .map((n) => ({ program: n.program, reason: n.reason })),
+  ];
+  const left = new Set(excluded.map((x) => x.program));
+  const candidates = programs.filter((p) => !left.has(p.name));
   return {
     asOf,
     weights: w,
     minutesRatio: ratio,
-    excluded: lastProgram ? [{ program: lastProgram, reason: 'run last' }] : [],
-    ranking: standalone.filter((p) => p.name !== lastProgram).map(score).sort(byTotal),
-    addons: programs.filter((p) => !profiles.get(p.name).standalone).map(score).sort(byTotal),
+    excluded,
+    ranking: candidates.filter((p) => profiles.get(p.name).standalone).map(score).sort(byTotal),
+    addons: candidates.filter((p) => !profiles.get(p.name).standalone).map(score).sort(byTotal),
   };
 }
 

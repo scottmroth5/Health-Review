@@ -1,6 +1,6 @@
 {
   "kind": "advisor",
-  "description": "Program Advisor: goal scores, past-run lift and VO2 max history, deload exclusion, avoid list, completion, watch-minutes ratio, fresh stimulus, last program left out, add-on listed apart; goal weights",
+  "description": "Program Advisor: goal scores, past-run lift and VO2 max history, deload exclusion, avoid list, completion, watch-minutes ratio, fresh stimulus, last program left out, add-on listed apart; goal weights; programs the owner marked not ranked",
   "notes": [
     "Synthetic programs, one 4-week phase each, 3 sessions a week except Echo (2). Set shares come from phaseStats; minutes = 0.75 a set + rest per set (each exercise its own rest group).",
     "Alpha: Squat 5x5, Curl 3x10, Single Leg Lunge 2x10, rest 2 minutes. 10 sets: heavy 5 = 50%, 6-12 reps 5 = 50%, arm 3 = 30%, one side 2 = 20%; main range tie 1-5 vs 6-12 (20 each) goes to 1-5. Minutes 7.5 + 2 x 10 = 27.5 -> 28.",
@@ -16,7 +16,8 @@
     "Charlie: strength 33.5 / 50 = 0.67 + 0.1 = 0.77; joint (0 + 0.3 x 2/3 + 0.2 x (1 - 33/40)) x 0.75 = 0.235 x 0.75 = 0.17625 -> 0.18; weekly 51 -> 1; vo2 1/3 -> 0.33; no runs -> x1; total (0.77 + 0.18 + 1 + 0.33) / 4 = 0.57.",
     "Echo: strength min(1, 50 / 50 + 0.1) = 1; joint 0; weekly 2 x 12 + 20 = 44 -> 1; vo2 0; total 0.50. Delta is the program run last: left out.",
     "Weights (variants): strength 3x, others 1x divides by 6. Alpha (3 x 1 + 0.4 + 1 + 0) / 6 = 0.733 -> 0.73; Charlie (3 x 0.77 + 0.18 + 1 + 0.33) / 6 = 3.82 / 6 = 0.637 -> 0.64; Bravo (3 x 0.5 + 0.9 + 1 + 1) / 6 x 0.8 = 0.587 -> 0.59.",
-    "Strength only (the other weights 0, so those goals drop out): Alpha 1, Charlie 0.77, Bravo 0.5 x 0.8 = 0.4; Echo 1. Every weight 0: totals are null."
+    "Strength only (the other weights 0, so those goals drop out): Alpha 1, Charlie 0.77, Bravo 0.5 x 0.8 = 0.4; Echo 1. Every weight 0: totals are null.",
+    "Foxtrot is listed under not_ranked: left out after Delta with its reason, scored nowhere, and no other result changes (it has no watch minutes, so the ratio is unaffected)."
   ],
   "dictionary": {
     "version": 1,
@@ -65,6 +66,12 @@
       "avoid": [
         {
           "exercise": "circus-press"
+        }
+      ],
+      "not_ranked": [
+        {
+          "program": "Foxtrot",
+          "reason": "only for a break from equipment"
         }
       ]
     },
@@ -247,6 +254,36 @@
             ]
           }
         ]
+      },
+      {
+        "name": "Foxtrot",
+        "weeks": 4,
+        "profile": {
+          "conditioning": 2,
+          "mobility": 2
+        },
+        "phases": [
+          {
+            "name": "Phase 1",
+            "weeks": [
+              1,
+              4
+            ],
+            "workouts_per_week": 2,
+            "workouts": [
+              {
+                "name": "F",
+                "exercises": [
+                  {
+                    "name": "Single Leg Lunge",
+                    "sets": "3",
+                    "reps": "12"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       }
     ],
     "blocks": [
@@ -390,6 +427,10 @@
       {
         "program": "Delta",
         "reason": "run last"
+      },
+      {
+        "program": "Foxtrot",
+        "reason": "only for a break from equipment"
       }
     ],
     "ranking": [

@@ -147,7 +147,7 @@ in between; fewer than 4 recent or 2 baseline sessions is not_enough_data; a ran
 new_rep_range, never a stall. GET /api/lifts feeds the Training tab's Lift progress card; the weekly summary's
 lifts holds recently trained lifts only (no trend points), and CONTRACT tells the model to report these statuses as given.
 Program Advisor (metrics/advisor.js, pure; fixture evals/fixtures/metrics/advisor.json): ranks the catalog's standalone
-programs (the one run last left out; add-ons such as No BS 6-Pack listed apart) on the owner's goals (strength, joint
+programs (the one run last and those listed under not_ranked in config/substitutions.json left out with their reason; add-ons such as No BS 6-Pack listed apart) on the owner's goals (strength, joint
 health and balance, time, VO2 max), each 0 to 1 from the prescription (heavy and 6-12 rep shares, one-side and arm
 isolation shares, the profile's judged conditioning and mobility, the avoid list in config/substitutions.json) and past
 runs (first vs last 2 weeks of primary lift estimated maxes, first vs last 4 weeks of VO2 max), times completion on

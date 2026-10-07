@@ -53,6 +53,9 @@
     { "prescribed": "lying-leg-curls", "use": ["band-leg-curls", "stability-ball-leg-curl", "ball-leg-curls"], "reason": "no machines" },
     { "prescribed": "leg-press", "use": ["dumbbell-bulgarian-split-squat", "goblet-squats"], "reason": "no machines" }
   ],
+  "not_ranked": [
+    { "program": "MAPS Anywhere", "reason": "only for a break from equipment" }
+  ],
   "avoid": [
     { "exercise": "circus-press", "reason": "paused for now (owner's choice)", "since": "2026-10-06", "temporary": true, "note": "I want to do them again later; remove this entry then" }
   ]
