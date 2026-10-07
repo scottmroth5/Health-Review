@@ -12,7 +12,7 @@ Health specific logic stays in this repo; never add it to agent-core.
                     instructions.js (fixed CONTRACT + owner prompt sections, output schema, rendering), validate.js
                     (dashes, number grounding, physician routing), claude.js (agent-core client with refusal fallbacks),
                     review.js (one call, one retry on failed checks, saved to reviews), suggest-exercises.js (the
-                    optional exercise-name assist)
+                    optional exercise-name assist), advisor-chat.js (the Next program chat)
 /metrics            deterministic metric calculations: stats.js (windows, rounding, pearson), one module per report
                     area (recovery, cardio, strength, drinking, checkins), index.js computeWeek, load.js (SQL),
                     dictionary.js (exercise dictionary loader), blocks.js (program block detection), catalog.js (MAPS
@@ -232,6 +232,12 @@ and after averages) is the one place medication data enters the summary. Lab val
 block (latest value and change from the previous draw); there are no reference ranges by the owner's choice, so code
 never labels a value high, low or abnormal, and any interpretation of labs goes only to physician discussion. Never send any of it to another service or
 log its text.
+The Next program chat (agent/advisor-chat.js, POST /api/advisor/chat) sends computed training facts only: the Advisor
+ranking at the owner's current weights (scores, reasons, flags), lift statuses, the current program and week, equipment
+and paused exercises, plus the owner's typed note and the last 10 messages of the thread (owner's choice, 2026-10-07).
+Never program focus text, raw logs, medications, labs or genetics. Replies get the review's checks (dashes, grounded
+numbers, medication and symptom wording only in the physician list; one retry, then warnings). The thread lives in
+advisor_notes (migration 013); the advisor-chat run records metadata only. features.chat false turns it off (the demo).
 The exercise-name assist (npm run log:unmapped -- --suggest) sends exercise names only (unmapped names and the
 dictionary's own names), and only after the owner types yes; never weights, dates, set counts or other log data
 (owner's choice, 2026-10-02). Its proposals reach the dictionary only through --accept.

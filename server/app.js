@@ -15,6 +15,7 @@ import { loadDictionary } from '../metrics/dictionary.js';
 import { loadSubstitutions } from '../metrics/load.js';
 import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
 import { currentProgram } from '../ingest/program-blocks.js';
+import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../agent/advisor-chat.js';
 
 const nullable = (schema) => ({ ...schema, type: [schema.type, 'null'] });
 const scale = nullable({ type: 'integer', minimum: 1, maximum: 10 });
@@ -61,12 +62,13 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
 /**
  * @param {object} ctx
  * @param {{ db: import('better-sqlite3').Database }} ctx.store
- * @param {{ sync?: () => Promise<object> }} [ctx.services]
+ * @param {{ sync?: () => Promise<object>, claude?: () => { send: Function } }} [ctx.services]  claude: the chat's client, made on first use
+ * @param {{ chat?: boolean }} [ctx.features]  chat false turns the Next program chat off (the demo instance)
  * @param {string} [ctx.publicDir]   static UI to serve; skipped when missing
  * @param {string} [ctx.authMode]
  * @param {() => Date} [ctx.clock]
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs') }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {} }) {
   const app = Fastify({ logger });
   const { db } = store;
   let syncing = false;
@@ -178,6 +180,47 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     substitutions: substitutions ?? loadSubstitutions(),
     weights: Object.fromEntries(GOALS.map((g) => [g, req.query[g]])),
   }));
+
+  // ---- Next program chat (computed training facts and the owner's notes go to Claude; see agent/advisor-chat.js) ----
+  const chatOn = () => features.chat !== false && typeof services.claude === 'function';
+  const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, notes: { type: 'array', items: anyObject } } } };
+  app.get('/api/advisor/chat', { schema: { summary: 'The Next program chat thread, oldest first, and whether the chat is on', response: chatThread } },
+    async () => ({ enabled: chatOn(), notes: listChat(db) }));
+  let chatting = false;
+  app.post('/api/advisor/chat', {
+    schema: {
+      summary: 'Ask Claude about the next program: saves the note, sends computed training facts plus the note and recent thread, saves the checked reply',
+      body: {
+        type: 'object', additionalProperties: false, required: ['text'],
+        properties: {
+          text: { type: 'string', minLength: 1, maxLength: MAX_NOTE_CHARS },
+          weights: { type: 'object', additionalProperties: false, properties: Object.fromEntries(GOALS.map((g) => [g, { type: 'integer', minimum: 0, maximum: MAX_WEIGHT }])) },
+        },
+      },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => {
+    if (!chatOn()) return reply.code(503).send({ error: 'The chat is off in this instance' });
+    if (!req.body.text.trim()) throw badRequest('text must not be blank');
+    if (chatting) return reply.code(409).send({ error: 'A question is already being answered' });
+    const cat = programCatalog();
+    if (!cat) return reply.code(503).send({ error: 'The chat needs the MAPS catalog (data/maps/programs.json)' });
+    chatting = true;
+    try {
+      return await askAdvisor({
+        store, claude: services.claude(), text: req.body.text.trim(), today: q.localDate(clock()), catalog: cat,
+        dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), weights: req.body.weights,
+        logger: { info() {}, warn() {}, error() {} },
+      });
+    } finally {
+      chatting = false;
+    }
+  });
+  app.delete('/api/advisor/chat/:id', {
+    schema: { summary: 'Delete one note or reply from the thread', params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } }, response: { 200: anyObject } },
+  }, async (req, reply) => (deleteChatNote(db, req.params.id) ? { deleted: 1 } : reply.code(404).send({ error: 'Not found' })));
+  app.delete('/api/advisor/chat', { schema: { summary: 'Clear the whole thread', response: { 200: anyObject } } },
+    async () => ({ deleted: clearChat(db) }));
 
   app.get('/api/lifts', {
     schema: {

@@ -180,6 +180,18 @@ finish, or when no block is in progress. The model explains the ranking and does
 
 **API:** `GET /api/advisor?strength=1&joint=1&time=1&vo2=1` (each 0 to 3, default 1).
 
+**Ask Claude about your next program:** under the card, type a note, for example a different mindset, a schedule
+change, or something bothering you, and Claude answers in light of the ranking at your current weights.
+- **What's sent:** the ranking, lift progress, your current program and week, your equipment and paused exercises,
+  your note, and the last 10 messages of the thread.
+- **What's never sent:** medications, labs, genetics, your logs, or the program focus lines.
+- **Health topics:** anything about pain, injury or medication comes back as a point to discuss with a physician,
+  never as advice.
+- **Checks:** replies get the same checks as the weekly review.
+- **Saving:** the thread is saved in your database, so it's in the encrypted backup. Delete single messages, or
+  clear the thread.
+- **Cost:** each question is one call at medium effort, usually 30 to 60 seconds and a few cents.
+
 ## Sheets pipeline and data checks
 
 Apple Health and Apple Watch data reach the app through two Google Sheets. Health Auto Export on your phone writes

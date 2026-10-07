@@ -121,6 +121,20 @@
         <p class="muted small">Ranked in code from what each program calls for and your past runs of it. Set how much each goal counts to see how the recommendation changes; this only changes this view (the weekly review uses equal weights).</p>
         <div id="advisor-weights" class="advisor-weights"></div>
         <div id="advisor-body" class="muted small">Loading…</div>
+        <section class="advisor-chat" aria-labelledby="chat-title">
+          <h3 class="sub" id="chat-title">Ask Claude about your next program</h3>
+          <p class="muted small">Sent: the ranking at your weights above, lift progress, your current program, your equipment and paused exercises, and your notes. Not sent: medications, labs, genetics or your logs. Anything about pain, injury or medication comes back as a point to discuss with a physician.</p>
+          <div id="chat-thread" class="chat-thread"></div>
+          <form id="chat-form">
+            <label for="chat-text" class="sr-only">Your note</label>
+            <textarea id="chat-text" rows="3" maxlength="4000" placeholder="For example: my left shoulder is cranky, and I'd rather train 4 days a week for the next block."></textarea>
+            <div class="actions">
+              <button type="submit">Send</button>
+              <button type="button" class="ghost danger" id="chat-clear" hidden>Clear thread</button>
+              <span class="status" id="chat-status" role="status"></span>
+            </div>
+          </form>
+        </section>
       </div>
 
     </section>

@@ -6,6 +6,7 @@ import { repoPath } from '../tools/paths.js';
 import { createSheetsSource } from '../ingest/sheets.js';
 import { runSync } from '../ingest/sync.js';
 import { buildApp } from './app.js';
+import { createReviewClaude } from '../agent/claude.js';
 import { assertSafeBinding } from './auth.js';
 
 const host = process.env.HOST ?? '127.0.0.1';
@@ -17,6 +18,8 @@ const store = openHealthStore();
 const quiet = { info() {}, warn() {}, error() {} };
 const services = {
   sync: () => runSync({ store, source: createSheetsSource(getGoogleAuth()), logger: quiet }),
+  // The Next program chat's client, made on first use (needs ANTHROPIC_API_KEY in .env).
+  claude: (() => { let c; return () => (c ??= createReviewClaude()); })(),
 };
 
 const app = await buildApp({ store, services, publicDir: repoPath('server', 'public'), authMode });

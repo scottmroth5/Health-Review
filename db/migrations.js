@@ -348,4 +348,22 @@ export const MIGRATIONS = [
       WHERE duration_sec IS NOT NULL;
     `,
   },
+  {
+    id: '013-advisor-chat',
+    up: `
+      -- The Next program chat: the owner's notes and Claude's replies, one thread. Text stays in this database (and its
+      -- encrypted backup); runs record metadata only.
+      CREATE TABLE advisor_notes (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('owner', 'claude')),
+        text TEXT NOT NULL,
+        physician TEXT,
+        weights TEXT,
+        model TEXT,
+        warnings TEXT
+      );
+      CREATE INDEX advisor_notes_created ON advisor_notes(created_at);
+    `,
+  },
 ];

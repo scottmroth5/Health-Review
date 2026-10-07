@@ -881,6 +881,7 @@ async function loadTrainingTab() {
   };
   loadProgram().catch(failed('#program-body'));
   loadAdvisor().catch(failed('#advisor-body'));
+  loadChat().catch(failed('#chat-thread'));
   loadLifts().catch(failed('#lifts-body'));
   return loadTraining();
 }
@@ -959,6 +960,54 @@ async function loadAdvisor() {
     a.addons.length ? `Add-ons, not ranked: ${a.addons.map((x) => `${x.program} (${x.total === null ? 'n/a' : x.total.toFixed(2)})`).join(', ')}.` : null,
   ].filter(Boolean);
   fill(body, ...top, table, ...extras.map((t) => h('p', { class: 'muted small' }, t)));
+}
+
+// ---------------- next program chat ----------------
+const whenText = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+function chatEntry(n) {
+  const del = h('button', { type: 'button', class: 'link small', onclick: async () => {
+    await api('DELETE', `/api/advisor/chat/${encodeURIComponent(n.id)}`);
+    loadChat();
+  } }, 'Delete');
+  const head = h('div', { class: 'chat-head muted small' }, h('strong', {}, n.role === 'owner' ? 'You' : 'Claude'), ` ${whenText(n.created_at)} `, del);
+  const body = h('div', { class: 'chat-body' });
+  if (n.role === 'owner') fill(body, h('p', {}, n.text));
+  else renderMarkdown(n.text, body);
+  return h('article', { class: `chat-entry ${n.role}` }, head, body,
+    n.physician?.length ? h('div', { class: 'chat-physician' }, h('p', { class: 'small' }, h('strong', {}, 'To discuss with a physician')),
+      h('ul', { class: 'small' }, ...n.physician.map((p) => h('li', {}, h('strong', {}, p.topic), `: ${p.detail}`)))) : null,
+    n.warnings?.length ? h('p', { class: 'muted small' }, `Checks flagged: ${n.warnings.join('; ')}`) : null);
+}
+
+async function loadChat() {
+  const { enabled, notes } = await api('GET', '/api/advisor/chat');
+  fill($('#chat-thread'), notes.map(chatEntry));
+  $('#chat-clear').hidden = !notes.length;
+  const form = $('#chat-form');
+  for (const el of form.elements) el.disabled = !enabled;
+  if (!enabled) $('#chat-status').textContent = 'The chat is off in this instance.';
+}
+
+async function sendChat(e) {
+  e.preventDefault();
+  const text = $('#chat-text').value.trim();
+  if (!text) return;
+  const send = $('#chat-form').querySelector('button[type="submit"]');
+  send.disabled = true;
+  $('#chat-status').className = 'status';
+  $('#chat-status').textContent = 'Thinking… usually 30 to 60 seconds.';
+  try {
+    await api('POST', '/api/advisor/chat', { text, weights: advisorWeights() });
+    $('#chat-text').value = '';
+    $('#chat-status').textContent = '';
+  } catch (err) {
+    $('#chat-status').className = 'status error';
+    $('#chat-status').textContent = `Not answered: ${err.message}.`;
+  } finally {
+    send.disabled = false;
+    loadChat();
+  }
 }
 
 // ---------------- lift progress (plateaus) ----------------
@@ -1363,6 +1412,12 @@ initPrompt();
 initMeds();
 initLabs();
 $$('[data-tview]').forEach((b) => b.addEventListener('click', () => loadTraining(b.dataset.tview)));
+$('#chat-form').addEventListener('submit', sendChat);
+$('#chat-clear').addEventListener('click', async () => {
+  if (!confirm('Clear the whole Next program thread?')) return;
+  await api('DELETE', '/api/advisor/chat');
+  loadChat();
+});
 $$('[data-vview]').forEach((b) => b.addEventListener('click', () => loadVo2(b.dataset.vview)));
 $$('[data-log]').forEach((b) => b.addEventListener('click', () => showLog(b.dataset.log)));
 $$('[data-range]').forEach((b) => b.addEventListener('click', () => {

@@ -20,7 +20,7 @@ export const loadSubstitutions = (path = SUBSTITUTIONS_PATH) => JSON.parse(readF
  * data/maps/programs.json when present), exercise dictionary and substitutions (default to config/)
  */
 // The confirmed program block the week ends in, with phase and finish from its logged workout names.
-function programForWeek(db, weekEnd, catalog) {
+export function programForWeek(db, weekEnd, catalog) {
   const block = db.prepare(`SELECT program, start_date, status FROM program_blocks WHERE source = 'confirmed'
     AND start_date <= ? AND COALESCE(end_date, ?) >= ? ORDER BY start_date DESC LIMIT 1`).get(weekEnd, weekEnd, addDays(weekEnd, -6));
   if (!block) return null;
