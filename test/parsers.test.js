@@ -10,6 +10,7 @@ import {
   parseDrinkingLog,
   parseWeeklyCheckins,
   sessionDuration,
+  mergeHealthDays,
 } from '../ingest/parsers.js';
 import { openHealthStore } from '../db/store.js';
 import { MIGRATIONS } from '../db/migrations.js';
@@ -52,6 +53,19 @@ test('health rows without a numeric date are skipped with a warning; bad numbers
   assert.equal(records[0].hrv_ms, null);
   const kinds = warnings.filter((w) => w.row).map((w) => [w.row, w.kind]);
   assert.deepEqual(kinds, [[2, 'missing or text date'], [3, 'not a number']]);
+});
+
+test('merging health days: most steps wins (a tie goes to the later row), gaps come from the latest row that has them', () => {
+  const merged = mergeHealthDays([
+    { date: '2026-03-01', steps: 5000, hrv_ms: 40, resting_hr: null, vo2max: 44 },
+    { date: '2026-03-01', steps: 5000, hrv_ms: 42, resting_hr: null, vo2max: null },
+    { date: '2026-03-01', steps: null, hrv_ms: 50, resting_hr: 55, vo2max: 45 },
+    { date: '2026-03-02', steps: 100, hrv_ms: 39 },
+  ]);
+  assert.deepEqual(merged, [
+    { date: '2026-03-01', steps: 5000, hrv_ms: 42, resting_hr: 55, vo2max: 45 },
+    { date: '2026-03-02', steps: 100, hrv_ms: 39 },
+  ]);
 });
 
 // ---- workout sessions ----

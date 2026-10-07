@@ -77,8 +77,10 @@ GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 Sheets are read unformatted with dates as serial numbers and stored as local wall-clock text; no time zone conversion.
 Health metrics and workout sessions stay in Google Sheets (v1 consolidation scripts still feed them, nightly 4 to 5am).
 Every sync reads the whole first tab of each (the consolidated tab, whatever it is named); the owner trims it into an
-Archive tab, so a row-number watermark could skip rows, and archived rows stay in the database. Duplicate health days
-merge field by field. The Workout Log has one tab per year: normal syncs
+Archive tab, so a row-number watermark could skip rows, and archived rows stay in the database. A health day can have
+several rows (the v1 consolidation appends one whenever Active Energy changed between exports, and an export made
+during the day is partial): ingest/parsers.js mergeHealthDays keeps the row with the most steps and fills its gaps
+from the others; --backfill also reads the Archive tab so a day split across tabs merges once. The Workout Log has one tab per year: normal syncs
 read the current year (and last year in January), and a tab is replaced only when its content hash changes.
 Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI owns them now and imports never
 overwrite UI rows. The Workout Log can hold planned future workouts with weights but no reps: metrics count only sets

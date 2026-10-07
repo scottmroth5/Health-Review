@@ -65,14 +65,42 @@ test('every sync reads the whole first tab, so new rows anywhere are picked up',
   store.close();
 });
 
-test('duplicate health days merge field by field: later non-empty values win, empty ones never erase', async () => {
+test('duplicate health days: the row with the most steps is kept, its gaps filled from the other rows', async () => {
   const store = open();
   const data = sheets();
-  data.health_metrics.Sheet1.push([serial('2026-03-03', 3), 44, '', 3200]); // partial export
+  data.health_metrics.Sheet1.push([serial('2026-03-03', 3), 44, '', 3200]); // the only row with steps
   data.health_metrics.Sheet1.push([serial('2026-03-03', 3), 49, 54, '']); // later export missing steps
   await sync(store, fakeSource(data), { backfill: true });
-  assert.deepEqual(store.db.prepare("SELECT hrv_ms, resting_hr, steps FROM daily_metrics WHERE date = '2026-03-03'").get(), { hrv_ms: 49, resting_hr: 54, steps: 3200 });
+  assert.deepEqual(store.db.prepare("SELECT hrv_ms, resting_hr, steps FROM daily_metrics WHERE date = '2026-03-03'").get(), { hrv_ms: 44, resting_hr: 54, steps: 3200 });
   assert.equal(count(store, 'daily_metrics'), 3);
+  store.close();
+});
+
+test('a partial export appended after the full day never replaces it (v1 duplicate rows)', async () => {
+  const store = open();
+  const data = sheets();
+  data.health_metrics.Sheet1.push(day('2026-03-03', 47, 55, 6000)); // the full day
+  data.health_metrics.Sheet1.push(day('2026-03-03', 52, 58, 400)); // a run made early in the day, appended later
+  await sync(store, fakeSource(data));
+  assert.deepEqual(store.db.prepare("SELECT hrv_ms, resting_hr, steps FROM daily_metrics WHERE date = '2026-03-03'").get(), { hrv_ms: 47, resting_hr: 55, steps: 6000 });
+  // When the full day only arrives on a later sync, it replaces the partial one stored before.
+  data.health_metrics.Sheet1.push(day('2026-03-04', 50, 56, 4000));
+  await sync(store, fakeSource(data));
+  data.health_metrics.Sheet1.push(day('2026-03-04', 49, 55, 11000));
+  await sync(store, fakeSource(data));
+  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-03-04'").get().steps, 11000);
+  store.close();
+});
+
+test('backfill reads the Archive tab too, so a day split across it and the data tab keeps the full row', async () => {
+  const store = open();
+  const data = sheets();
+  data.health_metrics.Archive = [HEALTH, day('2026-02-20', 46, 55, 15000)];
+  data.health_metrics.Sheet1.push(day('2026-02-20', 51, 57, 9000));
+  await sync(store, fakeSource(data)); // the daily sync reads the data tab only
+  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-02-20'").get().steps, 9000);
+  await sync(store, fakeSource(data), { backfill: true });
+  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-02-20'").get().steps, 15000);
   store.close();
 });
 

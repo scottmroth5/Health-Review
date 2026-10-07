@@ -13,6 +13,7 @@ import { createTracer } from '@scottmroth5/agent-core';
 import {
   HEALTH_METRIC_COLUMNS,
   parseHealthMetrics,
+  mergeHealthDays,
   parseWorkoutSessions,
   parseWorkoutLogTab,
   parseDrinkingLog,
@@ -46,9 +47,12 @@ export async function runSync({ store, source, backfill = false, now = new Date(
   const warnings = [];
   const stamp = now.toISOString();
   try {
+    // Backfill also reads the Archive tab (rows trimmed off the data tab), so duplicate days split across the two
+    // merge once; the daily sync reads the data tab only.
+    const healthArchive = backfill ? (await source.listTabs('health_metrics')).filter((t) => /^archive$/i.test(t)) : [];
     counts.health_metrics = await syncWholeTab({
       store, source, key: 'health_metrics', parse: parseHealthMetrics, warnings,
-      write: upsertDailyMetrics(store.db, stamp),
+      write: upsertDailyMetrics(store.db, stamp), extraTabs: healthArchive, merge: mergeHealthDays,
     });
     counts.workout_sessions = await syncWholeTab({
       store, source, key: 'workout_sessions', parse: parseWorkoutSessions, warnings,
@@ -103,16 +107,29 @@ function saveState(db, key, tab, data) {
 // The consolidated tabs are trimmed into an Archive tab from time to time, so a row-number watermark
 // could skip rows after the tab shrinks and grows again. Reading the whole tab is cheap and the
 // upserts are idempotent.
-async function syncWholeTab({ store, source, key, parse, write, warnings }) {
+// extraTabs (read before the data tab, as they hold older rows) are parsed too, and merge combines every tab's
+// records so a day split across tabs is written once.
+async function syncWholeTab({ store, source, key, parse, write, warnings, extraTabs = [], merge = (records) => records }) {
   const tab = await dataTab(source, key);
+  const all = [];
+  let extraRows = 0;
+  for (const extra of extraTabs) {
+    const more = await source.readRows(key, extra);
+    const parsed = parse({ ...more, tab: extra });
+    warnings.push(...parsed.warnings);
+    all.push(...parsed.records);
+    extraRows += more.rows.length;
+  }
   const data = await source.readRows(key, tab);
   const { records, warnings: w } = parse({ ...data, tab });
   warnings.push(...w);
+  all.push(...records);
+  const merged = merge(all);
   store.tx(() => {
-    for (const r of records) write(r);
+    for (const r of merged) write(r);
     saveState(store.db, key, tab, data);
   });
-  return { rowsRead: data.rows.length, upserted: records.length };
+  return { rowsRead: data.rows.length + extraRows, upserted: merged.length };
 }
 
 async function syncWorkoutLog({ store, source, backfill, now, warnings }) {

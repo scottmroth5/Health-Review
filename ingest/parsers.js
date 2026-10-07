@@ -67,7 +67,9 @@ const HEALTH_FIELDS = {
 };
 export const HEALTH_METRIC_COLUMNS = Object.keys(HEALTH_FIELDS).filter((f) => f !== 'date');
 
-/** One record per sheet row. Duplicate days are merged on upsert (later non-empty values win). */
+/**
+ * One record per date: the sheet can hold several rows for a day (see mergeHealthDays), and they are merged here.
+ */
 export function parseHealthMetrics({ header, rows, firstRowNumber, tab }) {
   const source = 'health_metrics';
   const { index, warnings } = columnIndex(header, HEALTH_FIELDS, source);
@@ -81,7 +83,34 @@ export function parseHealthMetrics({ header, rows, firstRowNumber, tab }) {
     if (typeof when !== 'number') return warn('missing or text date');
     records.push({ date: serialToDate(when), ...numericFields(row, index, HEALTH_METRIC_COLUMNS, warn) });
   });
-  return { records, warnings };
+  return { records: mergeHealthDays(records), warnings };
+}
+
+/**
+ * One record per date from health rows in sheet order. The v1 consolidation appends a second row for a day whenever
+ * its Active Energy changed between Health Auto Export runs, and a run made during the day exports that day partly
+ * done, so the later row can be the partial one. The row with the most steps is the fullest copy of the day (a row
+ * without steps counts lowest; a tie goes to the later row); any field it lacks comes from the latest other row
+ * that has one.
+ */
+export function mergeHealthDays(records) {
+  const byDate = new Map();
+  for (const r of records) {
+    if (!byDate.has(r.date)) byDate.set(r.date, []);
+    byDate.get(r.date).push(r);
+  }
+  return [...byDate.values()].map((rows) => {
+    if (rows.length === 1) return rows[0];
+    const steps = (r) => (r.steps === null || r.steps === undefined ? -1 : r.steps);
+    const base = rows.reduce((best, r) => (steps(r) >= steps(best) ? r : best));
+    const merged = { ...base };
+    for (const field of HEALTH_METRIC_COLUMNS) {
+      if (merged[field] !== null && merged[field] !== undefined) continue;
+      const donor = rows.findLast((r) => r[field] !== null && r[field] !== undefined);
+      if (donor) merged[field] = donor[field];
+    }
+    return merged;
+  });
 }
 
 // ---- Consolidated Apple Workout Sessions ----
