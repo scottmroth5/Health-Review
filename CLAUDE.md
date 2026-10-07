@@ -33,6 +33,9 @@ Health specific logic stays in this repo; never add it to agent-core.
                     (shared grading), run-review-eval.mjs (runner from the claude-api skill scaffold)
 /tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core);
                     apps-script/ConsolidateHealthMetrics.gs (the fixed v1 consolidation the owner pastes into Apps Script)
+/demo               the separate demo instance's made-up data: generate.js (seeded generator, run through the app's own
+                    normalization, block detection and phases), catalog.json (invented "Sample" programs, never MAPS),
+                    substitutions.json
 /scripts            command-line entry points
 /test               node:test suites with synthetic fixtures only
 /data               gitignored; local health datastore and exports; google/ holds the OAuth client_secret.json and token.json
@@ -56,6 +59,9 @@ npm run programs:detect           propose program blocks from history (-- --writ
 npm run programs:review -- list   confirm, edit, merge, split blocks and unassign days (see README.md)
 npm run programs:catalog          validate data/maps/programs.json and print each program's weeks and phases
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
+npm run demo                      the demo instance on http://localhost:5189: data/demo/demo.db only (built when missing),
+                                  no .env, no sync, review or chat (server/demo.js sets HEALTH_INSTANCE=demo)
+npm run demo:build                rebuild data/demo/demo.db from demo/generate.js (also the demo's reset)
 npm run backup                    encrypted backup of data/health.db and data/maps/programs.json to the "Health-Review
                                   backups" folder in Google Drive (-- --to <folder> writes it to a folder instead, such as
                                   a USB drive; -- --check-passphrase checks HEALTH_BACKUP_PASSPHRASE in .env)

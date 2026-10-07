@@ -225,6 +225,12 @@ async function loadStatus() {
   $('#day').max = s.today;
   if (!$('#day').value) $('#day').value = s.today;
   renderDataChecks(s.dataChecks);
+  // The demo instance (npm run demo): a banner, no sync, and no privacy toggle (there is nothing real to hide).
+  const demoInstance = s.instance === 'demo';
+  $('#instance-banner').hidden = !demoInstance;
+  $('#sync-now').hidden = s.sync === false;
+  document.querySelector('.demo-toggle').hidden = demoInstance;
+  if (demoInstance) document.title = 'Health Review (demo data)';
   const last = s.lastSync;
   $('#sync-status').textContent = last
     ? `Last sync ${new Date(last.finished_at ?? last.started_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}${last.status === 'ok' ? '' : ` (${last.status})`}`

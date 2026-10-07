@@ -23,7 +23,9 @@
     "programs:review": "node scripts/programs-review.js",
     "programs:catalog": "node scripts/programs-catalog.js",
     "backup": "node --env-file=.env scripts/backup.js",
-    "backup:restore": "node --env-file=.env scripts/backup-restore.js"
+    "backup:restore": "node --env-file=.env scripts/backup-restore.js",
+    "demo:build": "node demo/generate.js",
+    "demo": "node server/demo.js"
   },
   "keywords": [],
   "author": "",

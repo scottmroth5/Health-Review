@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "note": "Made-up preferences for the demo instance.",
+  "equipment": {
+    "note": "Sample home gym: barbell, dumbbells, kettlebells and bands; no machines.",
+    "have": ["barbell", "dumbbell", "kettlebell", "band", "bodyweight", "pull-up bar"],
+    "lack": ["machine", "cable"]
+  },
+  "fill_rule": "A cable or machine slot is filled by a band, dumbbell or bodyweight exercise with the same movement pattern logged in the same session.",
+  "swaps": [],
+  "not_ranked": [],
+  "avoid": [
+    { "exercise": "circus-press", "reason": "sample: paused for now", "since": "2026-01-01", "temporary": true }
+  ]
+}

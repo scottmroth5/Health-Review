@@ -13,6 +13,11 @@ export const PROGRAMS = [
   ['MAPS 15 Advanced', /maps 15/i], // every MAPS 15 workout logged so far is Advanced (owner, 2026-10-05)
   ['No BS 6-Pack', /no bs/i],
   ['HIIT', /\bhiit\b|\bhitt\b/i],
+  // The demo instance's made-up programs (demo/catalog.json); the owner's log never uses these names.
+  ['Sample Strength', /sample strength/i],
+  ['Sample Hypertrophy', /sample hypertrophy/i],
+  ['Sample Conditioning', /sample conditioning/i],
+  ['Sample Balance', /sample balance/i],
   ['Between programs', /between programs/i],
   ['Home workouts', /\bhome\b|corona/i],
 ];

@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "note": "Made-up programs for the demo instance. Not MAPS or any real program; safe to publish.",
+  "programs": [
+    {
+      "name": "Sample Strength", "weeks": 12,
+      "profile": { "focus": "Barbell strength: squat, bench, deadlift and press, heavier each phase", "conditioning": 0, "mobility": 1, "extra_minutes_per_week": 20 },
+      "phases": [
+        { "name": "Phase 1", "weeks": [1, 4], "workouts_per_week": 3, "rest": "2 minutes", "workouts": [
+          { "name": "Day A", "exercises": [{ "name": "Barbell Squat", "sets": "5", "reps": "5" }, { "name": "Barbell Bench Press", "sets": "5", "reps": "5" }, { "name": "Dumbbell Row", "sets": "3", "reps": "8-10" }] },
+          { "name": "Day B", "exercises": [{ "name": "Barbell Deadlift", "sets": "3", "reps": "5" }, { "name": "Barbell Z Press", "sets": "5", "reps": "5" }, { "name": "Pullups", "sets": "3", "reps": "6-8" }] }] },
+        { "name": "Phase 2", "weeks": [5, 8], "workouts_per_week": 3, "rest": "3 minutes", "workouts": [
+          { "name": "Day A", "exercises": [{ "name": "Barbell Squat", "sets": "5", "reps": "3-5" }, { "name": "Barbell Bench Press", "sets": "5", "reps": "3-5" }, { "name": "Dumbbell Row", "sets": "3", "reps": "8" }] },
+          { "name": "Day B", "exercises": [{ "name": "Barbell Deadlift", "sets": "4", "reps": "3" }, { "name": "Barbell Z Press", "sets": "4", "reps": "3-5" }, { "name": "Pullups", "sets": "3", "reps": "5-8" }] }] },
+        { "name": "Phase 3", "weeks": [9, 12], "workouts_per_week": 3, "rest": "3-4 minutes", "workouts": [
+          { "name": "Day A", "exercises": [{ "name": "Barbell Squat", "sets": "4", "reps": "2-3" }, { "name": "Barbell Bench Press", "sets": "4", "reps": "2-3" }] },
+          { "name": "Day B", "exercises": [{ "name": "Barbell Deadlift", "sets": "3", "reps": "2" }, { "name": "Barbell Z Press", "sets": "4", "reps": "3" }] }] }
+      ]
+    },
+    {
+      "name": "Sample Hypertrophy", "weeks": 10,
+      "profile": { "focus": "Muscle size: moderate weights, 8 to 12 reps, more sets", "conditioning": 0, "mobility": 0, "extra_minutes_per_week": 30 },
+      "phases": [
+        { "name": "Phase 1", "weeks": [1, 5], "workouts_per_week": 3, "rest": "90 seconds", "workouts": [
+          { "name": "Day A", "exercises": [{ "name": "Barbell Squat", "sets": "4", "reps": "8-12" }, { "name": "Barbell Bench Press", "sets": "4", "reps": "8-12" }, { "name": "Dumbbell Curls", "sets": "3", "reps": "10-12" }, { "name": "Dumbbell Skull Crushers", "sets": "3", "reps": "10-12" }] },
+          { "name": "Day B", "exercises": [{ "name": "Barbell Deadlift", "sets": "3", "reps": "8-10" }, { "name": "Barbell Z Press", "sets": "4", "reps": "8-12" }, { "name": "Dumbbell Lateral Raises", "sets": "3", "reps": "12-15" }, { "name": "Pullups", "sets": "3", "reps": "8-10" }] }] },
+        { "name": "Phase 2", "weeks": [6, 10], "workouts_per_week": 3, "rest": "60 seconds", "workouts": [
+          { "name": "Day A", "exercises": [{ "name": "Barbell Squat", "sets": "4", "reps": "10-12" }, { "name": "Barbell Bench Press", "sets": "4", "reps": "10-12" }, { "name": "Dumbbell Curls", "sets": "4", "reps": "12" }] },
+          { "name": "Day B", "exercises": [{ "name": "Barbell Deadlift", "sets": "3", "reps": "10" }, { "name": "Barbell Z Press", "sets": "4", "reps": "10-12" }, { "name": "Dumbbell Lateral Raises", "sets": "4", "reps": "15" }] }] }
+      ]
+    },
+    {
+      "name": "Sample Conditioning", "weeks": 8,
+      "profile": { "focus": "Conditioning: kettlebell and bodyweight circuits for the heart and lungs", "conditioning": 3, "mobility": 2, "extra_minutes_per_week": 40, "minutes_per_session": 30 },
+      "phases": [
+        { "name": "Phase 1", "weeks": [1, 4], "workouts_per_week": 3, "rest": "30 seconds", "minutes": "25-30", "workouts": [
+          { "name": "Circuit", "exercises": [{ "name": "Kettlebell Swings", "sets": "5", "reps": "15", "conditioning": true }, { "name": "Goblet Squats", "sets": "5", "reps": "12", "conditioning": true }, { "name": "Push-Up", "sets": "5", "reps": "12", "conditioning": true }, { "name": "Planks", "sets": "5", "reps": "30s", "conditioning": true }] }] },
+        { "name": "Phase 2", "weeks": [5, 8], "workouts_per_week": 3, "rest": "20 seconds", "minutes": "30", "workouts": [
+          { "name": "Circuit", "exercises": [{ "name": "Kettlebell Swings", "sets": "6", "reps": "20", "conditioning": true }, { "name": "Box Jumps", "sets": "6", "reps": "10", "conditioning": true }, { "name": "Dumbbell Walking Lunges", "sets": "6", "reps": "12", "conditioning": true }, { "name": "Planks", "sets": "6", "reps": "40s", "conditioning": true }] }] }
+      ]
+    },
+    {
+      "name": "Sample Balance", "weeks": 10,
+      "profile": { "focus": "Balance: one arm or one leg at a time to even out sides, ending in barbell 5 x 5", "conditioning": 1, "mobility": 3, "extra_minutes_per_week": 45 },
+      "phases": [
+        { "name": "Phase 1", "weeks": [1, 4], "workouts_per_week": 3, "rest": "60 seconds", "workouts": [
+          { "name": "Day A", "exercises": [{ "name": "Dumbbell Bulgarian Split Squat", "sets": "3", "reps": "10" }, { "name": "Single Arm Dumbbell Row", "sets": "3", "reps": "10" }, { "name": "Barbell Z Press", "sets": "3", "reps": "8-10" }, { "name": "Single Leg Standing Calf Raises", "sets": "3", "reps": "12" }] },
+          { "name": "Day B", "exercises": [{ "name": "Single Leg Dumbbell Romanian Deadlifts", "sets": "3", "reps": "10" }, { "name": "Barbell Bench Press", "sets": "3", "reps": "8-10" }, { "name": "Pullups", "sets": "3", "reps": "8" }, { "name": "Bird Dog", "sets": "3", "reps": "10" }] }] },
+        { "name": "Phase 2", "weeks": [5, 7], "workouts_per_week": 3, "rest": "60 seconds", "workouts": [
+          { "name": "Day A", "exercises": [{ "name": "Dumbbell Bulgarian Split Squat", "sets": "3", "reps": "8" }, { "name": "Barbell Z Press", "sets": "3", "reps": "8-10" }, { "name": "Single Arm Dumbbell Row", "sets": "3", "reps": "8" }] },
+          { "name": "Day B", "exercises": [{ "name": "Barbell Bench Press", "sets": "3", "reps": "8-10" }, { "name": "Pullups", "sets": "3", "reps": "8-10" }, { "name": "Circus Press", "sets": "3", "reps": "6" }] }] },
+        { "name": "Phase 3", "weeks": [8, 10], "workouts_per_week": 3, "rest": "up to 3 minutes", "workouts": [
+          { "name": "Day A", "exercises": [{ "name": "Barbell Squat", "sets": "5", "reps": "5" }, { "name": "Barbell Bench Press", "sets": "5", "reps": "5" }] },
+          { "name": "Day B", "exercises": [{ "name": "Barbell Deadlift", "sets": "5", "reps": "5" }, { "name": "Barbell Z Press", "sets": "5", "reps": "5" }] }] }
+      ]
+    }
+  ]
+}

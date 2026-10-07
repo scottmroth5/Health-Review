@@ -63,12 +63,13 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  * @param {object} ctx
  * @param {{ db: import('better-sqlite3').Database }} ctx.store
  * @param {{ sync?: () => Promise<object>, claude?: () => { send: Function } }} [ctx.services]  claude: the chat's client, made on first use
+ * @param {'main'|'demo'} [ctx.instance]  'demo' marks the made-up-data instance (the UI shows a banner)
  * @param {{ chat?: boolean }} [ctx.features]  chat false turns the Next program chat off (the demo instance)
  * @param {string} [ctx.publicDir]   static UI to serve; skipped when missing
  * @param {string} [ctx.authMode]
  * @param {() => Date} [ctx.clock]
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {} }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main' }) {
   const app = Fastify({ logger });
   const { db } = store;
   let syncing = false;
@@ -119,7 +120,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.get('/api/status', { schema: { summary: 'Today, the last sync, and data check warnings as of today (stale or missing Apple Health days, partial days, impossible values)', response: { 200: anyObject } } }, async () => {
     const today = q.localDate(clock());
-    return { today, lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today) };
+    return { today, instance, sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today) };
   });
 
   // ---- one day ----

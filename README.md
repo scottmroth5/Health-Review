@@ -226,6 +226,36 @@ sync log (Activity tab). The checks look for:
 
 The weekly review gets the week's missing and partial days, so it doesn't read them as bad days.
 
+## Demo instance
+
+To show the app without your data, run a second, separate instance with made-up data:
+
+```
+npm run demo          # http://localhost:5189 (builds data/demo/demo.db first if it is missing)
+npm run demo:build    # rebuild the demo database from scratch, which also resets anything changed while demoing
+```
+
+- **It never touches your data:** its own database (`data/demo/demo.db`), its own log folder, no Google sign-in,
+  and no `.env`, so no API keys are in reach.
+- **Off in the demo:** sync, reviews and the Claude chat. A banner says it's sample data.
+- **Your instance keeps running:** on 5188, as before. The two share only code.
+- **The data:** about 15 months, made up by `demo/generate.js` from a fixed seed, so every build is the same for a
+  given day. It includes:
+  - Apple Health days and workouts, with a planted gap and a partial day so the data checks have something to show
+  - a Workout Log across five runs of four made-up programs, the last one near its end so the Advisor appears
+  - check-ins, a few drink days, supplements (no prescription medicines), a lab panel, sample reviews and a sample
+    chat thread
+- **Publishing:** the programs in `demo/catalog.json` ("Sample Strength" and so on) are invented, not MAPS. The
+  generator, catalog and `demo/substitutions.json` hold no real values, so they are safe to publish. The generated
+  database stays in `data/` (gitignored).
+
+## Planned
+
+- **Users and logins** (deferred, 2026-10-07): register users, tie your data to your login, mark a user as demo or
+  real, and give each demo user an isolated copy of the demo data while the base never changes. Until then, the
+  separate demo instance covers showing the app.
+  - Exposing the server beyond this computer first needs a login mode in `server/auth.js`, and HTTPS.
+
 ## Encrypted backups
 
 Every night at 11pm, `npm run backup` uploads an encrypted copy of `data/health.db` and your program catalog to a
