@@ -257,6 +257,10 @@ test('summary: the Program Advisor ranking reaches the review only within 21 day
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress',
     'Next block: HIIT ranks first at 0.63 (VO2 max 1, time 1). MAPS Powerlift follows at 0.55, about 3 x 14 min a week, strength 1.']]), allowed), []);
   assert.ok(CONTRACT.includes('"advisor"'));
+  // The review's medication check flags "prescription(s)" outside physician discussion, so neither the advisor
+  // block nor its CONTRACT line may prime the model with the word.
+  assert.doesNotMatch(JSON.stringify(s.advisor), /prescription/i);
+  assert.doesNotMatch(CONTRACT.split('\n').find((l) => l.includes('"advisor"')), /prescription/i);
   // Between blocks, after a block ends, or past the program's end: always due.
   assert.equal(advisorDue(null, '2026-10-03'), true);
   assert.equal(advisorDue({ status: 'completed', earliestFinish: null }, '2026-10-03'), true);

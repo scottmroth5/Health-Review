@@ -240,7 +240,8 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
     reasons.push(`About ${pr.sessionsPerWeek} x ${minutesPerSession} min a week${pr.extraMinutesPerWeek ? ` plus ${pr.extraMinutesPerWeek} min of extra sessions` : ''}`);
     if (completion !== null) reasons.push(`You reached ${completion}% of it on average (${runs.length} ${runs.length === 1 ? 'run' : 'runs'})`);
     if (fresh) reasons.push(`Trains mostly ${pr.mainRange} reps, a change for your stalled lifts`);
-    const flags = pr.avoidHits.map((h) => `Prescribes ${h.name} (${h.phase}), on your avoid list`);
+    // "Calls for", not "prescribes": the review's medication check flags "prescription" outside physician discussion.
+    const flags = pr.avoidHits.map((h) => `Calls for ${h.name} (${h.phase}), on your avoid list`);
 
     return {
       program: program.name,
