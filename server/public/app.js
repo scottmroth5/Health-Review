@@ -158,7 +158,37 @@ function buildTodayForms() {
 // ---------------- daily check-off ----------------
 const SLOT_ORDER = ['morning', 'afternoon', 'before_workout', 'during_workout', 'after_workout', 'before_bed', 'daily'];
 
-function renderDoses(day) {
+// The day shown in the check-off, with any one-day adjustments made in the editor (dose, movedTo) before saving.
+let doseDay = null;
+let doseEditing = null; // 'medicationId|timing' of the open editor
+
+/** Keeps the checkboxes' current state in doseDay before the list is redrawn. */
+function keepDoseChecks() {
+  for (const c of $$('#dose-list input[type="checkbox"]')) {
+    const slot = doseDay.items.find((m) => m.id === Number(c.dataset.med))?.slots.find((s) => s.timing === c.dataset.timing);
+    if (slot) slot.taken = c.checked;
+  }
+}
+
+/** The inline editor for one slot: dose and slot for this day only, defaults from the Meds tab. */
+function doseEditor(m, s) {
+  const close = () => { doseEditing = null; renderDoses(doseDay, { keep: true }); };
+  const dose = h('input', { type: 'text', maxlength: '100', value: s.dose ?? '', placeholder: m.dose ? `Default: ${m.dose}` : 'Dose taken', 'aria-label': `Dose of ${m.name} taken on this day` });
+  const slot = h('select', { 'aria-label': `When ${m.name} was taken on this day` },
+    SLOT_ORDER.map((t) => h('option', { value: t, selected: (s.movedTo ?? s.timing) === t }, `${TIMING_LABELS[t]}${t === s.timing ? ' (scheduled)' : ''}`)));
+  return h('div', { class: 'dose-editor' },
+    h('div', { class: 'grid2' }, h('label', {}, 'Dose taken', dose), h('label', {}, 'Taken', slot)),
+    h('p', { class: 'muted small' }, 'For this day only. Change the default on the ', h('a', { href: '#meds' }, 'Meds'), ' tab.'),
+    h('div', { class: 'actions' },
+      h('button', { type: 'button', onclick: () => { s.dose = dose.value.trim() || null; s.movedTo = slot.value === s.timing ? null : slot.value; close(); } }, 'Apply'),
+      h('button', { type: 'button', class: 'ghost', onclick: () => { s.dose = null; s.movedTo = null; close(); } }, 'Reset to default'),
+      h('button', { type: 'button', class: 'ghost', onclick: close }, 'Cancel')));
+}
+
+function renderDoses(day, { keep = false } = {}) {
+  if (keep) keepDoseChecks();
+  else doseEditing = null; // a freshly loaded day starts with no editor open
+  doseDay = day;
   const list = $('#dose-list');
   const form = $('#doses');
   const status = $('.status', form);
@@ -172,21 +202,35 @@ function renderDoses(day) {
     setStatus(status, '');
     return;
   }
+  // Grouped by the slot each was actually taken in (a one-day move), otherwise its scheduled slot.
   for (const slot of SLOT_ORDER) {
-    const rows = day.items.flatMap((m) => m.slots.filter((s) => s.timing === slot).map((s) => ({ m, s })));
+    const rows = day.items.flatMap((m) => m.slots.filter((s) => (s.movedTo ?? s.timing) === slot).map((s) => ({ m, s })));
     if (!rows.length) continue;
     list.append(h('div', { class: 'dose-group' }, h('div', { class: 'dose-slot' }, TIMING_LABELS[slot]),
-      rows.map(({ m, s }) => h('label', { class: 'check dose' },
-        h('input', { type: 'checkbox', checked: s.taken === true, 'data-med': String(m.id), 'data-timing': slot }),
-        h('span', {}, m.name, m.dose ? h('span', { class: 'muted' }, ` ${m.dose}`) : null)))));
+      rows.map(({ m, s }) => {
+        const key = `${m.id}|${s.timing}`;
+        const shownDose = s.dose ?? m.dose;
+        const notes = [s.dose && m.dose ? `default ${m.dose}` : s.dose ? 'adjusted' : null, s.movedTo ? `moved from ${TIMING_LABELS[s.timing]}` : null].filter(Boolean);
+        return h('div', { class: `dose-row${notes.length ? ' adjusted' : ''}` },
+          h('label', { class: 'check dose' },
+            h('input', { type: 'checkbox', checked: s.taken === true, 'data-med': String(m.id), 'data-timing': s.timing }),
+            h('span', {}, m.name, shownDose ? h('span', { class: s.dose ? '' : 'muted' }, ` ${shownDose}`) : null,
+              notes.length ? h('span', { class: 'muted small' }, ` (${notes.join('; ')})`) : null)),
+          h('button', { type: 'button', class: 'link small dose-adjust', 'aria-expanded': String(doseEditing === key),
+            onclick: () => { doseEditing = doseEditing === key ? null : key; renderDoses(doseDay, { keep: true }); } }, 'Adjust'),
+          doseEditing === key ? doseEditor(m, s) : null);
+      })));
   }
-  setStatus(status, day.saved ? 'Saved (unchecked items are recorded as skipped)' : 'Not logged for this day');
+  const adjusted = day.items.some((m) => m.slots.some((s) => s.dose || s.movedTo));
+  setStatus(status, day.saved ? `Saved (unchecked items are recorded as skipped)${adjusted ? '; adjustments apply to this day only' : ''}` : 'Not logged for this day');
 }
 
 async function saveDoses(evt) {
   evt.preventDefault();
   const status = $('.status', evt.currentTarget);
-  const doses = $$('#dose-list input[type="checkbox"]').map((c) => ({ medication_id: Number(c.dataset.med), timing: c.dataset.timing, taken: c.checked }));
+  keepDoseChecks();
+  doseEditing = null;
+  const doses = doseDay.items.flatMap((m) => m.slots.map((s) => ({ medication_id: m.id, timing: s.timing, taken: s.taken === true, dose: s.dose ?? null, moved_to: s.movedTo ?? null })));
   try {
     renderDoses(await api('PUT', `/api/doses/${$('#day').value}`, { doses }));
     setStatus(status, 'Saved (unchecked items are recorded as skipped)', 'ok');

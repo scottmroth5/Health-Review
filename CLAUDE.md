@@ -116,6 +116,10 @@ These are observational before and after averages; never present them as cause, 
 A period with start_estimated (real start unknown; the owner's existing items count from 2026-01-01) is active from
 started_on but never produces a start event. Daily check-off (medication_doses): saving a day records every slot taken
 or skipped; a day with no rows is unknown, never missed. The weekly summary reports doses taken out of doses logged.
+A saved slot can carry a one-day adjustment (migration 014): dose (taken instead of the period's dose) and moved_to (the
+slot it was taken in; timing stays the scheduled slot, the key). Values equal to the default are stored as NULL. The
+Today tab shows and edits them; the Meds tab periods stay the defaults, and the weekly review ignores adjustments
+(owner's choice, 2026-10-07).
 A dose or timing change is a new dated period; a correction (fixing a typo) updates the current period in place and
 records no event. Each Meds card shows its dose history once there is more than one period.
 

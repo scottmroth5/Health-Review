@@ -330,3 +330,11 @@ body.demo .demo-toggle { color: var(--accent); font-weight: 600; }
 /* The demo instance's banner */
 .instance-banner { margin: 0; padding: 8px 16px; text-align: center; font-size: 0.88rem; background: var(--surface-0);
   border-bottom: 1px solid var(--border); }
+
+/* One-day dose and slot adjustments on the Today tab */
+.dose-row { display: grid; grid-template-columns: 1fr auto; align-items: center; border-bottom: 1px solid var(--grid); }
+.dose-row label.dose { border-bottom: none; }
+.dose-row.adjusted label.dose { border-left: 3px solid var(--accent); padding-left: 8px; }
+.dose-adjust { padding: 8px 4px; min-height: 44px; }
+.dose-editor { grid-column: 1 / -1; padding: 8px 0 12px; }
+.dose-editor .actions { margin-top: 4px; }

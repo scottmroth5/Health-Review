@@ -366,4 +366,14 @@ export const MIGRATIONS = [
       CREATE INDEX advisor_notes_created ON advisor_notes(created_at);
     `,
   },
+  {
+    id: '014-dose-adjustments',
+    up: `
+      -- One-day adjustments on the Today tab: the dose actually taken and the slot it was actually taken in. NULL means
+      -- the item's default from its current period. timing stays the scheduled slot (the key), so a move never
+      -- collides with another slot of the same item. Only the Today tab reads these; the review counts taken or not.
+      ALTER TABLE medication_doses ADD COLUMN dose TEXT;
+      ALTER TABLE medication_doses ADD COLUMN moved_to TEXT;
+    `,
+  },
 ];

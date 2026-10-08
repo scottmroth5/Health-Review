@@ -351,7 +351,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.put('/api/doses/:date', {
     schema: {
-      summary: "Save the day's check-off: every listed slot is recorded taken or not",
+      summary: "Save the day's check-off: every listed slot is recorded taken or not, with optional one-day dose and slot adjustments",
       params: dateParams,
       body: {
         type: 'object', additionalProperties: false, required: ['doses'],
@@ -360,7 +360,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
             type: 'array', maxItems: 200,
             items: {
               type: 'object', additionalProperties: false, required: ['medication_id', 'timing', 'taken'],
-              properties: { medication_id: { type: 'integer', minimum: 1 }, timing: { type: 'string', enum: TIMINGS }, taken: { type: 'boolean' } },
+              properties: {
+                medication_id: { type: 'integer', minimum: 1 }, timing: { type: 'string', enum: TIMINGS }, taken: { type: 'boolean' },
+                // One-day adjustments (null or absent: the default from the Meds tab).
+                dose: { type: ['string', 'null'], maxLength: 100 }, moved_to: { type: ['string', 'null'], enum: [...TIMINGS, null] },
+              },
             },
           },
         },

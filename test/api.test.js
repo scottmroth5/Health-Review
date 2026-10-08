@@ -308,6 +308,35 @@ test('daily check-off: lists slots in effect, saves taken and skipped, clears ba
   await done();
 });
 
+test('daily check-off: one-day dose and slot adjustments are saved for that day only; the defaults stay; the week counts are unchanged', async () => {
+  const { app, db, done } = await setup();
+  const mag = (await post(app, '/api/medications', { ...MAG, timings: ['morning', 'before_bed'] })).json(); // default 200 mg
+  const saved = (await put(app, '/api/doses/2026-03-09', { doses: [
+    { medication_id: mag.id, timing: 'morning', taken: true, dose: ' 400 mg ', moved_to: 'before_bed' }, // both slots now before bed, no clash
+    { medication_id: mag.id, timing: 'before_bed', taken: true, dose: '200 mg', moved_to: 'before_bed' }, // equal to the defaults: no adjustment
+  ] })).json();
+  assert.deepEqual(saved.items[0].slots.map((s) => [s.timing, s.dose, s.movedTo, s.defaultDose]),
+    [['morning', '400 mg', 'before_bed', '200 mg'], ['before_bed', null, null, '200 mg']]);
+
+  const next = (await app.inject('/api/days/2026-03-08')).json().medications;
+  assert.deepEqual(next.items[0].slots.map((s) => [s.dose, s.movedTo]), [[null, null], [null, null]], 'other days keep the defaults');
+  assert.equal((await app.inject('/api/medications')).json()[0].current.dose, '200 mg', 'the Meds tab default is unchanged');
+
+  // The weekly review counts taken or skipped only, so an adjustment changes nothing there.
+  const { medicationsWeek } = await import('../metrics/medications.js');
+  const meds = db.prepare('SELECT * FROM medications').all();
+  const periods = db.prepare('SELECT * FROM medication_periods').all();
+  const doses = db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses').all();
+  assert.deepEqual(medicationsWeek(meds, periods, [], [], '2026-03-14', doses).current.map((m) => [m.week.dosesTaken, m.week.dosesLogged]), [[2, 2]]);
+
+  const bad = (d) => put(app, '/api/doses/2026-03-09', { doses: [{ medication_id: mag.id, timing: 'morning', taken: true, ...d }] });
+  assert.equal((await bad({ moved_to: 'lunch' })).statusCode, 400);
+  assert.equal((await bad({ dose: 'x'.repeat(101) })).statusCode, 400);
+  assert.equal((await app.inject({ method: 'DELETE', url: '/api/doses/2026-03-09' })).statusCode, 204);
+  assert.equal(db.prepare('SELECT COUNT(*) FROM medication_doses').pluck().get(), 0, 'clearing the day removes its adjustments');
+  await done();
+});
+
 test('labs: add results in the app (new and existing tests), edit, delete; sheet results are read-only here', async () => {
   const { app, db, done } = await setup();
   const created = await post(app, '/api/labs/results', { name: 'Homocysteine', panel: 'OTHER', unit: 'umol/L', drawn_on: '2026-03-01', value: '9.5' });

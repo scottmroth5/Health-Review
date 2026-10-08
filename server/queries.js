@@ -227,34 +227,49 @@ function insertPeriod(db, id, { dose, timings, started_on, stopped_on = null, st
 
 // ---- daily check-off ----
 
-/** Medications in effect on a date, each with its timing slots and what was saved for that day. */
+/**
+ * Medications in effect on a date, each with its timing slots and what was saved for that day. A slot can carry a
+ * one-day adjustment: dose (what was taken instead of defaultDose) and movedTo (the slot it was taken in instead of
+ * its scheduled timing); null means the default.
+ */
 export function dayMedications(db, date) {
   const rows = db.prepare(`SELECT m.id, m.name, m.kind, p.dose, p.timings FROM medication_periods p JOIN medications m ON m.id = p.medication_id
     WHERE p.started_on <= ? AND (p.stopped_on IS NULL OR p.stopped_on > ?) ORDER BY m.kind, m.name`).all(date, date);
-  const saved = db.prepare('SELECT medication_id, timing, taken FROM medication_doses WHERE date = ?').all(date);
-  const takenOf = (id, timing) => saved.find((s) => s.medication_id === id && s.timing === timing)?.taken;
+  const saved = db.prepare('SELECT medication_id, timing, taken, dose, moved_to FROM medication_doses WHERE date = ?').all(date);
+  const savedOf = (id, timing) => saved.find((s) => s.medication_id === id && s.timing === timing);
   return {
     saved: saved.length > 0,
-    items: rows.map((r) => {
-      const timings = JSON.parse(r.timings);
-      return { id: r.id, name: r.name, kind: r.kind, dose: r.dose, slots: timings.map((t) => ({ timing: t, taken: takenOf(r.id, t) === undefined ? null : Boolean(takenOf(r.id, t)) })) };
-    }),
+    items: rows.map((r) => ({
+      id: r.id, name: r.name, kind: r.kind, dose: r.dose,
+      slots: JSON.parse(r.timings).map((t) => {
+        const s = savedOf(r.id, t);
+        return { timing: t, taken: s === undefined ? null : Boolean(s.taken), dose: s?.dose ?? null, defaultDose: r.dose, movedTo: s?.moved_to ?? null };
+      }),
+    })),
   };
 }
 
 /**
- * Saves the day's check-off: every listed slot is recorded taken or not, replacing what was saved
- * before. Each slot must belong to a medication in effect that day.
+ * Saves the day's check-off: every listed slot is recorded taken or not, replacing what was saved before. Each slot
+ * must belong to a medication in effect that day. An optional dose or moved_to adjusts that slot for this day only; a
+ * value equal to the default is stored as no adjustment.
  */
 export function saveDoses(db, date, doses) {
-  const expected = new Map(dayMedications(db, date).items.flatMap((m) => m.slots.map((s) => [`${m.id}|${s.timing}`, m.name])));
+  const day = dayMedications(db, date);
+  const expected = new Map(day.items.flatMap((m) => m.slots.map((s) => [`${m.id}|${s.timing}`, m])));
   for (const d of doses) {
     if (!expected.has(`${d.medication_id}|${d.timing}`)) throw fail(400, 'One of the checked items is not in effect on that day');
   }
   db.transaction(() => {
     db.prepare('DELETE FROM medication_doses WHERE date = ?').run(date);
-    const ins = db.prepare('INSERT INTO medication_doses (date, medication_id, timing, taken, updated_at) VALUES (?, ?, ?, ?, ?)');
-    for (const d of doses) ins.run(date, d.medication_id, d.timing, d.taken ? 1 : 0, now());
+    const ins = db.prepare('INSERT INTO medication_doses (date, medication_id, timing, taken, updated_at, dose, moved_to) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    for (const d of doses) {
+      const item = expected.get(`${d.medication_id}|${d.timing}`);
+      const dose = d.dose?.trim() || null;
+      const adjustedDose = dose && dose !== (item.dose ?? '').trim() ? dose : null;
+      const movedTo = d.moved_to && d.moved_to !== d.timing ? d.moved_to : null;
+      ins.run(date, d.medication_id, d.timing, d.taken ? 1 : 0, now(), adjustedDose, movedTo);
+    }
   })();
   return dayMedications(db, date);
 }

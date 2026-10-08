@@ -151,6 +151,13 @@ Each program also has a `profile`, written as short summaries rather than copied
   health and balance score is cut. Delete the entry when you want it back. Exercise ids are the `id`s in
   `config/exercise-dictionary.json`.
 
+## One-day dose adjustments
+
+On the Today tab, **Adjust** next to a supplement or medication changes, for that day only, the dose you took and the
+slot you took it in (for example, the morning magnesium taken before bed). The values on the Meds tab stay the
+defaults. A lasting change is still a dated change on the Meds tab, which is what the before-and-after averages use.
+Adjustments are saved with the day's check-off, and the weekly review counts only taken or skipped.
+
 ## Program Advisor
 
 The Training tab's **Next program** card ranks the MAPS programs for your next block. The ranking is computed in
