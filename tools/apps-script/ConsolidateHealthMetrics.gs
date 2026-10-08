@@ -1,149 +1,418 @@
-// Bound to the Consolidated Apple Health Metrics spreadsheet (Extensions > Apps Script). Keep the consolidated data
-// tab as the FIRST tab. Paste this over the v1 script (see README.md, "Sheets pipeline"); the nightly trigger can keep
-// calling consolidateHealthMetrics.
+// The owner's health consolidation script (Consolidated Apple Health Metrics spreadsheet, Extensions > Apps Script),
+// patched so each day keeps ONE row: the fullest export of it. Drop-in replacement for the file that holds these
+// functions. The constants (HEALTH_FOLDER_ID, HEALTH_MAIN_SHEET_NAME, HEALTH_ARCHIVE_SHEET_NAME, HEALTH_DATE_HEADER,
+// HEALTH_DATE_COL_FALLBACK, HEALTH_ARCHIVE_AFTER_MONTHS, HEALTH_DELETE_AFTER_MONTHS) stay where they are in your
+// project and are not redefined here. Archive, purge, locks and trigger setup work as before.
 //
-// Changes from v1 (legacy/ConsolidateHealthMetrics.gs):
-//  - One row per day. v1 skipped a row only when Date/Time AND the first metric (Active Energy) matched, so a day
-//    exported partly done and again later got a second row. Now the date alone is the key: an export whose copy of a
-//    day has more steps replaces that day's row in place; otherwise it is skipped.
-//  - Writes in batches (setValues) instead of one appendRow per row, so runs finish well inside the time limit.
-//  - collapseDuplicateDays() is an optional one-time cleanup of days that already have several rows.
-// The sheet's time zone is left as it is on purpose: the Health Review app corrects its effects (the 3-hour shift in
-// workout Duration cells and the 03:00 date stamps), and changing it could move workout start times.
+// What changed (marked "PATCH" below):
+//  - The duplicate key was Date/Time plus the first metric (Active Energy). Health Auto Export re-exports a day while
+//    it is still in progress, so a day whose Active Energy grew between runs got a second row, and the partial one
+//    could win downstream. Now the key is the calendar day alone (healthDayKey_):
+//      consolidation: a later export with MORE STEPS replaces that day's row in place; otherwise it is skipped. A day
+//      already in the archive is skipped (it is complete).
+//      archive: a day already in the archive keeps the fuller of the two rows.
+//  - Consolidation collects new and replacement rows and writes them in batches instead of one appendRow per row.
+//  - collapseHealthDuplicateDays() is an optional one-time cleanup of days that already have several rows.
+// The Health Review app copes either way (it keeps the fullest row per day on import), so this is about a clean sheet.
 
-var FOLDER_ID = "xxx"; // Health Auto Export folder ID
-var FILE_MATCH = "Apple Health Metrics-HealthMetrics";
-var STEPS_HEADER = "Step Count (steps)";
-var MAX_RUN_MS = 5 * 60 * 1000;
-
-function consolidateHealthMetrics() {
-  var destination = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  var props = PropertiesService.getScriptProperties();
-  var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
-  var startTime = new Date().getTime();
-  var processedIndex = Number(props.getProperty("healthProcessedIndex") || 0);
-
-  // Only build the file list on the first run of a batch.
-  if (processedIndex === 0) {
-    var files = DriveApp.getFolderById(FOLDER_ID).getFiles();
-    var fileList = [];
-    while (files.hasNext()) {
-      var f = files.next();
-      if (f.getName().indexOf(FILE_MATCH) !== -1) fileList.push({ name: f.getName(), id: f.getId() });
-    }
-    fileList.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    props.setProperty("healthFileList", JSON.stringify(fileList));
+// ===== HEALTH HELPERS =====
+function getHealthMainSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(HEALTH_MAIN_SHEET_NAME);
+  if (!sheet) {
+    var names = ss.getSheets().map(function(s) { return s.getName(); }).join(", ");
+    throw new Error("Main sheet not found: " + HEALTH_MAIN_SHEET_NAME + ". Tabs in this file: " + names);
   }
-  var fileList = JSON.parse(props.getProperty("healthFileList") || "[]");
-
-  // What the sheet already holds: for each day, its row number and step count (the fullest row when there are several).
-  var existing = destination.getDataRange().getValues();
-  var header = existing.length ? existing[0] : null;
-  var days = {};
-  for (var r = 1; r < existing.length; r++) {
-    var key = dayKey(existing[r][0], tz);
-    if (!key) continue;
-    var steps = stepsOf(existing[r], header);
-    if (!days[key] || steps > days[key].steps) days[key] = { row: r + 1, steps: steps };
-  }
-
-  var appends = [];    // new days, written together at the end
-  var appendIndex = {}; // day -> position in appends
-  var updates = {};    // existing row number -> fuller values
-
-  for (var i = processedIndex; i < fileList.length; i++) {
-    if (new Date().getTime() - startTime > MAX_RUN_MS) {
-      flush(destination, header, appends, updates);
-      props.setProperty("healthProcessedIndex", String(i));
-      Logger.log("Paused at file " + i + " of " + fileList.length + ". Run again to continue.");
-      return;
-    }
-    var data = SpreadsheetApp.open(DriveApp.getFileById(fileList[i].id)).getSheets()[0].getDataRange().getValues();
-    if (data.length === 0) continue;
-    if (!header) {
-      header = data[0];
-      destination.getRange(1, 1, 1, header.length).setValues([header]);
-    }
-    for (var j = 1; j < data.length; j++) {
-      var row = fit(data[j], header.length);
-      var k = dayKey(row[0], tz);
-      if (!k) continue;
-      var s = stepsOf(row, header);
-      if (days[k]) {
-        if (s > days[k].steps) { updates[days[k].row] = row; days[k].steps = s; }
-      } else if (appendIndex[k] !== undefined) {
-        if (s > stepsOf(appends[appendIndex[k]], header)) appends[appendIndex[k]] = row;
-      } else {
-        appendIndex[k] = appends.length;
-        appends.push(row);
-      }
-    }
-  }
-  flush(destination, header, appends, updates);
-
-  props.deleteProperty("healthProcessedIndex");
-  props.deleteProperty("healthFileList");
-  Logger.log("All done. Processed " + fileList.length + " files: " + appends.length + " new days, "
-    + Object.keys(updates).length + " days replaced by a fuller export.");
+  return sheet;
 }
 
-/** Optional, run once by hand: keeps the fullest row of each day and deletes the others. Back up the sheet first. */
-function collapseDuplicateDays() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
-  var values = sheet.getDataRange().getValues();
-  var header = values[0];
-  var best = {};
-  for (var r = 1; r < values.length; r++) {
-    var key = dayKey(values[r][0], tz);
-    if (!key) continue;
-    var steps = stepsOf(values[r], header);
-    if (!best[key] || steps > best[key].steps) best[key] = { row: r + 1, steps: steps };
+function getHealthArchiveSheet_(header) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(HEALTH_ARCHIVE_SHEET_NAME) || ss.insertSheet(HEALTH_ARCHIVE_SHEET_NAME);
+  if (sheet.getLastRow() === 0 && header) {
+    sheet.getRange(1, 1, 1, header.length).setValues([header]);
   }
-  var remove = [];
-  for (var r2 = 1; r2 < values.length; r2++) {
-    var k2 = dayKey(values[r2][0], tz);
-    if (k2 && best[k2].row !== r2 + 1) remove.push(r2 + 1);
+  return sheet;
+}
+
+// Finds the date column by header text so a column order change does not break things
+function healthDateCol_(header) {
+  for (var c = 0; c < header.length; c++) {
+    if (String(header[c]).trim().toLowerCase().indexOf(HEALTH_DATE_HEADER.toLowerCase()) === 0) return c;
   }
-  for (var x = remove.length - 1; x >= 0; x--) sheet.deleteRow(remove[x]); // bottom up, so row numbers stay valid
-  Logger.log("Removed " + remove.length + " duplicate rows.");
+  return HEALTH_DATE_COL_FALLBACK;
+}
+
+function healthMonthsAgo_(n) {
+  var d = new Date();
+  d.setMonth(d.getMonth() - n);
+  return d;
+}
+
+// Handles Date objects from Sheets and strings like "2026-09-14 00:00:00 -0400"
+function parseHealthDate_(value) {
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+  if (value === "" || value === null) return null;
+  var s = String(value).trim();
+  var d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  return null;
+}
+
+// Kept for anything else in your project that still calls it; this file no longer uses it.
+function healthRowKey_(row) {
+  return row[0] + "|" + row[1];
+}
+
+// PATCH: the calendar day of a row ('yyyy-MM-dd' in the spreadsheet's time zone), or null when unreadable.
+function healthDayKey_(row, dateCol) {
+  var d = parseHealthDate_(row[dateCol]);
+  if (!d) return null;
+  return Utilities.formatDate(d, SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), "yyyy-MM-dd");
+}
+
+// PATCH: the row's step count, or -1 when it has none (so any row with steps counts as fuller).
+var HEALTH_STEPS_HEADER = "Step Count (steps)";
+function healthStepsCol_(header) {
+  for (var c = 0; c < header.length; c++) {
+    if (String(header[c]).trim() === HEALTH_STEPS_HEADER) return c;
+  }
+  return -1;
+}
+function healthSteps_(row, stepsCol) {
+  if (stepsCol < 0) return -1;
+  var v = Number(row[stepsCol]);
+  return row[stepsCol] === "" || isNaN(v) ? -1 : v;
+}
+
+function getHealthBody_(sheet, numCols) {
+  if (sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
+}
+
+function rewriteHealthBody_(sheet, rows, numCols) {
+  var lastRow = sheet.getLastRow();
+  var lastCol = Math.max(sheet.getLastColumn(), numCols);
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+  if (rows.length > 0) {
+    var normalized = rows.map(function(r) {
+      var out = r.slice(0, numCols);
+      while (out.length < numCols) out.push("");
+      return out;
+    });
+    sheet.getRange(2, 1, normalized.length, numCols).setValues(normalized);
+  }
+  SpreadsheetApp.flush();
+}
+
+// PATCH: writes replacement rows in place and appends new rows in one batch, then empties both lists.
+function flushHealthWrites_(sheet, numCols, appends, updates) {
+  var fit = function(r) {
+    var out = r.slice(0, numCols);
+    while (out.length < numCols) out.push("");
+    return out;
+  };
+  for (var rowNumber in updates) sheet.getRange(Number(rowNumber), 1, 1, numCols).setValues([fit(updates[rowNumber])]);
+  if (appends.length) sheet.getRange(sheet.getLastRow() + 1, 1, appends.length, numCols).setValues(appends.map(fit));
+  appends.length = 0;
+  for (var k in updates) delete updates[k];
+  SpreadsheetApp.flush();
+}
+
+// ===== CONSOLIDATION (patched) =====
+// Changes from your version:
+//  1. Writes to the named main sheet instead of getActiveSheet()
+//  2. Dedupes against the archive tab too, so archived rows are not re-imported
+//  3. Skips rows older than the delete cutoff, so purged rows do not come back
+//  4. Script lock so it cannot overlap with archive or purge
+//  5. PATCH: one row per day; a later export with more steps replaces the day's row; batched writes
+function consolidateHealthMetrics() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) { Logger.log("Another run is in progress."); return; }
+
+  try {
+    var folder = DriveApp.getFolderById(HEALTH_FOLDER_ID);
+    var destination = getHealthMainSheet_();
+    var props = PropertiesService.getScriptProperties();
+    var deleteCutoff = healthMonthsAgo_(HEALTH_DELETE_AFTER_MONTHS);
+
+    var processedIndex = Number(props.getProperty("healthProcessedIndex") || 0);
+    var headerWritten = props.getProperty("healthHeaderWritten") === "true";
+    var startTime = new Date().getTime();
+    var maxRunTime = 5 * 60 * 1000;
+
+    if (processedIndex === 0) {
+      var files = folder.getFiles();
+      var fileList = [];
+      while (files.hasNext()) {
+        var f = files.next();
+        if (f.getName().indexOf("Apple Health Metrics-HealthMetrics") !== -1) {
+          fileList.push({ name: f.getName(), id: f.getId() });
+        }
+      }
+      fileList.sort(function(a, b) { return a.name.localeCompare(b.name); });
+      props.setProperty("healthFileList", JSON.stringify(fileList));
+    }
+
+    var fileList = JSON.parse(props.getProperty("healthFileList") || "[]");
+
+    // PATCH: days already in main (row number and steps of the fullest row) and in the archive.
+    var mainData = destination.getDataRange().getValues();
+    var header = mainData.length ? mainData[0] : null;
+    var mainDays = {};
+    var archiveDays = {};
+    if (header) {
+      var mainDateCol = healthDateCol_(header);
+      var mainStepsCol = healthStepsCol_(header);
+      for (var r = 1; r < mainData.length; r++) {
+        var key = healthDayKey_(mainData[r], mainDateCol);
+        if (!key) continue;
+        var steps = healthSteps_(mainData[r], mainStepsCol);
+        if (!mainDays[key] || steps > mainDays[key].steps) mainDays[key] = { row: r + 1, steps: steps };
+      }
+    }
+    var archive = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HEALTH_ARCHIVE_SHEET_NAME);
+    if (archive && archive.getLastRow() > 1) {
+      var archiveData = archive.getDataRange().getValues();
+      var archiveDateCol = healthDateCol_(archiveData[0]);
+      for (var a = 1; a < archiveData.length; a++) {
+        var ak = healthDayKey_(archiveData[a], archiveDateCol);
+        if (ak) archiveDays[ak] = true;
+      }
+    }
+
+    var appends = [];     // new days, written together
+    var appendIndex = {}; // day -> position in appends
+    var updates = {};     // main row number -> fuller row
+    var added = 0;
+    var replaced = 0;
+
+    for (var i = processedIndex; i < fileList.length; i++) {
+      if (new Date().getTime() - startTime > maxRunTime) {
+        if (header) flushHealthWrites_(destination, header.length, appends, updates);
+        props.setProperty("healthProcessedIndex", i.toString());
+        Logger.log("Paused at file " + i + " of " + fileList.length + ". Run again to continue.");
+        return;
+      }
+
+      var ss = SpreadsheetApp.open(DriveApp.getFileById(fileList[i].id));
+      var data = ss.getSheets()[0].getDataRange().getValues();
+      if (data.length === 0) continue;
+
+      if (!headerWritten) {
+        if (destination.getLastRow() === 0) destination.appendRow(data[0]);
+        headerWritten = true;
+        props.setProperty("healthHeaderWritten", "true");
+      }
+      if (!header) header = destination.getRange(1, 1, 1, destination.getLastColumn()).getValues()[0];
+
+      var dateCol = healthDateCol_(data[0]);
+      var stepsCol = healthStepsCol_(data[0]);
+
+      for (var j = 1; j < data.length; j++) {
+        var row = data[j];
+        var rowDate = parseHealthDate_(row[dateCol]);
+        if (rowDate && rowDate < deleteCutoff) continue; // past retention, do not re-import
+        var day = healthDayKey_(row, dateCol);
+        if (!day || archiveDays[day]) continue;          // unreadable date, or already archived (complete)
+        var s = healthSteps_(row, stepsCol);
+        if (mainDays[day]) {
+          if (s > mainDays[day].steps) {                 // a fuller export of a day already in main
+            updates[mainDays[day].row] = row;
+            mainDays[day].steps = s;
+            replaced++;
+          }
+        } else if (appendIndex[day] !== undefined) {
+          if (s > healthSteps_(appends[appendIndex[day]], stepsCol)) appends[appendIndex[day]] = row;
+        } else {
+          appendIndex[day] = appends.length;
+          appends.push(row);
+          added++;
+        }
+      }
+    }
+    if (header) flushHealthWrites_(destination, header.length, appends, updates);
+
+    props.deleteProperty("healthProcessedIndex");
+    props.deleteProperty("healthHeaderWritten");
+    props.deleteProperty("healthFileList");
+    Logger.log("All done! Processed " + fileList.length + " files: " + added + " new days, " + replaced + " days replaced by a fuller export.");
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function resetHealthProgress() {
   var props = PropertiesService.getScriptProperties();
   props.deleteProperty("healthProcessedIndex");
+  props.deleteProperty("healthHeaderWritten");
   props.deleteProperty("healthFileList");
-  props.deleteProperty("healthHeaderWritten"); // left over from v1
   Logger.log("Health progress reset.");
 }
 
-// ---- helpers ----
+// ===== ARCHIVE =====
+// Moves rows 1 month or older from the main tab to the archive tab.
+// PATCH: a day already in the archive keeps the fuller of the two rows (more steps) instead of a second row.
+function archiveHealthData() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) { Logger.log("Another run is in progress."); return; }
 
-function flush(sheet, header, appends, updates) {
-  for (var rowNumber in updates) {
-    sheet.getRange(Number(rowNumber), 1, 1, header.length).setValues([updates[rowNumber]]);
+  try {
+    var main = getHealthMainSheet_();
+    var mainData = main.getDataRange().getValues();
+    if (mainData.length < 2) { Logger.log("Nothing to archive."); return; }
+
+    var header = mainData[0];
+    var numCols = header.length;
+    var dateCol = healthDateCol_(header);
+    var stepsCol = healthStepsCol_(header);
+    var archiveCutoff = healthMonthsAgo_(HEALTH_ARCHIVE_AFTER_MONTHS);
+
+    var keep = [], toArchive = [], unparsed = 0;
+    for (var i = 1; i < mainData.length; i++) {
+      var row = mainData[i];
+      var d = parseHealthDate_(row[dateCol]);
+      if (!d) { keep.push(row); unparsed++; continue; }
+      if (d <= archiveCutoff) toArchive.push(row);
+      else keep.push(row);
+    }
+
+    var note = unparsed
+      ? " " + unparsed + " rows had unreadable dates in column " + (dateCol + 1) +
+        " (" + header[dateCol] + ") and were left in main."
+      : "";
+
+    if (toArchive.length === 0) {
+      Logger.log("Nothing old enough to archive." + note);
+      return;
+    }
+
+    var archive = getHealthArchiveSheet_(header);
+    var archiveRows = getHealthBody_(archive, numCols);
+    var archiveIndex = {}; // day -> position in archiveRows
+    archiveRows.forEach(function(r, n) {
+      var k = healthDayKey_(r, dateCol);
+      if (k && (archiveIndex[k] === undefined || healthSteps_(r, stepsCol) > healthSteps_(archiveRows[archiveIndex[k]], stepsCol))) archiveIndex[k] = n;
+    });
+
+    var archivedCount = 0;
+    toArchive.forEach(function(row) {
+      var key = healthDayKey_(row, dateCol);
+      if (archiveIndex[key] === undefined) {
+        archiveIndex[key] = archiveRows.length;
+        archiveRows.push(row);
+        archivedCount++;
+      } else if (healthSteps_(row, stepsCol) > healthSteps_(archiveRows[archiveIndex[key]], stepsCol)) {
+        archiveRows[archiveIndex[key]] = row; // the fuller copy of a day already archived
+      }
+    });
+
+    archiveRows.sort(function(a, b) {
+      var da = parseHealthDate_(a[dateCol]), db = parseHealthDate_(b[dateCol]);
+      return (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
+    });
+
+    // Write archive FIRST so a failure never loses rows removed from main
+    rewriteHealthBody_(archive, archiveRows, numCols);
+    rewriteHealthBody_(main, keep, numCols);
+
+    Logger.log(
+      "Archived " + archivedCount + " rows. Main now " + keep.length +
+      " rows, archive " + archiveRows.length + " rows." + note
+    );
+  } finally {
+    lock.releaseLock();
   }
-  if (appends.length) sheet.getRange(sheet.getLastRow() + 1, 1, appends.length, header.length).setValues(appends);
-  appends.length = 0;
-  for (var key in updates) delete updates[key];
 }
 
-/** 'yyyy-MM-dd' for a Date/Time cell (a Date, or export text that starts with the date); null for anything else. */
-function dayKey(value, tz) {
-  if (value instanceof Date) return Utilities.formatDate(value, tz, "yyyy-MM-dd");
-  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(value || ""));
-  return m ? m[1] : null;
+// ===== PURGE =====
+// Deletes rows 1 year or older from both the archive tab and the main tab.
+function purgeHealthData() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) { Logger.log("Another run is in progress."); return; }
+
+  try {
+    var deleteCutoff = healthMonthsAgo_(HEALTH_DELETE_AFTER_MONTHS);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheets = [getHealthMainSheet_(), ss.getSheetByName(HEALTH_ARCHIVE_SHEET_NAME)];
+    var summary = [];
+
+    sheets.forEach(function(sheet) {
+      if (!sheet || sheet.getLastRow() < 2) return;
+      var numCols = sheet.getLastColumn();
+      var header = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+      var dateCol = healthDateCol_(header);
+      var rows = getHealthBody_(sheet, numCols);
+      var kept = [], deleted = 0;
+
+      rows.forEach(function(row) {
+        var d = parseHealthDate_(row[dateCol]);
+        if (d && d <= deleteCutoff) deleted++;
+        else kept.push(row);
+      });
+
+      if (deleted > 0) rewriteHealthBody_(sheet, kept, numCols);
+      summary.push(sheet.getName() + ": deleted " + deleted + ", kept " + kept.length);
+    });
+
+    Logger.log(summary.length ? summary.join(" | ") : "Nothing to purge.");
+  } finally {
+    lock.releaseLock();
+  }
 }
 
-function stepsOf(row, header) {
-  var i = header ? header.indexOf(STEPS_HEADER) : -1;
-  var v = i >= 0 ? Number(row[i]) : NaN;
-  return isNaN(v) ? -1 : v;
+// ===== OPTIONAL ONE-TIME CLEANUP (PATCH) =====
+// Keeps the fullest row (most steps) of each day in the main and archive tabs and removes the other copies.
+// Run once by hand after a sheet backup (File > Make a copy). The Health Review app merges duplicates either way.
+function collapseHealthDuplicateDays() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) { Logger.log("Another run is in progress."); return; }
+
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var summary = [];
+    [getHealthMainSheet_(), ss.getSheetByName(HEALTH_ARCHIVE_SHEET_NAME)].forEach(function(sheet) {
+      if (!sheet || sheet.getLastRow() < 2) return;
+      var numCols = sheet.getLastColumn();
+      var header = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+      var dateCol = healthDateCol_(header);
+      var stepsCol = healthStepsCol_(header);
+      var rows = getHealthBody_(sheet, numCols);
+      var best = {}; // day -> position of its fullest row
+      rows.forEach(function(row, n) {
+        var k = healthDayKey_(row, dateCol);
+        if (k && (best[k] === undefined || healthSteps_(row, stepsCol) > healthSteps_(rows[best[k]], stepsCol))) best[k] = n;
+      });
+      var kept = rows.filter(function(row, n) {
+        var k = healthDayKey_(row, dateCol);
+        return !k || best[k] === n;
+      });
+      if (kept.length < rows.length) rewriteHealthBody_(sheet, kept, numCols);
+      summary.push(sheet.getName() + ": removed " + (rows.length - kept.length) + " duplicate rows, kept " + kept.length);
+    });
+    Logger.log(summary.join(" | "));
+  } finally {
+    lock.releaseLock();
+  }
 }
 
-/** The row padded or trimmed to the sheet's column count, so a batch write never fails on a ragged row. */
-function fit(row, width) {
-  var out = row.slice(0, width);
-  while (out.length < width) out.push("");
-  return out;
+// ===== TRIGGER SETUP =====
+// Run each once. Re-running replaces that trigger instead of stacking duplicates.
+function setupHealthArchiveTrigger() {
+  replaceHealthTrigger_("archiveHealthData", function(b) { return b.everyDays(1).atHour(3); });
+  Logger.log("Daily health archive trigger installed (about 3 AM).");
+}
+
+function setupHealthPurgeTrigger() {
+  replaceHealthTrigger_("purgeHealthData", function(b) { return b.onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(4); });
+  Logger.log("Weekly health purge trigger installed (Sundays about 4 AM).");
+}
+
+function replaceHealthTrigger_(handler, schedule) {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === handler) ScriptApp.deleteTrigger(t);
+  });
+  schedule(ScriptApp.newTrigger(handler).timeBased()).create();
 }

@@ -205,16 +205,27 @@ Apple Health and Apple Watch data reach the app through two Google Sheets. Healt
 files to a Drive folder, and v1 Apps Scripts consolidate those files into the sheets nightly. The app reads the sheets
 at 7am.
 
-**The fixed health consolidation script** is at `tools/apps-script/ConsolidateHealthMetrics.gs`. The v1 script keyed
-rows on Date/Time plus Active Energy, so a day exported partly done and again later got a second row. The fixed script
-keeps one row per day and replaces a day's row when a later export has more steps. To install it:
+**The patched health consolidation script** is at `tools/apps-script/ConsolidateHealthMetrics.gs`. It's your
+current script, with its archive (after 1 month), purge (after 1 year), locks and trigger setup unchanged. Only the
+duplicate rule changed:
+- Your script keyed rows on Date/Time plus Active Energy, so a day exported partly done and again later got a second
+  row.
+- The patched script keeps one row per day in both the main and Archive tabs, keeping the copy with more steps.
+- Consolidation now writes in batches.
+
+To install it:
 1. Back up the sheet first: File > Make a copy.
 2. Open Extensions > Apps Script on the Consolidated Apple Health Metrics sheet.
-3. Replace the script with the file's contents, and put your Health Auto Export folder ID in `FOLDER_ID`.
+3. Replace the contents of the file that holds `consolidateHealthMetrics`, `archiveHealthData` and `purgeHealthData`
+   with this file.
+   - Leave the file with your constants (`HEALTH_FOLDER_ID`, `HEALTH_MAIN_SHEET_NAME` and the rest) as it is. This
+     file uses them and doesn't redefine them.
 4. Run `consolidateHealthMetrics` once and check the log. It reports new days and days replaced by a fuller export.
-   The nightly trigger can stay as it is.
-5. Optionally, run `collapseDuplicateDays` once to remove the duplicate rows already in the sheet. The app merges
-   them correctly either way.
+   The nightly, archive and purge triggers can stay as they are.
+5. Optionally, run `collapseHealthDuplicateDays` once, to remove the duplicate rows already in the main and Archive
+   tabs. The app merges them correctly either way.
+
+Rows the purge deletes from the sheet after a year stay in the app's database, which keeps your full history.
 
 The workout sessions script needs no change: it keys rows on type, start and end, and there are no duplicates.
 
