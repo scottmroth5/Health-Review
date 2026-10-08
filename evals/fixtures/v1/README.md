@@ -7,7 +7,7 @@ What the frozen v1 scripts in `/legacy` return for synthetic inputs. They were g
 | File | v1 code | Status in v2 |
 |---|---|---|
 | `sheet-rows.json` | `getSheetData` | Row rules ported to `ingest/rows.js`. Dates are no longer flattened to `M/d/yyyy`. Phase 2 sync: the missing-tab (`No data`) and fetch-error (`Error fetching data`) cases become errors instead of text sent to the model. |
-| `consolidate-health.json`, `consolidate-workouts.json` | `Consolidate*.gs` (still running in Google) | `ingest/dedupe.js` removes v1's partial-day duplicates when syncing. Workout sessions match v1. |
+| `consolidate-health.json`, `consolidate-workouts.json` | `Consolidate*.gs` (still running in Google) | v1 kept partial-day duplicates; the import now keeps the fullest row per day (`mergeHealthDays` in `ingest/parsers.js`) and the patched script in `tools/apps-script` stops creating them. Workout sessions match v1. |
 | `prompt.json` | `loadConfig`, `buildPrompt` | Section order and `{{TODAY}}` ported to `agent/prompts.js`. Appending raw rows is dropped: v2 sends computed summaries only (Phase 5). |
 | `email.json` | `formatEmailHtml` | Email delivery is dropped. Phase 3 renders reports in the UI. v1 replaced em and en dashes with `-` and left `--`; v2 rejects all three (Phase 5 validator). |
 | `claude-call.json` | `callClaudeAPI` | Replaced by agent-core `createClaude`; the two `BUG:` cases (truncation returned as complete, only the first text block read) are tested as fixed. |

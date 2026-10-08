@@ -6,7 +6,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { repoPath } from '../tools/paths.js';
 import { rowsToRecords } from '../ingest/rows.js';
-import { latestByKey } from '../ingest/dedupe.js';
 import { assembleSections } from '../agent/prompts.js';
 
 const decode = (v) =>
@@ -61,39 +60,11 @@ test('rows: no values gives no records', () => {
   assert.deepEqual(rowsToRecords(undefined), []);
 });
 
-// ---- consolidation and dedupe ----
-const health = golden('consolidate-health');
-const workouts = golden('consolidate-workouts');
-const byDate = (r) => r.Date;
-const bySession = (r) => `${r.Type}|${r.Start}|${r.End}`;
-
-test('dedupe: FIXED v1 bug: a re-exported partial day stayed twice; the later row now wins', () => {
-  const c = health['BUG: a partial day re-exported with a different first metric is kept twice'];
-  const v1Records = rowsToRecords(c.v1.destination);
-  assert.equal(v1Records.filter((r) => r.Date === '2026-03-02 00:00:00').length, 2, 'v1 kept both rows');
-
-  const v2 = latestByKey(v1Records, byDate);
-  assert.equal(v2.length, 1);
-  assert.equal(v2[0]['Heart Rate Variability (ms)'], 48, 'the later, complete export wins');
-});
-
-for (const name of [
-  'empty destination gets the header once and rows from matching files in name order',
-  'rows whose date and first metric already exist are skipped',
-  'empty source file is skipped',
-]) {
-  test(`dedupe: health matches v1 when there are no re-exports: ${name}`, () => {
-    const records = rowsToRecords(health[name].v1.destination);
-    assert.deepEqual(latestByKey(records, byDate), records);
-  });
-}
-
-for (const [name, c] of Object.entries(workouts)) {
-  test(`dedupe: workouts match v1: ${name}`, () => {
-    const allRows = [c.files[0].values[0], ...c.destination.slice(1), ...c.files.flatMap((f) => f.values.slice(1))];
-    assert.deepEqual(latestByKey(rowsToRecords(allRows), bySession), rowsToRecords(c.v1.destination));
-  });
-}
+// ---- consolidation ----
+// v1's duplicate health days (a partial day re-exported with a different first metric) are now handled by the
+// import's mergeHealthDays, which keeps the fullest row per day (test/parsers.test.js, test/sync.test.js), and by the
+// patched consolidation script (tools/apps-script). Workout sessions are deduplicated by the workout_sessions key
+// (type, start, end) on upsert (test/sync.test.js). The consolidate-*.json goldens stay as the record of v1's behavior.
 
 // ---- prompt sections ----
 const prompt = golden('prompt');
