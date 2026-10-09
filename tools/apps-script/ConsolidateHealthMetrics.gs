@@ -67,10 +67,14 @@ function healthRowKey_(row) {
 }
 
 // PATCH: the calendar day of a row ('yyyy-MM-dd' in the spreadsheet's time zone), or null when unreadable.
+// The time zone is looked up once per run: asking the spreadsheet for every row is a slow service call, and
+// thousands of them pushed a nightly run past the 6-minute limit (Oct 9, 2026).
+var healthTimeZone_ = null;
 function healthDayKey_(row, dateCol) {
   var d = parseHealthDate_(row[dateCol]);
   if (!d) return null;
-  return Utilities.formatDate(d, SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), "yyyy-MM-dd");
+  if (!healthTimeZone_) healthTimeZone_ = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+  return Utilities.formatDate(d, healthTimeZone_, "yyyy-MM-dd");
 }
 
 // PATCH: the row's step count, or -1 when it has none (so any row with steps counts as fuller).
@@ -212,6 +216,14 @@ function consolidateHealthMetrics() {
       var stepsCol = healthStepsCol_(data[0]);
 
       for (var j = 1; j < data.length; j++) {
+        // PATCH: also check the clock inside a file, so a slow run saves its writes and pauses instead of being killed
+        // at the 6-minute limit. Re-reading this file next run is safe (rows already written are skipped or upgraded).
+        if (j % 200 === 0 && new Date().getTime() - startTime > maxRunTime) {
+          if (header) flushHealthWrites_(destination, header.length, appends, updates);
+          props.setProperty("healthProcessedIndex", i.toString());
+          Logger.log("Paused in file " + i + " of " + fileList.length + ". The next run continues from it.");
+          return;
+        }
         var row = data[j];
         var rowDate = parseHealthDate_(row[dateCol]);
         if (rowDate && rowDate < deleteCutoff) continue; // past retention, do not re-import
