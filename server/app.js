@@ -62,7 +62,8 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
 /**
  * @param {object} ctx
  * @param {{ db: import('better-sqlite3').Database }} ctx.store
- * @param {{ sync?: () => Promise<object>, claude?: () => { send: Function } }} [ctx.services]  claude: the chat's client, made on first use
+ * @param {{ sync?: () => Promise<object>, claude?: () => { send: Function }, review?: (o: { weekEnd: string, today: string }) => Promise<object> }} [ctx.services]
+ *   claude: the chat's client, made on first use; review: writes and saves one weekly review (the manual run)
  * @param {'main'|'demo'} [ctx.instance]  'demo' marks the made-up-data instance (the UI shows a banner)
  * @param {{ chat?: boolean }} [ctx.features]  chat false turns the Next program chat off (the demo instance)
  * @param {string} [ctx.publicDir]   static UI to serve; skipped when missing
@@ -73,6 +74,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const app = Fastify({ logger });
   const { db } = store;
   let syncing = false;
+  // The manual review run: one at a time, in the background; the last failure is kept as its error name only.
+  const reviewRun = { running: false, weekEnd: null, error: null };
 
   await app.register(swagger, {
     openapi: { info: { title: 'Health Review API', version: '1.0.0', description: 'Local health tracking and weekly review' } },
@@ -255,6 +258,49 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.get('/api/reviews', { schema: { summary: 'Weekly reviews, newest first', response: { 200: { type: 'array', items: anyObject } } } },
     async () => q.listReviews(db));
+
+  const reviewState = () => ({
+    ...q.reviewStatus(db, q.localDate(clock()), clock()),
+    running: reviewRun.running,
+    error: reviewRun.error,
+    canRun: typeof services.review === 'function',
+  });
+
+  app.get('/api/reviews/status', {
+    schema: { summary: "Last week's review: whether it exists, the last run, and Apple Health days missing or partial (dates only)", response: { 200: anyObject } },
+  }, async () => reviewState());
+
+  app.post('/api/reviews/run', {
+    schema: {
+      summary: "Write last week's review now (syncs first; refused while Apple Health days are missing unless force). Returns 202 and runs in the background",
+      body: { type: 'object', additionalProperties: false, properties: { force: { type: 'boolean' } } },
+      response: { 202: anyObject },
+    },
+  }, async (req, reply) => {
+    if (typeof services.review !== 'function') return reply.code(503).send({ error: 'Writing reviews is not available in this server' });
+    if (reviewRun.running) return reply.code(409).send({ error: 'A review is already being written' });
+    reviewRun.running = true;
+    reviewRun.error = null;
+    try {
+      if (services.sync && !syncing) {
+        syncing = true;
+        try { await services.sync(); } catch { /* review the data already stored, as npm run review does */ } finally { syncing = false; }
+      }
+      const status = q.reviewStatus(db, q.localDate(clock()), clock());
+      if (!status.ready && !req.body?.force) {
+        reviewRun.running = false;
+        return reply.code(409).send({ error: 'Apple Health data is incomplete for the week', missingDays: status.missingDays, partialDays: status.partialDays });
+      }
+      reviewRun.weekEnd = status.weekEnd;
+      services.review({ weekEnd: status.weekEnd, today: q.localDate(clock()) })
+        .catch((err) => { reviewRun.error = err.name === 'Error' ? 'Review failed' : err.name; })
+        .finally(() => { reviewRun.running = false; });
+      return reply.code(202).send({ started: true, weekEnd: status.weekEnd });
+    } catch (err) {
+      reviewRun.running = false;
+      throw err;
+    }
+  });
 
   // ---- sync ----
   app.post('/api/sync', { schema: { summary: 'Copy new rows from the Google Sheets now', response: { 200: anyObject } } }, async (req, reply) => {

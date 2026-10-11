@@ -3,13 +3,17 @@
 //   npm run review -- --week 2026-09-26  a specific week (ending on that Saturday)
 //   npm run review -- --dry-run          build the summary and prompt, report sizes, call nothing
 //   npm run review -- --no-sync          skip the sync first
+//   npm run review -- --force            write it even when Apple Health days are missing or partial
+// Without --force, a week with any day missing from Apple Health (or a likely partial export) is skipped: nothing is
+// sent, a 'skipped' review run is recorded with the dates, and the Reviews tab offers a manual run.
 // REVIEW_MODEL and REVIEW_EFFORT in .env override the defaults (claude-opus-5-5, high).
 import { openHealthStore } from '../db/store.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
 import { createSheetsSource } from '../ingest/sheets.js';
 import { runSync } from '../ingest/sync.js';
-import { lastWeekEnd } from '../metrics/stats.js';
-import { isValidDate, localDate } from '../server/queries.js';
+import { addDays, lastWeekEnd } from '../metrics/stats.js';
+import { isValidDate, localDate, reviewStatus } from '../server/queries.js';
+import { createTracer } from '@scottmroth5/agent-core';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { prepareReview, runReview } from '../agent/review.js';
 
@@ -18,6 +22,7 @@ const flag = (name) => args.includes(name);
 const weekArg = args.indexOf('--week');
 const today = localDate();
 const weekEnd = weekArg >= 0 ? args[weekArg + 1] : lastWeekEnd(today);
+const shortDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const model = process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL;
 const effort = process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT;
 const quiet = { info() {}, warn() {}, error() {} };
@@ -35,7 +40,16 @@ async function main() {
       }
     }
 
+    // The gate: every day of the week needs Apple Health data (dates only are printed and recorded).
+    // reviewStatus works from today's last week; for --week it is asked as of the Sunday after that week.
+    const gate = reviewStatus(store.db, weekArg >= 0 ? addDays(weekEnd, 1) : today);
+    const gaps = [
+      gate.missingDays.length ? `no Apple Health data for ${gate.missingDays.map(shortDate).join(', ')}` : '',
+      gate.partialDays.length ? `a likely partial export on ${gate.partialDays.map(shortDate).join(', ')}` : '',
+    ].filter(Boolean).join('; ');
+
     if (flag('--dry-run')) {
+      console.log(gate.ready ? 'Data gate: Apple Health data is complete for the week.' : `Data gate: ${gaps} (a scheduled run would skip).`);
       const prep = prepareReview(store.db, { weekEnd, today });
       const summaryText = JSON.stringify(prep.summary);
       console.log(`Week ending ${weekEnd} (dry run, nothing sent)`);
@@ -43,6 +57,14 @@ async function main() {
       console.log(`  sensitive sections included: ${prep.sensitiveSent.join(', ') || 'none'}`);
       console.log(`  summary: ${summaryText.length.toLocaleString()} characters, ${prep.summary.notes.length} notes`);
       console.log(`  model: ${model}, effort: ${effort}`);
+      return;
+    }
+
+    if (!gate.ready && !flag('--force')) {
+      const run = createTracer({ store, logger: quiet }).startRun('review', { weekEnd, gate: true });
+      run.finish('skipped', { weekEnd, missingDays: gate.missingDays, partialDays: gate.partialDays });
+      console.log(`Skipped the week ending ${weekEnd}: ${gaps}. Nothing was sent.`);
+      console.log('Run it from the Reviews tab once the data arrives, or: npm run review -- --force');
       return;
     }
 

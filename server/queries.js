@@ -7,9 +7,9 @@ import { loadAdvisorInput, loadDataCheckInput, loadMedications, loadPrimarySets,
 import { trainingView } from '../metrics/volume.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
 import { liftProgress } from '../metrics/plateau.js';
-import { addDays } from '../metrics/stats.js';
+import { addDays, lastWeekEnd } from '../metrics/stats.js';
 import { recommendPrograms } from '../metrics/advisor.js';
-import { dataChecks } from '../metrics/dataquality.js';
+import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
 export const BODY_FIELDS = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat'];
@@ -129,6 +129,36 @@ export function lastSync(db) {
 /** Data check warnings as of today (info findings, such as a lifting day without a watch workout, stay in the sync log). */
 export function dataCheckWarnings(db, today) {
   return dataChecks(loadDataCheckInput(db, today)).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }));
+}
+
+/** The hour on the Sunday after a review week from which a missing review counts as overdue (the task runs at 8). */
+export const REVIEW_DUE_HOUR = 9;
+
+/**
+ * Whether last week's review exists, and whether its Apple Health data is complete enough to write it: every day of
+ * the week has a row and none looks like a partial export. Shared by npm run review (the gate) and the Reviews notice.
+ * Dates only, never values.
+ * @param {Date} now  local clock, for overdue (no review, and a run was tried or it is past 9am on the Sunday after)
+ */
+export function reviewStatus(db, today, now = new Date()) {
+  const weekEnd = lastWeekEnd(today);
+  const weekFrom = addDays(weekEnd, -6);
+  const daily = db.prepare('SELECT date, steps FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(addDays(weekFrom, -28), weekEnd);
+  const { missingDays, suspectedPartialDays } = weekDataQuality(daily, weekFrom, weekEnd);
+  const hasReview = !!db.prepare('SELECT 1 FROM reviews WHERE week_ending = ?').get(weekEnd);
+  const run = db.prepare(`SELECT status, started_at, finished_at, summary FROM runs
+    WHERE name = 'review' AND json_extract(meta, '$.weekEnd') = ? ORDER BY id DESC LIMIT 1`).get(weekEnd);
+  const lastRun = run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
+  const due = today > addDays(weekEnd, 1) || now.getHours() >= REVIEW_DUE_HOUR;
+  return {
+    weekEnd,
+    hasReview,
+    lastRun,
+    missingDays,
+    partialDays: suspectedPartialDays,
+    ready: !missingDays.length && !suspectedPartialDays.length,
+    overdue: !hasReview && (!!lastRun || due),
+  };
 }
 
 // ---- settings ----

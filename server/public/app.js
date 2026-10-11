@@ -269,6 +269,7 @@ async function loadStatus() {
   $('#day').max = s.today;
   if (!$('#day').value) $('#day').value = s.today;
   renderDataChecks(s.dataChecks);
+  loadReviewNotice();
   // The demo instance (npm run demo): a banner, no sync, and no privacy toggle (there is nothing real to hide).
   const demoInstance = s.instance === 'demo';
   $('#instance-banner').hidden = !demoInstance;
@@ -1182,6 +1183,68 @@ async function loadTraining(view = trainingViewChoice()) {
 }
 
 // ---------------- reviews ----------------
+
+// The notice when last week's review is missing (the Sunday run skipped for missing Apple Health days, failed, or did
+// not run), with a manual run. Shown on the Today and Reviews tabs; hidden in the demo (no review service).
+const reviewNotice = { timer: null };
+const fmtDay = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const dayList = (dates) => dates.map(fmtDay).join(', ');
+
+async function loadReviewNotice() {
+  clearTimeout(reviewNotice.timer);
+  let s;
+  try {
+    s = await api('GET', '/api/reviews/status');
+  } catch {
+    return;
+  }
+  const show = s.canRun && (s.running || (s.overdue && !s.hasReview));
+  for (const node of document.querySelectorAll('[data-review-notice]')) {
+    node.hidden = !show;
+    if (show) fill(node, reviewNoticeContent(s));
+  }
+  if (s.running) {
+    reviewNotice.timer = setTimeout(loadReviewNotice, 5000);
+  } else if (reviewNotice.wasRunning) {
+    reviewNotice.wasRunning = false;
+    if (location.hash === '#reviews') loadReviews();
+  }
+}
+
+function reviewNoticeContent(s) {
+  const week = `the week ending ${fmtDay(s.weekEnd)}`;
+  const gaps = [
+    s.missingDays.length ? `no Apple Health data for ${dayList(s.missingDays)}` : '',
+    s.partialDays.length ? `a likely partial export on ${dayList(s.partialDays)}` : '',
+  ].filter(Boolean).join('; ');
+  if (s.running) return [h('p', {}, `Writing the review for ${week}… This takes 1 to 3 minutes.`)];
+  const run = s.lastRun;
+  const why = s.error ? `The manual run failed (${s.error}).`
+    : run?.status === 'skipped' ? (s.ready ? 'The Sunday run was skipped because Apple Health data was missing; it has arrived now.' : `The Sunday run was skipped: ${gaps}.`)
+    : run?.status === 'error' ? 'The last run failed. The review log on the Activity tab has the details.'
+    : 'The weekly run has not written it.';
+  const button = h('button', { type: 'button' }, s.ready ? 'Run review now' : 'Run anyway');
+  const status = h('span', { class: 'status', role: 'status' });
+  button.addEventListener('click', async () => {
+    if (!s.ready && !confirm(`Apple Health data is incomplete (${gaps}). Write the review anyway? Those days will be treated as incomplete.`)) return;
+    button.disabled = true;
+    setStatus(status, 'Syncing, then starting…');
+    try {
+      await api('POST', '/api/reviews/run', { force: !s.ready });
+      reviewNotice.wasRunning = true;
+      loadReviewNotice();
+    } catch (err) {
+      setStatus(status, err.message, 'error');
+      button.disabled = false;
+    }
+  });
+  return [
+    h('p', {}, h('span', { 'aria-hidden': 'true' }, '⚠ '), `No review for ${week}. ${why}`),
+    s.ready || run?.status === 'skipped' ? null : h('p', { class: 'muted small' }, `Still incomplete: ${gaps}.`),
+    h('div', { class: 'actions' }, button, h('span', { class: 'muted small' }, "About $0.35 and 1 to 3 minutes; sends the week's summary to Claude."), status),
+  ];
+}
+
 function renderMarkdown(md, into) {
   // Minimal, safe subset: ## headings, - bullets, **bold**, paragraphs. Text only via textContent.
   const inline = (parent, text) => {
@@ -1215,6 +1278,7 @@ function renderMarkdown(md, into) {
 }
 
 async function loadReviews() {
+  loadReviewNotice();
   const reviews = await api('GET', '/api/reviews');
   const container = $('#reviews');
   container.replaceChildren();
@@ -1385,7 +1449,7 @@ function initPrompt() {
 // ---------------- activity ----------------
 const RUN_LABELS = { sync: 'Sync', review: 'Weekly review', 'review-eval': 'Review eval', backup: 'Encrypted backup' };
 const runLabel = (name) => RUN_LABELS[name] ?? name;
-const RUN_STATUS = { running: 'running', ok: 'finished', error: 'failed', failed: 'failed' };
+const RUN_STATUS = { running: 'running', ok: 'finished', error: 'failed', failed: 'failed', skipped: 'skipped (Apple Health data missing)' };
 const when = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
 const seconds = (ms) => (ms == null ? '' : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60000)} min`);
 const usd = (v) => (v ? `$${v.toFixed(4)}` : '');

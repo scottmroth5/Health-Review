@@ -6,7 +6,8 @@ import { repoPath } from '../tools/paths.js';
 import { createSheetsSource } from '../ingest/sheets.js';
 import { runSync } from '../ingest/sync.js';
 import { buildApp } from './app.js';
-import { createReviewClaude } from '../agent/claude.js';
+import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
+import { runReview } from '../agent/review.js';
 import { assertSafeBinding } from './auth.js';
 
 const demo = process.env.HEALTH_INSTANCE === 'demo';
@@ -31,10 +32,16 @@ if (demo) {
   });
 } else {
   store = openHealthStore();
+  // The Claude client for the Next program chat and the manual review run, made on first use (needs ANTHROPIC_API_KEY in .env).
+  const claude = (() => { let c; return () => (c ??= createReviewClaude()); })();
   const services = {
     sync: () => runSync({ store, source: createSheetsSource(getGoogleAuth()), logger: quiet }),
-    // The Next program chat's client, made on first use (needs ANTHROPIC_API_KEY in .env).
-    claude: (() => { let c; return () => (c ??= createReviewClaude()); })(),
+    claude,
+    // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.
+    review: ({ weekEnd, today }) => runReview({
+      store, claude: claude(), weekEnd, today, logger: quiet,
+      model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
+    }),
   };
   app = await buildApp({ store, services, publicDir: repoPath('server', 'public'), authMode });
 }

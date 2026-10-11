@@ -244,6 +244,12 @@ sync log (Activity tab). The checks look for:
 
 The weekly review gets the week's missing and partial days, so it doesn't read them as bad days.
 
+**The Sunday review waits for complete data.** If any day of the review week (Sunday to Saturday) has no Apple Health
+data, or looks like a partial export, the scheduled run skips the review. It sends nothing and records a *skipped*
+run with the dates (Activity tab). From 9am on Sunday, while last week has no review, the Today and Reviews tabs say
+why and offer **Run review now**, which syncs first. While days are still missing the button reads **Run anyway** and
+asks first. From the command line, `npm run review -- --force` writes it anyway, and `-- --dry-run` shows the check.
+
 ## Demo instance
 
 To show the app without your data, run a second, separate instance with made-up data:

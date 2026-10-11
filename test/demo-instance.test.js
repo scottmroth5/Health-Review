@@ -47,6 +47,8 @@ test('demo instance: reports itself, refuses sync and chat, reads its own logs, 
   assert.ok(status.dataChecks.length >= 1, 'the planted gap or partial day shows');
   assert.equal((await app.inject({ method: 'POST', url: '/api/sync' })).statusCode, 503);
   assert.equal((await app.inject('/api/advisor/chat')).json().enabled, false);
+  assert.equal((await app.inject('/api/reviews/status')).json().canRun, false);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/reviews/run', payload: {} })).statusCode, 503);
   assert.equal((await app.inject({ method: 'POST', url: '/api/advisor/chat', payload: { text: 'hi' } })).statusCode, 503);
   assert.deepEqual((await app.inject('/api/logs/sync')).json().lines, [], 'never the main instance logs');
   const advisor = (await app.inject('/api/advisor')).json();

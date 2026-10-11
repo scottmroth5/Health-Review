@@ -76,7 +76,8 @@ npm run evals                     free: metric fixtures, then a summary of saved
 npm run evals -- --regrade v1     free: re-apply the current checks to a variant's saved drafts
 npm run evals -- --live [--variant v2] [--cases a,b]   paid: run the review contract eval (about $0.35 per case)
 npm run review                    sync, then write the weekly review for the week ending last Saturday (-- --week YYYY-MM-DD,
-                                  -- --dry-run to build and size the prompt without calling Claude, -- --no-sync)
+                                  -- --dry-run to build and size the prompt without calling Claude, -- --no-sync,
+                                  -- --force to write it although Apple Health days are missing or partial)
 Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
 GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
@@ -191,6 +192,11 @@ medication names, lab values (a lab name with a number next to it) and symptom w
 at most 3,000 words (the owner's rules ask for under 2,000; the margin avoids paying for a retry over small overruns). Failed checks get one retry listing the problems; dashes left after that are
 replaced in code, and anything else is saved with the report as warnings. Runs record metadata only, including the names
 of sensitive sections sent; prompt and report text never go to logs or run records.
+Data gate (reviewStatus in server/queries.js, weekDataQuality underneath): without --force, a week with any day missing
+from daily_metrics or a likely partial export is skipped, recorded as a 'skipped' review run with the dates, and nothing is
+sent. GET /api/reviews/status (overdue: no review and a run was tried or it is past 9am on the Sunday after) drives a notice
+on the Today and Reviews tabs; POST /api/reviews/run syncs, applies the same gate (force to override), and writes the review
+in the background through services.review (main instance only; never in the demo). A failed manual run keeps its error name only.
 
 ## Eval
 The review contract eval runs the real pipeline on 13 cases (9 real weeks read from data/health.db by date, 4 synthetic
