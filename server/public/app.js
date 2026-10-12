@@ -51,9 +51,15 @@ function setupDemo() {
 
 // ---------------- routing ----------------
 const VIEWS = ['today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity'];
+let currentView = null;
 function route() {
   if (location.hash === '#history') return location.replace('#health'); // the old name of the Health tab
-  const view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'today';
+  // A view can carry a detail after a slash (#reviews/2026-10-03 picks a past review).
+  const name = location.hash.slice(1).split('/')[0];
+  const view = VIEWS.includes(name) ? name : 'today';
+  // Choosing another week on the Reviews tab re-renders from the reviews already loaded.
+  if (view === 'reviews' && currentView === 'reviews' && reviewsView.list) return renderReviews();
+  currentView = view;
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
   $$('.top nav a').forEach((a) => (a.getAttribute('href') === `#${view}` ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   ({ today: loadDay, training: loadTrainingTab, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
@@ -1207,7 +1213,7 @@ async function loadReviewNotice() {
     reviewNotice.timer = setTimeout(loadReviewNotice, 5000);
   } else if (reviewNotice.wasRunning) {
     reviewNotice.wasRunning = false;
-    if (location.hash === '#reviews') loadReviews();
+    if (location.hash.startsWith('#reviews')) loadReviews();
   }
 }
 
@@ -1277,32 +1283,66 @@ function renderMarkdown(md, into) {
   }
 }
 
+// One review at a time: the latest by default, or the week in the address (#reviews/2026-10-03), with every week
+// listed to choose from (a side column on wide screens, a collapsed list on a phone).
+const reviewsView = { list: null };
+window.matchMedia('(max-width: 720px)').addEventListener('change', () => {
+  if (currentView === 'reviews' && reviewsView.list) renderReviews();
+});
+
 async function loadReviews() {
   loadReviewNotice();
-  const reviews = await api('GET', '/api/reviews');
+  reviewsView.list = await api('GET', '/api/reviews');
+  renderReviews();
+}
+
+function renderReviews() {
+  const reviews = reviewsView.list;
   const container = $('#reviews');
-  container.replaceChildren();
   if (!reviews.length) {
-    const p = document.createElement('p');
-    p.className = 'empty-state';
-    p.textContent = 'No weekly reviews yet.';
-    container.append(p);
+    fill(container, h('p', { class: 'empty-state' }, 'No weekly reviews yet.'));
     return;
   }
-  for (const r of reviews) {
-    const card = document.createElement('article');
-    card.className = 'card review';
-    card.append(h('h2', {}, `Week ending ${niceDate(r.week_ending)}`),
-      h('p', { class: 'meta' }, `Generated ${new Date(r.created_at).toLocaleString()}${r.model ? ` by ${r.model}` : ''}`));
-    if (r.warnings.length) {
-      card.append(h('div', { class: 'review-warnings' },
-        h('strong', {}, 'Checks that still failed after a retry:'),
-        h('ul', {}, r.warnings.map((w) => h('li', {}, w)))));
-    }
-    renderMarkdown(state.demo ? redactReview(r.report_md) : r.report_md, card);
-    card.append(h('p', { class: 'meta' }, 'An analytical aid, not medical advice. Discuss medications, lab results and symptoms with your physician.'));
-    container.append(card);
+  const asked = location.hash.split('/')[1];
+  const r = reviews.find((x) => x.week_ending === asked) ?? reviews[0];
+  const latest = r === reviews[0];
+
+  const items = reviews.map((x, i) => {
+    const current = x === r;
+    const button = h('button', { type: 'button', class: 'review-pick', 'aria-current': current ? 'true' : null },
+      h('span', { 'aria-hidden': 'true', class: 'check' }, current ? '✓' : ''),
+      h('span', { class: 'label' }, niceDate(x.week_ending), i === 0 ? h('span', { class: 'muted small' }, ' (latest)') : null));
+    button.addEventListener('click', () => {
+      location.hash = i === 0 ? '#reviews' : `#reviews/${x.week_ending}`;
+    });
+    return h('li', {}, button);
+  });
+  const list = h('ul', { class: 'review-picks' }, items);
+  const nav = h('nav', { class: 'review-list card', 'aria-label': 'Weekly reviews' },
+    h('details', { class: 'review-list-phone' }, h('summary', {}, `All reviews (${reviews.length}), by week ending`)),
+    h('h2', { class: 'review-list-title' }, 'Weeks ending'),
+    list);
+  // On a phone the list sits inside the collapsed details; on wide screens CSS shows it as a column.
+  const phone = window.matchMedia('(max-width: 720px)').matches;
+  if (phone) nav.querySelector('details').append(list);
+
+  const card = h('article', { class: 'card review' });
+  if (!latest) {
+    const back = h('a', { href: '#reviews', class: 'small' }, 'Back to latest');
+    card.append(h('p', { class: 'meta' }, 'An earlier week. ', back));
   }
+  card.append(h('h2', {}, `Week ending ${niceDate(r.week_ending)}`),
+    h('p', { class: 'meta' }, `Generated ${new Date(r.created_at).toLocaleString()}${r.model ? ` by ${r.model}` : ''}`));
+  if (r.warnings.length) {
+    card.append(h('div', { class: 'review-warnings' },
+      h('strong', {}, 'Checks that still failed after a retry:'),
+      h('ul', {}, r.warnings.map((w) => h('li', {}, w)))));
+  }
+  renderMarkdown(state.demo ? redactReview(r.report_md) : r.report_md, card);
+  card.append(h('p', { class: 'meta' }, 'An analytical aid, not medical advice. Discuss medications, lab results and symptoms with your physician.'));
+
+  fill(container, h('div', { class: 'review-layout' }, nav, card));
+  if (phone && asked) card.scrollIntoView({ block: 'start' });
 }
 
 // ---------------- prompt admin ----------------
