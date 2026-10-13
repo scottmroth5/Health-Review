@@ -4,6 +4,8 @@
 //   npm run review -- --dry-run          build the summary and prompt, report sizes, call nothing
 //   npm run review -- --no-sync          skip the sync first
 //   npm run review -- --force            write it even when Apple Health days are missing or partial
+//   npm run review -- --scheduled        the scheduled task (Sunday, with Monday and Tuesday catch-ups): do nothing
+//                                        when the week's review already exists
 // Without --force, a week with any day missing from Apple Health (or a likely partial export) is skipped: nothing is
 // sent, a 'skipped' review run is recorded with the dates, and the Reviews tab offers a manual run.
 // REVIEW_MODEL and REVIEW_EFFORT in .env override the defaults (claude-opus-5-5, high).
@@ -31,6 +33,11 @@ async function main() {
   if (!isValidDate(weekEnd)) throw new Error(`Not a date: ${weekEnd}. Use --week YYYY-MM-DD.`);
   const store = openHealthStore();
   try {
+    // A catch-up run after Sunday's review was written: no sync, no call, no run recorded.
+    if (flag('--scheduled') && store.db.prepare('SELECT 1 FROM reviews WHERE week_ending = ?').get(weekEnd)) {
+      console.log(`Already written for the week ending ${weekEnd}; nothing to do.`);
+      return;
+    }
     if (!flag('--no-sync') && !flag('--dry-run')) {
       try {
         await runSync({ store, source: createSheetsSource(getGoogleAuth()), logger: quiet });

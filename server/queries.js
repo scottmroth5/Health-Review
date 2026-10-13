@@ -238,7 +238,12 @@ export function reviewStatus(db, today, now = new Date()) {
   const weekFrom = addDays(weekEnd, -6);
   const daily = db.prepare('SELECT date, steps FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(addDays(weekFrom, -28), weekEnd);
   const { missingDays, suspectedPartialDays } = weekDataQuality(daily, weekFrom, weekEnd);
-  const hasReview = !!db.prepare('SELECT 1 FROM reviews WHERE week_ending = ?').get(weekEnd);
+  const saved = db.prepare('SELECT summary_json FROM reviews WHERE week_ending = ?').get(weekEnd);
+  const hasReview = !!saved;
+  // The saved summary carries dataQuality only when the review was written with missing or partial days.
+  let gaps = null;
+  try { gaps = saved ? JSON.parse(saved.summary_json).dataQuality ?? null : null; } catch { gaps = null; }
+  const writtenWithGaps = gaps ? { missingDays: gaps.missingDays ?? [], partialDays: gaps.suspectedPartialDays ?? [] } : null;
   const run = db.prepare(`SELECT status, started_at, finished_at, summary FROM runs
     WHERE name = 'review' AND json_extract(meta, '$.weekEnd') = ? ORDER BY id DESC LIMIT 1`).get(weekEnd);
   const lastRun = run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
@@ -251,6 +256,9 @@ export function reviewStatus(db, today, now = new Date()) {
     partialDays: suspectedPartialDays,
     ready: !missingDays.length && !suspectedPartialDays.length,
     overdue: !hasReview && (!!lastRun || due),
+    writtenWithGaps,
+    // Written while days were missing or partial, and the week is complete now: offer to write it again.
+    rewriteAvailable: !!writtenWithGaps && !missingDays.length && !suspectedPartialDays.length,
   };
 }
 

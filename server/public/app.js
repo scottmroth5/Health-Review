@@ -1379,7 +1379,7 @@ async function loadReviewNotice() {
   } catch {
     return;
   }
-  const show = s.canRun && (s.running || (s.overdue && !s.hasReview));
+  const show = s.canRun && (s.running || (s.overdue && !s.hasReview) || s.rewriteAvailable);
   for (const node of document.querySelectorAll('[data-review-notice]')) {
     node.hidden = !show;
     if (show) fill(node, reviewNoticeContent(s));
@@ -1399,6 +1399,7 @@ function reviewNoticeContent(s) {
     s.partialDays.length ? `a likely partial export on ${dayList(s.partialDays)}` : '',
   ].filter(Boolean).join('; ');
   if (s.running) return [h('p', {}, `Writing the review for ${week}… This takes 1 to 3 minutes.`)];
+  if (s.rewriteAvailable) return rewriteNotice(s, week);
   const run = s.lastRun;
   const why = s.error ? `The manual run failed (${s.error}).`
     : run?.status === 'skipped' ? (s.ready ? 'The Sunday run was skipped because Apple Health data was missing; it has arrived now.' : `The Sunday run was skipped: ${gaps}.`)
@@ -1423,6 +1424,33 @@ function reviewNoticeContent(s) {
     h('p', {}, h('span', { 'aria-hidden': 'true' }, '⚠ '), `No review for ${week}. ${why}`),
     s.ready || run?.status === 'skipped' ? null : h('p', { class: 'muted small' }, `Still incomplete: ${gaps}.`),
     h('div', { class: 'actions' }, button, h('span', { class: 'muted small' }, "About $0.35 and 1 to 3 minutes; sends the week's summary to Claude."), status),
+  ];
+}
+
+/** The review exists but was written while days were missing or partial, and the week is complete now. */
+function rewriteNotice(s, week) {
+  const w = s.writtenWithGaps;
+  const was = [
+    w.missingDays.length ? `Apple Health data for ${dayList(w.missingDays)} was missing` : '',
+    w.partialDays.length ? `${dayList(w.partialDays)} looked like a partial export` : '',
+  ].filter(Boolean).join(' and ');
+  const button = h('button', { type: 'button' }, 'Rewrite with the full week');
+  const status = h('span', { class: 'status', role: 'status' });
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    setStatus(status, 'Syncing, then starting…');
+    try {
+      await api('POST', '/api/reviews/run', {});
+      reviewNotice.wasRunning = true;
+      loadReviewNotice();
+    } catch (err) {
+      setStatus(status, err.message, 'error');
+      button.disabled = false;
+    }
+  });
+  return [
+    h('p', {}, h('span', { 'aria-hidden': 'true' }, 'ⓘ '), `The review for ${week} was written while ${was}. The full week has arrived now.`),
+    h('div', { class: 'actions' }, button, h('span', { class: 'muted small' }, "About $0.35 and 1 to 3 minutes; replaces the current review for that week."), status),
   ];
 }
 

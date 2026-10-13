@@ -50,7 +50,7 @@ npm run sync                      copy the Sheets into data/health.db (prints co
 npm run sync -- --backfill        one-time full import, including the v1 drinking log and weekly check-ins
 powershell -ExecutionPolicy Bypass -File scripts\register-sync-task.ps1   (re)register the daily 7am sync task
                                   ("Health-Review daily sync"; runs scripts\sync-daily.cmd, logs to data\logs\sync.log)
-powershell -ExecutionPolicy Bypass -File scripts\register-review-task.ps1   (re)register the Sunday 8am review task
+powershell -ExecutionPolicy Bypass -File scripts\register-review-task.ps1   (re)register the review task: Sunday 8am, catch-ups Monday and Tuesday
                                   ("Health-Review weekly review"; runs scripts\review-weekly.cmd, logs to data\logs\review.log)
 npm run log:normalize             apply config/exercise-dictionary.json to all Workout Log history (prints coverage)
 npm run log:unmapped              names with no dictionary entry, with set counts (-- --suggest asks Claude, names only;
@@ -59,6 +59,8 @@ npm run programs:detect           propose program blocks from history (-- --writ
 npm run programs:review -- list   confirm, edit, merge, split blocks and unassign days (see README.md)
 npm run programs:catalog          validate data/maps/programs.json and print each program's weeks and phases
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
+npm run server:restart            stop the server (task and its node process) and start the task again; run after code changes
+npm run server:stop               stop it (ending the task alone leaves node running; stop-server.ps1 stops the process too)
 npm run demo                      the demo instance on http://localhost:5189: data/demo/demo.db only (built when missing),
                                   no .env, no sync, review or chat (server/demo.js sets HEALTH_INSTANCE=demo)
 npm run demo:build                rebuild data/demo/demo.db from demo/generate.js (also the demo's reset)
@@ -211,6 +213,11 @@ from daily_metrics or a likely partial export is skipped, recorded as a 'skipped
 sent. GET /api/reviews/status (overdue: no review and a run was tried or it is past 9am on the Sunday after) drives a notice
 on the Today and Reviews tabs; POST /api/reviews/run syncs, applies the same gate (force to override), and writes the review
 in the background through services.review (main instance only; never in the demo). A failed manual run keeps its error name only.
+The task passes --scheduled: a Monday or Tuesday catch-up does nothing once the week's review exists. A review whose saved
+summary has dataQuality (written with gaps) gets rewriteAvailable once the week is complete; the notice offers Rewrite with
+the full week (POST /api/reviews/run overwrites the week's review); nothing rewrites automatically.
+server-start.cmd runs stop-server.ps1 -KeepTask first, so starting the task replaces a leftover server (it holds port 5188
+and server.log open).
 
 ## Eval
 The review contract eval runs the real pipeline on 13 cases (9 real weeks read from data/health.db by date, 4 synthetic

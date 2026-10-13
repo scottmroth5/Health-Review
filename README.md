@@ -280,6 +280,18 @@ run with the dates (Activity tab). From 9am on Sunday, while last week has no re
 why and offer **Run review now**, which syncs first. While days are still missing the button reads **Run anyway** and
 asks first. From the command line, `npm run review -- --force` writes it anyway, and `-- --dry-run` shows the check.
 
+**Catch-up runs.** The scheduled task also runs Monday and Tuesday at 8am. Once the week's review exists those runs do
+nothing (no sync, no cost); otherwise they try again, so a week skipped on Sunday for a late Apple Health export is
+usually written by Monday. Re-run `scripts\register-review-task.ps1` after updating to pick up the extra days.
+
+**Rewrite with the full week.** If a review was written while days were missing or partial (with Run anyway, or
+`--force`) and those days arrive later, the Today and Reviews tabs offer **Rewrite with the full week** (about $0.35).
+It replaces that week's review. Nothing rewrites a review automatically.
+
+**Restarting the server.** `npm run server:restart` stops the running server and starts the "Health-Review server"
+task again, then waits for it to answer; run it after updating the code. `npm run server:stop` stops it. Ending the
+task in Task Scheduler alone leaves the server running, because Windows does not stop the node process it started.
+
 **What it costs:** the Activity tab's Claude API spend card shows this month, this year and all time, plus the last 12
 months and each year split into reviews, the Next program chat and evals. Reviews and chat come from the recorded runs;
 evals are priced from their saved token counts and dated by when each variant last ran. These are estimates at list

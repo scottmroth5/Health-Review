@@ -65,6 +65,27 @@ test('reviewStatus: overdue only from 9am on the Sunday after, or once a run was
   s.close();
 });
 
+test('reviewStatus: a review written with a missing day is offered for a rewrite once the day arrives', () => {
+  const s = store();
+  fillDays(s.db, { skip: ['2026-03-07'] });
+  const save = s.db.prepare("INSERT OR REPLACE INTO reviews (week_ending, summary_json, report_md, created_at) VALUES (?, ?, 'x', 'x')");
+  save.run(WEEK_END, JSON.stringify({ dataQuality: { missingDays: ['2026-03-07'], suspectedPartialDays: [] } }));
+  let r = reviewStatus(s.db, '2026-03-09', MONDAY);
+  assert.deepEqual(r.writtenWithGaps, { missingDays: ['2026-03-07'], partialDays: [] });
+  assert.equal(r.rewriteAvailable, false); // still missing
+  assert.equal(r.overdue, false);
+
+  s.db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES ('2026-03-07', 8000, 'x')").run();
+  r = reviewStatus(s.db, '2026-03-09', MONDAY);
+  assert.equal(r.rewriteAvailable, true);
+
+  save.run(WEEK_END, JSON.stringify({ week: {} })); // rewritten with the full week: no dataQuality
+  r = reviewStatus(s.db, '2026-03-09', MONDAY);
+  assert.equal(r.writtenWithGaps, null);
+  assert.equal(r.rewriteAvailable, false);
+  s.close();
+});
+
 test('reviewStatus: a run for another week is not this week\'s run', () => {
   const s = store();
   fillDays(s.db);
