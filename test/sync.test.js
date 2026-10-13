@@ -13,7 +13,8 @@ const CHECKIN = ['Week Ending (Saturday) ', 'Morning Readiness (1-10)', 'Avg Ene
 const day = (d, hrv, rhr, steps) => [serial(d, 3), hrv, rhr, steps];
 const NOW = new Date(2026, 2, 9, 7, 0); // local 2026-03-09
 // The sparse fake sheets trip the post-sync data checks (their own tests are below); most tests look at import warnings only.
-const importWarnings = (warnings) => warnings.filter((w) => w.source !== 'data_check');
+// Data checks and the exercise-name typo count run after every import; tests of the import itself leave them out.
+const importWarnings = (warnings) => warnings.filter((w) => w.source !== 'data_check' && w.source !== 'exercise_names');
 
 function sheets() {
   return {
@@ -326,5 +327,18 @@ test('a renamed first tab duplicates nothing and replaces the old sync state', a
   assert.equal(count(store, 'workout_sessions'), sessionsBefore);
   assert.deepEqual(store.db.prepare("SELECT tab FROM sync_state WHERE source IN ('health_metrics', 'workout_sessions') ORDER BY source").all().map((r) => r.tab),
     ['Consolidated Health', 'Consolidated Sessions']);
+  store.close();
+});
+
+test('after a sync, an info line counts exercise names that look like typos (npm run log:typos)', async () => {
+  const { createDictionary } = await import('../metrics/dictionary.js');
+  const dictionary = createDictionary({ version: 1, exercises: [
+    { id: 'single-arm-row', name: 'Single-Arm Row', implement: 'dumbbell', pattern: 'horizontal pull', primary: false },
+    { id: 'sing-arm-row', name: 'Sing-Arm Row', implement: 'dumbbell', pattern: 'horizontal pull', primary: false },
+  ] });
+  const store = open();
+  const { warnings } = await sync(store, fakeSource(sheets()), { dictionary });
+  const line = warnings.find((w) => w.source === 'exercise_names');
+  assert.deepEqual([line.detail, line.severity], ['1 exercise name looks like a typo; see npm run log:typos', 'info']);
   store.close();
 });

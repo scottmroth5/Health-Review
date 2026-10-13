@@ -8,7 +8,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { openHealthStore } from '../db/store.js';
-import { unmappedNames } from '../ingest/normalize.js';
+import { canonicalSetCounts, unmappedNames } from '../ingest/normalize.js';
+import { typoCandidates } from '../metrics/name-typos.js';
 import { DICTIONARY_PATH, createDictionary, loadDictionary } from '../metrics/dictionary.js';
 import { applySuggestions, suggestMappings, SUGGEST_MODEL } from '../agent/suggest-exercises.js';
 import { createReviewClaude } from '../agent/claude.js';
@@ -32,8 +33,11 @@ if (process.argv.includes('--accept')) {
 
 const store = openHealthStore();
 let groups;
+let typos = 0;
 try {
   groups = unmappedNames(store.db);
+  const found = typoCandidates({ dictionary: JSON.parse(readFileSync(DICTIONARY_PATH, 'utf8')), unmapped: groups, setCounts: canonicalSetCounts(store.db) });
+  typos = found.entries.length + found.unmapped.length;
 } finally {
   store.close();
 }
@@ -51,6 +55,8 @@ if (!process.argv.includes('--suggest')) {
     const status = g.status === 'inferred' ? `inferred ${g.implement}` : g.status;
     console.log(`${String(g.sets).padStart(5)} sets  ${years}  [${status}]  ${g.spellings.join(' | ')}`);
   }
+  if (typos) console.log(`
+${typos === 1 ? '1 name looks like a typo' : `${typos} names look like typos`} of a dictionary exercise; see npm run log:typos.`);
   process.exit(0);
 }
 

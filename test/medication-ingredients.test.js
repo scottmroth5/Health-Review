@@ -132,3 +132,23 @@ test('combine: refuses a name used by another item, fewer than two items, and an
   assert.equal((await app.inject('/api/medications')).json().length, 3);
   await done();
 });
+
+test('check-offs by week: current items only, this week so far last, weeks bounded', async () => {
+  const { app, done } = await setup(); // today is Monday 2026-03-09
+  const a = await add(app, { name: 'Alpha', kind: 'supplement', timings: ['morning'], dose: '1 cap', started_on: '2026-02-01' });
+  const b = await add(app, { name: 'Beta', kind: 'supplement', timings: ['morning'], dose: '1 cap', started_on: '2026-02-01' });
+  await post(app, `/api/medications/${b.id}/stop`, { stopped_on: '2026-03-01' });
+  const put = (date, taken) => app.inject({ method: 'PUT', url: `/api/doses/${date}`, payload: { doses: [{ medication_id: a.id, timing: 'morning', taken }] } });
+  await put('2026-03-06', true);
+  await put('2026-03-07', false);
+  await put('2026-03-09', true);
+
+  const r = (await app.inject('/api/medications/checkoffs?weeks=4')).json();
+  assert.deepEqual(r.weekEnds, ['2026-02-21', '2026-02-28', '2026-03-07', '2026-03-14']);
+  assert.deepEqual(r.items.map((i) => i.name), ['Alpha']);
+  assert.deepEqual(r.items[0].weeks.map((w) => [w.taken, w.logged]), [[0, 0], [0, 0], [1, 2], [1, 1]]);
+  assert.equal((await app.inject('/api/medications/checkoffs')).json().weekEnds.length, 12);
+  assert.equal((await app.inject('/api/medications/checkoffs?weeks=3')).statusCode, 400);
+  assert.equal((await app.inject('/api/medications/checkoffs?weeks=53')).statusCode, 400);
+  await done();
+});

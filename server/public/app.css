@@ -179,6 +179,16 @@ fieldset.regimen .opts label:has(input:checked), fieldset.combine-picks .opts la
 .ingredient-row input { margin: 0; }
 .ingredients { display: grid; gap: 6px; justify-items: start; }
 .combine-preview ul { margin: 4px 0; padding-left: 20px; }
+/* Meds tab: weekly check-off bars (height = share taken; an outlined box = not logged) */
+.checkoffs { margin: 6px 0; }
+.checkoff-bars { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; height: 28px; max-width: 320px; align-items: end; }
+.checkoff-bar { position: relative; height: 100%; border-radius: 3px; background: var(--series-1-wash); overflow: hidden; }
+.checkoff-bar .fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--series-1); border-radius: 3px 3px 0 0; min-height: 2px; }
+.checkoff-bar.unlogged { background: none; border: 1px dashed var(--muted); }
+.checkoff-table summary { cursor: pointer; font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px; }
+.checkoff-table table { border-collapse: collapse; font-size: 0.85rem; margin-top: 4px; }
+.checkoff-table th, .checkoff-table td { padding: 2px 10px 2px 0; text-align: left; border-bottom: 1px solid var(--grid); }
+
 /* Today tab: an item's ingredients on their own line under its name */
 .dose .ingredients-line { display: block; font-size: 0.85rem; }
 label.check { display: flex; align-items: center; gap: 8px; }

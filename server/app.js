@@ -468,6 +468,14 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     return reply.code(204).send();
   });
 
+  app.get('/api/medications/checkoffs', {
+    schema: {
+      summary: 'Daily check-offs by week for each current item: taken out of logged slots, weeks ending Saturday (the last is this week so far); a week with nothing logged has logged 0',
+      querystring: { type: 'object', additionalProperties: false, properties: { weeks: { type: 'integer', minimum: 4, maximum: 52, default: 12 } } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.medicationCheckoffs(db, q.localDate(clock()), req.query.weeks));
+
   app.get('/api/medications/impact', {
     schema: { summary: 'Each start, change and stop with before and after averages (observational, not cause)', response: medList },
   }, async () => q.medicationImpact(db, q.localDate(clock())));

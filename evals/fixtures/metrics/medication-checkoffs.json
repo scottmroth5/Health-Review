@@ -1,0 +1,48 @@
+{
+  "kind": "medication-checkoffs",
+  "description": "Weekly check-offs for the Meds tab: weeks ending Saturday with the current week so far, taken out of logged slots, an unlogged week, an item with two slots a day, rows outside the window left out",
+  "notes": [
+    "Today is Wednesday 2026-03-11, so the current week ends Saturday 03-14; 4 weeks end 02-21, 02-28, 03-07, 03-14 and the window starts Sunday 02-15.",
+    "Item 1 (one slot): 02-14 is before the window (left out). Week to 02-21: 02-16 taken, 02-17 taken, 02-18 skipped = 2 of 3. Week to 02-28: nothing saved = 0 of 0 (not logged). Week to 03-07: 03-01 to 03-07 all taken = 7 of 7. Week to 03-14: 03-08 taken, 03-09 skipped = 1 of 2; 03-12 is after today (left out).",
+    "Item 2 (morning and before bed): 03-02 morning taken, before bed skipped; 03-03 both taken = 3 of 4 in the week to 03-07; other weeks 0 of 0."
+  ],
+  "today": "2026-03-11",
+  "weeks": 4,
+  "doses": [
+    { "date": "2026-02-14", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-02-16", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-02-17", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-02-18", "medication_id": 1, "timing": "morning", "taken": 0 },
+    { "date": "2026-03-01", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-02", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-03", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-04", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-05", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-06", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-07", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-08", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-09", "medication_id": 1, "timing": "morning", "taken": 0 },
+    { "date": "2026-03-12", "medication_id": 1, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-02", "medication_id": 2, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-02", "medication_id": 2, "timing": "before_bed", "taken": 0 },
+    { "date": "2026-03-03", "medication_id": 2, "timing": "morning", "taken": 1 },
+    { "date": "2026-03-03", "medication_id": 2, "timing": "before_bed", "taken": 1 }
+  ],
+  "expected": {
+    "weekEnds": ["2026-02-21", "2026-02-28", "2026-03-07", "2026-03-14"],
+    "items": {
+      "1": [
+        { "weekEnd": "2026-02-21", "taken": 2, "logged": 3 },
+        { "weekEnd": "2026-02-28", "taken": 0, "logged": 0 },
+        { "weekEnd": "2026-03-07", "taken": 7, "logged": 7 },
+        { "weekEnd": "2026-03-14", "taken": 1, "logged": 2 }
+      ],
+      "2": [
+        { "weekEnd": "2026-02-21", "taken": 0, "logged": 0 },
+        { "weekEnd": "2026-02-28", "taken": 0, "logged": 0 },
+        { "weekEnd": "2026-03-07", "taken": 3, "logged": 4 },
+        { "weekEnd": "2026-03-14", "taken": 0, "logged": 0 }
+      ]
+    }
+  }
+}

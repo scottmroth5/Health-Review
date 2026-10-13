@@ -2,7 +2,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
-import { medicationEvents, eventImpact, doseText, ingredientsOf } from '../metrics/medications.js';
+import { medicationEvents, eventImpact, doseText, ingredientsOf, weeklyCheckoffs } from '../metrics/medications.js';
 import { loadAdherenceInput, loadConfirmedBlocks, loadAdvisorInput, loadDataCheckInput, loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
 import { trainingView } from '../metrics/volume.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
@@ -587,6 +587,17 @@ export function combineMedications(db, { ids, name, timing, preview = false }) {
     for (const [date, d] of days) ins.run(date, id, timing, d.any ? 1 : 0, now());
     return { preview: false, ...plan, medication: getMedication(db, id) };
   })();
+}
+
+/** Weekly check-offs (taken out of logged) for each current item, oldest week first, ending with this week so far. */
+export function medicationCheckoffs(db, today, weeks = 12) {
+  const current = db.prepare(`SELECT m.id, m.name FROM medications m JOIN medication_periods p ON p.medication_id = m.id
+    WHERE p.stopped_on IS NULL ORDER BY m.name`).all();
+  const from = addDays(today, -7 * weeks);
+  const doses = db.prepare('SELECT date, medication_id, taken FROM medication_doses WHERE date BETWEEN ? AND ?').all(from, today);
+  const { weekEnds, items } = weeklyCheckoffs(doses, { weeks, today });
+  const empty = () => weekEnds.map((weekEnd) => ({ weekEnd, taken: 0, logged: 0 }));
+  return { weekEnds, items: current.map((m) => ({ id: m.id, name: m.name, weeks: items.get(m.id) ?? empty() })) };
 }
 
 /** Every start, change and stop with its before and after averages, newest first. */

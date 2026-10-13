@@ -63,6 +63,18 @@ edit the dictionary and rerun `npm run log:normalize` at any time.
 
 Each sync re-applies the dictionary when Workout Log rows change.
 
+## Exercise name typos
+
+`npm run log:typos` lists exercise names that look like typos of each other, numbered: two dictionary exercises with
+the same equipment and movement whose names differ by a letter or two in one word ("Dumbbell Should Press" and
+"Dumbbell Shoulder Press"), and logged names with no entry that look like a dictionary exercise ("Assault Bik").
+- `npm run log:typos -- --merge 1,3` folds those into the exercise they look like: the typo becomes a variant name,
+  the duplicate entry is removed, and the dictionary is re-applied to all your history.
+- `npm run log:typos -- --distinct 2` marks a pair as different exercises (Knee Abduction and Knee Adduction), so
+  it is never listed again.
+- Nothing changes until you give the numbers, and nothing is sent anywhere. Each sync's log notes how many look like
+  typos.
+
 ## Program blocks
 
 Each lifting day (session) belongs to a program block or is explicitly unassigned. A block is one run
@@ -181,6 +193,9 @@ a blend). Choose between them in the Dose box of the Meds tab's Add, Change and 
   other: the dose history and the Changes and impact list show it as, for example, "Beta 10 mg to 20 mg". Fix a mistake
   marks it as a correction, with no change recorded.
 - **On the Today tab** the item has one checkbox, with its ingredients on the line underneath.
+- **Each current item's card** shows the last 12 weeks of check-offs: this week so far, the share taken over the 12
+  weeks, a bar per week (an outlined box when nothing was logged, which counts as unknown, not missed), and the numbers
+  as a table.
 - **Combine items taken as one pill** (on the Meds tab) turns two or more current items into one item with ingredients,
   for past history and from now on. Every start, change and stop date of any of them becomes a period of the new item.
   Each logged day becomes one check-off in the slot you choose, and it counts as taken if any of them was taken. One-day

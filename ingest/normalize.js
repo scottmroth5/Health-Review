@@ -37,6 +37,12 @@ export function coverage(db) {
  * Names still needing a dictionary entry (unmapped and inferred), grouped by lookup key, most sets first.
  * Each group lists the spellings as typed, so one dictionary entry can cover them all.
  */
+/** Logged sets per canonical exercise id, for the typo finder's keeper choice. Counts only. */
+export function canonicalSetCounts(db) {
+  return new Map(db.prepare(`SELECT e.canonical_id AS id, COUNT(s.exercise_id) AS sets FROM strength_exercises e
+    LEFT JOIN strength_sets s ON s.exercise_id = e.id WHERE e.canonical_id IS NOT NULL GROUP BY e.canonical_id`).all().map((r) => [r.id, r.sets]));
+}
+
 export function unmappedNames(db) {
   const rows = db.prepare(`SELECT e.exercise AS name, e.map_status AS status, e.implement, COUNT(s.exercise_id) AS sets,
       MIN(e.tab_year) AS first, MAX(e.tab_year) AS last

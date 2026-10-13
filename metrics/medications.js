@@ -133,6 +133,30 @@ export function eventImpact(event, metrics, checkins, today, events = []) {
   };
 }
 
+/**
+ * Daily check-offs by week for the Meds tab: per item, per week ending on a Saturday (the last one is the current week,
+ * so far), how many saved slots were taken out of how many were saved. A week with nothing saved has logged 0: not
+ * logged, never missed.
+ * @param {Array<{date: string, medication_id: number, taken: number|boolean}>} doses  medication_doses rows
+ * @param {{ weeks?: number, today: string }} options
+ * @returns {{ weekEnds: string[], items: Map<number, Array<{weekEnd: string, taken: number, logged: number}>> }}
+ */
+export function weeklyCheckoffs(doses, { weeks = 12, today }) {
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay(); // 0 = Sunday
+  const current = addDays(today, 6 - dow);
+  const weekEnds = Array.from({ length: weeks }, (_, i) => addDays(current, -7 * (weeks - 1 - i)));
+  const first = addDays(weekEnds[0], -6);
+  const items = new Map();
+  for (const d of doses) {
+    if (d.date < first || d.date > today) continue;
+    if (!items.has(d.medication_id)) items.set(d.medication_id, weekEnds.map((weekEnd) => ({ weekEnd, taken: 0, logged: 0 })));
+    const week = items.get(d.medication_id)[Math.floor(daysBetween(first, d.date) / 7)];
+    week.logged += 1;
+    if (d.taken) week.taken += 1;
+  }
+  return { weekEnds, items };
+}
+
 /** The period in effect on a date, or null. */
 export const activeOn = (periods, date) =>
   periods.find((p) => p.started_on <= date && (p.stopped_on === null || p.stopped_on === undefined || p.stopped_on > date)) ?? null;

@@ -569,7 +569,32 @@ function inlineForm(card, title, fields, submitLabel, onSubmit) {
 const dateInput = (name, value) => h('label', {}, name === 'effective_on' ? 'Effective from' : name === 'started_on' ? 'Started on' : 'Stopped on',
   h('input', { type: 'date', name, required: true, value, max: state.today }));
 
-function currentCard(m) {
+/**
+ * The last 12 weeks of daily check-offs for one item: a line for this week and the whole span, a bar per week (height =
+ * share taken; an outlined box when nothing was logged, which is unknown, not missed), and the same numbers as a table.
+ */
+function checkoffTrend(weeks) {
+  if (!weeks?.length) return null;
+  const now = weeks.at(-1);
+  const logged = weeks.reduce((s, w) => s + w.logged, 0);
+  const taken = weeks.reduce((s, w) => s + w.taken, 0);
+  const label = (w) => `Week ending ${niceDate(w.weekEnd)}${w === now ? ' (so far)' : ''}: ${w.logged ? `${w.taken} of ${w.logged} taken` : 'not logged'}`;
+  const line = [
+    now.logged ? `Taken ${now.taken} of ${now.logged} logged this week so far` : 'Nothing logged this week yet',
+    logged ? `${Math.round((taken / logged) * 100)}% of logged doses taken over ${weeks.length} weeks` : `nothing logged in ${weeks.length} weeks`,
+  ].join('; ');
+  return h('div', { class: 'checkoffs' },
+    h('p', { class: 'meta' }, `${line}.`),
+    h('div', { class: 'checkoff-bars', role: 'img', 'aria-label': `Weekly check-offs, oldest first: ${weeks.map(label).join('; ')}` },
+      weeks.map((w) => h('span', { class: `checkoff-bar${w.logged ? '' : ' unlogged'}`, title: label(w) },
+        w.logged ? h('span', { class: 'fill', style: `height: ${Math.round((w.taken / w.logged) * 100)}%` }) : null))),
+    h('details', { class: 'checkoff-table' }, h('summary', {}, 'Weekly numbers'),
+      h('table', {}, h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Week ending'), h('th', { scope: 'col' }, 'Taken'), h('th', { scope: 'col' }, 'Logged'))),
+        h('tbody', {}, [...weeks].reverse().map((w) => h('tr', {}, h('td', {}, `${niceDate(w.weekEnd)}${w === now ? ' (so far)' : ''}`),
+          h('td', {}, w.logged ? String(w.taken) : '·'), h('td', {}, w.logged ? String(w.logged) : 'not logged')))))));
+}
+
+function currentCard(m, checkoffs) {
   const card = h('div', { class: 'card med-card' },
     h('div', { class: 'head' }, h('h3', {}, m.name), h('span', { class: 'pill' }, m.kind === 'medication' ? 'Medication' : 'Supplement'),
       m.prescribed ? h('span', { class: 'pill rx' }, 'Prescribed') : null),
@@ -579,6 +604,7 @@ function currentCard(m) {
     h('p', { class: 'meta' }, m.current.start_estimated ? `Taking since at least ${niceDate(m.current.started_on)} (start date unknown)` : `Since ${niceDate(m.current.started_on)}`),
     m.purpose ? h('p', { class: 'meta' }, `For ${m.purpose}`) : null,
     m.notes ? h('p', { class: 'meta note-text' }, m.notes) : null,
+    checkoffTrend(checkoffs),
     doseHistory(m));
 
   const actions = h('div', { class: 'actions' },
@@ -755,11 +781,13 @@ function renderCombine(current) {
 
 async function loadMeds() {
   if (!state.today) await loadStatus();
-  const [meds, impact] = await Promise.all([api('GET', '/api/medications'), api('GET', '/api/medications/impact')]);
+  const [meds, impact, checkoffs] = await Promise.all([api('GET', '/api/medications'), api('GET', '/api/medications/impact'),
+    api('GET', '/api/medications/checkoffs?weeks=12').catch(() => ({ items: [] }))]);
+  const weeksOf = new Map(checkoffs.items.map((i) => [i.id, i.weeks]));
   const current = meds.filter((m) => m.current);
   const past = meds.filter((m) => !m.current);
   const empty = (text) => h('p', { class: 'empty-state' }, text);
-  $('#meds-current').replaceChildren(...(current.length ? current.map(currentCard) : [empty('Nothing in your current list. Add what you take below.')]));
+  $('#meds-current').replaceChildren(...(current.length ? current.map((m) => currentCard(m, weeksOf.get(m.id))) : [empty('Nothing in your current list. Add what you take below.')]));
   $('#meds-past').replaceChildren(...(past.length ? past.map(pastCard) : [empty('Nothing stopped yet.')]));
   renderCombine(current);
   $('#meds-impact').replaceChildren(...(impact.length ? impact.map(impactCard) : [empty('Changes appear here once you add something.')]));

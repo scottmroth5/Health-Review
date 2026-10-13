@@ -55,6 +55,8 @@ powershell -ExecutionPolicy Bypass -File scripts\register-review-task.ps1   (re)
 npm run log:normalize             apply config/exercise-dictionary.json to all Workout Log history (prints coverage)
 npm run log:unmapped              names with no dictionary entry, with set counts (-- --suggest asks Claude, names only;
                                   -- --accept data/exercise-proposals.json adds the kept proposals)
+npm run log:typos                 exercise names that look like typos of each other, numbered (-- --merge 1,3 folds them
+                                  into the exercise they look like and re-normalizes; -- --distinct 2 marks them different)
 npm run programs:detect           propose program blocks from history (-- --write saves them as detected)
 npm run programs:review -- list   confirm, edit, merge, split blocks and unassign days (see README.md)
 npm run programs:catalog          validate data/maps/programs.json and print each program's weeks and phases
@@ -131,7 +133,9 @@ weekly summary's current list carries ingredients. POST /api/medications/combine
 preview first) merges items taken as one pill into one item: periods split at every start, change and stop of any of them,
 estimated starts stay estimated, one slot for all, one check-off per logged day (taken if any was), old items removed.
 medicationNames (metrics/load.js) gives medication names plus their ingredients' names for the review and chat routing
-checks. Each Meds card shows its dose history once there is more than one period.
+checks. Each Meds card shows its dose history once there is more than one period, and the last 12 weeks of check-offs
+(weeklyCheckoffs; GET /api/medications/checkoffs?weeks=4..52): taken out of logged per week ending Saturday, the current
+week so far last, a week with nothing logged shown as not logged, never missed.
 
 Training volume (metrics/volume.js): reps x total load (per-hand weights x2) over performed sets dated up to today;
 days without lifting are real zeros; band, bodyweight, timed and unparsed sets are counted as sets, not volume; weeks end
@@ -147,6 +151,10 @@ replacing a tab. Names match by baseKey (spelling, plural, hyphen, typo and word
 different words merge only through dictionary variants, which the owner decides. Unknown names are flagged, never
 guessed ('inferred' only when one implement word names the implement). Volume and strength group by canonical
 exercise, so barbell and dumbbell versions are never combined; unmapped names fall back to baseKey.
+Typo finder (metrics/name-typos.js, pure): two spelling keys that differ in one word 1 or 2 letters apart (at most half
+the longer word, 3+ letters); dictionary pairs must share implement and pattern; the keeper is the side whose word is more
+common in the dictionary, then more sets. The dictionary's distinct list (ids, or key:<baseKey> for a logged name) holds
+pairs the owner marked different. Nothing merges without the owner's numbers; each sync adds an info line with the count.
 Program blocks: one block per program run, named by program only (phases ignored); detected from workout names (metrics/blocks.js: the
 same program before and after unassigned days or a break of any length is one block unless another program comes
 between; Between programs and Home workouts are blocks, but a Between programs, HIIT or ab-program stretch with the

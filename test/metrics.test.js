@@ -8,7 +8,7 @@ import { computeWeek } from '../metrics/index.js';
 import { loadWeekData, loadMetricSettings } from '../metrics/load.js';
 import { round, mean, sd, pearson, lastWeekEnd, windows } from '../metrics/stats.js';
 import { sessionKind } from '../metrics/cardio.js';
-import { medicationEvents, medicationsWeek, doseText } from '../metrics/medications.js';
+import { medicationEvents, medicationsWeek, doseText, weeklyCheckoffs } from '../metrics/medications.js';
 import { trainingView } from '../metrics/volume.js';
 import { exerciseKey, exerciseName } from '../metrics/exercises.js';
 import { volumeByExercise } from '../metrics/volume.js';
@@ -54,6 +54,12 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       const daily = expandDaily(fx.input.dailyFill);
       assertSubset(dataChecks({ ...fx.input, daily }), fx.expected);
       assertSubset(weekDataQuality(daily, fx.week.from, fx.week.to), fx.week.expected, 'week');
+      return;
+    }
+    if (fx.kind === 'medication-checkoffs') {
+      const r = weeklyCheckoffs(fx.doses, { weeks: fx.weeks, today: fx.today });
+      assert.deepEqual(r.weekEnds, fx.expected.weekEnds);
+      assert.deepEqual(Object.fromEntries([...r.items].map(([id, w]) => [String(id), w])), fx.expected.items);
       return;
     }
     if (fx.kind === 'medication-ingredients') {

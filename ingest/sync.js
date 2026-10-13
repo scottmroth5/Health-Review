@@ -22,7 +22,8 @@ import {
   parseWeeklyCheckins,
   parseLabSheet,
 } from './parsers.js';
-import { normalizeAll } from './normalize.js';
+import { canonicalSetCounts, normalizeAll, unmappedNames } from './normalize.js';
+import { typoCandidates } from '../metrics/name-typos.js';
 import { assignForward, refreshPhases } from './program-blocks.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
@@ -77,6 +78,8 @@ export async function runSync({ store, source, backfill = false, now = new Date(
     const checks = dataChecks(loadDataCheckInput(store.db, localDay(now)));
     for (const c of checks) warnings.push({ source: 'data_check', kind: c.kind, detail: c.message, severity: c.severity });
     counts.data_checks = { warn: checks.filter((c) => c.severity === 'warn').length, info: checks.filter((c) => c.severity === 'info').length };
+    const typos = typoCount(store.db, dictionary);
+    if (typos) warnings.push({ source: 'exercise_names', kind: 'likely typos', detail: `${typos === 1 ? '1 exercise name looks like a typo' : `${typos} exercise names look like typos`}; see npm run log:typos`, severity: 'info' });
     run.finish('ok', { counts, warnings: warnings.length });
     return { counts, warnings };
   } catch (err) {
@@ -275,6 +278,19 @@ function normalizeLog(db, dictionary, now, warnings) {
   if (!dict) return { skipped: 'no exercise dictionary' };
   const { sets, mappedPct } = normalizeAll(db, dict, { now });
   return { sets, mappedPct };
+}
+
+/** How many exercise names look like typos (metrics/name-typos.js), for an info line; 0 without a valid dictionary. */
+function typoCount(db, dictionary) {
+  let dict = dictionary;
+  try {
+    if (dict === undefined) dict = existsSync(DICTIONARY_PATH) ? loadDictionary() : null;
+  } catch {
+    return 0; // an invalid dictionary is reported by normalizeLog
+  }
+  if (!dict) return 0;
+  const found = typoCandidates({ dictionary: dict, unmapped: unmappedNames(db), setCounts: canonicalSetCounts(db) });
+  return found.entries.length + found.unmapped.length;
 }
 
 // ---- writers: each returns a function(record) ----

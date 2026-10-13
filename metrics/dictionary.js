@@ -64,11 +64,18 @@ export function createDictionary(json) {
     if (e?.id && e?.name) for (const n of [e.name, ...(e.variants ?? [])]) claim(n, e.id);
   }
   for (const n of json?.ignore ?? []) claim(n, 'ignore');
+  // Pairs the owner confirmed are different exercises, so the typo finder (metrics/name-typos.js) never shows them again.
+  // Each side is an exercise id, or "key:<spelling key>" for a logged name with no entry.
+  for (const pair of json?.distinct ?? []) {
+    if (!Array.isArray(pair) || pair.length !== 2 || pair[0] === pair[1]) problems.push(`distinct: ${JSON.stringify(pair)} must be two different ids`);
+    else for (const id of pair) if (!ids.has(id) && !/^key:\S/.test(id)) problems.push(`distinct: unknown id ${id}`);
+  }
   if (problems.length) throw fail(problems);
 
   const entries = new Map(exercises.map((e) => [e.id, e]));
   return {
     exercises,
+    distinct: json?.distinct ?? [],
     /**
      * @returns {{status: 'mapped'|'inferred'|'unmapped'|'ignored', id: string|null, name: string|null,
      *   implement: string|null, pattern: string|null, primary: boolean, lift: string|null}}
