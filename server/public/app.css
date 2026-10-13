@@ -166,6 +166,21 @@ fieldset.timings label { display: inline-flex; align-items: center; gap: 6px; ma
   border-radius: 999px; color: var(--text-primary); background: var(--surface-0); cursor: pointer; }
 fieldset.timings input { width: auto; margin: 0; display: inline; }
 fieldset.timings label:has(input:checked) { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+/* Dose or ingredients (Meds tab forms), and the Combine panel's item picker: the same chip choices as the timings */
+fieldset.regimen, fieldset.combine-picks { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; padding: 8px 10px; display: grid; gap: 8px; }
+fieldset.regimen legend, fieldset.combine-picks legend { font-size: 0.9rem; color: var(--text-secondary); padding: 0 4px; }
+fieldset.regimen .opts, fieldset.combine-picks .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+fieldset.regimen .opts label, fieldset.combine-picks .opts label { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 999px; color: var(--text-primary); background: var(--surface-0); cursor: pointer; }
+fieldset.regimen .opts input, fieldset.combine-picks .opts input { width: auto; margin: 0; display: inline; }
+fieldset.regimen .opts label:has(input:checked), fieldset.combine-picks .opts label:has(input:checked) { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.ingredient-rows { display: grid; gap: 6px; }
+.ingredient-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.ingredient-row input { margin: 0; }
+.ingredients { display: grid; gap: 6px; justify-items: start; }
+.combine-preview ul { margin: 4px 0; padding-left: 20px; }
+/* Today tab: an item's ingredients on their own line under its name */
+.dose .ingredients-line { display: block; font-size: 0.85rem; }
 label.check { display: flex; align-items: center; gap: 8px; }
 label.check input { width: auto; display: inline; margin: 0; }
 .med-card .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }

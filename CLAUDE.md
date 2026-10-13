@@ -122,7 +122,14 @@ slot it was taken in; timing stays the scheduled slot, the key). Values equal to
 Today tab shows and edits them; the Meds tab periods stay the defaults, and the weekly review ignores adjustments
 (owner's choice, 2026-10-07).
 A dose or timing change is a new dated period; a correction (fixing a typo) updates the current period in place and
-records no event. Each Meds card shows its dose history once there is more than one period.
+records no event.
+Ingredients (migration 015): a period has dose or ingredients (JSON [{ name, dose }], never both; names unique per item), so
+each ingredient's dose history is the period history; change events carry ingredientChanges ({ name, from, to }) and the
+weekly summary's current list carries ingredients. POST /api/medications/combine (queries.js combineMedications;
+preview first) merges items taken as one pill into one item: periods split at every start, change and stop of any of them,
+estimated starts stay estimated, one slot for all, one check-off per logged day (taken if any was), old items removed.
+medicationNames (metrics/load.js) gives medication names plus their ingredients' names for the review and chat routing
+checks. Each Meds card shows its dose history once there is more than one period.
 
 Training volume (metrics/volume.js): reps x total load (per-hand weights x2) over performed sets dated up to today;
 days without lifting are real zeros; band, bodyweight, timed and unparsed sets are counted as sets, not volume; weeks end

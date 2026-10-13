@@ -376,4 +376,13 @@ export const MIGRATIONS = [
       ALTER TABLE medication_doses ADD COLUMN moved_to TEXT;
     `,
   },
+  {
+    id: '015-medication-ingredients',
+    up: `
+      -- An item can list its ingredients instead of one dose (a compounded pill, a supplement blend): a JSON array of
+      -- { name, dose }. A period has dose or ingredients, never both (checked in code). Each ingredient's dose history is
+      -- the item's period history, so changing one ingredient's dose is a dated change like any other.
+      ALTER TABLE medication_periods ADD COLUMN ingredients TEXT;
+    `,
+  },
 ];

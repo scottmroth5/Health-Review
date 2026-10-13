@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { createTracer } from '@scottmroth5/agent-core';
 import { recommendPrograms } from '../metrics/advisor.js';
 import { liftsForReview } from '../metrics/plateau.js';
-import { loadAdvisorInput, loadPrimarySets, loadSessionPhases, programForWeek } from '../metrics/load.js';
+import { loadAdvisorInput, loadPrimarySets, loadSessionPhases, programForWeek, medicationNames } from '../metrics/load.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
 import { DEFAULT_REVIEW_MODEL } from './claude.js';
 
@@ -116,7 +116,7 @@ export async function askAdvisor({ store, claude, text, today, catalog, dictiona
 
   const checks = {
     allowed: allowedNumbers({ context, earlier, text }, CHAT_CONTRACT),
-    medicationNames: db.prepare("SELECT name FROM medications WHERE kind = 'medication'").pluck().all(),
+    medicationNames: medicationNames(db),
     labNames: db.prepare('SELECT name FROM lab_tests').pluck().all(),
     maxWords: MAX_WORDS,
   };

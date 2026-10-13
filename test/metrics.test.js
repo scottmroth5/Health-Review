@@ -8,7 +8,7 @@ import { computeWeek } from '../metrics/index.js';
 import { loadWeekData, loadMetricSettings } from '../metrics/load.js';
 import { round, mean, sd, pearson, lastWeekEnd, windows } from '../metrics/stats.js';
 import { sessionKind } from '../metrics/cardio.js';
-import { medicationEvents } from '../metrics/medications.js';
+import { medicationEvents, medicationsWeek, doseText } from '../metrics/medications.js';
 import { trainingView } from '../metrics/volume.js';
 import { exerciseKey, exerciseName } from '../metrics/exercises.js';
 import { volumeByExercise } from '../metrics/volume.js';
@@ -54,6 +54,15 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       const daily = expandDaily(fx.input.dailyFill);
       assertSubset(dataChecks({ ...fx.input, daily }), fx.expected);
       assertSubset(weekDataQuality(daily, fx.week.from, fx.week.to), fx.week.expected, 'week');
+      return;
+    }
+    if (fx.kind === 'medication-ingredients') {
+      const { medications, medication_periods: periods } = fx.input;
+      const events = medicationEvents(medications, periods);
+      assertSubset(events, fx.expected.events, 'events');
+      assert.equal(events.find((e) => e.name === 'Single').ingredientChanges, undefined);
+      assertSubset(medicationsWeek(medications, periods, [], [], fx.weekEnd).current, fx.expected.current, 'current');
+      assert.equal(doseText(periods.find((x) => x.id === 12)), fx.expected.currentDoseText);
       return;
     }
     if (fx.kind === 'adherence') {

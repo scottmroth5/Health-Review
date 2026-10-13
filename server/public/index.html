@@ -189,9 +189,9 @@
             <label>Type
               <select name="kind"><option value="supplement">Supplement</option><option value="medication">Medication</option></select>
             </label>
-            <label>Dose <input type="text" name="dose" maxlength="100" placeholder="500 mg, 2 capsules"></label>
             <label>Started on <input type="date" name="started_on" required></label>
           </div>
+          <div data-regimen></div>
           <label class="check"><input type="checkbox" name="start_estimated"> I don't know when I started (count it from January 1 of this year)</label>
           <fieldset class="timings" data-timings><legend>When you take it</legend></fieldset>
           <label>Purpose <input type="text" name="purpose" maxlength="200" placeholder="Sleep, blood pressure, recovery"></label>
@@ -209,6 +209,12 @@
             <span class="status" role="status"></span>
           </div>
         </form>
+      </details>
+
+      <details class="card" id="med-combine-card">
+        <summary><strong>Combine items taken as one pill</strong></summary>
+        <p class="muted small">For items that are really one pill or blend: they become one item that lists each as an ingredient with its dose, for past history and from now on. Each logged day becomes one check-off, taken if any of them was taken. Preview first; nothing changes until you press Combine.</p>
+        <div id="med-combine"></div>
       </details>
 
       <h2 class="section-title">Past</h2>

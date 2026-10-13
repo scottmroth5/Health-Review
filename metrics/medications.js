@@ -22,7 +22,36 @@ export const IMPACT_FIELDS = {
   stress: { from: 'checkins', d: 1, min: 7 },
 };
 
-const regimen = (p) => ({ dose: p.dose ?? null, timings: typeof p.timings === 'string' ? JSON.parse(p.timings) : p.timings });
+const parsed = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
+
+/** A period's ingredients ([{ name, dose }]), or null for an item with one dose. */
+export const ingredientsOf = (p) => {
+  const list = parsed(p.ingredients ?? null);
+  return Array.isArray(list) && list.length ? list.map((i) => ({ name: i.name, dose: i.dose ?? null })) : null;
+};
+
+/** The dose as one line: the dose, or each ingredient with its dose ("Alpha 5 mg + Beta 10 mg"). */
+export function doseText(p) {
+  const list = ingredientsOf(p);
+  if (!list) return p.dose ?? null;
+  return list.map((i) => (i.dose ? `${i.name} ${i.dose}` : i.name)).join(' + ');
+}
+
+const regimen = (p) => ({ dose: p.dose ?? null, ingredients: ingredientsOf(p), timings: parsed(p.timings) });
+
+/** Ingredients added, removed or with a new dose between two regimens: [{ name, from, to }] (from or to null). */
+export function ingredientChanges(from, to) {
+  const a = new Map((from.ingredients ?? []).map((i) => [i.name.toLowerCase(), i]));
+  const b = new Map((to.ingredients ?? []).map((i) => [i.name.toLowerCase(), i]));
+  const out = [];
+  for (const [key, i] of a) {
+    const j = b.get(key);
+    if (!j) out.push({ name: i.name, from: i.dose, to: null });
+    else if ((i.dose ?? '') !== (j.dose ?? '')) out.push({ name: j.name, from: i.dose, to: j.dose });
+  }
+  for (const [key, j] of b) if (!a.has(key)) out.push({ name: j.name, from: null, to: j.dose });
+  return out;
+}
 
 /**
  * Start, change and stop events, oldest first.
@@ -46,7 +75,11 @@ export function medicationEvents(medications, periods) {
       const prev = list[i - 1];
       const next = list[i + 1];
       if (prev && prev.stopped_on === p.started_on) {
-        events.push({ ...base, date: p.started_on, type: 'change', from: regimen(prev), to: regimen(p), reason: null });
+        const from = regimen(prev);
+        const to = regimen(p);
+        const change = { ...base, date: p.started_on, type: 'change', from, to, reason: null };
+        if (from.ingredients || to.ingredients) change.ingredientChanges = ingredientChanges(from, to);
+        events.push(change);
       } else if (!p.start_estimated) {
         // An estimated start ("since at least") is not a real event, so it gets no start or impact.
         events.push({ ...base, date: p.started_on, type: 'start', from: null, to: regimen(p), reason: null });

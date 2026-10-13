@@ -1,0 +1,35 @@
+{
+  "kind": "medication-ingredients",
+  "description": "An item with ingredients: start, a dose change to one ingredient, an ingredient swapped for another; the current list carries the ingredients",
+  "notes": [
+    "Blend (synthetic supplement): Alpha 5 mg + Beta 10 mg from 03-01; Beta changes to 20 mg on 04-01; on 05-01 Beta is dropped and Gamma 1 g added. Single: 2 caps from 03-15.",
+    "Events, oldest first: 03-01 start Blend, 03-15 start Single, 04-01 change Blend (Beta 10 mg to 20 mg; Alpha unchanged so not listed), 05-01 change Blend (Beta 20 mg removed, then Gamma 1 g added).",
+    "At week end 05-09 the current list (by kind, then name) is Blend with Alpha 5 mg and Gamma 1 g (dose null), then Single 2 caps. doseText of Blend's current period is 'Alpha 5 mg + Gamma 1 g'."
+  ],
+  "weekEnd": "2026-05-09",
+  "input": {
+    "medications": [
+      { "id": 1, "name": "Blend", "kind": "supplement", "purpose": null, "prescribed": 0 },
+      { "id": 2, "name": "Single", "kind": "supplement", "purpose": null, "prescribed": 0 }
+    ],
+    "medication_periods": [
+      { "id": 10, "medication_id": 1, "dose": null, "ingredients": "[{\"name\":\"Alpha\",\"dose\":\"5 mg\"},{\"name\":\"Beta\",\"dose\":\"10 mg\"}]", "timings": "[\"daily\"]", "started_on": "2026-03-01", "stopped_on": "2026-04-01" },
+      { "id": 11, "medication_id": 1, "dose": null, "ingredients": "[{\"name\":\"Alpha\",\"dose\":\"5 mg\"},{\"name\":\"Beta\",\"dose\":\"20 mg\"}]", "timings": "[\"daily\"]", "started_on": "2026-04-01", "stopped_on": "2026-05-01" },
+      { "id": 12, "medication_id": 1, "dose": null, "ingredients": "[{\"name\":\"Alpha\",\"dose\":\"5 mg\"},{\"name\":\"Gamma\",\"dose\":\"1 g\"}]", "timings": "[\"daily\"]", "started_on": "2026-05-01", "stopped_on": null },
+      { "id": 13, "medication_id": 2, "dose": "2 caps", "ingredients": null, "timings": "[\"morning\"]", "started_on": "2026-03-15", "stopped_on": null }
+    ]
+  },
+  "expected": {
+    "events": [
+      { "date": "2026-03-01", "type": "start", "name": "Blend", "to": { "dose": null, "ingredients": [{ "name": "Alpha", "dose": "5 mg" }, { "name": "Beta", "dose": "10 mg" }] } },
+      { "date": "2026-03-15", "type": "start", "name": "Single", "to": { "dose": "2 caps", "ingredients": null } },
+      { "date": "2026-04-01", "type": "change", "name": "Blend", "ingredientChanges": [{ "name": "Beta", "from": "10 mg", "to": "20 mg" }] },
+      { "date": "2026-05-01", "type": "change", "name": "Blend", "ingredientChanges": [{ "name": "Beta", "from": "20 mg", "to": null }, { "name": "Gamma", "from": null, "to": "1 g" }] }
+    ],
+    "current": [
+      { "name": "Blend", "dose": null, "ingredients": [{ "name": "Alpha", "dose": "5 mg" }, { "name": "Gamma", "dose": "1 g" }], "timings": ["daily"], "since": "2026-05-01" },
+      { "name": "Single", "dose": "2 caps", "ingredients": null, "since": "2026-03-15" }
+    ],
+    "currentDoseText": "Alpha 5 mg + Gamma 1 g"
+  }
+}

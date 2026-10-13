@@ -342,6 +342,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const dateField = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
   const timings = { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'string', enum: TIMINGS } };
   const dose = text(100);
+  // An item lists its ingredients instead of one dose (a compounded pill, a blend); never both.
+  const ingredients = nullable({
+    type: 'array', minItems: 1, maxItems: 20,
+    items: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: { type: 'string', minLength: 1, maxLength: 100 }, dose: text(100) } },
+  });
   const medDetails = {
     name: { type: 'string', minLength: 1, maxLength: 100 },
     kind: { type: 'string', enum: ['medication', 'supplement'] },
@@ -361,7 +366,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       body: {
         type: 'object', additionalProperties: false, required: ['name', 'kind', 'timings', 'started_on'],
         properties: {
-          ...medDetails, dose, timings, started_on: dateField, stopped_on: nullable(dateField), stop_reason: text(200),
+          ...medDetails, dose, ingredients, timings, started_on: dateField, stopped_on: nullable(dateField), stop_reason: text(200),
           start_estimated: { type: 'boolean', description: 'Real start unknown: taken since at least started_on, with no start event' },
         },
       },
@@ -384,7 +389,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       body: {
         type: 'object', additionalProperties: false, required: ['timings'],
         properties: {
-          dose, timings, effective_on: dateField,
+          dose, ingredients, timings, effective_on: dateField,
           correction: { type: 'boolean', description: 'Fix a mistake in the current dose or timing; no change is recorded' },
         },
       },
@@ -408,10 +413,26 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     schema: {
       summary: 'Start taking it again',
       params: idParams,
-      body: { type: 'object', additionalProperties: false, required: ['timings', 'started_on'], properties: { dose, timings, started_on: dateField } },
+      body: { type: 'object', additionalProperties: false, required: ['timings', 'started_on'], properties: { dose, ingredients, timings, started_on: dateField } },
       response: { 200: anyObject },
     },
   }, async (req) => q.startMedication(db, req.params.id, { ...req.body, started_on: pastDate(req.body.started_on) }));
+
+  app.post('/api/medications/combine', {
+    schema: {
+      summary: 'Combine items taken as one pill into one item with ingredients, for past history and from now on (preview: the plan, nothing changed)',
+      body: {
+        type: 'object', additionalProperties: false, required: ['ids', 'name', 'timing'],
+        properties: {
+          ids: { type: 'array', minItems: 2, maxItems: 20, uniqueItems: true, items: { type: 'integer', minimum: 1 } },
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          timing: { type: 'string', enum: TIMINGS },
+          preview: { type: 'boolean' },
+        },
+      },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.combineMedications(db, req.body));
 
   app.delete('/api/medications/:id', { schema: { summary: 'Remove an entry added by mistake, with all its history', params: idParams } }, async (req, reply) => {
     if (!q.deleteMedication(db, req.params.id)) return reply.code(404).send({ error: 'Medication not found' });

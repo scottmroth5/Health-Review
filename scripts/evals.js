@@ -75,9 +75,10 @@ async function regrade(variant) {
   const { gradeDraft, SPEC } = await import('../evals/grade-review.js');
   const { allowedNumbers, checkReport, stripDashes, findDashes } = await import('../agent/validate.js');
   const { openHealthStore } = await import('../db/store.js');
+  const { medicationNames } = await import('../metrics/load.js');
   const store = openHealthStore();
   const names = {
-    medicationNames: store.db.prepare("SELECT name FROM medications WHERE kind = 'medication'").pluck().all(),
+    medicationNames: medicationNames(store.db),
     labNames: store.db.prepare('SELECT name FROM lab_tests').pluck().all(),
   };
   store.close();

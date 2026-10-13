@@ -179,7 +179,7 @@ function keepDoseChecks() {
 /** The inline editor for one slot: dose and slot for this day only, defaults from the Meds tab. */
 function doseEditor(m, s) {
   const close = () => { doseEditing = null; renderDoses(doseDay, { keep: true }); };
-  const dose = h('input', { type: 'text', maxlength: '100', value: s.dose ?? '', placeholder: m.dose ? `Default: ${m.dose}` : 'Dose taken', 'aria-label': `Dose of ${m.name} taken on this day` });
+  const dose = h('input', { type: 'text', maxlength: '100', value: s.dose ?? '', placeholder: s.defaultDose ? `Default: ${s.defaultDose}` : 'Dose taken', 'aria-label': `Dose of ${m.name} taken on this day` });
   const slot = h('select', { 'aria-label': `When ${m.name} was taken on this day` },
     SLOT_ORDER.map((t) => h('option', { value: t, selected: (s.movedTo ?? s.timing) === t }, `${TIMING_LABELS[t]}${t === s.timing ? ' (scheduled)' : ''}`)));
   return h('div', { class: 'dose-editor' },
@@ -215,12 +215,13 @@ function renderDoses(day, { keep = false } = {}) {
     list.append(h('div', { class: 'dose-group' }, h('div', { class: 'dose-slot' }, TIMING_LABELS[slot]),
       rows.map(({ m, s }) => {
         const key = `${m.id}|${s.timing}`;
-        const shownDose = s.dose ?? m.dose;
-        const notes = [s.dose && m.dose ? `default ${m.dose}` : s.dose ? 'adjusted' : null, s.movedTo ? `moved from ${TIMING_LABELS[s.timing]}` : null].filter(Boolean);
+        // defaultDose is the period's dose, or its ingredients as one line ("Alpha 5 mg + Beta 10 mg").
+        const shownDose = s.dose ?? s.defaultDose;
+        const notes = [s.dose && s.defaultDose ? `default ${s.defaultDose}` : s.dose ? 'adjusted' : null, s.movedTo ? `moved from ${TIMING_LABELS[s.timing]}` : null].filter(Boolean);
         return h('div', { class: `dose-row${notes.length ? ' adjusted' : ''}` },
           h('label', { class: 'check dose' },
             h('input', { type: 'checkbox', checked: s.taken === true, 'data-med': String(m.id), 'data-timing': s.timing }),
-            h('span', {}, m.name, shownDose ? h('span', { class: s.dose ? '' : 'muted' }, ` ${shownDose}`) : null,
+            h('span', {}, m.name, shownDose ? h('span', { class: `${s.dose ? '' : 'muted'}${m.ingredients && !s.dose ? ' ingredients-line' : ''}` }, ` ${shownDose}`) : null,
               notes.length ? h('span', { class: 'muted small' }, ` (${notes.join('; ')})`) : null)),
           h('button', { type: 'button', class: 'link small dose-adjust', 'aria-expanded': String(doseEditing === key),
             onclick: () => { doseEditing = doseEditing === key ? null : key; renderDoses(doseDay, { keep: true }); } }, 'Adjust'),
@@ -487,7 +488,46 @@ function h(tag, attrs = {}, ...children) {
 const TIMING_LABELS = { morning: 'Morning', afternoon: 'Afternoon', before_workout: 'Before workout', during_workout: 'During workout', after_workout: 'After workout', before_bed: 'Before bed', daily: 'Daily' };
 const IMPACT_LABELS = { hrv_ms: ['HRV', ' ms'], resting_hr: ['Resting heart rate', ' bpm'], sleep_total_hr: ['Sleep', ' h'], readiness: ['Readiness', ''], energy: ['Energy', ''], mood: ['Mood', ''], stress: ['Stress', ''] };
 const niceDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-const regimenText = (r) => [r.dose, r.timings.map((t) => TIMING_LABELS[t].toLowerCase()).join(', ')].filter(Boolean).join(', ');
+/** The dose as one line: the dose, or each ingredient with its dose ("Alpha 5 mg + Beta 10 mg"). */
+const doseLine = (r) => r.dose ?? (r.ingredients?.length ? r.ingredients.map((i) => (i.dose ? `${i.name} ${i.dose}` : i.name)).join(' + ') : null);
+const regimenText = (r) => [doseLine(r), r.timings.map((t) => TIMING_LABELS[t].toLowerCase()).join(', ')].filter(Boolean).join(', ');
+
+/**
+ * One dose, or a list of ingredients each with its dose (a compounded pill, a blend). The returned element's read()
+ * gives { dose, ingredients } for the API, with the unused one null.
+ */
+function regimenEditor({ dose = null, ingredients = null } = {}) {
+  const group = `regimen-${Math.random().toString(36).slice(2)}`;
+  const many = h('input', { type: 'radio', name: group, value: 'ingredients', checked: Boolean(ingredients?.length) });
+  const one = h('input', { type: 'radio', name: group, value: 'dose', checked: !ingredients?.length });
+  const single = h('label', {}, 'Dose', h('input', { type: 'text', maxLength: 100, value: dose ?? '', placeholder: '500 mg, 2 capsules' }));
+  const rows = h('div', { class: 'ingredient-rows' });
+  const addRow = (i = {}) => {
+    const row = h('div', { class: 'ingredient-row' },
+      h('input', { type: 'text', maxLength: 100, value: i.name ?? '', placeholder: 'Ingredient', 'aria-label': 'Ingredient name' }),
+      h('input', { type: 'text', maxLength: 100, value: i.dose ?? '', placeholder: 'Dose', 'aria-label': 'Ingredient dose' }),
+      h('button', { type: 'button', class: 'ghost small', onclick: () => { row.remove(); if (!rows.children.length) addRow(); } }, 'Remove'));
+    rows.append(row);
+    return row;
+  };
+  (ingredients?.length ? ingredients : [{}, {}]).forEach(addRow);
+  const list = h('div', { class: 'ingredients' }, rows,
+    h('button', { type: 'button', class: 'ghost small', onclick: () => $('input', addRow())?.focus() }, 'Add ingredient'));
+  const show = () => { single.hidden = many.checked; list.hidden = !many.checked; };
+  one.addEventListener('change', show);
+  many.addEventListener('change', show);
+  show();
+  const el = h('fieldset', { class: 'regimen' }, h('legend', {}, 'Dose'),
+    h('div', { class: 'opts' }, h('label', {}, one, 'One dose'), h('label', {}, many, 'Ingredients, each with a dose')),
+    single, list);
+  el.read = () => {
+    if (!many.checked) return { dose: $('input', single).value.trim() || null, ingredients: null };
+    const items = $$('.ingredient-row', rows).map((r) => $$('input', r).map((x) => x.value.trim()))
+      .filter(([name]) => name).map(([name, d]) => ({ name, dose: d || null }));
+    return { dose: null, ingredients: items.length ? items : null };
+  };
+  return el;
+}
 
 function fillTimings(fieldset, selected = []) {
   const opts = h('div', { class: 'opts' }, Object.entries(TIMING_LABELS).map(([value, label]) =>
@@ -534,6 +574,7 @@ function currentCard(m) {
     h('div', { class: 'head' }, h('h3', {}, m.name), h('span', { class: 'pill' }, m.kind === 'medication' ? 'Medication' : 'Supplement'),
       m.prescribed ? h('span', { class: 'pill rx' }, 'Prescribed') : null),
     h('div', { class: 'chips' }, m.current.dose ? h('span', { class: 'chip' }, m.current.dose) : null,
+      (m.current.ingredients ?? []).map((i) => h('span', { class: 'chip ingredient' }, i.dose ? `${i.name} ${i.dose}` : i.name)),
       m.current.timings.map((t) => h('span', { class: 'chip' }, TIMING_LABELS[t]))),
     h('p', { class: 'meta' }, m.current.start_estimated ? `Taking since at least ${niceDate(m.current.started_on)} (start date unknown)` : `Since ${niceDate(m.current.started_on)}`),
     m.purpose ? h('p', { class: 'meta' }, `For ${m.purpose}`) : null,
@@ -542,8 +583,9 @@ function currentCard(m) {
 
   const actions = h('div', { class: 'actions' },
     h('button', { type: 'button', class: 'ghost', onclick: () => {
-      inlineForm(card, 'Set the new dose or timing and the date it took effect. The old one is kept in the dose history.', [
-        h('label', {}, 'Dose', h('input', { type: 'text', name: 'dose', maxLength: 100, value: m.current.dose ?? '' })),
+      const regimen = regimenEditor(m.current);
+      inlineForm(card, 'Set the new dose (or an ingredient\'s new dose) or timing and the date it took effect. The old one is kept in the dose history.', [
+        regimen,
         timingFieldset(m.current.timings),
         h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'correction', onchange: (evt) => {
           const date = $('input[name="effective_on"]', evt.target.form);
@@ -552,8 +594,8 @@ function currentCard(m) {
         } }), 'Fix a mistake (nothing actually changed, so no change is recorded)'),
         dateInput('effective_on', state.today),
       ], 'Save', (f) => api('POST', `/api/medications/${m.id}/changes`, {
-        dose: f.elements.dose.value.trim() || null,
-        timings: readTimings($('fieldset', f)),
+        ...regimen.read(),
+        timings: readTimings($('fieldset.timings', f)),
         ...(f.elements.correction.checked ? { correction: true } : { effective_on: f.elements.effective_on.value }),
       }));
     } }, 'Change dose or timing'),
@@ -608,13 +650,16 @@ function pastCard(m) {
       m.prescribed ? h('span', { class: 'pill rx' }, 'Prescribed') : null),
     ...m.periods.map((p) => h('p', { class: 'meta' }, `${niceDate(p.started_on)} to ${niceDate(p.stopped_on)}: ${regimenText(p)}${p.stop_reason ? ` (stopped: ${p.stop_reason})` : ''}`)));
   card.append(h('div', { class: 'actions' },
-    h('button', { type: 'button', class: 'ghost', onclick: () => inlineForm(card, 'Start taking it again.', [
-      h('label', {}, 'Dose', h('input', { type: 'text', name: 'dose', maxLength: 100, value: last.dose ?? '' })),
-      timingFieldset(last.timings),
-      dateInput('started_on', state.today),
-    ], 'Start again', (f) => api('POST', `/api/medications/${m.id}/start`, {
-      dose: f.elements.dose.value.trim() || null, timings: readTimings($('fieldset', f)), started_on: f.elements.started_on.value,
-    })) }, 'Start again'),
+    h('button', { type: 'button', class: 'ghost', onclick: () => {
+      const regimen = regimenEditor(last);
+      inlineForm(card, 'Start taking it again.', [
+        regimen,
+        timingFieldset(last.timings),
+        dateInput('started_on', state.today),
+      ], 'Start again', (f) => api('POST', `/api/medications/${m.id}/start`, {
+        ...regimen.read(), timings: readTimings($('fieldset.timings', f)), started_on: f.elements.started_on.value,
+      }));
+    } }, 'Start again'),
     editButton(card, m),
     deleteButton(m)));
   return card;
@@ -623,6 +668,11 @@ function pastCard(m) {
 function eventText(e) {
   if (e.type === 'start') return `Started ${e.name}: ${regimenText(e.to)}`;
   if (e.type === 'stop') return `Stopped ${e.name}${e.reason ? ` (${e.reason})` : ''}`;
+  // An item with ingredients names what changed ("Beta 10 mg to 20 mg; added Gamma 1 g").
+  const parts = (e.ingredientChanges ?? []).map((c) => (c.from === null ? `added ${c.name}${c.to ? ` ${c.to}` : ''}`
+    : c.to === null ? `removed ${c.name}` : `${c.name} ${c.from ?? 'no dose'} to ${c.to ?? 'no dose'}`));
+  const timingsChanged = e.from.timings.join() !== e.to.timings.join();
+  if (parts.length && !timingsChanged) return `Changed ${e.name}: ${parts.join('; ')}`;
   return `Changed ${e.name}: ${regimenText(e.from)} to ${regimenText(e.to)}`;
 }
 
@@ -646,6 +696,63 @@ function impactCard(e) {
       h('tbody', {}, rows))));
 }
 
+/** The Combine panel: pick current items, name the pill and its slot, preview the merged history, then combine. */
+function renderCombine(current) {
+  const box = $('#med-combine');
+  if (current.length < 2) return box.replaceChildren(h('p', { class: 'muted small' }, 'Needs at least two current items.'));
+  const status = h('span', { class: 'status', role: 'status' });
+  const result = h('div', { class: 'combine-preview' });
+  const picks = current.map((m) => h('label', {}, h('input', { type: 'checkbox', value: String(m.id) }), m.name,
+    doseLine(m.current) ? h('span', { class: 'muted small' }, ` ${doseLine(m.current)}`) : null));
+  const name = h('input', { type: 'text', maxLength: 100, required: true });
+  let nameTouched = false;
+  name.addEventListener('input', () => { nameTouched = true; });
+  const slot = h('select', {}, Object.entries(TIMING_LABELS).map(([v, l]) => h('option', { value: v, selected: v === 'daily' }, l)));
+  const chosen = () => picks.map((p) => $('input', p)).filter((i) => i.checked).map((i) => Number(i.value));
+  const reset = () => {
+    result.replaceChildren();
+    setStatus(status, '');
+    if (!nameTouched) name.value = current.filter((m) => chosen().includes(m.id)).map((m) => m.name).join(' + ');
+  };
+  [...picks.map((p) => $('input', p)), slot].forEach((i) => i.addEventListener('change', reset));
+  name.addEventListener('input', () => result.replaceChildren());
+
+  const body = () => ({ ids: chosen(), name: name.value.trim(), timing: slot.value });
+  const preview = h('button', { type: 'button', class: 'ghost', onclick: async () => {
+    if (chosen().length < 2) return setStatus(status, 'Choose at least two items', 'error');
+    if (!name.value.trim()) return setStatus(status, 'Give the combined item a name', 'error');
+    try {
+      const p = await api('POST', '/api/medications/combine', { ...body(), preview: true });
+      setStatus(status, '');
+      const span = (s) => (s.start_estimated ? `Since at least ${niceDate(s.started_on)}` : `From ${niceDate(s.started_on)}`)
+        + (s.stopped_on ? ` to ${niceDate(s.stopped_on)}` : ', current');
+      const go = h('button', { type: 'button', onclick: async () => {
+        if (!confirm(`Combine ${p.replaces.join(', ')} into ${p.name}? The separate items are removed; their history moves into ${p.name}.`)) return;
+        try {
+          await api('POST', '/api/medications/combine', body());
+          await loadMeds();
+        } catch (err) {
+          setStatus(status, err.message, 'error');
+        }
+      } }, 'Combine');
+      result.replaceChildren(
+        h('p', { class: 'small' }, `${p.name} (${p.kind}${p.prescribed ? ', prescribed' : ''}), ${TIMING_LABELS[p.timing].toLowerCase()}, replacing ${p.replaces.join(' and ')}:`),
+        h('ul', { class: 'small' }, p.periods.map((s) => h('li', {}, `${span(s)}: ${doseLine(s)}${s.stop_reason ? ` (stopped: ${s.stop_reason})` : ''}`))),
+        h('p', { class: 'small' }, `${p.daysMerged} logged day${p.daysMerged === 1 ? '' : 's'} become one check-off each.`,
+          p.daysDisagreeing.length ? ` On ${p.daysDisagreeing.map(niceDate).join(', ')} the items were checked differently; ${p.daysDisagreeing.length === 1 ? 'that day counts' : 'those days count'} as taken.` : '',
+          p.adjustmentsDropped ? ` ${p.adjustmentsDropped} one-day dose or slot adjustment${p.adjustmentsDropped === 1 ? '' : 's'} will be dropped.` : ''),
+        h('div', { class: 'actions' }, go));
+    } catch (err) {
+      setStatus(status, err.message, 'error');
+    }
+  } }, 'Preview');
+  box.replaceChildren(
+    h('fieldset', { class: 'combine-picks' }, h('legend', {}, 'Items in the pill'), h('div', { class: 'opts' }, picks)),
+    h('div', { class: 'grid2' }, h('label', {}, 'Name', name), h('label', {}, 'When you take it', slot)),
+    h('div', { class: 'actions' }, preview, status),
+    result);
+}
+
 async function loadMeds() {
   if (!state.today) await loadStatus();
   const [meds, impact] = await Promise.all([api('GET', '/api/medications'), api('GET', '/api/medications/impact')]);
@@ -654,6 +761,7 @@ async function loadMeds() {
   const empty = (text) => h('p', { class: 'empty-state' }, text);
   $('#meds-current').replaceChildren(...(current.length ? current.map(currentCard) : [empty('Nothing in your current list. Add what you take below.')]));
   $('#meds-past').replaceChildren(...(past.length ? past.map(pastCard) : [empty('Nothing stopped yet.')]));
+  renderCombine(current);
   $('#meds-impact').replaceChildren(...(impact.length ? impact.map(impactCard) : [empty('Changes appear here once you add something.')]));
   const add = $('#med-add');
   if (!add.elements.started_on.value) add.elements.started_on.value = state.today;
@@ -664,6 +772,8 @@ async function loadMeds() {
 function initMeds() {
   const form = $('#med-add');
   fillTimings($('[data-timings]', form));
+  const resetRegimen = () => $('[data-regimen]', form).replaceChildren(regimenEditor());
+  resetRegimen();
   const syncEstimated = () => {
     const f = form.elements;
     f.started_on.disabled = f.start_estimated.checked;
@@ -678,7 +788,7 @@ function initMeds() {
     const f = form.elements;
     try {
       await api('POST', '/api/medications', {
-        name: f.name.value.trim(), kind: f.kind.value, dose: f.dose.value.trim() || null, timings,
+        name: f.name.value.trim(), kind: f.kind.value, ...$('.regimen', form).read(), timings,
         started_on: f.started_on.value, start_estimated: f.start_estimated.checked,
         purpose: f.purpose.value.trim() || null, prescribed: f.prescribed.checked, notes: f.notes.value.trim() || null,
         ...(f.stopped_on.value ? { stopped_on: f.stopped_on.value, stop_reason: f.stop_reason.value.trim() || null } : {}),
@@ -687,6 +797,7 @@ function initMeds() {
       const estimated = f.start_estimated.checked;
       form.reset();
       fillTimings($('[data-timings]', form));
+      resetRegimen();
       f.start_estimated.checked = estimated;
       f.started_on.value = state.today;
       syncEstimated();

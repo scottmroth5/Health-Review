@@ -173,6 +173,21 @@ slot you took it in (for example, the morning magnesium taken before bed). The v
 defaults. A lasting change is still a dated change on the Meds tab, which is what the before-and-after averages use.
 Adjustments are saved with the day's check-off, and the weekly review counts only taken or skipped.
 
+## Ingredients and combined pills
+
+A medication or supplement has either **one dose** or a **list of ingredients, each with its dose** (a compounded pill,
+a blend). Choose between them in the Dose box of the Meds tab's Add, Change and Start again forms.
+- **Each ingredient's dose history is kept.** Changing one ingredient's dose from a date is a dated change like any
+  other: the dose history and the Changes and impact list show it as, for example, "Beta 10 mg to 20 mg". Fix a mistake
+  marks it as a correction, with no change recorded.
+- **On the Today tab** the item has one checkbox, with its ingredients on the line underneath.
+- **Combine items taken as one pill** (on the Meds tab) turns two or more current items into one item with ingredients,
+  for past history and from now on. Every start, change and stop date of any of them becomes a period of the new item.
+  Each logged day becomes one check-off in the slot you choose, and it counts as taken if any of them was taken. One-day
+  adjustments on the old items are dropped. Preview shows all of this before anything changes.
+- **The weekly review** gets the ingredients and which ingredient changed. Ingredient names of medications count as
+  medication names for its checks, so they appear only in the physician discussion section.
+
 ## Program Advisor
 
 The Training tab's **Next program** card ranks the MAPS programs for your next block. The ranking is computed in

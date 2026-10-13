@@ -196,6 +196,19 @@ export function loadDataCheckInput(db, today) {
   };
 }
 
+/**
+ * Names that mark a sentence as medication talk for the review's routing check: every medication's name and the names
+ * of its ingredients in any period (an ingredient named alone is caught, not only the full name of the pill).
+ */
+export function medicationNames(db) {
+  const meds = db.prepare("SELECT id, name FROM medications WHERE kind = 'medication'").all();
+  const ingredients = db.prepare(`SELECT p.ingredients FROM medication_periods p JOIN medications m ON m.id = p.medication_id
+    WHERE m.kind = 'medication' AND p.ingredients IS NOT NULL`).pluck().all()
+    .flatMap((json) => JSON.parse(json).map((i) => i.name));
+  const seen = new Set();
+  return [...meds.map((m) => m.name), ...ingredients].filter((n) => !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
+}
+
 /** All medications and their periods (small tables, read whole). */
 export function loadMedications(db) {
   return {

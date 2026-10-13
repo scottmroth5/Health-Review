@@ -3,7 +3,7 @@
 // sent by name); prompt and report text never go to logs.
 import { createTracer } from '@scottmroth5/agent-core';
 import { computeWeek } from '../metrics/index.js';
-import { loadWeekData, loadMetricSettings, loadWeekNotes } from '../metrics/load.js';
+import { loadWeekData, loadMetricSettings, loadWeekNotes, medicationNames } from '../metrics/load.js';
 import { buildSummary } from './summary.js';
 import { buildSystem, REPORT_SCHEMA, renderReport } from './instructions.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
@@ -37,7 +37,7 @@ export function prepareReview(db, { weekEnd, today }) {
     sectionNames: sections.map((s) => s.name),
     checks: {
       allowed: allowedNumbers(summary, system),
-      medicationNames: db.prepare("SELECT name FROM medications WHERE kind = 'medication'").pluck().all(),
+      medicationNames: medicationNames(db),
       labNames: db.prepare('SELECT name FROM lab_tests').pluck().all(),
     },
   };

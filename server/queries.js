@@ -2,7 +2,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
-import { medicationEvents, eventImpact } from '../metrics/medications.js';
+import { medicationEvents, eventImpact, doseText, ingredientsOf } from '../metrics/medications.js';
 import { loadAdherenceInput, loadConfirmedBlocks, loadAdvisorInput, loadDataCheckInput, loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
 import { trainingView } from '../metrics/volume.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
@@ -309,7 +309,20 @@ export function advisor(db, today, { catalog, dictionary, substitutions, weights
 // Each dose or timing period is a row; stopped_on is the first day it no longer applied.
 
 const fail = (statusCode, message) => Object.assign(new Error(message), { statusCode });
-const asPeriod = (p) => ({ ...p, timings: JSON.parse(p.timings), start_estimated: Boolean(p.start_estimated) });
+const asPeriod = (p) => ({ ...p, timings: JSON.parse(p.timings), ingredients: ingredientsOf(p), start_estimated: Boolean(p.start_estimated) });
+
+/**
+ * A period's dose or ingredients from a request: trimmed, ingredients as JSON (null when none). An item has one dose or
+ * a list of ingredients, never both, and an ingredient name appears once.
+ */
+function regimenOf({ dose, ingredients }) {
+  const list = (ingredients ?? []).map((i) => ({ name: i.name.trim(), dose: i.dose?.trim() || null })).filter((i) => i.name);
+  const single = dose?.trim() || null;
+  if (list.length && single) throw fail(400, 'Give one dose or a list of ingredients, not both');
+  const names = new Set(list.map((i) => i.name.toLowerCase()));
+  if (names.size !== list.length) throw fail(400, 'Each ingredient can be listed once');
+  return { dose: single, ingredients: list.length ? JSON.stringify(list) : null };
+}
 const openPeriod = (db, id) => db.prepare('SELECT * FROM medication_periods WHERE medication_id = ? AND stopped_on IS NULL').get(id);
 
 function getMedication(db, id) {
@@ -342,10 +355,11 @@ function assertNoOverlap(db, id, start, stop) {
   if (clash) throw fail(409, `Those dates overlap an existing period that started ${clash.started_on}`);
 }
 
-function insertPeriod(db, id, { dose, timings, started_on, stopped_on = null, stop_reason = null, start_estimated = false }) {
-  db.prepare(`INSERT INTO medication_periods (medication_id, dose, timings, started_on, stopped_on, stop_reason, start_estimated, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, dose?.trim() || null, JSON.stringify(timings), started_on, stopped_on, stop_reason?.trim() || null, start_estimated ? 1 : 0, now());
+function insertPeriod(db, id, { dose, ingredients, timings, started_on, stopped_on = null, stop_reason = null, start_estimated = false }) {
+  const r = regimenOf({ dose, ingredients });
+  db.prepare(`INSERT INTO medication_periods (medication_id, dose, ingredients, timings, started_on, stopped_on, stop_reason, start_estimated, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, r.dose, r.ingredients, JSON.stringify(timings), started_on, stopped_on, stop_reason?.trim() || null, start_estimated ? 1 : 0, now());
 }
 
 // ---- daily check-off ----
@@ -356,17 +370,17 @@ function insertPeriod(db, id, { dose, timings, started_on, stopped_on = null, st
  * its scheduled timing); null means the default.
  */
 export function dayMedications(db, date) {
-  const rows = db.prepare(`SELECT m.id, m.name, m.kind, p.dose, p.timings FROM medication_periods p JOIN medications m ON m.id = p.medication_id
+  const rows = db.prepare(`SELECT m.id, m.name, m.kind, p.dose, p.ingredients, p.timings FROM medication_periods p JOIN medications m ON m.id = p.medication_id
     WHERE p.started_on <= ? AND (p.stopped_on IS NULL OR p.stopped_on > ?) ORDER BY m.kind, m.name`).all(date, date);
   const saved = db.prepare('SELECT medication_id, timing, taken, dose, moved_to FROM medication_doses WHERE date = ?').all(date);
   const savedOf = (id, timing) => saved.find((s) => s.medication_id === id && s.timing === timing);
   return {
     saved: saved.length > 0,
     items: rows.map((r) => ({
-      id: r.id, name: r.name, kind: r.kind, dose: r.dose,
+      id: r.id, name: r.name, kind: r.kind, dose: r.dose, ingredients: ingredientsOf(r),
       slots: JSON.parse(r.timings).map((t) => {
         const s = savedOf(r.id, t);
-        return { timing: t, taken: s === undefined ? null : Boolean(s.taken), dose: s?.dose ?? null, defaultDose: r.dose, movedTo: s?.moved_to ?? null };
+        return { timing: t, taken: s === undefined ? null : Boolean(s.taken), dose: s?.dose ?? null, defaultDose: doseText(r), movedTo: s?.moved_to ?? null };
       }),
     })),
   };
@@ -389,7 +403,7 @@ export function saveDoses(db, date, doses) {
     for (const d of doses) {
       const item = expected.get(`${d.medication_id}|${d.timing}`);
       const dose = d.dose?.trim() || null;
-      const adjustedDose = dose && dose !== (item.dose ?? '').trim() ? dose : null;
+      const adjustedDose = dose && dose !== (doseText(item) ?? '').trim() ? dose : null;
       const movedTo = d.moved_to && d.moved_to !== d.timing ? d.moved_to : null;
       ins.run(date, d.medication_id, d.timing, d.taken ? 1 : 0, now(), adjustedDose, movedTo);
     }
@@ -429,7 +443,7 @@ export function addMedication(db, body) {
  * A dose or timing change from effective_on, kept as a new period. A correction (or a change on the
  * current period's start day) fixes the current period in place instead, so no change is recorded.
  */
-export function changeMedication(db, id, { dose, timings, effective_on, correction = false }) {
+export function changeMedication(db, id, { dose, ingredients, timings, effective_on, correction = false }) {
   requireMedication(db, id);
   return db.transaction(() => {
     const open = openPeriod(db, id);
@@ -437,10 +451,11 @@ export function changeMedication(db, id, { dose, timings, effective_on, correcti
     if (!correction && !effective_on) throw fail(400, 'Choose the date the change took effect, or mark it as a correction');
     if (!correction && effective_on < open.started_on) throw fail(400, `The change cannot be before the current period started (${open.started_on})`);
     if (correction || effective_on === open.started_on) {
-      db.prepare('UPDATE medication_periods SET dose = ?, timings = ? WHERE id = ?').run(dose?.trim() || null, JSON.stringify(timings), open.id);
+      const r = regimenOf({ dose, ingredients });
+      db.prepare('UPDATE medication_periods SET dose = ?, ingredients = ?, timings = ? WHERE id = ?').run(r.dose, r.ingredients, JSON.stringify(timings), open.id);
     } else {
       db.prepare('UPDATE medication_periods SET stopped_on = ? WHERE id = ?').run(effective_on, open.id);
-      insertPeriod(db, id, { dose, timings, started_on: effective_on });
+      insertPeriod(db, id, { dose, ingredients, timings, started_on: effective_on });
     }
     return getMedication(db, id);
   })();
@@ -455,12 +470,12 @@ export function stopMedication(db, id, { stopped_on, reason }) {
   return getMedication(db, id);
 }
 
-export function startMedication(db, id, { dose, timings, started_on }) {
+export function startMedication(db, id, { dose, ingredients, timings, started_on }) {
   requireMedication(db, id);
   return db.transaction(() => {
     if (openPeriod(db, id)) throw fail(409, 'Already being taken; use Change instead');
     assertNoOverlap(db, id, started_on, null);
-    insertPeriod(db, id, { dose, timings, started_on });
+    insertPeriod(db, id, { dose, ingredients, timings, started_on });
     return getMedication(db, id);
   })();
 }
@@ -480,6 +495,91 @@ export function updateMedicationDetails(db, id, changes) {
 }
 
 export const deleteMedication = (db, id) => db.prepare('DELETE FROM medications WHERE id = ?').run(id).changes > 0;
+
+/**
+ * Combines items taken as one pill into one item with ingredients, for past history and from now on. Every start,
+ * change and stop date of any of them starts a new period whose ingredients are the items in effect then, at their doses
+ * (an item with ingredients is flattened); consecutive identical periods merge. A period that begins only where estimated
+ * starts began stays estimated (no start event). All periods use the one slot given: the old slots count as a
+ * correction, not a dated change. Each logged day becomes one check-off in that slot, taken if any item was taken that
+ * day; one-day adjustments on the old rows are dropped. The old items are removed. preview returns the plan unchanged.
+ */
+export function combineMedications(db, { ids, name, timing, preview = false }) {
+  const items = [...new Set(ids)].map((id) => requireMedication(db, id));
+  if (items.length < 2) throw fail(400, 'Choose at least two items to combine');
+  const newName = name.trim();
+  const clash = db.prepare('SELECT id FROM medications WHERE name = ?').get(newName);
+  if (clash && !items.some((m) => m.id === clash.id)) throw fail(409, 'Another entry already has that name');
+
+  const periods = items.flatMap((m) => m.periods.map((p) => ({ ...p, item: m })));
+  const bounds = [...new Set(periods.flatMap((p) => [p.started_on, p.stopped_on]).filter(Boolean))].sort();
+  const segments = [];
+  bounds.forEach((start, i) => {
+    const active = periods.filter((p) => p.started_on <= start && (p.stopped_on === null || p.stopped_on > start));
+    if (!active.length) return;
+    const ingredients = items.flatMap((m) => {
+      const p = active.find((a) => a.item.id === m.id);
+      if (!p) return [];
+      return p.ingredients ?? [{ name: m.name, dose: p.dose ?? null }];
+    });
+    const open = active.some((p) => p.stopped_on === null);
+    const stop = i + 1 < bounds.length ? bounds[i + 1] : open ? null : start;
+    const prev = segments.at(-1);
+    const contiguous = prev && prev.stopped_on === start;
+    if (contiguous && JSON.stringify(prev.ingredients) === JSON.stringify(ingredients)) {
+      prev.stopped_on = stop;
+      return;
+    }
+    const starting = active.filter((p) => p.started_on === start);
+    segments.push({
+      started_on: start, stopped_on: stop, ingredients,
+      start_estimated: !contiguous && starting.length > 0 && starting.every((p) => p.start_estimated),
+    });
+  });
+  // A combined period that ends with no combined period right after it is a stop: keep the reasons given then.
+  segments.forEach((seg, i) => {
+    if (!seg.stopped_on || segments[i + 1]?.started_on === seg.stopped_on) return;
+    const reasons = [...new Set(periods.filter((p) => p.stopped_on === seg.stopped_on && p.stop_reason).map((p) => p.stop_reason))];
+    seg.stop_reason = reasons.join('; ') || null;
+  });
+
+  const marks = db.prepare(`SELECT date, taken, dose, moved_to FROM medication_doses WHERE medication_id IN (${items.map(() => '?').join(', ')})`)
+    .all(...items.map((m) => m.id));
+  const days = new Map();
+  for (const r of marks) {
+    const d = days.get(r.date) ?? { any: false, all: true };
+    d.any ||= Boolean(r.taken);
+    d.all &&= Boolean(r.taken);
+    days.set(r.date, d);
+  }
+  const disagreed = [...days].filter(([, d]) => d.any && !d.all).map(([date]) => date).sort();
+  const joined = (key) => [...new Set(items.map((m) => m[key]?.trim()).filter(Boolean))].join('; ') || null;
+  const plan = {
+    name: newName,
+    kind: items.some((m) => m.kind === 'medication') ? 'medication' : 'supplement',
+    prescribed: items.some((m) => m.prescribed),
+    purpose: joined('purpose'),
+    notes: joined('notes'),
+    timing,
+    replaces: items.map((m) => m.name),
+    periods: segments,
+    daysMerged: days.size,
+    daysDisagreeing: disagreed,
+    adjustmentsDropped: marks.filter((r) => r.dose !== null || r.moved_to !== null).length,
+  };
+  for (const seg of segments) regimenOf({ ingredients: seg.ingredients }); // the same ingredient in two items is refused
+  if (preview) return { preview: true, ...plan };
+
+  return db.transaction(() => {
+    for (const m of items) db.prepare('DELETE FROM medications WHERE id = ?').run(m.id);
+    const id = db.prepare('INSERT INTO medications (name, kind, purpose, prescribed, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(plan.name, plan.kind, plan.purpose, plan.prescribed ? 1 : 0, plan.notes, now()).lastInsertRowid;
+    for (const seg of segments) insertPeriod(db, id, { ...seg, timings: [timing] });
+    const ins = db.prepare('INSERT INTO medication_doses (date, medication_id, timing, taken, updated_at) VALUES (?, ?, ?, ?, ?)');
+    for (const [date, d] of days) ins.run(date, id, timing, d.any ? 1 : 0, now());
+    return { preview: false, ...plan, medication: getMedication(db, id) };
+  })();
+}
 
 /** Every start, change and stop with its before and after averages, newest first. */
 export function medicationImpact(db, today) {
