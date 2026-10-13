@@ -21,6 +21,7 @@ test('workoutNumber: the number in logged and catalog workout names', () => {
   assert.equal(workoutNumber('Workout in between programs'), null);
   assert.equal(isFocusSession('Symmetry Focus Sesssion 1 (Quads)'), true);
   assert.equal(isFocusSession('Trigger Session'), true);
+  assert.equal(isFocusSession('Symmetry Phase II - Mobility Session 3'), true);
   assert.equal(isFocusSession('Symmetry Foundation 1 - Phase 4'), false);
 });
 

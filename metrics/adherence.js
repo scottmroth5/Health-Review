@@ -2,8 +2,8 @@
 // block's days (metrics/load.js loadAdherenceInput), the catalog program, the dictionary lookup and substitutions.
 //
 // A day finds its catalog workout by program, stored phase and the number in its logged Workout name ("Foundation 2",
-// "Foundational 1", "Day 3", "Workout 2"); a phase with a single workout matches every day. Focus and Trigger sessions
-// have no fixed list. Anything else is not matched, never guessed.
+// "Foundational 1", "Day 3", "Workout 2"); a phase with a single workout matches every day. Focus, Trigger and
+// Mobility sessions have no fixed list. Anything else is not matched, never guessed.
 // Each exercise gets one status: as_called (same canonical exercise), swapped (one of the owner's swaps, or the fill
 // rule: a cable or machine slot filled by a band, dumbbell or bodyweight exercise with the same movement pattern),
 // changed (a missed exercise paired with one done instead with the same movement pattern), skipped, or added.
@@ -37,14 +37,14 @@ export function workoutNumber(name) {
   return { from, to };
 }
 
-export const isFocusSession = (name) => /\b(focus|trigger)\b/i.test(String(name ?? ''));
+export const isFocusSession = (name) => /\b(focus|trigger|mobility)\b/i.test(String(name ?? ''));
 
 /**
  * The catalog workout a logged day was following.
  * @returns {{ status: 'matched', phase: object, workout: object } | { status: 'focus'|'not_matched', reason: string }}
  */
 export function matchWorkout(day, program) {
-  if (isFocusSession(day.workout)) return { status: 'focus', reason: 'focus session (no fixed list)' };
+  if (isFocusSession(day.workout)) return { status: 'focus', reason: 'focus, trigger or mobility session (no fixed list)' };
   if (!program) return { status: 'not_matched', reason: 'program not in the catalog' };
   const phase = program.phases.find((p) => p.name.toLowerCase() === String(day.phase ?? '').toLowerCase());
   if (!phase) return { status: 'not_matched', reason: day.phase ? `no ${day.phase} in the catalog` : 'phase unknown' };

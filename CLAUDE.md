@@ -179,7 +179,7 @@ ends, or between blocks; CONTRACT tells the model to explain the ranking, never 
 (metrics/load.js) gathers the input for both the API and the review.
 Called for vs logged (metrics/adherence.js, pure; fixture evals/fixtures/metrics/adherence.json): each lifting day of a
 confirmed block matches its catalog workout by program, stored phase and the number (or capital letter) in the logged
-Workout name; a phase with one workout matches every day; Focus and Trigger sessions are focus (no fixed list); anything
+Workout name; a phase with one workout matches every day; Focus, Trigger and Mobility sessions are focus (no fixed list); anything
 else is not_matched, never guessed. Exercises pair in order: as_called (same canonical id), swapped (substitutions swaps,
 then the fill rule), changed (same movement pattern), then skipped and added; only performed sets up to today count.
 GET /api/program/adherence?block= (loadAdherenceInput, loadConfirmedBlocks in metrics/load.js) feeds the Training tab's

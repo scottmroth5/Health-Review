@@ -969,7 +969,7 @@ async function loadAdherence(blockId) {
 
   fill(body,
     h('label', { class: 'adherence-pick' }, 'Block ', picker),
-    h('p', { class: 'small' }, `${c.matched} of ${c.days} lifting days matched a workout; ${c.focus} focus session${c.focus === 1 ? '' : 's'}; ${c.notMatched} not matched.`),
+    h('p', { class: 'small' }, `${c.matched} of ${c.days} lifting days matched a workout; ${c.focus} focus, trigger or mobility session${c.focus === 1 ? '' : 's'}; ${c.notMatched} not matched.`),
     h('div', { class: 'usual-changes' },
       usual('Done instead', a.usualChanges.swaps), usual('Most often skipped', a.usualChanges.skipped), usual('Most often added', a.usualChanges.added)),
     a.weeks.map((w, i) => h('details', { class: 'adherence-week', open: i === 0 },
@@ -980,7 +980,7 @@ async function loadAdherence(blockId) {
 function adherenceSession(s) {
   const head = h('span', { class: 'session-head' }, h('strong', {}, dayLabel(s.date)), ' ', s.workout ?? 'No workout name');
   if (s.match !== 'matched') {
-    const what = s.match === 'focus' ? 'Focus session, no fixed list' : `Not matched: ${s.reason}`;
+    const what = s.match === 'focus' ? 'Focus, trigger or mobility session, no fixed list' : `Not matched: ${s.reason}`;
     return h('div', { class: 'adherence-session' }, head, h('p', { class: 'muted small session-line' }, `${what}. ${s.exercisesLogged} exercises, ${s.setsLogged} sets.`));
   }
   const parts = Object.entries(s.counts).filter(([, n]) => n).map(([k, n]) => `${n} ${COUNT_WORDS[k]}`);

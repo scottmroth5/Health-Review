@@ -92,7 +92,7 @@
           { "status": "skipped", "called": { "name": "Curl" }, "logged": null },
           { "status": "added", "called": null, "logged": { "name": "Carry", "sets": 1 }, "repsInRange": null }
         ] },
-      { "date": "2026-03-10", "match": "focus", "reason": "focus session (no fixed list)", "setsLogged": 3 },
+      { "date": "2026-03-10", "match": "focus", "reason": "focus, trigger or mobility session (no fixed list)", "setsLogged": 3 },
       { "date": "2026-03-09", "match": "matched", "catalogWorkout": "Workout 1",
         "counts": { "as_called": 0, "swapped": 1, "changed": 1, "skipped": 1, "added": 1 },
         "setsCalled": { "min": 9, "max": 10 }, "setsLogged": 9, "exercisesLogged": 3,

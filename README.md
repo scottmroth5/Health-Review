@@ -156,8 +156,8 @@ Each program also has a `profile`, written as short summaries rather than copied
 The Training tab's **Called for vs logged** card compares each lifting day of a confirmed block with the workout the
 catalog lists for that phase. Pick any confirmed block; the one in progress shows first.
 - **Matching a day:** the program and phase come from the block, and the workout from the number in your logged
-  name ("Foundation 2", "Foundational 1", "Day 3", "Workout 2"). A phase with one workout matches every day. Focus and
-  Trigger sessions have no fixed list, and a name with no number (such as "In between programs") is shown as not
+  name ("Foundation 2", "Foundational 1", "Day 3", "Workout 2"). A phase with one workout matches every day. Focus,
+  Trigger and Mobility sessions have no fixed list, and a name with no number (such as "In between programs") is shown as not
   matched, never guessed. A line says how many days matched.
 - **Each exercise is one of:** as called for; swapped (a swap in `config/substitutions.json`, or the fill rule);
   changed (something else with the same movement pattern); skipped; or added. Sets logged are compared with the sets
