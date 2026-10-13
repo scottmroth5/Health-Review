@@ -893,13 +893,6 @@
       "primary": false
     },
     {
-      "id": "single-leg-to-touch",
-      "name": "Single-Leg To Touch",
-      "implement": "bodyweight",
-      "pattern": "other",
-      "primary": false
-    },
-    {
       "id": "skull-crusher-iso-hold",
       "name": "Skull Crusher Iso-Hold",
       "implement": "dumbbell",
@@ -1081,13 +1074,6 @@
       "name": "Cable Twists",
       "implement": "band",
       "pattern": "core",
-      "primary": false
-    },
-    {
-      "id": "sing-leg-suspension-squat",
-      "name": "Sing-leg Suspension Squat",
-      "implement": "suspension",
-      "pattern": "squat",
       "primary": false
     },
     {
@@ -1539,7 +1525,10 @@
       "name": "Single Leg Toe Touches",
       "implement": "bodyweight",
       "pattern": "hinge",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Single-Leg To Touch"
+      ]
     },
     {
       "id": "alternating-band-crossover",
@@ -2707,7 +2696,10 @@
       "name": "Single-leg Suspension Squat",
       "implement": "suspension",
       "pattern": "squat",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Sing-leg Suspension Squat"
+      ]
     },
     {
       "id": "sitting-leg-curls",
