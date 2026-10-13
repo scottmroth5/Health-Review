@@ -108,6 +108,44 @@ export function loadPrimarySets(db, to) {
     .map((s) => ({ ...s, canonical_name: canonicalName(s.canonical_id) }));
 }
 
+/** Confirmed program blocks, newest first, for the Called for vs logged picker. */
+export function loadConfirmedBlocks(db) {
+  return db.prepare(`SELECT id, program, start_date, end_date, status FROM program_blocks
+    WHERE source = 'confirmed' ORDER BY start_date DESC`).all();
+}
+
+/**
+ * A block's lifting days up to today for metrics/adherence.js: week, phase, the day's Workout name (its first named
+ * row), and each exercise with its performed sets and their reps (planned rows with no reps, time or distance count 0).
+ */
+export function loadAdherenceInput(db, blockId, today) {
+  const days = db.prepare(`SELECT date, week, phase FROM log_sessions
+    WHERE block_id = ? AND assignment = 'block' AND date <= ? ORDER BY date`).all(blockId, today);
+  const rows = db.prepare(`SELECT e.id, e.row_no, e.workout, e.exercise, e.canonical_id, e.implement, e.movement_pattern,
+      s.reps, s.reps_text, s.duration_sec, s.distance_yd
+    FROM strength_exercises e LEFT JOIN strength_sets s ON s.exercise_id = e.id
+    WHERE e.date = ? ORDER BY e.row_no, s.set_no`);
+  return days.map((d) => {
+    const byExercise = new Map();
+    let workout = null;
+    for (const r of rows.all(d.date)) {
+      workout ??= r.workout?.trim() || null;
+      if (!r.exercise) continue;
+      const key = r.canonical_id ?? r.exercise.trim().toLowerCase();
+      if (!byExercise.has(key)) {
+        byExercise.set(key, { name: r.exercise.trim(), canonical_id: r.canonical_id, canonicalName: canonicalName(r.canonical_id),
+          implement: r.implement, pattern: r.movement_pattern, sets: 0, reps: [] });
+      }
+      const e = byExercise.get(key);
+      if (r.reps != null || r.duration_sec != null || r.distance_yd != null || (r.reps_text ?? '') !== '') {
+        e.sets += 1;
+        if (r.reps != null) e.reps.push(r.reps);
+      }
+    }
+    return { ...d, workout, exercises: [...byExercise.values()] };
+  });
+}
+
 /** The stored phase of each session (log_sessions), as { date: phase }. */
 export function loadSessionPhases(db) {
   return Object.fromEntries(db.prepare('SELECT date, phase FROM log_sessions WHERE phase IS NOT NULL').all().map((r) => [r.date, r.phase]));

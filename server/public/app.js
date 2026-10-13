@@ -938,9 +938,73 @@ async function loadTrainingTab() {
   };
   loadProgram().catch(failed('#program-body'));
   loadAdvisor().catch(failed('#advisor-body'));
+  loadAdherence().catch(failed('#adherence-body'));
   loadChat().catch(failed('#chat-thread'));
   loadLifts().catch(failed('#lifts-body'));
   return loadTraining();
+}
+
+// ---------------- called for vs logged ----------------
+
+const ADHERENCE_STATUS = {
+  as_called: ['✓', 'As called for'], swapped: ['↔', 'Swapped'], changed: ['↔', 'Changed'], skipped: ['✗', 'Skipped'], added: ['+', 'Added'],
+};
+const COUNT_WORDS = { as_called: 'as called for', swapped: 'swapped', changed: 'changed', skipped: 'skipped', added: 'added' };
+const rangeText = (r) => (!r ? '' : r.min === r.max ? String(r.min) : `${r.min} to ${r.max}`);
+const dayLabel = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+async function loadAdherence(blockId) {
+  const body = $('#adherence-body');
+  const a = await api('GET', `/api/program/adherence${blockId ? `?block=${encodeURIComponent(blockId)}` : ''}`);
+  body.className = '';
+  if (!a.available) return fill(body, h('p', { class: 'muted small' }, 'Needs the MAPS catalog (data/maps/programs.json).'));
+  if (!a.block) return fill(body, h('p', { class: 'muted small' }, 'No confirmed program block yet. Confirm one with npm run programs:review.'));
+
+  const picker = h('select', { id: 'adherence-block' }, a.blocks.map((b) => h('option', { value: b.id, selected: b.id === a.block.id },
+    `${b.program}, ${niceDate(b.start_date)} to ${b.end_date ? niceDate(b.end_date) : 'now'}`)));
+  picker.addEventListener('change', () => loadAdherence(picker.value).catch((err) => fill(body, h('p', { class: 'status error' }, err.message))));
+  const c = a.coverage;
+  const usual = (title, items) => h('div', { class: 'usual' }, h('h3', {}, title),
+    items.length ? h('ul', {}, items.map((x) => h('li', {}, x.what, h('span', { class: 'muted' }, ` ×${x.times}`)))) : h('p', { class: 'muted small' }, 'None'));
+
+  fill(body,
+    h('label', { class: 'adherence-pick' }, 'Block ', picker),
+    h('p', { class: 'small' }, `${c.matched} of ${c.days} lifting days matched a workout; ${c.focus} focus session${c.focus === 1 ? '' : 's'}; ${c.notMatched} not matched.`),
+    h('div', { class: 'usual-changes' },
+      usual('Done instead', a.usualChanges.swaps), usual('Most often skipped', a.usualChanges.skipped), usual('Most often added', a.usualChanges.added)),
+    a.weeks.map((w, i) => h('details', { class: 'adherence-week', open: i === 0 },
+      h('summary', {}, w.week ? `Week ${w.week}` : 'Week unknown', h('span', { class: 'muted small' }, ` · ${w.sessions.length} day${w.sessions.length === 1 ? '' : 's'}`)),
+      w.sessions.map(adherenceSession))));
+}
+
+function adherenceSession(s) {
+  const head = h('span', { class: 'session-head' }, h('strong', {}, dayLabel(s.date)), ' ', s.workout ?? 'No workout name');
+  if (s.match !== 'matched') {
+    const what = s.match === 'focus' ? 'Focus session, no fixed list' : `Not matched: ${s.reason}`;
+    return h('div', { class: 'adherence-session' }, head, h('p', { class: 'muted small session-line' }, `${what}. ${s.exercisesLogged} exercises, ${s.setsLogged} sets.`));
+  }
+  const parts = Object.entries(s.counts).filter(([, n]) => n).map(([k, n]) => `${n} ${COUNT_WORDS[k]}`);
+  const line = `${s.catalogPhase}, ${s.catalogWorkout}: ${parts.join(', ')}; ${s.setsLogged} sets logged of ${rangeText(s.setsCalled)} called for.`;
+  const rows = s.rows.map((r) => {
+    const [icon, label] = ADHERENCE_STATUS[r.status];
+    const notes = [
+      r.reason,
+      r.setsStatus === 'under' ? 'fewer sets' : r.setsStatus === 'over' ? 'more sets' : null,
+      r.repsInRange ? `${r.repsInRange.inRange} of ${r.repsInRange.of} sets in the rep range` : null,
+    ].filter(Boolean).join('; ');
+    const reps = r.called?.reps ? `${rangeText(r.called.reps)}${r.called.reps.unit === 'seconds' ? ' s' : ''}` : '?';
+    const called = r.called ? `${r.called.name}, ${rangeText(r.called.sets) || '?'} × ${reps}` : '·';
+    const logged = r.logged ? `${r.logged.name}, ${r.logged.sets} set${r.logged.sets === 1 ? '' : 's'}${r.logged.reps.length ? ` (${r.logged.reps.join(', ')})` : ''}` : '·';
+    return h('tr', {},
+      h('td', { 'data-label': 'Called for' }, called),
+      h('td', { 'data-label': 'Logged' }, logged),
+      h('td', { 'data-label': 'Status' }, h('span', { 'aria-hidden': 'true' }, `${icon} `), label, notes ? h('span', { class: 'muted small' }, ` (${notes})`) : null));
+  });
+  return h('details', { class: 'adherence-session' },
+    h('summary', {}, head, h('span', { class: 'small session-line' }, line)),
+    h('table', { class: 'adherence-table' },
+      h('thead', {}, h('tr', {}, ['Called for', 'Logged', 'Status'].map((t) => h('th', { scope: 'col' }, t)))),
+      h('tbody', {}, rows)));
 }
 
 // ---------------- next program (Program Advisor) ----------------

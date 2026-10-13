@@ -3,12 +3,13 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact } from '../metrics/medications.js';
-import { loadAdvisorInput, loadDataCheckInput, loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
+import { loadAdherenceInput, loadConfirmedBlocks, loadAdvisorInput, loadDataCheckInput, loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
 import { trainingView } from '../metrics/volume.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
 import { liftProgress } from '../metrics/plateau.js';
 import { addDays, lastWeekEnd } from '../metrics/stats.js';
 import { recommendPrograms } from '../metrics/advisor.js';
+import { blockAdherence } from '../metrics/adherence.js';
 import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
@@ -129,6 +130,23 @@ export function lastSync(db) {
 /** Data check warnings as of today (info findings, such as a lifting day without a watch workout, stay in the sync log). */
 export function dataCheckWarnings(db, today) {
   return dataChecks(loadDataCheckInput(db, today)).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }));
+}
+
+// ---- called for vs logged ----
+
+/**
+ * Called for vs logged for one confirmed block (default: in progress, else the latest started), with the confirmed
+ * blocks whose program is in the catalog for the picker. { available: false } without a catalog; null for an unknown block.
+ */
+export function programAdherence(db, today, { catalog, dictionary, substitutions, blockId }) {
+  if (!catalog) return { available: false };
+  const blocks = loadConfirmedBlocks(db).filter((b) => catalog.find(b.program));
+  const block = blockId ? blocks.find((b) => b.id === blockId) : blocks.find((b) => b.status === 'in_progress') ?? blocks[0];
+  if (blockId && !block) return null;
+  const list = blocks.map(({ id, program, start_date, end_date, status }) => ({ id, program, start_date, end_date, status }));
+  if (!block) return { available: true, blocks: list, block: null };
+  const result = blockAdherence({ days: loadAdherenceInput(db, block.id, today), program: catalog.find(block.program), lookup: dictionary.lookup, substitutions });
+  return { available: true, blocks: list, block: list.find((b) => b.id === block.id), ...result };
 }
 
 // ---- spend ----

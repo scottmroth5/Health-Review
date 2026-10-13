@@ -346,6 +346,28 @@ body.demo .demo-toggle { color: var(--accent); font-weight: 600; }
   .review-pick { min-height: 44px; }
 }
 
+/* Called for vs logged (Training tab) */
+.adherence-pick { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 0.9rem; }
+.adherence-pick select { max-width: 100%; }
+.usual-changes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 8px 0 12px; }
+.usual-changes h3 { font-size: 0.88rem; margin: 0 0 4px; }
+.usual-changes ul { margin: 0; padding-left: 18px; font-size: 0.85rem; }
+.adherence-week { border-top: 1px solid var(--grid); padding: 6px 0; }
+.adherence-week > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.adherence-session { margin: 6px 0 6px 12px; }
+.adherence-session > summary { cursor: pointer; padding: 2px 0; }
+.adherence-session .session-line { display: block; margin: 0 0 0 18px; color: var(--text-secondary); }
+.adherence-table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin: 6px 0 8px; }
+.adherence-table th, .adherence-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+@media (max-width: 720px) {
+  .usual-changes { grid-template-columns: 1fr; }
+  .adherence-session { margin-left: 0; }
+  .adherence-table thead { display: none; }
+  .adherence-table tr { display: block; border-bottom: 1px solid var(--grid); padding: 4px 0; }
+  .adherence-table td { display: block; border: 0; padding: 2px 4px; }
+  .adherence-table td::before { content: attr(data-label) ": "; color: var(--text-secondary); }
+}
+
 /* Missing weekly review notice (Today and Reviews tabs) */
 .review-notice { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--danger);
   border-radius: 8px; font-size: 0.9rem; display: grid; gap: 6px; }

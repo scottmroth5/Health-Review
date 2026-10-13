@@ -177,6 +177,13 @@ the weekly review uses equal weights. The weekly summary carries advisor (the to
 left out and add-ons, no focus text) only when advisorDue: within 21 days of the block's earliest finish, after it
 ends, or between blocks; CONTRACT tells the model to explain the ranking, never re-rank it. loadAdvisorInput
 (metrics/load.js) gathers the input for both the API and the review.
+Called for vs logged (metrics/adherence.js, pure; fixture evals/fixtures/metrics/adherence.json): each lifting day of a
+confirmed block matches its catalog workout by program, stored phase and the number (or capital letter) in the logged
+Workout name; a phase with one workout matches every day; Focus and Trigger sessions are focus (no fixed list); anything
+else is not_matched, never guessed. Exercises pair in order: as_called (same canonical id), swapped (substitutions swaps,
+then the fill rule), changed (same movement pattern), then skipped and added; only performed sets up to today count.
+GET /api/program/adherence?block= (loadAdherenceInput, loadConfirmedBlocks in metrics/load.js) feeds the Training tab's
+card; it never goes to the weekly review or to Claude.
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and

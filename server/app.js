@@ -188,6 +188,21 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     weights: Object.fromEntries(GOALS.map((g) => [g, req.query[g]])),
   }));
 
+  app.get('/api/program/adherence', {
+    schema: {
+      summary: 'What the program calls for against what was logged, per lifting day of a confirmed block (default: the one in progress, else the latest): '
+        + 'each exercise as called for, swapped, changed, skipped or added, sets, the usual changes, and the blocks to choose from; available false without the MAPS catalog',
+      querystring: { type: 'object', properties: { block: { type: 'string', minLength: 1, maxLength: 64 } } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => {
+    const result = q.programAdherence(db, q.localDate(clock()), {
+      catalog: programCatalog(), dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), blockId: req.query.block,
+    });
+    if (result === null) return reply.code(404).send({ error: 'No such confirmed block' });
+    return result;
+  });
+
   // ---- Next program chat (computed training facts and the owner's notes go to Claude; see agent/advisor-chat.js) ----
   const chatOn = () => features.chat !== false && typeof services.claude === 'function';
   const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, notes: { type: 'array', items: anyObject } } } };

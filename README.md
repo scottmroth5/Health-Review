@@ -151,6 +151,21 @@ Each program also has a `profile`, written as short summaries rather than copied
   health and balance score is cut. Delete the entry when you want it back. Exercise ids are the `id`s in
   `config/exercise-dictionary.json`.
 
+## Called for vs logged
+
+The Training tab's **Called for vs logged** card compares each lifting day of a confirmed block with the workout the
+catalog lists for that phase. Pick any confirmed block; the one in progress shows first.
+- **Matching a day:** the program and phase come from the block, and the workout from the number in your logged
+  name ("Foundation 2", "Foundational 1", "Day 3", "Workout 2"). A phase with one workout matches every day. Focus and
+  Trigger sessions have no fixed list, and a name with no number (such as "In between programs") is shown as not
+  matched, never guessed. A line says how many days matched.
+- **Each exercise is one of:** as called for; swapped (a swap in `config/substitutions.json`, or the fill rule);
+  changed (something else with the same movement pattern); skipped; or added. Sets logged are compared with the sets
+  called for (fewer, within, more), and reps with the called-for range.
+- **Your usual changes:** what you most often do instead, skip and add across the block. A typo in a logged name shows
+  up here as a change or a skip plus an add; adding the typo as a variant in the exercise dictionary fixes it.
+- The card is on your screen only: it is not part of the weekly review, and nothing from the catalog is committed.
+
 ## One-day dose adjustments
 
 On the Today tab, **Adjust** next to a supplement or medication changes, for that day only, the dose you took and the

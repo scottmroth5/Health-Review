@@ -17,6 +17,7 @@ import { vo2maxReport } from '../metrics/vo2max.js';
 import { recommendPrograms } from '../metrics/advisor.js';
 import { createDictionary } from '../metrics/dictionary.js';
 import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
+import { blockAdherence } from '../metrics/adherence.js';
 
 /** Expands a fixture's dailyFill (one row per day with the given values, minus skip, plus overrides). */
 function expandDaily({ from, to, skip = [], override = {}, ...values }) {
@@ -53,6 +54,13 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       const daily = expandDaily(fx.input.dailyFill);
       assertSubset(dataChecks({ ...fx.input, daily }), fx.expected);
       assertSubset(weekDataQuality(daily, fx.week.from, fx.week.to), fx.week.expected, 'week');
+      return;
+    }
+    if (fx.kind === 'adherence') {
+      const lookup = createDictionary(fx.dictionary).lookup;
+      const result = blockAdherence({ ...fx.input, lookup });
+      assertSubset(result, fx.expected);
+      assertSubset(result.weeks, fx.expectedWeeks, 'weeks');
       return;
     }
     if (fx.kind === 'advisor') {
