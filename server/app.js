@@ -16,6 +16,8 @@ import { loadSubstitutions } from '../metrics/load.js';
 import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
 import { currentProgram } from '../ingest/program-blocks.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../agent/advisor-chat.js';
+// agent-core prices calls but does not export its price table yet; import it by path until a release exports it.
+import { costFromUsage } from '../node_modules/@scottmroth5/agent-core/src/pricing.js';
 
 const nullable = (schema) => ({ ...schema, type: [schema.type, 'null'] });
 const scale = nullable({ type: 'integer', minimum: 1, maximum: 10 });
@@ -69,8 +71,9 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  * @param {string} [ctx.publicDir]   static UI to serve; skipped when missing
  * @param {string} [ctx.authMode]
  * @param {() => Date} [ctx.clock]
+ * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main' }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage }) {
   const app = Fastify({ logger });
   const { db } = store;
   let syncing = false;
@@ -301,6 +304,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       throw err;
     }
   });
+
+  // ---- spend ----
+  app.get('/api/spend', {
+    schema: { summary: 'Estimated Claude API spend by month and year (reviews, chat, evals) at list prices', response: { 200: anyObject } },
+  }, async () => q.spend(db, { evalDir, price, today: q.localDate(clock()) }));
 
   // ---- sync ----
   app.post('/api/sync', { schema: { summary: 'Copy new rows from the Google Sheets now', response: { 200: anyObject } } }, async (req, reply) => {

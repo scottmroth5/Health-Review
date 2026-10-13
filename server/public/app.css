@@ -269,6 +269,14 @@ h3.sub { font-size: 0.9rem; margin: 14px 0 6px; color: var(--text-secondary); fo
 .console-line.run-start { color: var(--text-secondary); margin-top: 6px; }
 .console-line.bad { color: var(--danger); }
 .activity-grid > * { min-width: 0; }
+.tiles.three { grid-template-columns: repeat(3, 1fr); }
+.spend-table-wrap { overflow-x: auto; }
+.spend-tables { display: grid; gap: 12px; grid-template-columns: 1fr; margin: 8px 0; }
+@media (min-width: 720px) { .spend-tables { grid-template-columns: 3fr 2fr; align-items: start; } }
+table.spend-table { border-collapse: collapse; width: 100%; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+table.spend-table caption { text-align: left; font-weight: 600; padding-bottom: 4px; }
+table.spend-table th, table.spend-table td { padding: 4px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+table.spend-table th[scope="row"], table.spend-table thead th:first-child { text-align: left; font-weight: 500; }
 table.calls th, table.calls td { white-space: nowrap; padding: 4px 8px; text-align: right; }
 table.calls th:nth-child(-n+3), table.calls td:nth-child(-n+3) { text-align: left; }
 

@@ -227,6 +227,9 @@ sensitive sections are included in the weekly review (WEEKLY_INCLUDES_SENSITIVE 
 buildInstructions leaves them out unless a caller opts in.
 The Activity tab lists runs (GET /api/runs, /api/runs/:id: the tracer's runs and run_calls, metadata only) and the scheduled
 tasks' logs (GET /api/logs/sync|review, the last lines of data/logs; only those two names can be read).
+GET /api/spend (queries.js spend) totals estimated Claude API cost by month and year: runs.cost_usd by kind (review, advisor-chat,
+other) plus the review eval's results.jsonl usage priced with agent-core's pricing.js (imported by path until agent-core
+exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
 Health data may be stored or synced off this machine (cloud storage, backups, a future hosted deployment) only if it is

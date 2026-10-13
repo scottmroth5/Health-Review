@@ -1,5 +1,5 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact } from '../metrics/medications.js';
@@ -129,6 +129,81 @@ export function lastSync(db) {
 /** Data check warnings as of today (info findings, such as a lifting day without a watch workout, stay in the sync log). */
 export function dataCheckWarnings(db, today) {
   return dataChecks(loadDataCheckInput(db, today)).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }));
+}
+
+// ---- spend ----
+
+const SPEND_KINDS = { review: 'reviews', 'advisor-chat': 'chat' };
+const emptySpend = () => ({ reviews: 0, chat: 0, evals: 0, other: 0, total: 0 });
+const cents = (v) => Math.round(v * 100) / 100;
+
+/** Priced usage rows of the review eval: { month, usd, priced } per results row, dated by the results file's last write. */
+export function evalSpendRows(evalDir, price) {
+  if (!evalDir || !existsSync(evalDir)) return [];
+  const rows = [];
+  for (const variant of readdirSync(evalDir, { withFileTypes: true })) {
+    const file = join(evalDir, variant.name, 'results.jsonl');
+    if (!variant.isDirectory() || !existsSync(file)) continue;
+    const month = localDate(statSync(file).mtime).slice(0, 7);
+    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let row;
+      try { row = JSON.parse(line); } catch { continue; }
+      // Only the billed model and token counts are read; the rows' other fields are never used.
+      for (const usage of [row.usage, row.judge_usage].filter(Boolean)) {
+        const usd = price(row.model, usage);
+        rows.push({ month, usd: usd ?? 0, priced: usd !== null });
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * Claude API spend by month and year: reviews and the Next program chat from the tracer's runs (cost_usd), and the
+ * review eval priced from its saved token counts. Estimates at list prices.
+ * @param {{ evalDir?: string, price?: (model: string, usage: object) => number|null, today: string }} options
+ */
+export function spend(db, { evalDir, price, today }) {
+  const months = new Map();
+  const add = (month, kind, usd) => {
+    if (!months.has(month)) months.set(month, emptySpend());
+    const m = months.get(month);
+    m[kind] += usd;
+    m.total += usd;
+  };
+  const runs = db.prepare(`SELECT name, substr(started_at, 1, 7) AS month, SUM(cost_usd) AS usd FROM runs
+    WHERE cost_usd > 0 GROUP BY name, month`).all();
+  for (const r of runs) add(r.month, SPEND_KINDS[r.name] ?? 'other', r.usd);
+  let unpriced = 0;
+  for (const e of price ? evalSpendRows(evalDir, price) : []) {
+    if (!e.priced) unpriced += 1;
+    else add(e.month, 'evals', e.usd);
+  }
+
+  const round = (s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, cents(v)]));
+  const years = new Map();
+  for (const [month, s] of months) {
+    const y = years.get(month.slice(0, 4)) ?? emptySpend();
+    for (const k of Object.keys(s)) y[k] += s[k];
+    years.set(month.slice(0, 4), y);
+  }
+  const thisMonth = today.slice(0, 7);
+  const last12 = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1 - i, 1));
+    const month = d.toISOString().slice(0, 7);
+    last12.push({ month, ...round(months.get(month) ?? emptySpend()) });
+  }
+  const all = [...months.values()].reduce((sum, s) => sum + s.total, 0);
+  return {
+    thisMonth: cents(months.get(thisMonth)?.total ?? 0),
+    thisYear: cents(years.get(today.slice(0, 4))?.total ?? 0),
+    allTime: cents(all),
+    months: last12.reverse(),
+    years: [...years].sort(([a], [b]) => b.localeCompare(a)).map(([year, s]) => ({ year, ...round(s) })),
+    unpricedEvalRows: unpriced,
+  };
 }
 
 /** The hour on the Sunday after a review week from which a missing review counts as overdue (the task runs at 8). */

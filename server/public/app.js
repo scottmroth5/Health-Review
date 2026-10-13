@@ -1505,8 +1505,40 @@ function summaryLines(obj, prefix = '') {
   });
 }
 
+/** The Spend card: estimated Claude API cost this month, this year and all time, by month and year. */
+async function loadSpend() {
+  const body = $('#spend-body');
+  let s;
+  try {
+    s = await api('GET', '/api/spend');
+  } catch (err) {
+    fill(body, h('p', { class: 'status error' }, `Could not load spend: ${err.message}`));
+    return;
+  }
+  const dollars = (v) => `$${v.toFixed(2)}`;
+  const monthName = (m) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const tile = (label, value) => h('div', { class: 'tile' }, h('div', { class: 'tile-label' }, label), h('div', { class: 'tile-value' }, dollars(value)));
+  // Months before the first one with any spend are left out (months after it show a dot when nothing was spent).
+  const firstSpent = s.months.findLastIndex((m) => m.total > 0);
+  const months = firstSpent >= 0 ? s.months.slice(0, firstSpent + 1) : s.months.slice(0, 1);
+  const table = (caption, rows, label) => h('div', { class: 'spend-table-wrap' }, h('table', { class: 'spend-table' },
+    h('caption', {}, caption),
+    h('thead', {}, h('tr', {}, ['', 'Reviews', 'Chat', 'Evals', 'Total'].map((c) => h('th', { scope: 'col' }, c)))),
+    h('tbody', {}, rows.map((r) => h('tr', {}, h('th', { scope: 'row' }, label(r)),
+      [r.reviews, r.chat, r.evals, r.total].map((v) => h('td', {}, v ? dollars(v) : '·')))))));
+  fill(body,
+    h('div', { class: 'tiles three' }, tile('This month', s.thisMonth), tile('This year', s.thisYear), tile('All time', s.allTime)),
+    h('div', { class: 'spend-tables' },
+      table('By month (last 12)', months, (r) => monthName(r.month)),
+      table('By year', s.years.length ? s.years : [{ year: String(new Date().getFullYear()), reviews: 0, chat: 0, evals: 0, total: 0 }], (r) => r.year)),
+    h('p', { class: 'muted small' }, 'Estimated from token counts at list prices; your Anthropic Console bill is the real number. ',
+      'Evals are dated by when each variant last ran. Not counted: exercise-name suggestions (a few cents each).',
+      s.unpricedEvalRows ? ` ${s.unpricedEvalRows} eval rows used a model with no price and count as $0.` : ''));
+}
+
 async function loadActivity() {
   clearTimeout(activity.timer);
+  loadSpend();
   const runs = await api('GET', '/api/runs?limit=100');
   const list = $('#activity-list');
   if (!runs.length) {

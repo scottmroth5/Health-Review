@@ -43,7 +43,7 @@ if (demo) {
       model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
     }),
   };
-  app = await buildApp({ store, services, publicDir: repoPath('server', 'public'), authMode });
+  app = await buildApp({ store, services, publicDir: repoPath('server', 'public'), authMode, evalDir: repoPath('data', 'evals', 'review') });
 }
 await app.listen({ host, port });
 console.log(`Health Review${demo ? ' (demo data)' : ''}: http://localhost:${port}  (API contract: http://localhost:${port}/api/openapi.json)`);

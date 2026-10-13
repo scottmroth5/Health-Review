@@ -250,6 +250,11 @@ run with the dates (Activity tab). From 9am on Sunday, while last week has no re
 why and offer **Run review now**, which syncs first. While days are still missing the button reads **Run anyway** and
 asks first. From the command line, `npm run review -- --force` writes it anyway, and `-- --dry-run` shows the check.
 
+**What it costs:** the Activity tab's Claude API spend card shows this month, this year and all time, plus the last 12
+months and each year split into reviews, the Next program chat and evals. Reviews and chat come from the recorded runs;
+evals are priced from their saved token counts and dated by when each variant last ran. These are estimates at list
+prices; the Anthropic Console bill is the real number. Syncs and backups cost nothing.
+
 ## Demo instance
 
 To show the app without your data, run a second, separate instance with made-up data:

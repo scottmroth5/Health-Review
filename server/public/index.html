@@ -283,6 +283,10 @@
     <!-- Activity: runs recorded by syncs and reviews, and the scheduled tasks' logs -->
     <section id="view-activity" class="view" hidden>
       <p class="muted small">Every sync and weekly review, from the scheduled tasks, Sync now or the terminal. Counts and costs only: report and prompt text are never logged.</p>
+      <section class="card" id="spend" aria-labelledby="spend-title">
+        <h2 id="spend-title">Claude API spend</h2>
+        <div id="spend-body"><p class="muted small">Loading…</p></div>
+      </section>
       <div class="activity-grid">
         <nav class="activity-list card" id="activity-list" aria-label="Recent runs"></nav>
         <div class="activity-output card" id="activity-detail"></div>
