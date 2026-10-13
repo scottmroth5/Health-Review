@@ -60,7 +60,10 @@
       "name": "Seated Calf Raises",
       "implement": "dumbbell",
       "pattern": "other",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Seted Calf Raises"
+      ]
     },
     {
       "id": "pullups",
@@ -166,7 +169,10 @@
       "name": "Incline Dumbbell Press",
       "implement": "dumbbell",
       "pattern": "incline press",
-      "primary": true
+      "primary": true,
+      "variants": [
+        "Include Dumbbell Press"
+      ]
     },
     {
       "id": "barbell-z-press",
@@ -185,7 +191,8 @@
       "pattern": "vertical press",
       "primary": true,
       "variants": [
-        "Seated Dumbbell Press"
+        "Seated Dumbbell Press",
+        "Dumbbell Should Press"
       ]
     },
     {
@@ -239,7 +246,8 @@
       "pattern": "arms",
       "primary": true,
       "variants": [
-        "Dumbbell Supinating Curls"
+        "Dumbbell Supinating Curls",
+        "Dumbbel Supinated Curls"
       ]
     },
     {
@@ -287,7 +295,8 @@
       "pattern": "arms",
       "primary": false,
       "variants": [
-        "V Bar Press Down"
+        "V Bar Press Down",
+        "Tricep Pressdon"
       ]
     },
     {
@@ -388,7 +397,8 @@
       "pattern": "incline press",
       "primary": false,
       "variants": [
-        "Dumbbell Incline Barbell Chest Press"
+        "Dumbbell Incline Barbell Chest Press",
+        "Dubbell Incline Chest Press"
       ]
     },
     {
@@ -691,7 +701,11 @@
       "name": "Active Planks",
       "implement": "bodyweight",
       "pattern": "core",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Acive Planks",
+        "Active Planke"
+      ]
     },
     {
       "id": "close-grip-bench-press",
@@ -1442,7 +1456,10 @@
       "name": "Floor Seated Band Pulldown",
       "implement": "band",
       "pattern": "vertical pull",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Floor Seated Badn Pulldowns"
+      ]
     },
     {
       "id": "guillotine-press",
@@ -1497,13 +1514,6 @@
       "name": "Rotating Shoulder Press",
       "implement": "dumbbell",
       "pattern": "vertical press",
-      "primary": false
-    },
-    {
-      "id": "sing-arm-suspension-row",
-      "name": "Sing-Arm Suspension Row",
-      "implement": "suspension",
-      "pattern": "horizontal pull",
       "primary": false
     },
     {
@@ -1667,7 +1677,10 @@
       "name": "Single-Arm Suspension Row",
       "implement": "suspension",
       "pattern": "horizontal pull",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Sing-Arm Suspension Row"
+      ]
     },
     {
       "id": "single-leg-step-up",
@@ -1839,7 +1852,11 @@
       "name": "Assault Bike",
       "implement": "machine",
       "pattern": "other",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Assault Bik",
+        "Assualt Bike"
+      ]
     },
     {
       "id": "barbell-lunges",
@@ -2007,7 +2024,10 @@
       "name": "Plyoball Hamstring Curls",
       "implement": "other",
       "pattern": "hinge",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Plyball Hamstring Curl"
+      ]
     },
     {
       "id": "seated-barbell-shoulder-press",
@@ -2100,7 +2120,8 @@
       "pattern": "squat",
       "primary": false,
       "variants": [
-        "Weighted Step-Up"
+        "Weighted Step-Up",
+        "Dumbbell Step Ups"
       ]
     },
     {
@@ -2163,18 +2184,14 @@
       "primary": false
     },
     {
-      "id": "dumbbell-step-ups",
-      "name": "Dumbbell Step Ups",
-      "implement": "dumbbell",
-      "pattern": "squat",
-      "primary": false
-    },
-    {
       "id": "elliptical",
       "name": "Elliptical",
       "implement": "machine",
       "pattern": "other",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "eliptical"
+      ]
     },
     {
       "id": "hamstring-curls",
@@ -2233,13 +2250,6 @@
       "name": "Tricep Press Down",
       "implement": "band",
       "pattern": "arms",
-      "primary": false
-    },
-    {
-      "id": "dubbell-incline-chest-press",
-      "name": "Dubbell Incline Chest Press",
-      "implement": "dumbbell",
-      "pattern": "incline press",
       "primary": false
     },
     {
@@ -2431,7 +2441,10 @@
       "name": "Foam Roll: Piriformis",
       "implement": "other",
       "pattern": "mobility",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Foam Roll: Piriformas"
+      ]
     },
     {
       "id": "perfect-windmill",
@@ -2536,13 +2549,6 @@
       "variants": [
         "MAPS Single Leg Band T-Row"
       ]
-    },
-    {
-      "id": "eliptical",
-      "name": "eliptical",
-      "implement": "machine",
-      "pattern": "other",
-      "primary": false
     },
     {
       "id": "pushup-to-rotation",
@@ -2698,7 +2704,8 @@
       "pattern": "squat",
       "primary": false,
       "variants": [
-        "Sing-leg Suspension Squat"
+        "Sing-leg Suspension Squat",
+        "Singe-leg Suspension Squat"
       ]
     },
     {
@@ -2793,13 +2800,6 @@
       "primary": false
     },
     {
-      "id": "floor-seated-badn-pulldowns",
-      "name": "Floor Seated Badn Pulldowns",
-      "implement": "band",
-      "pattern": "vertical pull",
-      "primary": false
-    },
-    {
       "id": "fulcrum-pushup",
       "name": "Fulcrum Pushup",
       "implement": "bodyweight",
@@ -2870,13 +2870,6 @@
       "primary": false
     },
     {
-      "id": "dumbbell-should-press",
-      "name": "Dumbbell Should Press",
-      "implement": "dumbbell",
-      "pattern": "vertical press",
-      "primary": false
-    },
-    {
       "id": "foam-roll-it-band",
       "name": "Foam Roll: IT Band",
       "implement": "band",
@@ -2886,13 +2879,6 @@
     {
       "id": "foam-roll-latissimus-dorsi",
       "name": "Foam Roll: Latissimus Dorsi",
-      "implement": "other",
-      "pattern": "mobility",
-      "primary": false
-    },
-    {
-      "id": "foam-roll-piriformas",
-      "name": "Foam Roll: Piriformas",
       "implement": "other",
       "pattern": "mobility",
       "primary": false
@@ -3100,7 +3086,10 @@
       "name": "Plank Shoulder Touch",
       "implement": "bodyweight",
       "pattern": "core",
-      "primary": false
+      "primary": false,
+      "variants": [
+        "Plank Should Touch"
+      ]
     },
     {
       "id": "rear-delt-t-bar-row",
@@ -3492,5 +3481,15 @@
     "superset",
     "do 155",
     "use orange"
+  ],
+  "distinct": [
+    [
+      "knee-abduction",
+      "knee-adduction"
+    ],
+    [
+      "key:band leg lunge single",
+      "single-leg-band-hinge"
+    ]
   ]
 }
