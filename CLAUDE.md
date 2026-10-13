@@ -200,7 +200,8 @@ Workout name; a phase with one workout matches every day; Focus, Trigger and Mob
 else is not_matched, never guessed. Exercises pair in order: as_called (same canonical id), swapped (substitutions swaps,
 then the fill rule), changed (same movement pattern), then skipped and added; only performed sets up to today count.
 GET /api/program/adherence?block= (loadAdherenceInput, loadConfirmedBlocks in metrics/load.js) feeds the Training tab's
-card; it never goes to the weekly review or to Claude.
+card. The weekly summary's programAdherence (weekAdherence) carries the review week's counts, sets logged against called
+for, and the names of exercises the owner logged instead or on top; never the catalog's own exercise names (MAPS rule).
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and

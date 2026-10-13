@@ -17,7 +17,7 @@ import { vo2maxReport } from '../metrics/vo2max.js';
 import { recommendPrograms } from '../metrics/advisor.js';
 import { createDictionary } from '../metrics/dictionary.js';
 import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
-import { blockAdherence } from '../metrics/adherence.js';
+import { blockAdherence, weekAdherence } from '../metrics/adherence.js';
 
 /** Expands a fixture's dailyFill (one row per day with the given values, minus skip, plus overrides). */
 function expandDaily({ from, to, skip = [], override = {}, ...values }) {
@@ -76,6 +76,12 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       const result = blockAdherence({ ...fx.input, lookup });
       assertSubset(result, fx.expected);
       assertSubset(result.weeks, fx.expectedWeeks, 'weeks');
+      const wk = fx.expectedWeek;
+      const week = weekAdherence(result, wk.from, wk.to, wk.program);
+      assert.deepEqual(week, wk.expected);
+      // Only counts and the owner's logged names: nothing the program calls for.
+      for (const name of wk.neverContains) assert.ok(!JSON.stringify(week).includes(name), `${name} must not be in the review's adherence`);
+      assert.equal(weekAdherence(result, '2026-04-05', '2026-04-11', wk.program), null);
       return;
     }
     if (fx.kind === 'advisor') {

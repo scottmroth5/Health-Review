@@ -176,7 +176,10 @@ catalog lists for that phase. Pick any confirmed block; the one in progress show
   called for (fewer, within, more), and reps with the called-for range.
 - **Your usual changes:** what you most often do instead, skip and add across the block. A typo in a logged name shows
   up here as a change or a skip plus an add; adding the typo as a variant in the exercise dictionary fixes it.
-- The card is on your screen only: it is not part of the weekly review, and nothing from the catalog is committed.
+- **The weekly review** gets the week's counts (as called for, swapped, changed, skipped, added), the sets logged
+  against the sets called for, and the names of the exercises you logged instead or on top. The program's own exercise
+  names never leave your machine (they come from the Mind Pump PDFs), so the review can say "2 skipped" but not which.
+  Nothing from the catalog is committed.
 
 ## One-day dose adjustments
 

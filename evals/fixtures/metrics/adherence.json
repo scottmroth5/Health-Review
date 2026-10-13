@@ -8,109 +8,657 @@
     "2026-03-10: Focus Session = focus, 3 sets logged.",
     "2026-03-11 (Foundation 2 = Workout 2): Squat 2 of 3 sets = as called, under; Curl skipped; Carry (distance only, no reps) added. Sets called 3+2 = 5; logged 2+1 = 3.",
     "2026-03-12 'In between programs': no workout number. 2026-03-13 Phase 9: not in the catalog. 2026-03-14 'Workout 7': no workout 7 in Phase 2.",
-    "Usual changes sort by times, then name."
+    "Usual changes sort by times, then name.",
+    "Review week 03-08 to 03-14 (weekAdherence): 6 days, 2 matched (03-09, 03-11), 1 focus, 3 not matched. Counts: 03-09 swapped 1, changed 1, skipped 1, added 1; 03-11 as called 1, skipped 1, added 1: as_called 1, swapped 1, changed 1, skipped 2, added 2. Sets logged 9 + 3 = 12; called 9 + 5 = 14 to 10 + 5 = 15. Done instead (logged names only): Crunch, Z Press. Added: Carry, Curl. No called-for name (Overhead Press, Row, Sit-ups, the skipped Curl's called side) is in the output; Curl appears only as an exercise logged on top."
   ],
   "dictionary": {
     "version": 1,
     "exercises": [
-      { "id": "squat", "name": "Squat", "implement": "barbell", "pattern": "squat", "primary": true },
-      { "id": "cable-fly", "name": "Cable Fly", "implement": "cable", "pattern": "horizontal press", "primary": false },
-      { "id": "band-fly", "name": "Band Fly", "implement": "band", "pattern": "horizontal press", "primary": false },
-      { "id": "overhead-press", "name": "Overhead Press", "implement": "barbell", "pattern": "vertical press", "primary": true },
-      { "id": "z-press", "name": "Z Press", "implement": "barbell", "pattern": "vertical press", "primary": true },
-      { "id": "sit-ups", "name": "Sit-ups", "implement": "bodyweight", "pattern": "core", "primary": false },
-      { "id": "crunch", "name": "Crunch", "implement": "bodyweight", "pattern": "core", "primary": false },
-      { "id": "row", "name": "Row", "implement": "dumbbell", "pattern": "horizontal pull", "primary": false },
-      { "id": "curl", "name": "Curl", "implement": "dumbbell", "pattern": "arms", "primary": false },
-      { "id": "carry", "name": "Carry", "implement": "dumbbell", "pattern": "carry", "primary": false }
+      {
+        "id": "squat",
+        "name": "Squat",
+        "implement": "barbell",
+        "pattern": "squat",
+        "primary": true
+      },
+      {
+        "id": "cable-fly",
+        "name": "Cable Fly",
+        "implement": "cable",
+        "pattern": "horizontal press",
+        "primary": false
+      },
+      {
+        "id": "band-fly",
+        "name": "Band Fly",
+        "implement": "band",
+        "pattern": "horizontal press",
+        "primary": false
+      },
+      {
+        "id": "overhead-press",
+        "name": "Overhead Press",
+        "implement": "barbell",
+        "pattern": "vertical press",
+        "primary": true
+      },
+      {
+        "id": "z-press",
+        "name": "Z Press",
+        "implement": "barbell",
+        "pattern": "vertical press",
+        "primary": true
+      },
+      {
+        "id": "sit-ups",
+        "name": "Sit-ups",
+        "implement": "bodyweight",
+        "pattern": "core",
+        "primary": false
+      },
+      {
+        "id": "crunch",
+        "name": "Crunch",
+        "implement": "bodyweight",
+        "pattern": "core",
+        "primary": false
+      },
+      {
+        "id": "row",
+        "name": "Row",
+        "implement": "dumbbell",
+        "pattern": "horizontal pull",
+        "primary": false
+      },
+      {
+        "id": "curl",
+        "name": "Curl",
+        "implement": "dumbbell",
+        "pattern": "arms",
+        "primary": false
+      },
+      {
+        "id": "carry",
+        "name": "Carry",
+        "implement": "dumbbell",
+        "pattern": "carry",
+        "primary": false
+      }
     ]
   },
   "input": {
-    "substitutions": { "swaps": [{ "prescribed": "overhead-press", "use": ["z-press"], "reason": "preference" }] },
+    "substitutions": {
+      "swaps": [
+        {
+          "prescribed": "overhead-press",
+          "use": [
+            "z-press"
+          ],
+          "reason": "preference"
+        }
+      ]
+    },
     "program": {
       "name": "Alpha",
       "weeks": 4,
       "phases": [
-        { "name": "Phase 1", "weeks": [1, 2], "sets": "3", "reps": "8-12",
-          "workouts": [{ "name": "Workouts 1-3", "exercises": [{ "name": "Squat" }, { "name": "Cable Fly" }] }] },
-        { "name": "Phase 2", "weeks": [3, 4],
+        {
+          "name": "Phase 1",
+          "weeks": [
+            1,
+            2
+          ],
+          "sets": "3",
+          "reps": "8-12",
           "workouts": [
-            { "name": "Workout 1", "exercises": [
-              { "name": "Overhead Press", "sets": "4-5", "reps": "5" },
-              { "name": "Sit-ups", "sets": "2", "reps": "15" },
-              { "name": "Row", "sets": "3", "reps": "8-12" }] },
-            { "name": "Workout 2", "exercises": [
-              { "name": "Squat", "sets": "3", "reps": "5" },
-              { "name": "Curl", "sets": "2", "reps": "10-12" }] }
-          ] }
+            {
+              "name": "Workouts 1-3",
+              "exercises": [
+                {
+                  "name": "Squat"
+                },
+                {
+                  "name": "Cable Fly"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Phase 2",
+          "weeks": [
+            3,
+            4
+          ],
+          "workouts": [
+            {
+              "name": "Workout 1",
+              "exercises": [
+                {
+                  "name": "Overhead Press",
+                  "sets": "4-5",
+                  "reps": "5"
+                },
+                {
+                  "name": "Sit-ups",
+                  "sets": "2",
+                  "reps": "15"
+                },
+                {
+                  "name": "Row",
+                  "sets": "3",
+                  "reps": "8-12"
+                }
+              ]
+            },
+            {
+              "name": "Workout 2",
+              "exercises": [
+                {
+                  "name": "Squat",
+                  "sets": "3",
+                  "reps": "5"
+                },
+                {
+                  "name": "Curl",
+                  "sets": "2",
+                  "reps": "10-12"
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     "days": [
-      { "date": "2026-03-02", "week": 1, "phase": "Phase 1", "workout": "Alpha Foundation 2 - Phase 1", "exercises": [
-        { "name": "Squats", "canonical_id": "squat", "canonicalName": "Squat", "implement": "barbell", "pattern": "squat", "sets": 3, "reps": [10, 10, 12] },
-        { "name": "Band Flys", "canonical_id": "band-fly", "canonicalName": "Band Fly", "implement": "band", "pattern": "horizontal press", "sets": 3, "reps": [12, 12, 15] }] },
-      { "date": "2026-03-09", "week": 3, "phase": "Phase 2", "workout": "Alpha Foundation 1 - Phase 2", "exercises": [
-        { "name": "Z Press", "canonical_id": "z-press", "canonicalName": "Z Press", "implement": "barbell", "pattern": "vertical press", "sets": 5, "reps": [5, 5, 5, 5, 4] },
-        { "name": "Crunches", "canonical_id": "crunch", "canonicalName": "Crunch", "implement": "bodyweight", "pattern": "core", "sets": 2, "reps": [20, 20] },
-        { "name": "Curls", "canonical_id": "curl", "canonicalName": "Curl", "implement": "dumbbell", "pattern": "arms", "sets": 2, "reps": [12, 12] },
-        { "name": "Squat", "canonical_id": "squat", "canonicalName": "Squat", "implement": "barbell", "pattern": "squat", "sets": 0, "reps": [] }] },
-      { "date": "2026-03-10", "week": 3, "phase": "Phase 2", "workout": "Alpha Focus Session (Arms)", "exercises": [
-        { "name": "Curl", "canonical_id": "curl", "canonicalName": "Curl", "implement": "dumbbell", "pattern": "arms", "sets": 3, "reps": [12, 12, 12] }] },
-      { "date": "2026-03-11", "week": 3, "phase": "Phase 2", "workout": "Alpha Foundation 2 - Phase 2", "exercises": [
-        { "name": "Squat", "canonical_id": "squat", "canonicalName": "Squat", "implement": "barbell", "pattern": "squat", "sets": 2, "reps": [5, 5] },
-        { "name": "Farmer Carry", "canonical_id": "carry", "canonicalName": "Carry", "implement": "dumbbell", "pattern": "carry", "sets": 1, "reps": [] }] },
-      { "date": "2026-03-12", "week": 3, "phase": "Phase 2", "workout": "In between programs", "exercises": [
-        { "name": "Curl", "canonical_id": "curl", "canonicalName": "Curl", "implement": "dumbbell", "pattern": "arms", "sets": 2, "reps": [10, 10] }] },
-      { "date": "2026-03-13", "week": 3, "phase": "Phase 9", "workout": "Alpha Foundation 1", "exercises": [
-        { "name": "Curl", "canonical_id": "curl", "canonicalName": "Curl", "implement": "dumbbell", "pattern": "arms", "sets": 1, "reps": [10] }] },
-      { "date": "2026-03-14", "week": 3, "phase": "Phase 2", "workout": "Alpha Workout 7", "exercises": [
-        { "name": "Curl", "canonical_id": "curl", "canonicalName": "Curl", "implement": "dumbbell", "pattern": "arms", "sets": 1, "reps": [10] }] }
+      {
+        "date": "2026-03-02",
+        "week": 1,
+        "phase": "Phase 1",
+        "workout": "Alpha Foundation 2 - Phase 1",
+        "exercises": [
+          {
+            "name": "Squats",
+            "canonical_id": "squat",
+            "canonicalName": "Squat",
+            "implement": "barbell",
+            "pattern": "squat",
+            "sets": 3,
+            "reps": [
+              10,
+              10,
+              12
+            ]
+          },
+          {
+            "name": "Band Flys",
+            "canonical_id": "band-fly",
+            "canonicalName": "Band Fly",
+            "implement": "band",
+            "pattern": "horizontal press",
+            "sets": 3,
+            "reps": [
+              12,
+              12,
+              15
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-03-09",
+        "week": 3,
+        "phase": "Phase 2",
+        "workout": "Alpha Foundation 1 - Phase 2",
+        "exercises": [
+          {
+            "name": "Z Press",
+            "canonical_id": "z-press",
+            "canonicalName": "Z Press",
+            "implement": "barbell",
+            "pattern": "vertical press",
+            "sets": 5,
+            "reps": [
+              5,
+              5,
+              5,
+              5,
+              4
+            ]
+          },
+          {
+            "name": "Crunches",
+            "canonical_id": "crunch",
+            "canonicalName": "Crunch",
+            "implement": "bodyweight",
+            "pattern": "core",
+            "sets": 2,
+            "reps": [
+              20,
+              20
+            ]
+          },
+          {
+            "name": "Curls",
+            "canonical_id": "curl",
+            "canonicalName": "Curl",
+            "implement": "dumbbell",
+            "pattern": "arms",
+            "sets": 2,
+            "reps": [
+              12,
+              12
+            ]
+          },
+          {
+            "name": "Squat",
+            "canonical_id": "squat",
+            "canonicalName": "Squat",
+            "implement": "barbell",
+            "pattern": "squat",
+            "sets": 0,
+            "reps": []
+          }
+        ]
+      },
+      {
+        "date": "2026-03-10",
+        "week": 3,
+        "phase": "Phase 2",
+        "workout": "Alpha Focus Session (Arms)",
+        "exercises": [
+          {
+            "name": "Curl",
+            "canonical_id": "curl",
+            "canonicalName": "Curl",
+            "implement": "dumbbell",
+            "pattern": "arms",
+            "sets": 3,
+            "reps": [
+              12,
+              12,
+              12
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-03-11",
+        "week": 3,
+        "phase": "Phase 2",
+        "workout": "Alpha Foundation 2 - Phase 2",
+        "exercises": [
+          {
+            "name": "Squat",
+            "canonical_id": "squat",
+            "canonicalName": "Squat",
+            "implement": "barbell",
+            "pattern": "squat",
+            "sets": 2,
+            "reps": [
+              5,
+              5
+            ]
+          },
+          {
+            "name": "Farmer Carry",
+            "canonical_id": "carry",
+            "canonicalName": "Carry",
+            "implement": "dumbbell",
+            "pattern": "carry",
+            "sets": 1,
+            "reps": []
+          }
+        ]
+      },
+      {
+        "date": "2026-03-12",
+        "week": 3,
+        "phase": "Phase 2",
+        "workout": "In between programs",
+        "exercises": [
+          {
+            "name": "Curl",
+            "canonical_id": "curl",
+            "canonicalName": "Curl",
+            "implement": "dumbbell",
+            "pattern": "arms",
+            "sets": 2,
+            "reps": [
+              10,
+              10
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-03-13",
+        "week": 3,
+        "phase": "Phase 9",
+        "workout": "Alpha Foundation 1",
+        "exercises": [
+          {
+            "name": "Curl",
+            "canonical_id": "curl",
+            "canonicalName": "Curl",
+            "implement": "dumbbell",
+            "pattern": "arms",
+            "sets": 1,
+            "reps": [
+              10
+            ]
+          }
+        ]
+      },
+      {
+        "date": "2026-03-14",
+        "week": 3,
+        "phase": "Phase 2",
+        "workout": "Alpha Workout 7",
+        "exercises": [
+          {
+            "name": "Curl",
+            "canonical_id": "curl",
+            "canonicalName": "Curl",
+            "implement": "dumbbell",
+            "pattern": "arms",
+            "sets": 1,
+            "reps": [
+              10
+            ]
+          }
+        ]
+      }
     ]
   },
   "expected": {
-    "coverage": { "days": 7, "matched": 3, "focus": 1, "notMatched": 3 },
+    "coverage": {
+      "days": 7,
+      "matched": 3,
+      "focus": 1,
+      "notMatched": 3
+    },
     "usualChanges": {
       "swaps": [
-        { "what": "Cable Fly → Band Fly", "times": 1 },
-        { "what": "Overhead Press → Z Press", "times": 1 },
-        { "what": "Sit-ups → Crunch", "times": 1 }
+        {
+          "what": "Cable Fly → Band Fly",
+          "times": 1
+        },
+        {
+          "what": "Overhead Press → Z Press",
+          "times": 1
+        },
+        {
+          "what": "Sit-ups → Crunch",
+          "times": 1
+        }
       ],
-      "skipped": [{ "what": "Curl", "times": 1 }, { "what": "Row", "times": 1 }],
-      "added": [{ "what": "Carry", "times": 1 }, { "what": "Curl", "times": 1 }]
+      "skipped": [
+        {
+          "what": "Curl",
+          "times": 1
+        },
+        {
+          "what": "Row",
+          "times": 1
+        }
+      ],
+      "added": [
+        {
+          "what": "Carry",
+          "times": 1
+        },
+        {
+          "what": "Curl",
+          "times": 1
+        }
+      ]
     }
   },
   "expectedWeeks": [
-    { "week": 3, "sessions": [
-      { "date": "2026-03-14", "match": "not_matched", "reason": "no workout 7 in Phase 2", "setsLogged": 1 },
-      { "date": "2026-03-13", "match": "not_matched", "reason": "no Phase 9 in the catalog", "setsLogged": 1 },
-      { "date": "2026-03-12", "match": "not_matched", "reason": "no workout number in the name", "setsLogged": 2 },
-      { "date": "2026-03-11", "match": "matched", "catalogWorkout": "Workout 2", "catalogPhase": "Phase 2",
-        "counts": { "as_called": 1, "swapped": 0, "changed": 0, "skipped": 1, "added": 1 },
-        "setsCalled": { "min": 5, "max": 5 }, "setsLogged": 3,
-        "rows": [
-          { "status": "as_called", "called": { "name": "Squat" }, "logged": { "name": "Squat", "sets": 2 }, "setsStatus": "under", "repsInRange": { "inRange": 2, "of": 2 } },
-          { "status": "skipped", "called": { "name": "Curl" }, "logged": null },
-          { "status": "added", "called": null, "logged": { "name": "Carry", "sets": 1 }, "repsInRange": null }
-        ] },
-      { "date": "2026-03-10", "match": "focus", "reason": "focus, trigger or mobility session (no fixed list)", "setsLogged": 3 },
-      { "date": "2026-03-09", "match": "matched", "catalogWorkout": "Workout 1",
-        "counts": { "as_called": 0, "swapped": 1, "changed": 1, "skipped": 1, "added": 1 },
-        "setsCalled": { "min": 9, "max": 10 }, "setsLogged": 9, "exercisesLogged": 3,
-        "rows": [
-          { "status": "swapped", "reason": "your swap", "called": { "name": "Overhead Press" }, "logged": { "name": "Z Press", "sets": 5 }, "setsStatus": "within", "repsInRange": { "inRange": 4, "of": 5 } },
-          { "status": "changed", "called": { "name": "Sit-ups" }, "logged": { "name": "Crunch" }, "setsStatus": "within", "repsInRange": { "inRange": 0, "of": 2 } },
-          { "status": "skipped", "called": { "name": "Row" } },
-          { "status": "added", "logged": { "name": "Curl" } }
-        ] }
-    ] },
-    { "week": 1, "sessions": [
-      { "date": "2026-03-02", "match": "matched", "catalogWorkout": "Workouts 1-3",
-        "counts": { "as_called": 1, "swapped": 1, "changed": 0, "skipped": 0, "added": 0 },
-        "setsCalled": { "min": 6, "max": 6 }, "setsLogged": 6,
-        "rows": [
-          { "status": "as_called", "called": { "name": "Squat", "sets": { "min": 3, "max": 3 } }, "setsStatus": "within", "repsInRange": { "inRange": 3, "of": 3 } },
-          { "status": "swapped", "reason": "fills the cable or machine slot", "called": { "name": "Cable Fly" }, "logged": { "name": "Band Fly" }, "repsInRange": { "inRange": 2, "of": 3 } }
-        ] }
-    ] }
-  ]
+    {
+      "week": 3,
+      "sessions": [
+        {
+          "date": "2026-03-14",
+          "match": "not_matched",
+          "reason": "no workout 7 in Phase 2",
+          "setsLogged": 1
+        },
+        {
+          "date": "2026-03-13",
+          "match": "not_matched",
+          "reason": "no Phase 9 in the catalog",
+          "setsLogged": 1
+        },
+        {
+          "date": "2026-03-12",
+          "match": "not_matched",
+          "reason": "no workout number in the name",
+          "setsLogged": 2
+        },
+        {
+          "date": "2026-03-11",
+          "match": "matched",
+          "catalogWorkout": "Workout 2",
+          "catalogPhase": "Phase 2",
+          "counts": {
+            "as_called": 1,
+            "swapped": 0,
+            "changed": 0,
+            "skipped": 1,
+            "added": 1
+          },
+          "setsCalled": {
+            "min": 5,
+            "max": 5
+          },
+          "setsLogged": 3,
+          "rows": [
+            {
+              "status": "as_called",
+              "called": {
+                "name": "Squat"
+              },
+              "logged": {
+                "name": "Squat",
+                "sets": 2
+              },
+              "setsStatus": "under",
+              "repsInRange": {
+                "inRange": 2,
+                "of": 2
+              }
+            },
+            {
+              "status": "skipped",
+              "called": {
+                "name": "Curl"
+              },
+              "logged": null
+            },
+            {
+              "status": "added",
+              "called": null,
+              "logged": {
+                "name": "Carry",
+                "sets": 1
+              },
+              "repsInRange": null
+            }
+          ]
+        },
+        {
+          "date": "2026-03-10",
+          "match": "focus",
+          "reason": "focus, trigger or mobility session (no fixed list)",
+          "setsLogged": 3
+        },
+        {
+          "date": "2026-03-09",
+          "match": "matched",
+          "catalogWorkout": "Workout 1",
+          "counts": {
+            "as_called": 0,
+            "swapped": 1,
+            "changed": 1,
+            "skipped": 1,
+            "added": 1
+          },
+          "setsCalled": {
+            "min": 9,
+            "max": 10
+          },
+          "setsLogged": 9,
+          "exercisesLogged": 3,
+          "rows": [
+            {
+              "status": "swapped",
+              "reason": "your swap",
+              "called": {
+                "name": "Overhead Press"
+              },
+              "logged": {
+                "name": "Z Press",
+                "sets": 5
+              },
+              "setsStatus": "within",
+              "repsInRange": {
+                "inRange": 4,
+                "of": 5
+              }
+            },
+            {
+              "status": "changed",
+              "called": {
+                "name": "Sit-ups"
+              },
+              "logged": {
+                "name": "Crunch"
+              },
+              "setsStatus": "within",
+              "repsInRange": {
+                "inRange": 0,
+                "of": 2
+              }
+            },
+            {
+              "status": "skipped",
+              "called": {
+                "name": "Row"
+              }
+            },
+            {
+              "status": "added",
+              "logged": {
+                "name": "Curl"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "week": 1,
+      "sessions": [
+        {
+          "date": "2026-03-02",
+          "match": "matched",
+          "catalogWorkout": "Workouts 1-3",
+          "counts": {
+            "as_called": 1,
+            "swapped": 1,
+            "changed": 0,
+            "skipped": 0,
+            "added": 0
+          },
+          "setsCalled": {
+            "min": 6,
+            "max": 6
+          },
+          "setsLogged": 6,
+          "rows": [
+            {
+              "status": "as_called",
+              "called": {
+                "name": "Squat",
+                "sets": {
+                  "min": 3,
+                  "max": 3
+                }
+              },
+              "setsStatus": "within",
+              "repsInRange": {
+                "inRange": 3,
+                "of": 3
+              }
+            },
+            {
+              "status": "swapped",
+              "reason": "fills the cable or machine slot",
+              "called": {
+                "name": "Cable Fly"
+              },
+              "logged": {
+                "name": "Band Fly"
+              },
+              "repsInRange": {
+                "inRange": 2,
+                "of": 3
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expectedWeek": {
+    "from": "2026-03-08",
+    "to": "2026-03-14",
+    "program": "Alpha",
+    "expected": {
+      "program": "Alpha",
+      "days": 6,
+      "matched": 2,
+      "focus": 1,
+      "notMatched": 3,
+      "counts": {
+        "as_called": 1,
+        "swapped": 1,
+        "changed": 1,
+        "skipped": 2,
+        "added": 2
+      },
+      "setsLogged": 12,
+      "setsCalled": {
+        "min": 14,
+        "max": 15
+      },
+      "doneInstead": [
+        {
+          "name": "Crunch",
+          "times": 1
+        },
+        {
+          "name": "Z Press",
+          "times": 1
+        }
+      ],
+      "added": [
+        {
+          "name": "Carry",
+          "times": 1
+        },
+        {
+          "name": "Curl",
+          "times": 1
+        }
+      ]
+    },
+    "neverContains": [
+      "Overhead Press",
+      "Row",
+      "Sit-ups"
+    ]
+  }
 }

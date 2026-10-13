@@ -37,6 +37,14 @@ export function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }
     ? { ...loadAdvisorInput(db, weekEnd, cat), programs: cat.programs, lookup: (dictionary ?? loadDictionary()).lookup,
       substitutions: substitutions ?? loadSubstitutions() }
     : null;
+  // Called for vs logged for the week (metrics/adherence.js): the confirmed block the week ends in, when its program is in
+  // the catalog. computeWeek reduces it to counts and the owner's logged names.
+  const block = cat ? db.prepare(`SELECT id, program FROM program_blocks WHERE source = 'confirmed' AND start_date <= ?
+    AND COALESCE(end_date, ?) >= ? ORDER BY start_date DESC LIMIT 1`).get(weekEnd, weekEnd, addDays(weekEnd, -6)) : null;
+  const adherenceInput = block && cat.find(block.program)
+    ? { program: cat.find(block.program), programName: block.program, days: loadAdherenceInput(db, block.id, weekEnd),
+      lookup: (dictionary ?? loadDictionary()).lookup, substitutions: substitutions ?? loadSubstitutions() }
+    : null;
   const nextMorning = addDays(weekEnd, 1);
   return {
     daily_metrics: db.prepare('SELECT * FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(from, nextMorning),
@@ -54,6 +62,7 @@ export function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }
     // The confirmed program block the week ends in, with its phase and week from the catalog.
     program,
     advisor_input: advisorInput,
+    adherence_input: adherenceInput,
     primary_sets: loadPrimarySets(db, weekEnd),
     session_phases: loadSessionPhases(db),
   };

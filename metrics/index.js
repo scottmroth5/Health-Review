@@ -11,6 +11,7 @@ import { volumeTrend } from './volume.js';
 import { liftsForReview } from './plateau.js';
 import { advisorDue, advisorForReview, recommendPrograms } from './advisor.js';
 import { weekDataQuality } from './dataquality.js';
+import { blockAdherence, weekAdherence } from './adherence.js';
 
 /**
  * @param {{ daily_metrics: object[], workout_sessions: object[], strength_sets: object[], drinking_days: object[], checkins: object[] }} data
@@ -30,6 +31,9 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
     program: data.program ?? null,
     // Ranked at equal weights, only near the end of a block or between blocks.
     advisor: data.advisor_input && advisorDue(data.program ?? null, weekEnd) ? advisorForReview(recommendPrograms(data.advisor_input)) : null,
+    // How the week's lifting days followed the program: counts and the owner's logged names only (never the catalog's).
+    programAdherence: data.adherence_input
+      ? weekAdherence(blockAdherence(data.adherence_input), w.week.from, w.week.to, data.adherence_input.programName) : null,
     lifts: liftsForReview(data.primary_sets ?? [], weekEnd, { phases: new Map(Object.entries(data.session_phases ?? {})) }),
     drinking: drinking(data.drinking_days, data.daily_metrics, weekEnd),
     checkins: checkins(data.checkins, data.daily_metrics, weekEnd),

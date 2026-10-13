@@ -225,6 +225,39 @@ test('summary: the current program block, its logged phase and finish reach the 
   store.close();
 });
 
+test('summary: called for vs logged reaches the review as counts and logged names only, grounded; absent without a catalog', async () => {
+  const { createCatalog } = await import('../metrics/catalog.js');
+  const { createDictionary } = await import('../metrics/dictionary.js');
+  const { loadWeekData } = await import('../metrics/load.js');
+  const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 4, phases: [
+    { name: 'Phase 1', weeks: [1, 4], sets: '3', reps: '5', workouts: [{ name: 'Workout 1', exercises: [{ name: 'Press' }, { name: 'Row' }] }] }] }] },
+  { programs: ['MAPS Symmetry'] });
+  const dictionary = createDictionary({ version: 1, exercises: [
+    { id: 'press', name: 'Press', implement: 'barbell', pattern: 'vertical press', primary: true },
+    { id: 'z-press', name: 'Z Press', implement: 'barbell', pattern: 'vertical press', primary: true },
+    { id: 'row', name: 'Row', implement: 'dumbbell', pattern: 'horizontal pull', primary: false },
+  ] });
+  const store = openHealthStore(':memory:');
+  const now = new Date().toISOString();
+  store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
+    VALUES ('b1', 'MAPS Symmetry', '2026-09-14', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
+  store.db.prepare(`INSERT INTO log_sessions (id, date, block_id, assignment, program, week, source, updated_at, phase)
+    VALUES ('s1', '2026-09-22', 'b1', 'block', 'MAPS Symmetry', 2, 'forward', ?, 'Phase 1')`).run(now);
+  const { lastInsertRowid } = store.db.prepare(`INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise, canonical_id, implement, movement_pattern)
+    VALUES (2026, 1, '2026-09-22', 'Symmetry Foundation 1 - Phase 1', 'Z Press', 'z-press', 'barbell', 'vertical press')`).run();
+  for (let i = 1; i <= 3; i++) store.db.prepare('INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, reps) VALUES (?, ?, 95, 5)').run(lastInsertRowid, i);
+
+  const week = (cat) => buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog: cat, dictionary, substitutions: { swaps: [] } }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  const s = week(catalog);
+  assert.deepEqual(s.programAdherence, { program: 'MAPS Symmetry', days: 1, matched: 1, focus: 0, notMatched: 0,
+    counts: { as_called: 0, swapped: 0, changed: 1, skipped: 1, added: 0 }, setsLogged: 3, setsCalled: { min: 6, max: 6 },
+    doneInstead: [{ name: 'Z Press', times: 1 }], added: [] });
+  assert.ok(!/"(Press|Row)"/.test(JSON.stringify(s.programAdherence)), 'no called-for name is sent');
+  assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'One lifting day followed the program: 3 sets logged of 6 called for, 1 skipped, Z Press done instead.']]), allowedNumbers(s, '')), []);
+  assert.equal(week(null).programAdherence, undefined, 'no catalog, no adherence');
+  store.close();
+});
+
 test('summary: the Program Advisor ranking reaches the review only within 21 days of the block\'s earliest finish, grounded', async () => {
   const { createCatalog } = await import('../metrics/catalog.js');
   const { createDictionary } = await import('../metrics/dictionary.js');

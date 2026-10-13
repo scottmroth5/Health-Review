@@ -167,3 +167,36 @@ export function blockAdherence({ days, program, lookup, substitutions = {} }) {
   }
   return { coverage, weeks, usualChanges: { swaps: top(swapsSeen), skipped: top(skipped), added: top(added) } };
 }
+
+/**
+ * The review week's part of a block's adherence, for the weekly summary: counts, sets, and the names of exercises the
+ * owner logged instead of or on top of the program. The program's own exercise names (transcribed from the MAPS PDFs)
+ * never appear, so nothing from the catalog leaves the machine. Null when the week has no lifting days in the block.
+ * @param {ReturnType<typeof blockAdherence>} result
+ * @param {string} from  first day of the week
+ * @param {string} to    last day of the week
+ * @param {string} program  the block's program name
+ */
+export function weekAdherence(result, from, to, program) {
+  const days = result.weeks.flatMap((w) => w.sessions).filter((s) => s.date >= from && s.date <= to);
+  if (!days.length) return null;
+  const matched = days.filter((s) => s.match === 'matched');
+  const counts = Object.fromEntries(STATUSES.map((st) => [st, matched.reduce((n, s) => n + s.counts[st], 0)]));
+  const tally = (statuses) => {
+    const seen = new Map();
+    for (const s of matched) for (const r of s.rows) if (statuses.includes(r.status)) seen.set(r.logged.name, (seen.get(r.logged.name) ?? 0) + 1);
+    return top(seen).map(({ what, times }) => ({ name: what, times }));
+  };
+  return {
+    program,
+    days: days.length,
+    matched: matched.length,
+    focus: days.filter((s) => s.match === 'focus').length,
+    notMatched: days.filter((s) => s.match === 'not_matched').length,
+    counts,
+    setsLogged: matched.reduce((n, s) => n + s.setsLogged, 0),
+    setsCalled: { min: matched.reduce((n, s) => n + s.setsCalled.min, 0), max: matched.reduce((n, s) => n + s.setsCalled.max, 0) },
+    doneInstead: tally(['swapped', 'changed']),
+    added: tally(['added']),
+  };
+}
