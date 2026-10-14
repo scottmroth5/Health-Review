@@ -12,7 +12,9 @@
 //   vo2       conditioning (0 to 3), averaged with past runs' VO2 max change (first 4 weeks to last 4; +1 scores 1,
 //             -1 scores 0)
 // Total = the goals' scores averaged by weight (whole numbers 0 to 3, default 1 each; 0 leaves a goal out) x completion
-// (0.5 + 0.5 x average share of the program reached on past runs; 1 with no past runs); null when every weight is 0.
+// (0.5 + 0.5 x average share of the program reached on past runs; a program never run assumes the owner's average
+// over all past runs, so trying something new earns no bonus) x a low-goal factor (the lowest score among goals weighted
+// above 0, when under 0.2: 0.5 + 0.5 x score / 0.2, so a 0 halves the total); null when every weight is 0.
 // Goal scores are rounded to 2 places before the total. The program run last, and programs the owner listed under
 // not_ranked in config/substitutions.json, are left out with their reason; add-ons (profile.standalone false) are
 // scored and listed apart. Reasons are facts from these numbers only.
@@ -27,6 +29,8 @@ export const EQUAL_WEIGHTS = Object.freeze(Object.fromEntries(GOALS.map((g) => [
 export const HISTORY_WINDOW_DAYS = 14; // lift change: first and last 2 weeks of a run
 export const VO2_WINDOW_DAYS = 28; // VO2 max change: first and last 4 weeks of a run
 export const MIN_WATCH_SESSIONS = 10;
+export const LOW_GOAL = 0.2; // a weighted goal scoring under this lowers the total (a 0 halves it)
+const GOAL_LABELS = { strength: 'strength', joint: 'joint health and balance', time: 'time', vo2: 'VO2 max' };
 const WORK_MIN_PER_SET = 0.75;
 const DEFAULT_REST_MIN = 1.5;
 const clamp = (x) => Math.min(1, Math.max(0, x));
@@ -137,6 +141,8 @@ export function liftChanges(sets, start, end) {
     const win = s.date <= earlyTo ? 'early' : s.date >= lateFrom ? 'late' : null;
     if (!win) continue;
     if (!lifts.has(s.canonical_id)) lifts.set(s.canonical_id, { name: s.canonical_name ?? s.exercise, sets: [] });
+    // Only within one rep range: a submaximal 10-rep set's estimated max reads far below a near-max single, so comparing
+    // across ranges made heavy-start, high-rep-finish runs look like large losses (owner's choice, 2026-10-14).
     lifts.get(s.canonical_id).sets.push({ win, range: rangeOf(s.reps), e1rm: epley(totalLbs(s), s.reps) });
   }
   const out = [];
@@ -202,6 +208,9 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
   const stalled = lifts.filter((l) => (l.status === 'stalled' || l.status === 'regressing') && l.range);
 
   const past = blocks.filter((b) => b.status !== 'in_progress' && b.end_date && b.end_date <= asOf);
+  // What a program never run is assumed to reach: the owner's average over every past run.
+  const pastPercents = past.map((b) => b.percent).filter((p) => p !== null && p !== undefined);
+  const usualCompletion = pastPercents.length ? Math.round(avg(pastPercents)) : null;
   const score = (program) => {
     const pr = profiles.get(program.name);
     const runs = past.filter((b) => b.program === program.name).sort((a, b) => a.start_date.localeCompare(b.start_date));
@@ -226,8 +235,14 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
       time: round(clamp((360 - weeklyMinutes) / 240), 2),
       vo2: round(vo2History === null ? vo2Profile : (vo2Profile + clamp(0.5 + vo2History / 2)) / 2, 2),
     };
-    const multiplier = completion === null ? 1 : 0.5 + (0.5 * completion) / 100;
-    const total = weightSum ? round((GOALS.reduce((a, g) => a + w[g] * scores[g], 0) / weightSum) * multiplier, 2) : null;
+    const completionAssumed = completion === null && !runs.length ? usualCompletion : null;
+    const reached = completion ?? completionAssumed;
+    const multiplier = reached === null ? 1 : 0.5 + (0.5 * reached) / 100;
+    const weighted = GOALS.filter((g) => w[g] > 0).map((g) => ({ goal: g, score: scores[g] }));
+    const lowest = weighted.reduce((lo, x) => (lo === null || x.score < lo.score ? x : lo), null);
+    const lowGoal = lowest && lowest.score < LOW_GOAL ? lowest : null;
+    const lowFactor = lowGoal ? 0.5 + (0.5 * lowGoal.score) / LOW_GOAL : 1;
+    const total = weightSum ? round((GOALS.reduce((a, g) => a + w[g] * scores[g], 0) / weightSum) * multiplier * lowFactor, 2) : null;
 
     const reasons = [];
     const lastLifts = runLifts.at(-1);
@@ -239,6 +254,8 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
     if (lastVo2) reasons.push(`VO2 max ${signed(lastVo2.change)} during your ${lastVo2.block.start_date.slice(0, 4)} run`);
     reasons.push(`About ${pr.sessionsPerWeek} x ${minutesPerSession} min a week${pr.extraMinutesPerWeek ? ` plus ${pr.extraMinutesPerWeek} min of extra sessions` : ''}`);
     if (completion !== null) reasons.push(`You reached ${completion}% of it on average (${runs.length} ${runs.length === 1 ? 'run' : 'runs'})`);
+    if (completionAssumed !== null) reasons.push(`Not run before: assumes your average completion (${completionAssumed}%)`);
+    if (lowGoal) reasons.push(`Scores ${lowGoal.score} for ${GOAL_LABELS[lowGoal.goal]}, which lowers its total`);
     if (fresh) reasons.push(`Trains mostly ${pr.mainRange} reps, a change for your stalled lifts`);
     // "Calls for", not "prescribes": the review's medication check flags "prescription" outside physician discussion.
     const flags = pr.avoidHits.map((h) => `Calls for ${h.name} (${h.phase}), on your avoid list`);
@@ -248,6 +265,8 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
       total,
       scores,
       completion,
+      ...(completionAssumed !== null ? { completionAssumed } : {}),
+      ...(lowGoal ? { lowGoal } : {}),
       runs: runs.length,
       lessHistory: !runLifts.length && !runVo2.length,
       liftChangePct: liftHistory,

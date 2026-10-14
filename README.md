@@ -223,7 +223,14 @@ Each program gets four goal scores from 0 to 1:
 - **VO2 max:** the program's conditioning, averaged with your VO2 max change from the first 4 weeks to the last 4 on
   past runs.
 
-The total averages the four by their weights, then scales by how much of the program you reached on past runs. Each
+The total averages the four by their weights, then scales by how much of the program you reached on past runs. Two
+rules keep it honest (from a backtest against your past program choices, 2026-10-14):
+- **A program you've never run** assumes your average completion across all past runs, so being untried earns no bonus.
+- **A goal scoring under 0.2** (of the ones you weight above Off) lowers the total, down to half for a 0. Before this,
+  HIIT ranked first for eight straight years with a strength score of 0. Set strength to Off and it ranks on the rest.
+
+Lift changes from past runs compare only within one rep range: comparing a 10-rep finish with heavy singles at the
+start read as a large strength loss, so those runs give no lift number rather than a wrong one. Each
 pick lists its reasons as facts from these numbers, such as "Your Mar 2024 run: Barbell Squat +8%" or
 "About 3 x 45 min a week".
 

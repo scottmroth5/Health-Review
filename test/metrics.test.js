@@ -14,7 +14,7 @@ import { exerciseKey, exerciseName } from '../metrics/exercises.js';
 import { volumeByExercise } from '../metrics/volume.js';
 import { strength } from '../metrics/strength.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
-import { recommendPrograms } from '../metrics/advisor.js';
+import { recommendPrograms, liftChanges } from '../metrics/advisor.js';
 import { createDictionary } from '../metrics/dictionary.js';
 import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
 import { blockAdherence, weekAdherence } from '../metrics/adherence.js';
@@ -89,6 +89,10 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       assertSubset(recommendPrograms({ ...fx.input, lookup }), fx.expected);
       for (const v of fx.variants ?? []) assertSubset(recommendPrograms({ ...fx.input, lookup, weights: v.weights }), v.expected, JSON.stringify(v.weights));
       assert.throws(() => recommendPrograms({ ...fx.input, lookup, weights: { time: 4 } }), RangeError);
+      if (fx.liftChangesCase) {
+        const c = fx.liftChangesCase;
+        assert.deepEqual(liftChanges(c.sets, c.start, c.end), c.expected);
+      }
       return;
     }
     const result = computeWeek({ ...EMPTY, ...fx.input }, { weekEnd: fx.weekEnd, ...fx.options });

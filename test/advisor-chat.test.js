@@ -48,7 +48,7 @@ test('chat: a reply with an ungrounded number and symptom wording is retried; th
   const prompts = [];
   const drafts = [
     { reply: 'Go with HIIT at 77 percent effort, the pain will settle.', physicianDiscussion: [] },
-    { reply: 'HIIT leads at 0.63 with time 1 and VO2 max 1. Since you want strength, MAPS Powerlift scores strength 1; target 3 sessions a week.',
+    { reply: 'HIIT leads at 0.31 with time 1 and VO2 max 1. Since you want strength, MAPS Powerlift scores strength 1; target 3 sessions a week.',
       physicianDiscussion: [{ topic: 'Shoulder', detail: 'Discuss the shoulder you mentioned with a physician before heavy pressing.' }] },
   ];
   const r = await askAdvisor({ store, claude: fakeClaude(drafts, prompts), text: 'My shoulder hurts when I press. Strength matters most to me.',

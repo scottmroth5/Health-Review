@@ -452,11 +452,12 @@ test('advisor: ranks the catalog without the program run last; goal weights chan
   assert.equal(equal.available, true);
   assert.deepEqual(equal.weights, { strength: 1, joint: 1, time: 1, vo2: 1 });
   assert.deepEqual(equal.excluded, [{ program: 'MAPS Symmetry', reason: 'run last' }]);
-  assert.deepEqual(equal.ranking.map((r) => [r.program, r.total]), [['HIIT', 0.63], ['MAPS Powerlift', 0.55]]);
+  assert.deepEqual(equal.ranking.map((r) => [r.program, r.total]), [['HIIT', 0.31], ['MAPS Powerlift', 0.28]]); // each has a goal at 0 (HIIT strength, Powerlift VO2 max): x0.5
+  assert.deepEqual(equal.ranking.map((r) => r.lowGoal), [{ goal: 'strength', score: 0 }, { goal: 'vo2', score: 0 }]);
   assert.deepEqual(equal.ranking[1].scores, { strength: 1, joint: 0.2, time: 1, vo2: 0 });
 
-  const strength = (await app.inject('/api/advisor?strength=3')).json(); // Powerlift (3 + 0.2 + 1) / 6 = 0.7; HIIT 2.5 / 6 = 0.42
-  assert.deepEqual(strength.ranking.map((r) => [r.program, r.total]), [['MAPS Powerlift', 0.7], ['HIIT', 0.42]]);
+  const strength = (await app.inject('/api/advisor?strength=3')).json(); // Powerlift (3 + 0.2 + 1) / 6 x 0.5 = 0.35; HIIT 2.5 / 6 x 0.5 = 0.21
+  assert.deepEqual(strength.ranking.map((r) => [r.program, r.total]), [['MAPS Powerlift', 0.35], ['HIIT', 0.21]]);
   for (const bad of ['time=4', 'vo2=-1', 'joint=x']) assert.equal((await app.inject(`/api/advisor?${bad}`)).statusCode, 400, bad);
   await app.close();
   store.close();

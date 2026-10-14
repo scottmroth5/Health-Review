@@ -284,11 +284,11 @@ test('summary: the Program Advisor ranking reaches the review only within 21 day
   const s = week('2026-10-03');
   assert.deepEqual(s.advisor.leftOut, ['MAPS Symmetry (run last)']);
   assert.deepEqual(s.advisor.weights, { strength: 1, joint: 1, time: 1, vo2: 1 });
-  assert.deepEqual(s.advisor.top.map((t) => [t.program, t.total]), [['HIIT', 0.63], ['MAPS Powerlift', 0.55]]);
-  assert.deepEqual(s.advisor.top[1].reasons, ['About 3 x 14 min a week']);
+  assert.deepEqual(s.advisor.top.map((t) => [t.program, t.total]), [['HIIT', 0.31], ['MAPS Powerlift', 0.28]]);
+  assert.deepEqual(s.advisor.top[1].reasons, ['About 3 x 14 min a week', 'Scores 0 for VO2 max, which lowers its total']);
   const allowed = allowedNumbers(s, '');
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress',
-    'Next block: HIIT ranks first at 0.63 (VO2 max 1, time 1). MAPS Powerlift follows at 0.55, about 3 x 14 min a week, strength 1.']]), allowed), []);
+    'Next block: HIIT ranks first at 0.31 (VO2 max 1, time 1). MAPS Powerlift follows at 0.28, about 3 x 14 min a week, strength 1.']]), allowed), []);
   assert.ok(CONTRACT.includes('"advisor"'));
   // The review's medication check flags "prescription(s)" outside physician discussion, so neither the advisor
   // block nor its CONTRACT line may prime the model with the word.

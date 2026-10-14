@@ -11,13 +11,14 @@
     "Alpha run 2025-01-05..2025-02-15 (41 days): squat early best 200x5 = 233.3 -> 233 (Jan 6), late 220x5 = 256.7 -> 257 (Feb 10); the Feb 12 Deload set (250x5) is left out. Change 24 / 233 = 10.3%. Too short (under 56 days) for VO2.",
     "Bravo run 2025-03-01..2025-05-10 (70 days, 60% reached): VO2 first 28 days 40 and 41 = 40.5; last 28 days (from Apr 13) 42 and 43 = 42.5; change +2.0. No primary sets in it.",
     "Current lifts: Squat stalled in 1-5, so programs whose main range is not 1-5 (Bravo, Charlie, Echo) get +0.1 strength.",
-    "Alpha: strength profile min(1, (50 + 25) / 50) = 1, history clamp(0.5 + 10.3 / 20) = 1 -> 1.00; joint 0.5 x 0.5 + 0.3 x 1/3 + 0.2 x (1 - 0.75) = 0.40; weekly 3 x 33 = 99 -> time 1; vo2 0; completion 100 -> x1; total (1 + 0.4 + 1 + 0) / 4 = 0.60.",
+    "Alpha: strength profile min(1, (50 + 25) / 50) = 1, history clamp(0.5 + 10.3 / 20) = 1 -> 1.00; joint 0.5 x 0.5 + 0.3 x 1/3 + 0.2 x (1 - 0.75) = 0.40; weekly 3 x 33 = 99 -> time 1; vo2 0; completion 100 -> x1; mean (1 + 0.4 + 1 + 0) / 4 = 0.60; VO2 max 0 is under 0.2 -> x0.5; total 0.30.",
     "Bravo: strength 20 / 50 = 0.4 + 0.1 = 0.50; joint 0.5 x 1 + 0.3 x 2/3 + 0.2 x 1 = 0.90; weekly 3 x 21 + 30 = 93 -> 1; vo2 (1 + clamp(0.5 + 2 / 2)) / 2 = 1; completion 60 -> x0.8; total 0.85 x 0.8 = 0.68.",
-    "Charlie: strength 33.5 / 50 = 0.67 + 0.1 = 0.77; joint (0 + 0.3 x 2/3 + 0.2 x (1 - 33/40)) x 0.75 = 0.235 x 0.75 = 0.17625 -> 0.18; weekly 51 -> 1; vo2 1/3 -> 0.33; no runs -> x1; total (0.77 + 0.18 + 1 + 0.33) / 4 = 0.57.",
-    "Echo: strength min(1, 50 / 50 + 0.1) = 1; joint 0; weekly 2 x 12 + 20 = 44 -> 1; vo2 0; total 0.50. Delta is the program run last: left out.",
-    "Weights (variants): strength 3x, others 1x divides by 6. Alpha (3 x 1 + 0.4 + 1 + 0) / 6 = 0.733 -> 0.73; Charlie (3 x 0.77 + 0.18 + 1 + 0.33) / 6 = 3.82 / 6 = 0.637 -> 0.64; Bravo (3 x 0.5 + 0.9 + 1 + 1) / 6 x 0.8 = 0.587 -> 0.59.",
-    "Strength only (the other weights 0, so those goals drop out): Alpha 1, Charlie 0.77, Bravo 0.5 x 0.8 = 0.4; Echo 1. Every weight 0: totals are null.",
-    "Foxtrot is listed under not_ranked: left out after Delta with its reason, scored nowhere, and no other result changes (it has no watch minutes, so the ratio is unaffected)."
+    "Charlie: strength 33.5 / 50 = 0.67 + 0.1 = 0.77; joint (0 + 0.3 x 2/3 + 0.2 x (1 - 33/40)) x 0.75 = 0.235 x 0.75 = 0.17625 -> 0.18; weekly 51 -> 1; vo2 1/3 -> 0.33; never run -> assumes the average completion of all past runs (Alpha 100, Bravo 60 = 80) -> x0.9; joint 0.18 is under 0.2 -> x(0.5 + 0.5 x 0.18 / 0.2) = x0.95; total 0.57 x 0.9 x 0.95 = 0.487 -> 0.49.",
+    "Echo: strength min(1, 50 / 50 + 0.1) = 1; joint 0; weekly 2 x 12 + 20 = 44 -> 1; vo2 0; never run -> x0.9; lowest weighted goal 0 -> x0.5; total 0.5 x 0.9 x 0.5 = 0.225 -> 0.23. Delta is the program run last: left out.",
+    "Weights (variants): strength 3x, others 1x divides by 6. Bravo (3 x 0.5 + 0.9 + 1 + 1) / 6 x 0.8 = 0.587 -> 0.59; Charlie 3.82 / 6 x 0.9 x 0.95 = 0.544 -> 0.54; Alpha (3 x 1 + 0.4 + 1 + 0) / 6 x 0.5 = 0.367 -> 0.37.",
+    "Strength only (the other weights 0, so those goals drop out, and so does the low-goal check for them): Alpha 1, Charlie 0.77 x 0.9 = 0.693 -> 0.69, Bravo 0.5 x 0.8 = 0.4; Echo 1 x 0.9 = 0.9. Every weight 0: totals are null.",
+    "Foxtrot is listed under not_ranked: left out after Delta with its reason, scored nowhere, and no other result changes (it has no watch minutes, so the ratio is unaffected).",
+    "Lift change only within one rep range (liftChangesCase): early 200x5 (1-5 reps) and late 180x10 (6-12) have no range in common, and the late 100x15 has no early partner, so nothing is compared. Comparing across ranges was tried and dropped (2026-10-14): a submaximal 10-rep set reads far below a near-max single."
   ],
   "dictionary": {
     "version": 1,
@@ -465,8 +466,43 @@
         "flags": []
       },
       {
+        "program": "Charlie",
+        "total": 0.49,
+        "scores": {
+          "strength": 0.77,
+          "joint": 0.18,
+          "time": 1,
+          "vo2": 0.33
+        },
+        "completion": null,
+        "runs": 0,
+        "lessHistory": true,
+        "minutesPerSession": 17,
+        "minutesSource": "estimate",
+        "weeklyMinutes": 51,
+        "heavyPct": 0,
+        "moderatePct": 67,
+        "unilateralPct": 0,
+        "armIsolationPct": 33,
+        "mainRange": "6-12",
+        "reasons": [
+          "About 3 x 17 min a week",
+          "Not run before: assumes your average completion (80%)",
+          "Scores 0.18 for joint health and balance, which lowers its total",
+          "Trains mostly 6-12 reps, a change for your stalled lifts"
+        ],
+        "flags": [
+          "Calls for Circus Press (Phase 1), on your avoid list"
+        ],
+        "completionAssumed": 80,
+        "lowGoal": {
+          "goal": "joint",
+          "score": 0.18
+        }
+      },
+      {
         "program": "Alpha",
-        "total": 0.6,
+        "total": 0.3,
         "scores": {
           "strength": 1,
           "joint": 0.4,
@@ -489,43 +525,20 @@
         "reasons": [
           "Your Jan 2025 run: Squat +10.3%",
           "About 3 x 33 min a week",
-          "You reached 100% of it on average (1 run)"
+          "You reached 100% of it on average (1 run)",
+          "Scores 0 for VO2 max, which lowers its total"
         ],
-        "flags": []
-      },
-      {
-        "program": "Charlie",
-        "total": 0.57,
-        "scores": {
-          "strength": 0.77,
-          "joint": 0.18,
-          "time": 1,
-          "vo2": 0.33
-        },
-        "completion": null,
-        "runs": 0,
-        "lessHistory": true,
-        "minutesPerSession": 17,
-        "minutesSource": "estimate",
-        "weeklyMinutes": 51,
-        "heavyPct": 0,
-        "moderatePct": 67,
-        "unilateralPct": 0,
-        "armIsolationPct": 33,
-        "mainRange": "6-12",
-        "reasons": [
-          "About 3 x 17 min a week",
-          "Trains mostly 6-12 reps, a change for your stalled lifts"
-        ],
-        "flags": [
-          "Calls for Circus Press (Phase 1), on your avoid list"
-        ]
+        "flags": [],
+        "lowGoal": {
+          "goal": "vo2",
+          "score": 0
+        }
       }
     ],
     "addons": [
       {
         "program": "Echo",
-        "total": 0.5,
+        "total": 0.23,
         "scores": {
           "strength": 1,
           "joint": 0,
@@ -533,7 +546,12 @@
           "vo2": 0
         },
         "minutesPerSession": 12,
-        "weeklyMinutes": 44
+        "weeklyMinutes": 44,
+        "completionAssumed": 80,
+        "lowGoal": {
+          "goal": "joint",
+          "score": 0
+        }
       }
     ],
     "weights": {
@@ -557,16 +575,16 @@
         },
         "ranking": [
           {
-            "program": "Alpha",
-            "total": 0.73
+            "program": "Bravo",
+            "total": 0.59
           },
           {
             "program": "Charlie",
-            "total": 0.64
+            "total": 0.54
           },
           {
-            "program": "Bravo",
-            "total": 0.59
+            "program": "Alpha",
+            "total": 0.37
           }
         ]
       }
@@ -586,7 +604,7 @@
           },
           {
             "program": "Charlie",
-            "total": 0.77
+            "total": 0.69
           },
           {
             "program": "Bravo",
@@ -596,7 +614,7 @@
         "addons": [
           {
             "program": "Echo",
-            "total": 1
+            "total": 0.9
           }
         ]
       }
@@ -625,5 +643,42 @@
         ]
       }
     }
-  ]
+  ],
+  "liftChangesCase": {
+    "start": "2026-01-01",
+    "end": "2026-02-28",
+    "sets": [
+      {
+        "date": "2026-01-02",
+        "canonical_id": "squat",
+        "canonical_name": "Squat",
+        "is_primary": 1,
+        "weight_lbs": 200,
+        "per_hand": 0,
+        "reps": 5,
+        "workout": "A"
+      },
+      {
+        "date": "2026-02-20",
+        "canonical_id": "squat",
+        "canonical_name": "Squat",
+        "is_primary": 1,
+        "weight_lbs": 180,
+        "per_hand": 0,
+        "reps": 10,
+        "workout": "A"
+      },
+      {
+        "date": "2026-02-21",
+        "canonical_id": "squat",
+        "canonical_name": "Squat",
+        "is_primary": 1,
+        "weight_lbs": 100,
+        "per_hand": 0,
+        "reps": 15,
+        "workout": "A"
+      }
+    ],
+    "expected": []
+  }
 }

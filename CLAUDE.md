@@ -186,7 +186,10 @@ programs (the one run last and those listed under not_ranked in config/substitut
 health and balance, time, VO2 max), each 0 to 1 from the prescription (heavy and 6-12 rep shares, one-side and arm
 isolation shares, the profile's judged conditioning and mobility, the avoid list in config/substitutions.json) and past
 runs (first vs last 2 weeks of primary lift estimated maxes, first vs last 4 weeks of VO2 max), times completion on
-past runs. Minutes per session are Apple Watch strength minutes on that program (10+ sessions) or the prescription
+past runs; a program never run assumes the owner's average completion over all past runs, and the lowest score among
+goals weighted above 0, when under 0.2 (LOW_GOAL), scales the total by 0.5 + 0.5 x score / 0.2 (owner's choice after the
+2026-10-14 backtest, where an untried HIIT with strength 0 ranked first for 8 years). Lift history compares only within one
+rep range (across ranges was tried and dropped: submaximal high-rep sets read as losses). Minutes per session are Apple Watch strength minutes on that program (10+ sessions) or the prescription
 estimate times the owner's watch-to-estimate ratio. The model never ranks; reasons are facts from these numbers.
 Goal weights (0 to 3 each, default 1; 0 leaves a goal out) change the weighted average. GET /api/advisor?strength=&joint=&time=&vo2=
 feeds the Training tab's Next program card, whose weight buttons are saved per browser and change that view only;
