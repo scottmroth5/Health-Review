@@ -435,8 +435,8 @@ body.demo .demo-toggle { color: var(--accent); font-weight: 600; }
 
 /* Labs: reference range column, out-of-range marks (text and arrow, not color alone), range editor */
 .lab-range { white-space: nowrap; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.lab-out { font-weight: 600; }
-.lab-out .range-mark { font-weight: 400; font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
+.lab-out { font-weight: 700; font-style: italic; color: var(--danger); }
+.lab-out .range-mark { font-weight: 400; font-size: 0.8rem; white-space: nowrap; }
 .lab-range-editor { margin-top: 8px; border-top: 1px solid var(--grid); padding-top: 6px; }
 .lab-range-editor .actions label { display: inline-flex; align-items: center; gap: 4px; }
 .lab-range-editor .actions input { width: 6.5em; margin: 0; }
