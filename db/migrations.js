@@ -400,4 +400,21 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    id: '017-more-health-metrics',
+    up: `
+      -- Metrics turned on in Health Auto Export on 2026-10-15. Blood oxygen and breathing disturbances go to the review
+      -- only for physician discussion (no high or low labels, like labs).
+      ALTER TABLE daily_metrics ADD COLUMN cardio_recovery_bpm REAL;
+      ALTER TABLE daily_metrics ADD COLUMN walking_hr_avg REAL;
+      ALTER TABLE daily_metrics ADD COLUMN walking_speed_mph REAL;
+      ALTER TABLE daily_metrics ADD COLUMN hr_min REAL;
+      ALTER TABLE daily_metrics ADD COLUMN hr_max REAL;
+      ALTER TABLE daily_metrics ADD COLUMN hr_avg REAL;
+      ALTER TABLE daily_metrics ADD COLUMN wrist_temp_f REAL;
+      ALTER TABLE daily_metrics ADD COLUMN physical_effort REAL;
+      ALTER TABLE daily_metrics ADD COLUMN spo2_pct REAL;
+      ALTER TABLE daily_metrics ADD COLUMN breathing_disturbances REAL;
+    `,
+  },
 ];

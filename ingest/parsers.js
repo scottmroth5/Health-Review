@@ -64,6 +64,17 @@ const HEALTH_FIELDS = {
   sleep_awake_hr: 'Sleep Analysis [Awake] (hr)',
   steps: 'Step Count (steps)',
   vo2max: 'VO2 Max (ml/(kg·min))',
+  // Turned on 2026-10-15 (Health Auto Export's exact headers; the temperature uses "º", not "°").
+  cardio_recovery_bpm: 'Cardio Recovery (count/min)',
+  walking_hr_avg: 'Walking Heart Rate Average (bpm)',
+  walking_speed_mph: 'Walking Speed (mi/hr)',
+  hr_min: 'Heart Rate [Min] (bpm)',
+  hr_max: 'Heart Rate [Max] (bpm)',
+  hr_avg: 'Heart Rate [Avg] (bpm)',
+  wrist_temp_f: 'Apple Sleeping Wrist Temperature (ºF)',
+  physical_effort: 'Physical Effort (kcal/hr·kg)',
+  spo2_pct: 'Blood Oxygen Saturation (%)',
+  breathing_disturbances: 'Breathing Disturbances (count)',
 };
 export const HEALTH_METRIC_COLUMNS = Object.keys(HEALTH_FIELDS).filter((f) => f !== 'date');
 

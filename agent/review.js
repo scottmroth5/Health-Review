@@ -9,6 +9,9 @@ import { buildSystem, REPORT_SCHEMA, renderReport } from './instructions.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
 import { DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from './claude.js';
 
+/** Names the review's lab-value check also routes to physicianDiscussion (the summary's nightBreathing block). */
+export const NIGHT_BREATHING_NAMES = ['Blood Oxygen', 'SpO2', 'Oxygen Saturation', 'Breathing Disturbances'];
+
 // Room for adaptive thinking plus a ~2,000-word report: high effort has used 9.5k to over 16k tokens on the same week.
 const MAX_TOKENS = 32000;
 
@@ -38,7 +41,8 @@ export function prepareReview(db, { weekEnd, today }) {
     checks: {
       allowed: allowedNumbers(summary, system),
       medicationNames: medicationNames(db),
-      labNames: db.prepare('SELECT name FROM lab_tests').pluck().all(),
+      // Blood oxygen and breathing disturbances are checked like lab values: a number next to them only in physicianDiscussion.
+      labNames: [...db.prepare('SELECT name FROM lab_tests').pluck().all(), ...NIGHT_BREATHING_NAMES],
     },
   };
 }

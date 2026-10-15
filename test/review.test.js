@@ -47,6 +47,25 @@ test('routing: medication names, lab values and symptoms only in physician discu
     'a lab name without a value, "prescribed" sets, and short names inside words are not flagged');
 });
 
+test('routing: blood oxygen and breathing disturbance values only in physician discussion, like lab values', async () => {
+  const { NIGHT_BREATHING_NAMES } = await import('../agent/review.js');
+  const names = { medicationNames: [], labNames: NIGHT_BREATHING_NAMES };
+  const r = report(
+    [['Recovery', 'SpO2 94 most nights, and breathing disturbances 3.'], ['Weekly Wins', 'Blood oxygen tracking is on now.']],
+    [{ topic: 'Blood oxygen', detail: 'Blood Oxygen averaged 94.5 against 96 before: discuss with your physician.' }],
+  );
+  const problems = misroutedTopics(r, names);
+  assert.deepEqual(problems.map((p) => p.split(' in ')[0]), ['lab value "SpO2"', 'lab value "Breathing Disturbances"']);
+  assert.ok(problems.every((p) => p.includes('"Recovery"')), 'the name without a value, and values in physician discussion, pass');
+});
+
+test('summary: nightBreathing is passed to the review only when there is data', () => {
+  const base = computeWeek({ daily_metrics: [], workout_sessions: [], strength_sets: [], drinking_days: [], checkins: [] }, { weekEnd: '2026-09-26' });
+  assert.equal(buildSummary(base, [], { today: '2026-09-27' }).nightBreathing, undefined);
+  const withData = computeWeek({ daily_metrics: [{ date: '2026-09-24', spo2_pct: 95 }], workout_sessions: [], strength_sets: [], drinking_days: [], checkins: [] }, { weekEnd: '2026-09-26' });
+  assert.deepEqual(buildSummary(withData, [], { today: '2026-09-27' }).nightBreathing.spo2_pct.mean, 95);
+});
+
 test('grounding: calendar dates and numbers marked as targets are exempt; ratios are not', () => {
   const allowed = allowedNumbers({ easy: 90 }, '');
   const r = report([['Cardiovascular Snapshot', 'Phase III starts 8/31 (or 8/31/2026). Trim easy intervals from 90 to target 75 sec; target of 130 bpm or higher; keep 20/120.']]);

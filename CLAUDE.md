@@ -125,6 +125,11 @@ strength looks back 28 days; correlations and next-morning comparisons use 90 da
 counts (3 per group, 10 pairs). Values are rounded in code to the precision the report prints, so the review can be
 checked for numbers that are not in the summary. Days without a row are unknown, never zero (drinking rates are per
 logged day). Zone 2 counts cardio sessions whose average heart rate is inside the range in settings (no per-minute HR).
+Metrics turned on in Health Auto Export 2026-10-15 (migration 017): cardio recovery, walking heart rate and speed, heart
+rate min, max and average, sleeping wrist temperature and physical effort join RECOVERY_METRICS (week vs baseline, unusual
+days); blood oxygen and breathing disturbances form the summary's nightBreathing block (no unusual-day flags), which
+CONTRACT treats like lab values and prepareReview routes like lab names (NIGHT_BREATHING_NAMES). The Health tab charts
+all but heart rate min, max and average and physical effort.
 Medications (metrics/medications.js): each dose or timing period is a row in medication_periods; stopped_on is the first
 day it no longer applied, so a change closes one period and opens the next on the same date. Start, change and stop
 events are derived, never stored. Impact compares the 28 days before an event with days 7 to 34 after it (minimums 14

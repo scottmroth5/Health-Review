@@ -6,7 +6,9 @@
     "Previous week Feb 22..28: 52,48,52,48,52,48,52 -> 50.29; change 0.05 -> 0. Change vs baseline 0.33 -> 0, pct 0.67 -> 1.",
     "Resting HR only in the week: 55,56,54,57,60,55 -> 56.17 -> 56.2; no baseline so no changes or unusual days.",
     "VO2 max latest 43.1 (Mar 5); latest reading on or before Feb 5 is Jan 20 (42.0): change 1.1.",
-    "Mar 8 is after the week and must be ignored."
+    "Mar 8 is after the week and must be ignored.",
+    "Cardio recovery (added 2026-10-15) only in the week: Mar 2 22, Mar 5 25, Mar 7 28 -> 3 days, mean 25, min 22, max 28; no previous week or baseline, so no changes and no unusual days.",
+    "Night breathing: blood oxygen Mar 3 95, Mar 6 96 -> 2 days, mean 95.5; no baseline; never flagged high or low (no unusualDays field). Breathing disturbances have no data, so the block holds spo2_pct only."
   ],
   "weekEnd": "2026-03-07",
   "input": {
@@ -136,28 +138,33 @@
       {
         "date": "2026-03-02",
         "hrv_ms": 52,
-        "resting_hr": 56
+        "resting_hr": 56,
+        "cardio_recovery_bpm": 22
       },
       {
         "date": "2026-03-03",
         "hrv_ms": 55,
-        "resting_hr": 54
+        "resting_hr": 54,
+        "spo2_pct": 95
       },
       {
         "date": "2026-03-05",
         "hrv_ms": 51,
         "resting_hr": 57,
-        "vo2max": 43.1
+        "vo2max": 43.1,
+        "cardio_recovery_bpm": 25
       },
       {
         "date": "2026-03-06",
         "hrv_ms": 44,
-        "resting_hr": 60
+        "resting_hr": 60,
+        "spo2_pct": 96
       },
       {
         "date": "2026-03-07",
         "hrv_ms": 50,
-        "resting_hr": 55
+        "resting_hr": 55,
+        "cardio_recovery_bpm": 28
       },
       {
         "date": "2026-03-08",
@@ -216,6 +223,30 @@
         "latestDate": "2026-03-05",
         "change28d": 1.1,
         "comparedWith": "2026-01-20"
+      },
+      "cardio_recovery_bpm": {
+        "days": 3,
+        "mean": 25,
+        "min": 22,
+        "max": 28,
+        "prevWeekMean": null,
+        "changeVsPrevWeek": null,
+        "baselineDays": 0,
+        "baselineMean": null,
+        "changeVsBaseline": null,
+        "unusualDays": []
+      }
+    },
+    "nightBreathing": {
+      "spo2_pct": {
+        "days": 2,
+        "mean": 95.5,
+        "min": 95,
+        "max": 96,
+        "prevWeekMean": null,
+        "baselineDays": 0,
+        "baselineMean": null,
+        "changeVsBaseline": null
       }
     }
   }

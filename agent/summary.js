@@ -47,6 +47,7 @@ export function buildSummary(week, notes, { today }) {
     ...(week.dataQuality && (week.dataQuality.missingDays.length || week.dataQuality.suspectedPartialDays.length)
       ? { dataQuality: week.dataQuality } : {}),
     recovery,
+    ...(week.nightBreathing ? { nightBreathing: week.nightBreathing } : {}),
     cardio: week.cardio,
     strength,
     trainingVolume: week.trainingVolume,

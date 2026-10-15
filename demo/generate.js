@@ -137,8 +137,18 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
 
   // ---- Apple Health days: trends plus noise; a planted gap (9 days ago) and partial day (6 days ago) ----
   const insertDay = db.prepare(`INSERT INTO daily_metrics (date, active_energy_kcal, exercise_min, move_min, stand_hours, hrv_ms, respiratory_rate, resting_hr,
-    sleep_total_hr, sleep_asleep_hr, sleep_in_bed_hr, sleep_core_hr, sleep_deep_hr, sleep_rem_hr, sleep_awake_hr, steps, vo2max, updated_at)
-    VALUES (@date, @active, @exercise, @move, @stand, @hrv, @resp, @rhr, @sleep, @sleep, @inBed, @core, @deep, @rem, @awake, @steps, @vo2, @stamp)`);
+    sleep_total_hr, sleep_asleep_hr, sleep_in_bed_hr, sleep_core_hr, sleep_deep_hr, sleep_rem_hr, sleep_awake_hr, steps, vo2max,
+    cardio_recovery_bpm, walking_hr_avg, walking_speed_mph, hr_min, hr_max, hr_avg, wrist_temp_f, physical_effort, spo2_pct, breathing_disturbances, updated_at)
+    VALUES (@date, @active, @exercise, @move, @stand, @hrv, @resp, @rhr, @sleep, @sleep, @inBed, @core, @deep, @rem, @awake, @steps, @vo2,
+    @cardioRecovery, @walkingHr, @walkingSpeed, @hrMin, @hrMax, @hrAvg, @wristTemp, @effort, @spo2, @breathing, @stamp)`);
+  // The metrics added 2026-10-15 draw from their own stream, so every value generated before them stays the same.
+  const r2 = random(seed + 1);
+  const extra = (rhr) => ({
+    cardioRecovery: round(clamp(r2.normal(24, 3), 14, 38), 1), walkingHr: Math.round(clamp(r2.normal(rhr + 42, 4), 80, 125)),
+    walkingSpeed: round(clamp(r2.normal(3.1, 0.15), 2.5, 3.8), 2), hrMin: Math.round(rhr - 4), hrMax: Math.round(clamp(r2.normal(138, 12), 105, 175)),
+    hrAvg: Math.round(clamp(r2.normal(rhr + 16, 3), 60, 95)), wristTemp: round(r2.normal(96.4, 0.35), 2), effort: round(clamp(r2.normal(1.7, 0.3), 1, 3), 1),
+    spo2: round(clamp(r2.normal(96, 0.8), 92, 99), 1), breathing: round(clamp(r2.normal(2, 1.2), 0, 8), 1),
+  });
   const vo2At = (d) => {
     let v = 40.5;
     for (const [s, e, change] of vo2Path) {
@@ -160,6 +170,7 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
       rhr: round(clamp(r.normal(56 - (vo2At(d) - 40.5) * 0.6, 2.2), 46, 70), 1),
       sleep, inBed: round(sleep + 0.4, 2), core: round(sleep * 0.55, 2), deep: round(sleep * 0.16, 2), rem: round(sleep * 0.22, 2), awake: round(sleep * 0.07, 2),
       steps, vo2: daysBetween(first, d) % 5 === 0 ? round(vo2At(d) + r.normal(0, 0.25), 1) : null, stamp,
+      ...extra(56 - (vo2At(d) - 40.5) * 0.6),
     });
   }
 

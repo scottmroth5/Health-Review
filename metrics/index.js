@@ -1,6 +1,6 @@
 // The week's numbers, all computed in code. The model only ever receives this summary.
 import { windows } from './stats.js';
-import { recovery } from './recovery.js';
+import { recovery, nightBreathing } from './recovery.js';
 import { cardio } from './cardio.js';
 import { strength } from './strength.js';
 import { drinking } from './drinking.js';
@@ -25,6 +25,8 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
     // Days of the week with no Apple Health row, or that look like a partial export (dates only).
     dataQuality: weekDataQuality(data.daily_metrics, w.week.from, w.week.to),
     recovery: recovery(data.daily_metrics, weekEnd),
+    // Blood oxygen and breathing disturbances: values only, for physician discussion (null with no data).
+    nightBreathing: nightBreathing(data.daily_metrics, weekEnd),
     cardio: cardio(data.workout_sessions, weekEnd, { zone2 }),
     strength: strength(data.strength_sets, weekEnd),
     trainingVolume: volumeTrend(data.strength_sets, weekEnd),

@@ -163,6 +163,16 @@ Each program also has a `profile`, written as short summaries rather than copied
   health and balance score is cut. Delete the entry when you want it back. Exercise ids are the `id`s in
   `config/exercise-dictionary.json`.
 
+## More Apple Health metrics
+
+Turned on in Health Auto Export on 2026-10-15 and stored from then on: cardio recovery, walking heart rate, walking
+speed, heart rate (min, max, average), sleeping wrist temperature, physical effort, blood oxygen and breathing
+disturbances. The Health tab charts cardio recovery, walking heart rate and speed, wrist temperature, blood oxygen and
+breathing disturbances. The weekly review compares each with the previous week and your 28-day baseline. Blood oxygen
+and breathing disturbances are values only (no high or low labels, like labs) and appear in the review only for
+physician discussion. To fill earlier days, export a past date range from Health Auto Export into the same folder;
+the app reads the new files and fills the new columns on days it already has.
+
 ## Called for vs logged
 
 The Training tab's **Called for vs logged** card compares each lifting day of a confirmed block with the workout the

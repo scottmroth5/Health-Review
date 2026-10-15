@@ -402,6 +402,13 @@ const CHARTS = [
   { key: 'sleep_total_hr', title: 'Sleep', from: 'metrics', format: fmt(1, ' h') },
   { key: 'steps', title: 'Steps', from: 'metrics', format: fmt(0) },
   { key: 'exercise_min', title: 'Exercise minutes', from: 'metrics', format: fmt(0, ' min'), columns: true },
+  { key: 'cardio_recovery_bpm', title: 'Cardio recovery', from: 'metrics', format: fmt(0, ' bpm') },
+  { key: 'walking_hr_avg', title: 'Walking heart rate', from: 'metrics', format: fmt(0, ' bpm') },
+  { key: 'walking_speed_mph', title: 'Walking speed', from: 'metrics', format: fmt(2, ' mph') },
+  { key: 'wrist_temp_f', title: 'Sleeping wrist temperature', from: 'metrics', format: fmt(1, ' °F') },
+  // Values only, no reference lines or labels (discussed with a physician, like labs).
+  { key: 'spo2_pct', title: 'Blood oxygen', from: 'metrics', format: fmt(1, '%') },
+  { key: 'breathing_disturbances', title: 'Breathing disturbances', from: 'metrics', format: fmt(1) },
   { key: 'readiness', title: 'Morning readiness (1 to 10)', from: 'checkins', format: fmt(0), gapDays: 8 },
   { key: 'alcohol', title: 'Alcoholic drinks per day', from: 'drinking', format: fmt(0), columns: true },
 ];
