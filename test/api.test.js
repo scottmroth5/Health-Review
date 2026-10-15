@@ -92,6 +92,10 @@ test('history returns metrics, check-ins and drinks in the range', async () => {
   const h = (await app.inject('/api/history?from=2026-03-01&to=2026-03-09')).json();
   assert.deepEqual(h.metrics, [{ date: '2026-03-02', hrv_ms: 48, resting_hr: 55, sleep_total_hr: 7.2, steps: 8000, exercise_min: 35,
     cardio_recovery_bpm: 24, walking_hr_avg: 98, walking_speed_mph: 3.1, walking_asymmetry_pct: 4.2, wrist_temp_f: 96.4, spo2_pct: 95.5, breathing_disturbances: 2 }]);
+  await put(app, '/api/checkins/2026-03-03', { weight_lbs: 181.2, body_fat_pct: 20.5, muscle_mass_lbs: 79.1, visceral_fat: 9 });
+  const withBody = (await app.inject('/api/history?from=2026-03-01&to=2026-03-09')).json();
+  const c = withBody.checkins.find((x) => x.date === '2026-03-03');
+  assert.deepEqual([c.weight_lbs, c.body_fat_pct, c.muscle_mass_lbs, c.visceral_fat], [181.2, 20.5, 79.1, 9]);
   assert.equal((await app.inject('/api/history?from=2026-03-09&to=2026-03-01')).statusCode, 400);
   await done();
 });

@@ -209,6 +209,14 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
     const weight = d.endsWith('5') || d.endsWith('0') ? round(188 - daysBetween(days.at(-200), d) * 0.025 + r.normal(0, 0.8), 1) : null;
     insertCheckin.run(d, r.int(5, 9), r.int(5, 9), r.int(6, 9), r.int(2, 7), r.int(5, 9), weight, weight ? d : null, r.pick(notes), stamp);
   }
+  // Body composition on the weigh-in days, from its own stream (added later, so nothing above changes).
+  const r4 = random(seed + 3);
+  const weighIns = db.prepare('SELECT date, weight_lbs FROM checkins WHERE weight_lbs IS NOT NULL ORDER BY date').all();
+  const setBody = db.prepare('UPDATE checkins SET body_fat_pct = ?, muscle_mass_lbs = ?, visceral_fat = ? WHERE date = ?');
+  weighIns.forEach((w, i) => {
+    const fat = round(21.5 - i * 0.04 + r4.normal(0, 0.4), 1);
+    setBody.run(fat, round(w.weight_lbs * (1 - fat / 100) * 0.55 + r4.normal(0, 0.5), 1), Math.round(9 - i * 0.02 + r4.normal(0, 0.4)), w.date);
+  });
   const insertDrink = db.prepare("INSERT INTO drinking_days (date, beers, wine, bourbon, other, cbd, setting, mood_before, mood_after, notes, source, updated_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, NULL, 'ui', ?)");
   for (const d of days.slice(-120)) {
     if (dow(d) === 6 && r.next() < 0.7) insertDrink.run(d, r.int(0, 2), r.int(0, 2), r.int(0, 1), r.pick(['Dinner out', 'Home', 'Friends']), r.int(6, 8), r.int(6, 8), stamp);

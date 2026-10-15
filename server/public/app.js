@@ -402,6 +402,11 @@ const CHARTS = [
   { key: 'sleep_total_hr', title: 'Sleep', from: 'metrics', format: fmt(1, ' h') },
   { key: 'steps', title: 'Steps', from: 'metrics', format: fmt(0) },
   { key: 'exercise_min', title: 'Exercise minutes', from: 'metrics', format: fmt(0, ' min'), columns: true },
+  // Body composition from the Today tab check-in; readings up to 8 days apart are joined, like readiness.
+  { key: 'weight_lbs', title: 'Weight', from: 'checkins', format: fmt(1, ' lbs'), gapDays: 8 },
+  { key: 'body_fat_pct', title: 'Body fat', from: 'checkins', format: fmt(1, '%'), gapDays: 8 },
+  { key: 'muscle_mass_lbs', title: 'Muscle mass', from: 'checkins', format: fmt(1, ' lbs'), gapDays: 8 },
+  { key: 'visceral_fat', title: 'Visceral fat', from: 'checkins', format: fmt(0), gapDays: 8 },
   { key: 'cardio_recovery_bpm', title: 'Cardio recovery', from: 'metrics', format: fmt(0, ' bpm') },
   { key: 'walking_hr_avg', title: 'Walking heart rate', from: 'metrics', format: fmt(0, ' bpm') },
   { key: 'walking_speed_mph', title: 'Walking speed', from: 'metrics', format: fmt(2, ' mph') },
@@ -451,8 +456,14 @@ async function loadHistory() {
   const data = await api('GET', `/api/history?from=${from}&to=${to}`);
   const container = $('#charts');
   container.replaceChildren();
+  // A chart with no data in the range is left out, and named in one line below the charts.
+  const hidden = [];
   for (const c of CHARTS.filter((x) => !(state.demo && isDrinkingChart(x)))) {
     const points = data[c.from].filter((r) => r[c.key] !== null && r[c.key] !== undefined).map((r) => ({ date: r.date, value: r[c.key] }));
+    if (!points.length) {
+      hidden.push(c.title);
+      continue;
+    }
     const card = document.createElement('div');
     card.className = 'chart-card';
     const head = document.createElement('div');
@@ -473,6 +484,7 @@ async function loadHistory() {
     const opts = { from, to, format: c.format, label: c.title, gapDays: c.gapDays };
     (c.columns ? columnChart : lineChart)(chart, points, opts);
   }
+  fill($('#charts-hidden'), hidden.length ? `No data in this range: ${hidden.join(', ')}.` : '');
 }
 
 // ---------------- medications and supplements ----------------

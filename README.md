@@ -170,7 +170,9 @@ speed, walking asymmetry (lower is more even), heart rate (min, max, average), s
 disturbances. The Health tab charts cardio recovery, walking heart rate and speed, wrist temperature, blood oxygen and
 breathing disturbances. The weekly review compares each with the previous week and your 28-day baseline. Blood oxygen
 and breathing disturbances are values only (no high or low labels, like labs) and appear in the review only for
-physician discussion. To fill earlier days, export a past date range from Health Auto Export into the same folder;
+physician discussion. The Health tab also charts weight, body fat, muscle mass and visceral fat from the Today tab
+check-in. A chart with no data in the range you picked is left out, and a line below the charts names it, so it comes
+back by itself once data arrives. To fill earlier days, export a past date range from Health Auto Export into the same folder;
 the app reads the new files and fills the new columns on days it already has.
 
 ## Called for vs logged

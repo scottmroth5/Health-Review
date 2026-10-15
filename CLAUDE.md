@@ -130,7 +130,8 @@ asymmetry (lower is more even), heart
 rate min, max and average, sleeping wrist temperature and physical effort join RECOVERY_METRICS (week vs baseline, unusual
 days); blood oxygen and breathing disturbances form the summary's nightBreathing block (no unusual-day flags), which
 CONTRACT treats like lab values and prepareReview routes like lab names (NIGHT_BREATHING_NAMES). The Health tab charts
-all but heart rate min, max and average and physical effort.
+all but heart rate min, max and average and physical effort, plus the check-in's weight, body fat, muscle mass and visceral
+fat; a chart with no data in the selected range is left out and named in one line below the charts (#charts-hidden).
 Medications (metrics/medications.js): each dose or timing period is a row in medication_periods; stopped_on is the first
 day it no longer applied, so a change closes one period and opens the next on the same date. Start, change and stop
 events are derived, never stored. Impact compares the 28 days before an event with days 7 to 34 after it (minimums 14
