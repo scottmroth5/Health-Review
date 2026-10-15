@@ -272,6 +272,10 @@ export to Drive: health metrics to one folder, workout sessions to another. The 
 
   Each variable works on its own, so you can switch one kind at a time; remove a variable to go back to that kind's
   consolidated sheet.
+
+  The first read showed that the consolidated workout sheet put every workout's start and end 3 hours late (the export
+  files match Fitness). `npm run fix:session-times` moved the stored workouts back once, and the consolidated path
+  now corrects times as it reads them.
 - **Through the consolidated sheets (the v1 path).** v1 Apps Scripts consolidate the export files into two sheets
   nightly, and the app reads the sheets at 7am. The rest of this section is about that path.
 

@@ -24,6 +24,7 @@ import {
 } from './parsers.js';
 import { canonicalSetCounts, normalizeAll, unmappedNames } from './normalize.js';
 import { typoCandidates } from '../metrics/name-typos.js';
+import { moveHours, SHEET_LATE_HOURS } from './session-times.js';
 import { assignForward, refreshPhases } from './program-blocks.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
@@ -71,7 +72,7 @@ export async function runSync({ store, source, backfill = false, now = new Date(
       counts.workout_exports = await syncExports({ store, source, kind: 'workouts', folderId: exportFolders.workouts, warnings, stamp });
     } else {
       counts.workout_sessions = await syncWholeTab({
-        store, source, key: 'workout_sessions', parse: parseWorkoutSessions, warnings,
+        store, source, key: 'workout_sessions', parse: parseConsolidatedSessions, warnings,
         write: upsertWorkoutSessions(store.db, stamp),
       });
     }
@@ -153,6 +154,19 @@ async function syncWholeTab({ store, source, key, parse, write, warnings, extraT
     saveState(store.db, key, tab, data);
   });
   return { rowsRead: data.rows.length + extraRows, upserted: merged.length };
+}
+
+/**
+ * The consolidated Workout Sessions sheet puts every start and end 3 hours late (the v1 Apps Script copied rows between
+ * files in different time zones; confirmed against Fitness, 2026-10-15); Health Auto Export's own files are right. Its
+ * Duration cells carry the same 3 hours, which sessionDuration already removes.
+ */
+function parseConsolidatedSessions(input) {
+  const parsed = parseWorkoutSessions(input);
+  return {
+    ...parsed,
+    records: parsed.records.map((r) => ({ ...r, start: moveHours(r.start, -SHEET_LATE_HOURS), end: moveHours(r.end, -SHEET_LATE_HOURS) })),
+  };
 }
 
 /** Export files read per folder per sync at most; at Google's paced read rate that is about 2 minutes a folder. */

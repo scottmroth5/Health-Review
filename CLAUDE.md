@@ -56,6 +56,7 @@ powershell -ExecutionPolicy Bypass -File scripts\register-review-task.ps1   (re)
 npm run log:normalize             apply config/exercise-dictionary.json to all Workout Log history (prints coverage)
 npm run log:unmapped              names with no dictionary entry, with set counts (-- --suggest asks Claude, names only;
                                   -- --accept data/exercise-proposals.json adds the kept proposals)
+npm run fix:session-times         one-off, already applied: consolidated-sheet workout times back 3 hours (-- --apply; dry run default)
 npm run log:typos                 exercise names that look like typos of each other, numbered (-- --merge 1,3 folds them
                                   into the exercise they look like and re-normalizes; -- --distinct 2 marks them different)
 npm run programs:detect           propose program blocks from history (-- --write saves them as detected)
@@ -111,9 +112,12 @@ read the current year (and last year in January), and a tab is replaced only whe
 Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI owns them now and imports never
 overwrite UI rows. The Workout Log can hold planned future workouts with weights but no reps: metrics count only sets
 with reps, time, or distance, on dates up to today. Text in the log's date column (illness, injury, vacation) is kept
-in workout_log_notes; treat it as symptom data under the hard rules. The Workout Sessions sheet's Duration cells run 3 hours
-long (a time zone shift in the v1 consolidation): ingest/parsers.js sessionDuration removes it on import and migration
-012 repaired the stored rows; a value that fits neither way is NULL and minutes come from start to end.
+in workout_log_notes; treat it as symptom data under the hard rules. The consolidated Workout Sessions sheet runs 3 hours
+late in Start, End and Duration alike (the v1 Apps Script copied between files in different time zones; the export files
+are right, confirmed against Fitness 2026-10-15): ingest/parsers.js sessionDuration removes it from Duration, sync.js
+parseConsolidatedSessions moves Start and End back, migration 012 repaired stored durations, and the one-off
+npm run fix:session-times (ingest/session-times.js, run 2026-10-15) moved stored starts and ends back and deleted the late
+twins of export rows. A duration that fits neither way is NULL and minutes come from start to end.
 
 ## Metrics
 The review week is the 7 days ending on the most recent Saturday before today; the baseline is the 28 days before it;
