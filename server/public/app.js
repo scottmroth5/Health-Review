@@ -989,7 +989,7 @@ function initLabs() {
 // ---------------- training volume ----------------
 const TRAINING_VIEW_KEY = 'hr.trainingView';
 const BUCKET_DAYS = { day: 1, week: 7, month: 30 };
-const PREVIOUS_LABEL = { week: 'previous 7 days', month: 'previous 30 days', year: 'previous 52 weeks', '2y': 'previous 2 years', '5y': 'previous 5 years' };
+const PREVIOUS_LABEL = { week: 'previous 7 days', month: 'previous 30 days', '3m': 'previous 13 weeks', '6m': 'previous 26 weeks', year: 'previous 52 weeks', '2y': 'previous 2 years', '5y': 'previous 5 years' };
 const lbs = (v) => `${Math.round(v).toLocaleString()} lbs`;
 
 function trainingViewChoice() {

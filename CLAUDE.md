@@ -151,7 +151,7 @@ week so far last, a week with nothing logged shown as not logged, never missed.
 
 Training volume (metrics/volume.js): reps x total load (per-hand weights x2) over performed sets dated up to today;
 days without lifting are real zeros; band, bodyweight, timed and unparsed sets are counted as sets, not volume; weeks end
-on Saturday. GET /api/training?view=week|month|year|2y|5y|all feeds the Training tab, and computeWeek's
+on Saturday. GET /api/training?view=week|month|3m|6m|year|2y|5y|all (3m, 6m and year: 13, 26 and 52 weekly bars) feeds the Training tab, and computeWeek's
 trainingVolume (last 12 weeks and 12 months) goes to the weekly review.
 Each bar also lists its training programs (metrics/programs.js): Workout Log "Workout" names map to programs via
 PROGRAMS (first match wins); an unnamed lifting day takes the program from up to 7 days before, and a Trigger Session

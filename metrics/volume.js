@@ -98,7 +98,9 @@ export function volumeBuckets(sets, { from, to, bucket }) {
   });
 }
 
-export const VIEWS = ['week', 'month', 'year', '2y', '5y', 'all'];
+export const VIEWS = ['week', 'month', '3m', '6m', 'year', '2y', '5y', 'all'];
+/** Weekly-bar views: how many weeks each shows, ending this Saturday (the current week so far included). */
+const WEEK_VIEWS = { '3m': 13, '6m': 26, year: 52 };
 
 /** The first day of the month k months before the month of date. */
 const monthsBack = (date, k) => {
@@ -127,10 +129,12 @@ export function trainingView(sets, view, today) {
     range = { from: addDays(today, -29), to: today };
     previous = { from: addDays(today, -59), to: addDays(today, -30) };
     bucket = 'day';
-  } else if (view === 'year') {
-    const from = addDays(saturdayOnOrAfter(today), -52 * 7 + 1); // 52 weeks, the current one included
+  } else if (WEEK_VIEWS[view]) {
+    // 13, 26 or 52 weeks, the current one included; compared with the same number of weeks before.
+    const weeks = WEEK_VIEWS[view];
+    const from = addDays(saturdayOnOrAfter(today), -weeks * 7 + 1);
     range = { from, to: today };
-    previous = { from: addDays(from, -364), to: addDays(from, -1) };
+    previous = { from: addDays(from, -weeks * 7), to: addDays(from, -1) };
     bucket = 'week';
   } else if (view === '2y' || view === '5y') {
     // The current month and the 23 (or 59) before it, one bar per month; compared with the same span before.

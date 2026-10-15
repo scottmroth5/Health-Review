@@ -11,7 +11,9 @@
     "All: Nov 2023 through Mar 2026 = 29 months; total 300 + 350 + 400 + 540 + 600 + 450 + 2800 = 5440.",
     "Review trend for week ending 2026-03-07: weeks ending Dec 20 .. Mar 7 (12), with Jan 17: 540, Feb 21: 600, Mar 7: 450. Months Apr 2025 .. Mar 2026 (12): Jun 2025 400, Jan 540, Feb 600, Mar 450 (partial, up to Mar 7).",
     "2 years: the current month and 23 before it, Apr 2024 .. Mar 2026 (24 bars): everything except the Nov 2023 bench = 5440 - 300 = 5140. Previous 2 years (Apr 2022 .. Mar 2024): the bench, 300.",
-    "5 years: Apr 2021 .. Mar 2026 (60 bars): all 5440. Previous 5 years (Apr 2016 .. Mar 2021): nothing, 0."
+    "5 years: Apr 2021 .. Mar 2026 (60 bars): all 5440. Previous 5 years (Apr 2016 .. Mar 2021): nothing, 0.",
+    "3 months: 13 weeks ending Sat Mar 14, from Sun 2025-12-14: Jan 15 540 + Feb 20 600 + Mar 4 450 + Mar 9..12 2800 = 4390. Previous 13 weeks (2025-09-14..2025-12-13): nothing, 0.",
+    "6 months: 26 weeks from Sun 2025-09-14: the same 4390 (Jun 10 2025 is before it). Previous 26 weeks (2025-03-16..2025-09-13): squat 80x5 = 400 on 2025-06-10."
   ],
   "weekEnd": "2026-03-07",
   "today": "2026-03-12",
@@ -532,6 +534,42 @@
           "sets": 0
         }
       }
+    },
+    "3m": {
+      "range": {
+        "from": "2025-12-14",
+        "to": "2026-03-12"
+      },
+      "totals": {
+        "volumeLbs": 4390
+      },
+      "previous": {
+        "range": {
+          "from": "2025-09-14",
+          "to": "2025-12-13"
+        },
+        "totals": {
+          "volumeLbs": 0
+        }
+      }
+    },
+    "6m": {
+      "range": {
+        "from": "2025-09-14",
+        "to": "2026-03-12"
+      },
+      "totals": {
+        "volumeLbs": 4390
+      },
+      "previous": {
+        "range": {
+          "from": "2025-03-16",
+          "to": "2025-09-13"
+        },
+        "totals": {
+          "volumeLbs": 400
+        }
+      }
     }
   },
   "viewBucketCounts": {
@@ -540,6 +578,8 @@
     "year": 52,
     "all": 29,
     "2y": 24,
-    "5y": 60
+    "5y": 60,
+    "3m": 13,
+    "6m": 26
   }
 }
