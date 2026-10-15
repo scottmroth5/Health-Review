@@ -405,6 +405,7 @@ const CHARTS = [
   { key: 'cardio_recovery_bpm', title: 'Cardio recovery', from: 'metrics', format: fmt(0, ' bpm') },
   { key: 'walking_hr_avg', title: 'Walking heart rate', from: 'metrics', format: fmt(0, ' bpm') },
   { key: 'walking_speed_mph', title: 'Walking speed', from: 'metrics', format: fmt(2, ' mph') },
+  { key: 'walking_asymmetry_pct', title: 'Walking asymmetry (lower is more even)', from: 'metrics', format: fmt(1, '%') },
   { key: 'wrist_temp_f', title: 'Sleeping wrist temperature', from: 'metrics', format: fmt(1, ' °F') },
   // Values only, no reference lines or labels (discussed with a physician, like labs).
   { key: 'spo2_pct', title: 'Blood oxygen', from: 'metrics', format: fmt(1, '%') },

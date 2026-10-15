@@ -75,6 +75,7 @@ const HEALTH_FIELDS = {
   physical_effort: 'Physical Effort (kcal/hr·kg)',
   spo2_pct: 'Blood Oxygen Saturation (%)',
   breathing_disturbances: 'Breathing Disturbances (count)',
+  walking_asymmetry_pct: 'Walking Asymmetry Percentage (%)',
 };
 export const HEALTH_METRIC_COLUMNS = Object.keys(HEALTH_FIELDS).filter((f) => f !== 'date');
 

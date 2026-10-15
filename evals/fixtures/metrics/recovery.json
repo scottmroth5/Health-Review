@@ -8,7 +8,8 @@
     "VO2 max latest 43.1 (Mar 5); latest reading on or before Feb 5 is Jan 20 (42.0): change 1.1.",
     "Mar 8 is after the week and must be ignored.",
     "Cardio recovery (added 2026-10-15) only in the week: Mar 2 22, Mar 5 25, Mar 7 28 -> 3 days, mean 25, min 22, max 28; no previous week or baseline, so no changes and no unusual days.",
-    "Night breathing: blood oxygen Mar 3 95, Mar 6 96 -> 2 days, mean 95.5; no baseline; never flagged high or low (no unusualDays field). Breathing disturbances have no data, so the block holds spo2_pct only."
+    "Night breathing: blood oxygen Mar 3 95, Mar 6 96 -> 2 days, mean 95.5; no baseline; never flagged high or low (no unusualDays field). Breathing disturbances have no data, so the block holds spo2_pct only.",
+    "Walking asymmetry (added 2026-10-15) only in the week: Mar 2 3.0, Mar 6 4.0 -> 2 days, mean 3.5, min 3, max 4; no baseline."
   ],
   "weekEnd": "2026-03-07",
   "input": {
@@ -139,7 +140,8 @@
         "date": "2026-03-02",
         "hrv_ms": 52,
         "resting_hr": 56,
-        "cardio_recovery_bpm": 22
+        "cardio_recovery_bpm": 22,
+        "walking_asymmetry_pct": 3
       },
       {
         "date": "2026-03-03",
@@ -158,7 +160,8 @@
         "date": "2026-03-06",
         "hrv_ms": 44,
         "resting_hr": 60,
-        "spo2_pct": 96
+        "spo2_pct": 96,
+        "walking_asymmetry_pct": 4
       },
       {
         "date": "2026-03-07",
@@ -234,6 +237,15 @@
         "baselineDays": 0,
         "baselineMean": null,
         "changeVsBaseline": null,
+        "unusualDays": []
+      },
+      "walking_asymmetry_pct": {
+        "days": 2,
+        "mean": 3.5,
+        "min": 3,
+        "max": 4,
+        "prevWeekMean": null,
+        "baselineDays": 0,
         "unusualDays": []
       }
     },

@@ -22,6 +22,7 @@ export const RECOVERY_METRICS = {
   hr_avg: 0,
   wrist_temp_f: 1,
   physical_effort: 1,
+  walking_asymmetry_pct: 1, // lower is more even
 };
 
 /**

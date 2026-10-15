@@ -138,9 +138,11 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
   // ---- Apple Health days: trends plus noise; a planted gap (9 days ago) and partial day (6 days ago) ----
   const insertDay = db.prepare(`INSERT INTO daily_metrics (date, active_energy_kcal, exercise_min, move_min, stand_hours, hrv_ms, respiratory_rate, resting_hr,
     sleep_total_hr, sleep_asleep_hr, sleep_in_bed_hr, sleep_core_hr, sleep_deep_hr, sleep_rem_hr, sleep_awake_hr, steps, vo2max,
-    cardio_recovery_bpm, walking_hr_avg, walking_speed_mph, hr_min, hr_max, hr_avg, wrist_temp_f, physical_effort, spo2_pct, breathing_disturbances, updated_at)
+    cardio_recovery_bpm, walking_hr_avg, walking_speed_mph, hr_min, hr_max, hr_avg, wrist_temp_f, physical_effort, spo2_pct, breathing_disturbances,
+    walking_asymmetry_pct, updated_at)
     VALUES (@date, @active, @exercise, @move, @stand, @hrv, @resp, @rhr, @sleep, @sleep, @inBed, @core, @deep, @rem, @awake, @steps, @vo2,
-    @cardioRecovery, @walkingHr, @walkingSpeed, @hrMin, @hrMax, @hrAvg, @wristTemp, @effort, @spo2, @breathing, @stamp)`);
+    @cardioRecovery, @walkingHr, @walkingSpeed, @hrMin, @hrMax, @hrAvg, @wristTemp, @effort, @spo2, @breathing, @asymmetry, @stamp)`);
+  const r3 = random(seed + 2); // walking asymmetry (added later still): its own stream too
   // The metrics added 2026-10-15 draw from their own stream, so every value generated before them stays the same.
   const r2 = random(seed + 1);
   const extra = (rhr) => ({
@@ -148,6 +150,7 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
     walkingSpeed: round(clamp(r2.normal(3.1, 0.15), 2.5, 3.8), 2), hrMin: Math.round(rhr - 4), hrMax: Math.round(clamp(r2.normal(138, 12), 105, 175)),
     hrAvg: Math.round(clamp(r2.normal(rhr + 16, 3), 60, 95)), wristTemp: round(r2.normal(96.4, 0.35), 2), effort: round(clamp(r2.normal(1.7, 0.3), 1, 3), 1),
     spo2: round(clamp(r2.normal(96, 0.8), 92, 99), 1), breathing: round(clamp(r2.normal(2, 1.2), 0, 8), 1),
+    asymmetry: round(clamp(r3.normal(3.5, 1.2), 0, 12), 1),
   });
   const vo2At = (d) => {
     let v = 40.5;

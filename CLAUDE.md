@@ -125,7 +125,8 @@ strength looks back 28 days; correlations and next-morning comparisons use 90 da
 counts (3 per group, 10 pairs). Values are rounded in code to the precision the report prints, so the review can be
 checked for numbers that are not in the summary. Days without a row are unknown, never zero (drinking rates are per
 logged day). Zone 2 counts cardio sessions whose average heart rate is inside the range in settings (no per-minute HR).
-Metrics turned on in Health Auto Export 2026-10-15 (migration 017): cardio recovery, walking heart rate and speed, heart
+Metrics turned on in Health Auto Export 2026-10-15 (migrations 017 and 018): cardio recovery, walking heart rate, speed and
+asymmetry (lower is more even), heart
 rate min, max and average, sleeping wrist temperature and physical effort join RECOVERY_METRICS (week vs baseline, unusual
 days); blood oxygen and breathing disturbances form the summary's nightBreathing block (no unusual-day flags), which
 CONTRACT treats like lab values and prepareReview routes like lab names (NIGHT_BREATHING_NAMES). The Health tab charts

@@ -166,7 +166,7 @@ Each program also has a `profile`, written as short summaries rather than copied
 ## More Apple Health metrics
 
 Turned on in Health Auto Export on 2026-10-15 and stored from then on: cardio recovery, walking heart rate, walking
-speed, heart rate (min, max, average), sleeping wrist temperature, physical effort, blood oxygen and breathing
+speed, walking asymmetry (lower is more even), heart rate (min, max, average), sleeping wrist temperature, physical effort, blood oxygen and breathing
 disturbances. The Health tab charts cardio recovery, walking heart rate and speed, wrist temperature, blood oxygen and
 breathing disturbances. The weekly review compares each with the previous week and your 28-day baseline. Blood oxygen
 and breathing disturbances are values only (no high or low labels, like labs) and appear in the review only for

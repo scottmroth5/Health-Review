@@ -417,4 +417,11 @@ export const MIGRATIONS = [
       ALTER TABLE daily_metrics ADD COLUMN breathing_disturbances REAL;
     `,
   },
+  {
+    id: '018-walking-asymmetry',
+    up: `
+      -- Turned on in Health Auto Export 2026-10-15: the share of steps where one side's timing differs (lower is more even).
+      ALTER TABLE daily_metrics ADD COLUMN walking_asymmetry_pct REAL;
+    `,
+  },
 ];

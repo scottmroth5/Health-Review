@@ -260,7 +260,7 @@ test('health metrics: the columns turned on in Health Auto Export (2026-10-15) m
     'Heart Rate [Min] (bpm)', 'Heart Rate [Max] (bpm)', 'Heart Rate [Avg] (bpm)', 'Heart Rate Variability (ms)', 'Physical Effort (kcal/hr·kg)',
     'Respiratory Rate (count/min)', 'Resting Heart Rate (bpm)', 'Sleep Analysis [Total] (hr)', 'Sleep Analysis [Asleep] (hr)', 'Sleep Analysis [In Bed] (hr)',
     'Sleep Analysis [Core] (hr)', 'Sleep Analysis [Deep] (hr)', 'Sleep Analysis [REM] (hr)', 'Sleep Analysis [Awake] (hr)', 'Step Count (steps)',
-    'VO2 Max (ml/(kg·min))', 'Walking Heart Rate Average (bpm)', 'Walking Speed (mi/hr)'];
+    'VO2 Max (ml/(kg·min))', 'Walking Heart Rate Average (bpm)', 'Walking Speed (mi/hr)', 'Walking Asymmetry Percentage (%)'];
   const row = header.map(() => null);
   const set = (name, v) => { row[header.indexOf(name)] = v; };
   row[0] = serial('2026-10-14');
@@ -272,9 +272,10 @@ test('health metrics: the columns turned on in Health Auto Export (2026-10-15) m
   set('Physical Effort (kcal/hr·kg)', 1.8);
   set('Walking Heart Rate Average (bpm)', 98);
   set('Walking Speed (mi/hr)', 3.1);
+  set('Walking Asymmetry Percentage (%)', 4.2);
   const { records, warnings } = parseHealthMetrics({ header, rows: [row], firstRowNumber: 2, tab: 'export' });
   assert.deepEqual(warnings.filter((w) => w.kind === 'unknown column'), []);
   const [r] = records;
-  assert.deepEqual([r.wrist_temp_f, r.spo2_pct, r.breathing_disturbances, r.cardio_recovery_bpm, r.hr_avg, r.physical_effort, r.walking_hr_avg, r.walking_speed_mph],
-    [96.4, 95.5, 2, 24, 71, 1.8, 98, 3.1]);
+  assert.deepEqual([r.wrist_temp_f, r.spo2_pct, r.breathing_disturbances, r.cardio_recovery_bpm, r.hr_avg, r.physical_effort, r.walking_hr_avg, r.walking_speed_mph, r.walking_asymmetry_pct],
+    [96.4, 95.5, 2, 24, 71, 1.8, 98, 3.1, 4.2]);
 });
