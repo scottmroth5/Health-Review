@@ -45,6 +45,7 @@ Health specific logic stays in this repo; never add it to agent-core.
 npm test                          run unit tests, including metric fixtures
 node --test test/google.test.js   run one suite
 npm run google:login              one-time Google sign-in (read-only Sheets); saves data/google/token.json
+npm run google:exports            count Health Auto Export's files in HEALTH_EXPORT_FOLDER_ID (kinds, dates, already read)
 npm run google:check              verify read access to each *_SHEET_ID in .env (prints tab names and row counts only)
 npm run sync                      copy the Sheets into data/health.db (prints counts and warnings only)
 npm run sync -- --backfill        one-time full import, including the v1 drinking log and weekly check-ins
@@ -87,6 +88,11 @@ GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
 ## Data
 Sheets are read unformatted with dates as serial numbers and stored as local wall-clock text; no time zone conversion.
+With HEALTH_EXPORT_FOLDER_ID set, health metrics and workouts come from Health Auto Export's own files in that Drive folder
+(ingest/sync.js syncExports; listed with drive.metadata.readonly, read with the Sheets scope) instead of the consolidated
+sheets: only new or changed files (drive_exports, migration 016), at most 200 per sync, and each day merged with the stored
+day by mergeHealthDays so a partial export never lowers a full day. Unset, the consolidated sheets are read as below.
+Planned for the AWS move: Health Auto Export's REST API posting to an authenticated HTTPS ingest over Tailscale (no Google).
 Health metrics and workout sessions stay in Google Sheets (v1 consolidation scripts still feed them, nightly 4 to 5am).
 Every sync reads the whole first tab of each (the consolidated tab, whatever it is named); the owner trims it into an
 Archive tab, so a row-number watermark could skip rows, and archived rows stay in the database. A health day can have

@@ -342,3 +342,66 @@ test('after a sync, an info line counts exercise names that look like typos (npm
   assert.deepEqual([line.detail, line.severity], ['1 exercise name looks like a typo; see npm run log:typos', 'info']);
   store.close();
 });
+
+// ---- Health Auto Export files read straight from Drive (HEALTH_EXPORT_FOLDER_ID) ----
+const exportFile = (kind, id, name, values, modifiedTime = '2026-03-02T09:00:00Z') => ({ kind, id, name, modifiedTime, values });
+
+test('export files: with a folder set, health and workouts come from the files and the consolidated sheets are not read', async () => {
+  const store = open();
+  const src = fakeSource(sheets());
+  src.exports = [
+    exportFile('health', 'h1', 'Apple Health Metrics-HealthMetrics-2026-03-02', [HEALTH, day('2026-03-02', 50, 54, 9000)]),
+    exportFile('workouts', 'w1', 'Workout session metrics-2026-03-02', [SESSIONS, ['Outdoor Walk', serial('2026-03-02', 18), serial('2026-03-02', 18, 30), 30 / 1440, 110]]),
+  ];
+  const { counts } = await sync(store, src, { exportFolderId: 'folder' });
+  assert.deepEqual(counts.health_exports, { filesRead: 2, filesLeft: 0, healthDays: 1, workouts: 1 });
+  assert.equal(counts.health_metrics, undefined);
+  assert.ok(!src.reads.some((r) => r.source === 'health_metrics' || r.source === 'workout_sessions'), 'consolidated sheets untouched');
+  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-03-02'").get().steps, 9000);
+  assert.equal(store.db.prepare("SELECT duration_sec FROM workout_sessions WHERE type = 'Outdoor Walk'").get().duration_sec, 1800);
+
+  // A second sync reads nothing new; a changed file is read again.
+  const before = src.reads.filter((r) => r.file).length;
+  assert.equal((await sync(store, src, { exportFolderId: 'folder' })).counts.health_exports.filesRead, 0);
+  src.exports[0].modifiedTime = '2026-03-03T09:00:00Z';
+  assert.equal((await sync(store, src, { exportFolderId: 'folder' })).counts.health_exports.filesRead, 1);
+  assert.equal(src.reads.filter((r) => r.file).length, before + 1);
+  store.close();
+});
+
+test('export files: a partial export read after the full day never lowers it; its extra fields fill gaps', async () => {
+  const store = open();
+  const src = fakeSource(sheets());
+  src.exports = [exportFile('health', 'h1', 'Apple Health Metrics-HealthMetrics-a', [HEALTH, [serial('2026-03-02', 3), 48, null, 8000]])];
+  await sync(store, src, { exportFolderId: 'folder' });
+  src.exports.push(exportFile('health', 'h2', 'Apple Health Metrics-HealthMetrics-b', [HEALTH, [serial('2026-03-02', 3), 60, 52, 340]]));
+  await sync(store, src, { exportFolderId: 'folder' });
+  assert.deepEqual(store.db.prepare("SELECT hrv_ms, resting_hr, steps FROM daily_metrics WHERE date = '2026-03-02'").get(),
+    { hrv_ms: 48, resting_hr: 52, steps: 8000 });
+  store.close();
+});
+
+test('export files: at most 200 per sync, oldest first; the rest wait with an info line', async () => {
+  const { EXPORT_FILES_PER_SYNC } = await import('../ingest/sync.js');
+  const store = open();
+  const src = fakeSource(sheets());
+  const n = EXPORT_FILES_PER_SYNC + 5;
+  src.exports = Array.from({ length: n }, (_, i) => exportFile('health', `h${i}`, `Apple Health Metrics-HealthMetrics-${String(i).padStart(4, '0')}`,
+    [HEALTH, day('2026-03-01', 40, 55, 1000 + i)]));
+  const first = await sync(store, src, { exportFolderId: 'folder' });
+  assert.equal(first.counts.health_exports.filesRead, EXPORT_FILES_PER_SYNC);
+  assert.equal(first.warnings.find((w) => w.source === 'health_exports').detail, '5 export files still to read; the next syncs continue');
+  const second = await sync(store, src, { exportFolderId: 'folder' });
+  assert.deepEqual([second.counts.health_exports.filesRead, second.counts.health_exports.filesLeft], [5, 0]);
+  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-03-01'").get().steps, 1000 + n - 1);
+  store.close();
+});
+
+test('export files: without a folder the consolidated sheets are read as before', async () => {
+  const store = open();
+  const src = fakeSource(sheets());
+  const { counts } = await sync(store, src);
+  assert.equal(counts.health_exports, undefined);
+  assert.ok(src.reads.some((r) => r.source === 'health_metrics'));
+  store.close();
+});

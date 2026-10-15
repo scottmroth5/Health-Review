@@ -11,6 +11,7 @@
     "test": "node --test",
     "google:login": "node --env-file=.env scripts/google-login.js",
     "google:check": "node --env-file=.env scripts/google-check.js",
+    "google:exports": "node --env-file=.env scripts/google-exports.js",
     "sync": "node --env-file=.env scripts/sync.js",
     "start": "node --env-file=.env server/index.js",
     "server:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restart-server.ps1",

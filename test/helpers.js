@@ -27,6 +27,17 @@ export function fakeSource(tabs) {
       const start = Math.max(2, fromRow);
       return { header: values[0] ?? [], rows: values.slice(start - 1), firstRowNumber: start };
     },
+    // Health Auto Export files: exports = [{ kind, id, name, modifiedTime, values }].
+    exports: [],
+    async listExports() {
+      return this.exports.map(({ values: _, ...f }) => f).sort((a, b) => a.name.localeCompare(b.name));
+    },
+    async readFileRows(fileId) {
+      reads.push({ file: fileId });
+      const f = this.exports.find((x) => x.id === fileId);
+      if (!f) throw new Error(`fake: no export file ${fileId}`);
+      return { header: f.values[0] ?? [], rows: f.values.slice(1), firstRowNumber: 2 };
+    },
   };
 }
 

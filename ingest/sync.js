@@ -42,25 +42,33 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
  * @param {object|null} [options.catalog]  MAPS program catalog; defaults to data/maps/programs.json when present
  * @param {object|null} [options.dictionary]  exercise dictionary; defaults to config/exercise-dictionary.json when present
  * @param {object} [options.logger]
+ * @param {string} [options.exportFolderId]  Health Auto Export's Drive folder (HEALTH_EXPORT_FOLDER_ID): when set, health
+ *   metrics and workouts come from its export files instead of the consolidated sheets
  * @returns {Promise<{ counts: object, warnings: object[] }>}
  */
-export async function runSync({ store, source, backfill = false, now = new Date(), logger = console, dictionary, catalog }) {
+export async function runSync({ store, source, backfill = false, now = new Date(), logger = console, dictionary, catalog,
+  exportFolderId = process.env.HEALTH_EXPORT_FOLDER_ID || null }) {
   const run = createTracer({ store, logger }).startRun('sync', { backfill });
   const counts = {};
   const warnings = [];
   const stamp = now.toISOString();
   try {
-    // Backfill also reads the Archive tab (rows trimmed off the data tab), so duplicate days split across the two
-    // merge once; the daily sync reads the data tab only.
-    const healthArchive = backfill ? (await source.listTabs('health_metrics')).filter((t) => /^archive$/i.test(t)) : [];
-    counts.health_metrics = await syncWholeTab({
-      store, source, key: 'health_metrics', parse: parseHealthMetrics, warnings,
-      write: upsertDailyMetrics(store.db, stamp), extraTabs: healthArchive, merge: mergeHealthDays,
-    });
-    counts.workout_sessions = await syncWholeTab({
-      store, source, key: 'workout_sessions', parse: parseWorkoutSessions, warnings,
-      write: upsertWorkoutSessions(store.db, stamp),
-    });
+    if (exportFolderId) {
+      // Health Auto Export's own files in Drive, read directly: the consolidated sheets (and their Apps Scripts) are skipped.
+      counts.health_exports = await syncExports({ store, source, folderId: exportFolderId, warnings, stamp });
+    } else {
+      // Backfill also reads the Archive tab (rows trimmed off the data tab), so duplicate days split across the two
+      // merge once; the daily sync reads the data tab only.
+      const healthArchive = backfill ? (await source.listTabs('health_metrics')).filter((t) => /^archive$/i.test(t)) : [];
+      counts.health_metrics = await syncWholeTab({
+        store, source, key: 'health_metrics', parse: parseHealthMetrics, warnings,
+        write: upsertDailyMetrics(store.db, stamp), extraTabs: healthArchive, merge: mergeHealthDays,
+      });
+      counts.workout_sessions = await syncWholeTab({
+        store, source, key: 'workout_sessions', parse: parseWorkoutSessions, warnings,
+        write: upsertWorkoutSessions(store.db, stamp),
+      });
+    }
     counts.workout_log = await syncWorkoutLog({ store, source, backfill, now, warnings });
     if (counts.workout_log.tabsReplaced) {
       counts.normalized = normalizeLog(store.db, dictionary, now, warnings);
@@ -139,6 +147,53 @@ async function syncWholeTab({ store, source, key, parse, write, warnings, extraT
     saveState(store.db, key, tab, data);
   });
   return { rowsRead: data.rows.length + extraRows, upserted: merged.length };
+}
+
+/** Export files read per sync at most (Google's read limits); the rest wait for the next sync. */
+export const EXPORT_FILES_PER_SYNC = 200;
+
+/**
+ * Health Auto Export files from Drive: only files new or changed since they were last read (drive_exports), oldest
+ * first. A health day from the files is merged with the day already stored by mergeHealthDays (the fullest row wins,
+ * gaps filled from the others), so a partial export read after the full day never lowers it. Workouts upsert on type,
+ * start and end as before.
+ */
+async function syncExports({ store, source, folderId, warnings, stamp, limit = EXPORT_FILES_PER_SYNC }) {
+  const { db } = store;
+  const known = new Map(db.prepare('SELECT file_id, modified_time FROM drive_exports').all().map((r) => [r.file_id, r.modified_time]));
+  const todo = (await source.listExports(folderId)).filter((f) => known.get(f.id) !== f.modifiedTime);
+  const batch = todo.slice(0, limit);
+  if (todo.length > batch.length) {
+    warnings.push({ source: 'health_exports', kind: 'files still to read', detail: `${todo.length - batch.length} export files still to read; the next syncs continue`, severity: 'info' });
+  }
+
+  const read = [];
+  const healthRecords = [];
+  const workoutRecords = [];
+  for (const f of batch) {
+    const data = await source.readFileRows(f.id);
+    const parsed = (f.kind === 'health' ? parseHealthMetrics : parseWorkoutSessions)({ ...data, tab: f.name });
+    warnings.push(...parsed.warnings);
+    (f.kind === 'health' ? healthRecords : workoutRecords).push(...parsed.records);
+    read.push({ ...f, rows: data.rows.length });
+  }
+
+  // Each day from the files, merged with the stored day (stored first, so a tie goes to the newer file).
+  const dates = [...new Set(healthRecords.map((r) => r.date))];
+  const storedDay = db.prepare(`SELECT date, ${HEALTH_METRIC_COLUMNS.join(', ')} FROM daily_metrics WHERE date = ?`);
+  const stored = dates.map((d) => storedDay.get(d)).filter(Boolean);
+  const days = mergeHealthDays([...stored, ...healthRecords]).filter((r) => dates.includes(r.date));
+
+  const writeDay = upsertDailyMetrics(db, stamp);
+  const writeWorkout = upsertWorkoutSessions(db, stamp);
+  const record = db.prepare(`INSERT INTO drive_exports (file_id, kind, name, modified_time, rows, synced_at) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (file_id) DO UPDATE SET name = excluded.name, modified_time = excluded.modified_time, rows = excluded.rows, synced_at = excluded.synced_at`);
+  store.tx(() => {
+    for (const d of days) writeDay(d);
+    for (const w of workoutRecords) writeWorkout(w);
+    for (const f of read) record.run(f.id, f.kind, f.name, f.modifiedTime, f.rows, stamp);
+  });
+  return { filesRead: read.length, filesLeft: todo.length - batch.length, healthDays: days.length, workouts: workoutRecords.length };
 }
 
 async function syncWorkoutLog({ store, source, backfill, now, warnings }) {

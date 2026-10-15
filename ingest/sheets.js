@@ -51,5 +51,44 @@ export function createSheetsSource(auth, env = process.env) {
       const [[header = []], rows] = await Promise.all([values(source, `${quoted}!1:1`), values(source, `${quoted}!A${fromRow}:ZZ`)]);
       return { header, rows, firstRowNumber: fromRow };
     },
+    /**
+     * Health Auto Export's own export files in a Drive folder (Google Sheets files), oldest name first: their kind,
+     * id, name and modified time. Metadata only (drive.metadata.readonly); contents come through readFileRows.
+     */
+    async listExports(folderId) {
+      const files = [];
+      let pageToken;
+      do {
+        const params = new URLSearchParams({
+          q: `'${folderId.replaceAll("'", "\\'")}' in parents and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+          fields: 'nextPageToken, files(id, name, modifiedTime)',
+          pageSize: '1000',
+          orderBy: 'name',
+          ...(pageToken ? { pageToken } : {}),
+        });
+        const { data } = await auth.request({ url: `https://www.googleapis.com/drive/v3/files?${params}` });
+        for (const f of data.files ?? []) {
+          const kind = exportKind(f.name);
+          if (kind) files.push({ kind, id: f.id, name: f.name, modifiedTime: f.modifiedTime });
+        }
+        pageToken = data.nextPageToken;
+      } while (pageToken);
+      return files.sort((a, b) => a.name.localeCompare(b.name));
+    },
+    /** One export file's first tab: header row plus every row, unformatted with serial dates. */
+    async readFileRows(fileId) {
+      const values = (await api.spreadsheets.values.get({
+        spreadsheetId: fileId, range: 'A1:ZZ', valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER',
+      })).data.values ?? [];
+      const [header = [], ...rows] = values;
+      return { header, rows, firstRowNumber: 2 };
+    },
   };
+}
+
+/** Which Health Auto Export file a name is (the patterns the v1 Apps Scripts used), or null. */
+export function exportKind(name) {
+  if (/Apple Health Metrics-HealthMetrics/i.test(name)) return 'health';
+  if (/Workout session metrics/i.test(name)) return 'workouts';
+  return null;
 }

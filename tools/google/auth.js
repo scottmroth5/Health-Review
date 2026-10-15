@@ -7,7 +7,10 @@ import { repoPath } from '../paths.js';
  * Read the health spreadsheets, and manage only the files this app creates in Google Drive (the encrypted
  * nightly backups; drive.file cannot see anything else in Drive). Nothing broader.
  */
-export const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/drive.file'];
+// drive.metadata.readonly lists the Health Auto Export folder (names, ids, modified times; never file contents); the
+// export files themselves are read through the Sheets scope.
+export const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive.metadata.readonly'];
 
 export const CLIENT_SECRET_PATH = repoPath('data', 'google', 'client_secret.json');
 export const TOKEN_PATH = repoPath('data', 'google', 'token.json');

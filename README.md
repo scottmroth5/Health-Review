@@ -256,9 +256,21 @@ change, or something bothering you, and Claude answers in light of the ranking a
 
 ## Sheets pipeline and data checks
 
-Apple Health and Apple Watch data reach the app through two Google Sheets. Health Auto Export on your phone writes
-files to a Drive folder, and v1 Apps Scripts consolidate those files into the sheets nightly. The app reads the sheets
-at 7am.
+Apple Health and Apple Watch data start in Health Auto Export on your phone, which writes one Google Sheets file per
+export to a Drive folder. The app can read them two ways:
+- **Straight from the export files (recommended).** Set `HEALTH_EXPORT_FOLDER_ID` in `.env` to the folder's id (the
+  long id in its Drive URL). Each sync then lists the folder and reads only files that are new or changed since it last
+  read them (`drive_exports`), at most 200 per sync. A day read again from a partial export never lowers the full day
+  already stored. The consolidated sheets below aren't read at all.
+  1. Set the variable, then run `npm run google:login` once. It adds permission to list the folder (names and dates
+     only); the files themselves are read with the Sheets permission you already granted.
+  2. Run `npm run google:exports` to see how many files there are and how many syncs the first read takes.
+  3. Run `npm run sync`. After a week of matching data, turn off the two Apps Script triggers. The consolidated sheets
+     stay as they are, as an archive.
+
+  Remove the variable to go back to the consolidated sheets.
+- **Through the consolidated sheets (the v1 path).** v1 Apps Scripts consolidate the export files into two sheets
+  nightly, and the app reads the sheets at 7am. The rest of this section is about that path.
 
 **The patched health consolidation script** is at `tools/apps-script/ConsolidateHealthMetrics.gs`. It's your
 current script, with its archive (after 1 month), purge (after 1 year), locks and trigger setup unchanged. Only the
@@ -351,6 +363,10 @@ npm run demo:build    # rebuild the demo database from scratch, which also reset
   real, and give each demo user an isolated copy of the demo data while the base never changes. Until then, the
   separate demo instance covers showing the app.
   - Exposing the server beyond this computer first needs a login mode in `server/auth.js`, and HTTPS.
+- **Apple data without Google, with the move to AWS** (chosen 2026-10-15): replace the Drive read with Health Auto
+  Export's REST API automation, posting JSON to an authenticated HTTPS ingest endpoint reached over Tailscale (encrypted
+  between phone and server, nothing open to the internet). Apple Health and Apple Watch data then never pass through
+  Google, which also removes the last unencrypted cloud copy of them. Needs the login mode above first.
 
 ## Encrypted backups
 

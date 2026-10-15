@@ -385,4 +385,19 @@ export const MIGRATIONS = [
       ALTER TABLE medication_periods ADD COLUMN ingredients TEXT;
     `,
   },
+  {
+    id: '016-drive-exports',
+    up: `
+      -- Health Auto Export's own export files read straight from Drive (HEALTH_EXPORT_FOLDER_ID), instead of the
+      -- consolidated sheets: one row per file read, so each sync reads only new or changed files.
+      CREATE TABLE drive_exports (
+        file_id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('health', 'workouts')),
+        name TEXT NOT NULL,
+        modified_time TEXT NOT NULL,
+        rows INTEGER NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+    `,
+  },
 ];

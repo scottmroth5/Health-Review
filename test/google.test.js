@@ -28,3 +28,10 @@ test('client credentials and refresh token come from env first, then files', () 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('export files: Health Auto Export names map to their kind; anything else is ignored', async () => {
+  const { exportKind } = await import('../ingest/sheets.js');
+  assert.equal(exportKind('HealthAutoExport-2026-03-02 Apple Health Metrics-HealthMetrics-2026-03-02'), 'health');
+  assert.equal(exportKind('Workout session metrics-2026-03-02'), 'workouts');
+  assert.equal(exportKind('Consolidated Apple Workout Sessions'), null);
+});
