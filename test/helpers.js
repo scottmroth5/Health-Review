@@ -27,10 +27,13 @@ export function fakeSource(tabs) {
       const start = Math.max(2, fromRow);
       return { header: values[0] ?? [], rows: values.slice(start - 1), firstRowNumber: start };
     },
-    // Health Auto Export files: exports = [{ kind, id, name, modifiedTime, values }].
+    // Health Auto Export files: exports = [{ folder, kind, id, name, modifiedTime, values }]; kind follows the file name,
+    // as in the real source, so a file of the other kind in a folder is left out.
     exports: [],
-    async listExports() {
-      return this.exports.map(({ values: _, ...f }) => f).sort((a, b) => a.name.localeCompare(b.name));
+    async listExports(folderId, kind) {
+      const { exportKind } = await import('../ingest/sheets.js');
+      return this.exports.filter((f) => f.folder === folderId && exportKind(f.name) === kind)
+        .map(({ values: _, folder: __, ...f }) => ({ ...f, kind })).sort((a, b) => a.name.localeCompare(b.name));
     },
     async readFileRows(fileId) {
       reads.push({ file: fileId });

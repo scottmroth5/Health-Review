@@ -257,18 +257,20 @@ change, or something bothering you, and Claude answers in light of the ranking a
 ## Sheets pipeline and data checks
 
 Apple Health and Apple Watch data start in Health Auto Export on your phone, which writes one Google Sheets file per
-export to a Drive folder. The app can read them two ways:
-- **Straight from the export files (recommended).** Set `HEALTH_EXPORT_FOLDER_ID` in `.env` to the folder's id (the
-  long id in its Drive URL). Each sync then lists the folder and reads only files that are new or changed since it last
-  read them (`drive_exports`), at most 200 per sync. A day read again from a partial export never lowers the full day
-  already stored. The consolidated sheets below aren't read at all.
-  1. Set the variable, then run `npm run google:login` once. It adds permission to list the folder (names and dates
-     only); the files themselves are read with the Sheets permission you already granted.
-  2. Run `npm run google:exports` to see how many files there are and how many syncs the first read takes.
+export to Drive: health metrics to one folder, workout sessions to another. The app can read them two ways:
+- **Straight from the export files (recommended).** Set `HEALTH_EXPORT_FOLDER_ID` (the health metrics folder) and
+  `WORKOUT_EXPORT_FOLDER_ID` (the workout sessions folder) in `.env`; each is the long id in the folder's Drive URL.
+  Each sync then lists each folder and reads only files that are new or changed since it last read them
+  (`drive_exports`), at most 200 per folder per sync. A day read again from a partial export never lowers the full
+  day already stored. The consolidated sheet of a kind with a folder set isn't read at all.
+  1. Set both variables, then run `npm run google:login` once. It adds permission to list the folders (names and
+     dates only); the files themselves are read with the Sheets permission you already granted.
+  2. Run `npm run google:exports` to see how many files each folder holds and how many syncs the first read takes.
   3. Run `npm run sync`. After a week of matching data, turn off the two Apps Script triggers. The consolidated sheets
      stay as they are, as an archive.
 
-  Remove the variable to go back to the consolidated sheets.
+  Each variable works on its own, so you can switch one kind at a time; remove a variable to go back to that kind's
+  consolidated sheet.
 - **Through the consolidated sheets (the v1 path).** v1 Apps Scripts consolidate the export files into two sheets
   nightly, and the app reads the sheets at 7am. The rest of this section is about that path.
 

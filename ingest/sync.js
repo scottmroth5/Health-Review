@@ -42,20 +42,22 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
  * @param {object|null} [options.catalog]  MAPS program catalog; defaults to data/maps/programs.json when present
  * @param {object|null} [options.dictionary]  exercise dictionary; defaults to config/exercise-dictionary.json when present
  * @param {object} [options.logger]
- * @param {string} [options.exportFolderId]  Health Auto Export's Drive folder (HEALTH_EXPORT_FOLDER_ID): when set, health
- *   metrics and workouts come from its export files instead of the consolidated sheets
+ * @param {{ health?: string|null, workouts?: string|null }} [options.exportFolders]  Health Auto Export's Drive folders
+ *   (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID): a kind with a folder comes from its export files, one without
+ *   from its consolidated sheet
  * @returns {Promise<{ counts: object, warnings: object[] }>}
  */
 export async function runSync({ store, source, backfill = false, now = new Date(), logger = console, dictionary, catalog,
-  exportFolderId = process.env.HEALTH_EXPORT_FOLDER_ID || null }) {
+  exportFolders = { health: process.env.HEALTH_EXPORT_FOLDER_ID || null, workouts: process.env.WORKOUT_EXPORT_FOLDER_ID || null } }) {
   const run = createTracer({ store, logger }).startRun('sync', { backfill });
   const counts = {};
   const warnings = [];
   const stamp = now.toISOString();
   try {
-    if (exportFolderId) {
-      // Health Auto Export's own files in Drive, read directly: the consolidated sheets (and their Apps Scripts) are skipped.
-      counts.health_exports = await syncExports({ store, source, folderId: exportFolderId, warnings, stamp });
+    // Each kind reads Health Auto Export's own files from its Drive folder when one is set (the consolidated sheet and
+    // its Apps Script are skipped), otherwise its consolidated sheet.
+    if (exportFolders.health) {
+      counts.health_exports = await syncExports({ store, source, kind: 'health', folderId: exportFolders.health, warnings, stamp });
     } else {
       // Backfill also reads the Archive tab (rows trimmed off the data tab), so duplicate days split across the two
       // merge once; the daily sync reads the data tab only.
@@ -64,6 +66,10 @@ export async function runSync({ store, source, backfill = false, now = new Date(
         store, source, key: 'health_metrics', parse: parseHealthMetrics, warnings,
         write: upsertDailyMetrics(store.db, stamp), extraTabs: healthArchive, merge: mergeHealthDays,
       });
+    }
+    if (exportFolders.workouts) {
+      counts.workout_exports = await syncExports({ store, source, kind: 'workouts', folderId: exportFolders.workouts, warnings, stamp });
+    } else {
       counts.workout_sessions = await syncWholeTab({
         store, source, key: 'workout_sessions', parse: parseWorkoutSessions, warnings,
         write: upsertWorkoutSessions(store.db, stamp),
@@ -149,33 +155,35 @@ async function syncWholeTab({ store, source, key, parse, write, warnings, extraT
   return { rowsRead: data.rows.length + extraRows, upserted: merged.length };
 }
 
-/** Export files read per sync at most (Google's read limits); the rest wait for the next sync. */
+/** Export files read per folder per sync at most (Google's read limits); the rest wait for the next sync. */
 export const EXPORT_FILES_PER_SYNC = 200;
 
 /**
- * Health Auto Export files from Drive: only files new or changed since they were last read (drive_exports), oldest
- * first. A health day from the files is merged with the day already stored by mergeHealthDays (the fullest row wins,
- * gaps filled from the others), so a partial export read after the full day never lowers it. Workouts upsert on type,
- * start and end as before.
+ * Health Auto Export files of one kind from its Drive folder: only files new or changed since they were last read
+ * (drive_exports), oldest first. A health day from the files is merged with the day already stored by mergeHealthDays
+ * (the fullest row wins, gaps filled from the others), so a partial export read after the full day never lowers it.
+ * Workouts upsert on type, start and end as before.
  */
-async function syncExports({ store, source, folderId, warnings, stamp, limit = EXPORT_FILES_PER_SYNC }) {
+async function syncExports({ store, source, kind, folderId, warnings, stamp, limit = EXPORT_FILES_PER_SYNC }) {
   const { db } = store;
   const known = new Map(db.prepare('SELECT file_id, modified_time FROM drive_exports').all().map((r) => [r.file_id, r.modified_time]));
-  const todo = (await source.listExports(folderId)).filter((f) => known.get(f.id) !== f.modifiedTime);
+  const todo = (await source.listExports(folderId, kind)).filter((f) => known.get(f.id) !== f.modifiedTime);
   const batch = todo.slice(0, limit);
+  const label = kind === 'health' ? 'health' : 'workout';
   if (todo.length > batch.length) {
-    warnings.push({ source: 'health_exports', kind: 'files still to read', detail: `${todo.length - batch.length} export files still to read; the next syncs continue`, severity: 'info' });
+    warnings.push({ source: `${label}_exports`, kind: 'files still to read', detail: `${todo.length - batch.length} ${label} export files still to read; the next syncs continue`, severity: 'info' });
   }
 
   const read = [];
   const healthRecords = [];
   const workoutRecords = [];
+  const parse = kind === 'health' ? parseHealthMetrics : parseWorkoutSessions;
   for (const f of batch) {
     const data = await source.readFileRows(f.id);
-    const parsed = (f.kind === 'health' ? parseHealthMetrics : parseWorkoutSessions)({ ...data, tab: f.name });
+    const parsed = parse({ ...data, tab: f.name });
     warnings.push(...parsed.warnings);
-    (f.kind === 'health' ? healthRecords : workoutRecords).push(...parsed.records);
-    read.push({ ...f, rows: data.rows.length });
+    (kind === 'health' ? healthRecords : workoutRecords).push(...parsed.records);
+    read.push({ ...f, kind, rows: data.rows.length });
   }
 
   // Each day from the files, merged with the stored day (stored first, so a tie goes to the newer file).
@@ -193,7 +201,8 @@ async function syncExports({ store, source, folderId, warnings, stamp, limit = E
     for (const w of workoutRecords) writeWorkout(w);
     for (const f of read) record.run(f.id, f.kind, f.name, f.modifiedTime, f.rows, stamp);
   });
-  return { filesRead: read.length, filesLeft: todo.length - batch.length, healthDays: days.length, workouts: workoutRecords.length };
+  const result = { filesRead: read.length, filesLeft: todo.length - batch.length };
+  return kind === 'health' ? { ...result, healthDays: days.length } : { ...result, workouts: workoutRecords.length };
 }
 
 async function syncWorkoutLog({ store, source, backfill, now, warnings }) {

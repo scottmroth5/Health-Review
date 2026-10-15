@@ -52,10 +52,11 @@ export function createSheetsSource(auth, env = process.env) {
       return { header, rows, firstRowNumber: fromRow };
     },
     /**
-     * Health Auto Export's own export files in a Drive folder (Google Sheets files), oldest name first: their kind,
-     * id, name and modified time. Metadata only (drive.metadata.readonly); contents come through readFileRows.
+     * Health Auto Export's own export files of one kind ('health' or 'workouts') in a Drive folder (Google Sheets
+     * files), oldest name first: kind, id, name and modified time. Files of the other kind are left out. Metadata only
+     * (drive.metadata.readonly); contents come through readFileRows.
      */
-    async listExports(folderId) {
+    async listExports(folderId, kind) {
       const files = [];
       let pageToken;
       do {
@@ -68,8 +69,7 @@ export function createSheetsSource(auth, env = process.env) {
         });
         const { data } = await auth.request({ url: `https://www.googleapis.com/drive/v3/files?${params}` });
         for (const f of data.files ?? []) {
-          const kind = exportKind(f.name);
-          if (kind) files.push({ kind, id: f.id, name: f.name, modifiedTime: f.modifiedTime });
+          if (exportKind(f.name) === kind) files.push({ kind, id: f.id, name: f.name, modifiedTime: f.modifiedTime });
         }
         pageToken = data.nextPageToken;
       } while (pageToken);
