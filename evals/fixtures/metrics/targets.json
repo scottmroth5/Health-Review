@@ -1,0 +1,211 @@
+{
+  "kind": "targets",
+  "description": "Suggested targets: below the healthy level (one step, or straight to it when closer), at or past it (half a step, held at the cap), a range, lower is better, BMI weight from height, no norm (personal), no profile, a band, and an unknown metric",
+  "notes": [
+    "Profile: age 51, male, 70 inches. Config: config/health-targets.json.",
+    "VO2 max (higher, step 1, men 50 to 59 healthy 39.2, cap 43.4): latest 37.0 -> min(38.0, 39.2) = 38; 41.0 -> min(41.5, 43.4) = 41.5; 44.0 is past the cap -> hold 44.",
+    "Resting heart rate (lower, step 2, healthy 60, floor 50): 64 -> max(62, 60) = 62; 58 -> max(57, 50) = 57.",
+    "Steps (age 51: healthy 8000, cap 10000, step 1000): 6500 -> 7500; 7600 -> min(8600, 8000) = 8000 (straight to it).",
+    "Sleep (range 7 to 9, step 0.25): 6.6 -> min(6.85, 7) = 6.85; 7.4 is inside -> hold 7.4.",
+    "Body fat (men 40 to 59: healthy 21, floor 11, step 1): 24.3 -> max(23.3, 21) = 23.3.",
+    "Weight (BMI 18.5 to 24.9 at 70 in: 18.5 x 4900 / 703 = 128.94, 24.9 x 4900 / 703 = 173.56; step 1% of 190 = 1.9): 190 -> max(188.1, 173.56) = 188.1. Without a height: hold 190, based on your data only.",
+    "HRV (no norm, +5%): 40 -> 42. Wrist temperature (band 0.5): 96.4 -> 96.4 within 95.9 to 96.9.",
+    "Walking speed with no profile (its norm is for men 50 to 59): personal, 3.0 + 0.1 = 3.1, with a prompt to add the profile.",
+    "Alcohol (men: healthy 2, step 0.5): 2.6 -> max(2.1, 2) = 2.1. Breathing disturbances (no norm, lower, step 0.5, floor 0): 1.0 -> 0.5. Readiness (no norm, step 0.5, ceiling 10): 9.8 -> 10.",
+    "Steps past the healthy level (9005, under the 10000 cap): 9005 + 500 = 9505, rounded to the nearest 100 (roundTo) = 9500."
+  ],
+  "profile": {
+    "age": 51,
+    "sex": "male",
+    "heightIn": 70
+  },
+  "cases": [
+    {
+      "metric": "vo2max",
+      "current": 37,
+      "expected": {
+        "suggested": 38,
+        "basis": "norm",
+        "healthy": {
+          "low": 39.2,
+          "high": null
+        }
+      }
+    },
+    {
+      "metric": "vo2max",
+      "current": 41,
+      "expected": {
+        "suggested": 41.5,
+        "basis": "norm"
+      }
+    },
+    {
+      "metric": "vo2max",
+      "current": 44,
+      "expected": {
+        "suggested": 44,
+        "basis": "norm"
+      }
+    },
+    {
+      "metric": "resting_hr",
+      "current": 64,
+      "expected": {
+        "suggested": 62,
+        "healthy": {
+          "low": null,
+          "high": 60
+        }
+      }
+    },
+    {
+      "metric": "resting_hr",
+      "current": 58,
+      "expected": {
+        "suggested": 57
+      }
+    },
+    {
+      "metric": "steps",
+      "current": 6500,
+      "expected": {
+        "suggested": 7500
+      }
+    },
+    {
+      "metric": "steps",
+      "current": 7600,
+      "expected": {
+        "suggested": 8000
+      }
+    },
+    {
+      "metric": "steps",
+      "current": 9005,
+      "expected": {
+        "suggested": 9500
+      },
+      "reasonIncludes": "keep improving to 9,500 steps"
+    },
+    {
+      "metric": "sleep_total_hr",
+      "current": 6.6,
+      "expected": {
+        "suggested": 6.85,
+        "band": [
+          7,
+          9
+        ]
+      }
+    },
+    {
+      "metric": "sleep_total_hr",
+      "current": 7.4,
+      "expected": {
+        "suggested": 7.4,
+        "band": [
+          7,
+          9
+        ]
+      }
+    },
+    {
+      "metric": "body_fat_pct",
+      "current": 24.3,
+      "expected": {
+        "suggested": 23.3,
+        "basis": "norm"
+      }
+    },
+    {
+      "metric": "weight_lbs",
+      "current": 190,
+      "expected": {
+        "suggested": 188.1,
+        "band": [
+          128.9,
+          173.6
+        ],
+        "basis": "norm"
+      }
+    },
+    {
+      "metric": "weight_lbs",
+      "current": 190,
+      "profile": {
+        "age": 51,
+        "sex": "male",
+        "heightIn": null
+      },
+      "expected": {
+        "suggested": 190,
+        "basis": "personal"
+      }
+    },
+    {
+      "metric": "hrv_ms",
+      "current": 40,
+      "expected": {
+        "suggested": 42,
+        "basis": "personal",
+        "healthy": null
+      }
+    },
+    {
+      "metric": "wrist_temp_f",
+      "current": 96.4,
+      "expected": {
+        "suggested": 96.4,
+        "band": [
+          95.9,
+          96.9
+        ],
+        "basis": "personal"
+      }
+    },
+    {
+      "metric": "walking_speed_mph",
+      "current": 3,
+      "profile": {},
+      "expected": {
+        "suggested": 3.1,
+        "basis": "personal"
+      },
+      "reasonIncludes": "Add your profile"
+    },
+    {
+      "metric": "alcohol",
+      "current": 2.6,
+      "expected": {
+        "suggested": 2.1
+      }
+    },
+    {
+      "metric": "breathing_disturbances",
+      "current": 1,
+      "expected": {
+        "suggested": 0.5,
+        "basis": "personal"
+      }
+    },
+    {
+      "metric": "readiness",
+      "current": 9.8,
+      "expected": {
+        "suggested": 10
+      }
+    },
+    {
+      "metric": "vo2max",
+      "current": 37,
+      "reasonEquals": "Healthy for men 50 to 59: Good 39.2 (60th percentile), Excellent 43.4 (80th). Your latest reading 37 ml/kg/min: next step 38 ml/kg/min.",
+      "expected": {}
+    },
+    {
+      "metric": "not_a_metric",
+      "current": 1,
+      "expected": null
+    }
+  ]
+}

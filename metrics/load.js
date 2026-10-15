@@ -9,6 +9,7 @@ import { loadCatalog } from './catalog.js';
 import { programAt, programProgress } from './blocks.js';
 import { liftProgress } from './plateau.js';
 import { advisorDue } from './advisor.js';
+import { suggestTarget, loadTargetConfig } from './targets.js';
 import { repoPath } from '../tools/paths.js';
 
 export const SUBSTITUTIONS_PATH = repoPath('config', 'substitutions.json');
@@ -62,6 +63,8 @@ export function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }
     // The confirmed program block the week ends in, with its phase and week from the catalog.
     program,
     advisor_input: advisorInput,
+    // Health targets as of the week's end (owner-set, or suggested from the 90 days to it).
+    targets: loadTargets(db, weekEnd, loadTargetConfig()),
     adherence_input: adherenceInput,
     primary_sets: loadPrimarySets(db, weekEnd),
     session_phases: loadSessionPhases(db),
@@ -232,4 +235,58 @@ export function loadMetricSettings(db) {
   const low = Number(get('zone2_low_bpm'));
   const high = Number(get('zone2_high_bpm'));
   return { zone2: low > 0 && high > low ? { low, high } : null };
+}
+
+// ---- Health tab targets (metrics/targets.js) ----
+
+/** The owner's profile for age-based targets (settings: birth_year, sex, height_in), with age on today. */
+export const PROFILE_KEYS = ['birth_year', 'sex', 'height_in'];
+export function loadProfile(db, today) {
+  const rows = Object.fromEntries(db.prepare(`SELECT key, value FROM settings WHERE key IN (${PROFILE_KEYS.map(() => '?').join(', ')})`)
+    .all(...PROFILE_KEYS).map((r) => [r.key, r.value]));
+  const birthYear = rows.birth_year ? Number(rows.birth_year) : null;
+  return {
+    birthYear,
+    sex: rows.sex ?? null,
+    heightIn: rows.height_in ? Number(rows.height_in) : null,
+    age: birthYear ? Number(today.slice(0, 4)) - birthYear : null,
+  };
+}
+
+const TARGET_DAILY = ['hrv_ms', 'resting_hr', 'sleep_total_hr', 'steps', 'exercise_min', 'cardio_recovery_bpm', 'walking_hr_avg',
+  'walking_speed_mph', 'walking_asymmetry_pct', 'wrist_temp_f', 'spo2_pct', 'breathing_disturbances'];
+const TARGET_CHECKIN = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat', 'readiness'];
+
+/**
+ * Each target metric's current value: the average of its days in the 90 days to today (alcohol per logged drinking
+ * day), and VO2 max's latest reading. Null when there is none.
+ */
+export function targetCurrents(db, today) {
+  const from = addDays(today, -89);
+  const avg = (table, col) => db.prepare(`SELECT AVG(${col}) FROM ${table} WHERE date BETWEEN ? AND ? AND ${col} IS NOT NULL`).pluck().get(from, today);
+  const out = {};
+  for (const c of TARGET_DAILY) out[c] = avg('daily_metrics', c);
+  for (const c of TARGET_CHECKIN) out[c] = avg('checkins', c);
+  out.alcohol = db.prepare(`SELECT AVG(COALESCE(beers, 0) + COALESCE(wine, 0) + COALESCE(bourbon, 0) + COALESCE(other, 0)) FROM drinking_days
+    WHERE date BETWEEN ? AND ?`).pluck().get(from, today);
+  out.vo2max = db.prepare('SELECT vo2max FROM daily_metrics WHERE vo2max IS NOT NULL AND date <= ? ORDER BY date DESC LIMIT 1').pluck().get(today) ?? null;
+  return out;
+}
+
+/**
+ * Every target metric: its suggestion (suggestTarget) and the target in effect, the owner's where set (health_targets).
+ * @returns {Array<object>} config order; setBy 'owner' or 'suggested'
+ */
+export function loadTargets(db, today, config) {
+  const profile = loadProfile(db, today);
+  const currents = targetCurrents(db, today);
+  const owned = new Map(db.prepare('SELECT metric, target FROM health_targets').all().map((r) => [r.metric, r.target]));
+  return Object.entries(config.metrics).map(([metric, def]) => {
+    const s = suggestTarget({ metric, current: currents[metric] ?? null, profile, config });
+    const mine = owned.get(metric);
+    return {
+      ...s, label: def.label, unit: def.unit, decimals: def.decimals, direction: def.direction,
+      target: mine ?? s.suggested, setBy: mine === undefined ? 'suggested' : 'owner',
+    };
+  });
 }

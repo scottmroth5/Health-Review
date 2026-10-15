@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ClaudeTruncatedError } from '@scottmroth5/agent-core';
 import { openHealthStore } from '../db/store.js';
+import { addDays } from '../metrics/stats.js';
 import { findDashes, stripDashes, allowedNumbers, ungroundedNumbers, misroutedTopics } from '../agent/validate.js';
 import { buildSystem, renderReport, CONTRACT } from '../agent/instructions.js';
 import { buildSummary } from '../agent/summary.js';
@@ -64,6 +65,20 @@ test('summary: nightBreathing is passed to the review only when there is data', 
   assert.equal(buildSummary(base, [], { today: '2026-09-27' }).nightBreathing, undefined);
   const withData = computeWeek({ daily_metrics: [{ date: '2026-09-24', spo2_pct: 95 }], workout_sessions: [], strength_sets: [], drinking_days: [], checkins: [] }, { weekEnd: '2026-09-26' });
   assert.deepEqual(buildSummary(withData, [], { today: '2026-09-27' }).nightBreathing.spo2_pct.mean, 95);
+});
+
+test('summary: health targets reach the review (metrics with data only), and their numbers are grounded', async () => {
+  const { loadWeekData } = await import('../metrics/load.js');
+  const store = openHealthStore(':memory:');
+  const add = store.db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES (?, 6500, 'x')");
+  for (let d = '2026-07-01'; d <= '2026-09-26'; d = addDays(d, 1)) add.run(d);
+  for (const [k, v] of [['birth_year', '1975'], ['sex', 'male']]) store.db.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, 'x')").run(k, v);
+  store.db.prepare("INSERT INTO health_targets (metric, target, updated_at) VALUES ('resting_hr', 58, 'x')").run(); // no resting HR data: left out
+  const s = buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  assert.deepEqual(s.targets, [{ metric: 'Steps', target: 7500, setBy: 'suggested', current90d: 6500, basis: 'norm', healthyLow: 8000 }]);
+  assert.deepEqual(ungroundedNumbers(report([['Patterns Noticed', 'Steps averaged 6,500 against a target of 7,500 (healthy is 8,000 or more).']]), allowedNumbers(s, '')), []);
+  assert.ok(CONTRACT.includes('"targets"'));
+  store.close();
 });
 
 test('grounding: calendar dates and numbers marked as targets are exempt; ratios are not', () => {

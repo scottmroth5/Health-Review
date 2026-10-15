@@ -250,7 +250,8 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
     ['rules', 'Keep the review practical and under 2,000 words.', 0],
   ];
   sections.forEach(([name, text, sensitive], i) => db.prepare('INSERT INTO prompt_sections (position, name, text, sensitive, updated_at) VALUES (?, ?, ?, ?, ?)').run(i + 1, name, text, sensitive, stamp));
-  for (const [k, v] of [['zone2_low_bpm', '108'], ['zone2_high_bpm', '126']]) db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(k, v, stamp);
+  // A made-up profile for the age-based targets (born 1975, male, 5 ft 10 in).
+  for (const [k, v] of [['zone2_low_bpm', '108'], ['zone2_high_bpm', '126'], ['birth_year', '1975'], ['sex', 'male'], ['height_in', '70']]) db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(k, v, stamp);
   const lastSaturday = addDays(today, -((dow(today) + 1) % 7 || 7));
   for (const [i, weekEnd] of [addDays(lastSaturday, -7), lastSaturday].entries()) {
     db.prepare("INSERT INTO reviews (week_ending, summary_json, report_md, created_at, model, warnings, sensitive_sections) VALUES (?, '{}', ?, ?, 'sample', NULL, '[]')")

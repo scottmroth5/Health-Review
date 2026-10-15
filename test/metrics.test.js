@@ -18,6 +18,7 @@ import { recommendPrograms, liftChanges } from '../metrics/advisor.js';
 import { createDictionary } from '../metrics/dictionary.js';
 import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
 import { blockAdherence, weekAdherence } from '../metrics/adherence.js';
+import { suggestTarget, loadTargetConfig } from '../metrics/targets.js';
 
 /** Expands a fixture's dailyFill (one row per day with the given values, minus skip, plus overrides). */
 function expandDaily({ from, to, skip = [], override = {}, ...values }) {
@@ -54,6 +55,18 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       const daily = expandDaily(fx.input.dailyFill);
       assertSubset(dataChecks({ ...fx.input, daily }), fx.expected);
       assertSubset(weekDataQuality(daily, fx.week.from, fx.week.to), fx.week.expected, 'week');
+      return;
+    }
+    if (fx.kind === 'targets') {
+      const config = loadTargetConfig();
+      for (const c of fx.cases) {
+        const got = suggestTarget({ metric: c.metric, current: c.current, profile: c.profile ?? fx.profile, config });
+        const label = `${c.metric} at ${c.current}`;
+        if (c.expected === null) { assert.equal(got, null, label); continue; }
+        assertSubset(got, c.expected, label);
+        if (c.reasonIncludes) assert.ok(got.reason.includes(c.reasonIncludes), `${label}: ${got.reason}`);
+        if (c.reasonEquals) assert.equal(got.reason, c.reasonEquals, label);
+      }
       return;
     }
     if (fx.kind === 'medication-checkoffs') {

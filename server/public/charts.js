@@ -80,6 +80,27 @@ function frame(container, { from, to, yValues }) {
   return { svg, x, y, plotW, plotH, width, height, ylo };
 }
 
+/** The value a target adds to the y range, so its line is always on the chart (a band is clipped to the range instead). */
+const targetValues = (target) => (target && typeof target.value === 'number' ? [target.value] : []);
+
+/** A dashed target line (labelled "target") and, for a range, a light band behind the data. */
+function drawTarget(svg, { y, plotW }, target) {
+  if (!target) return;
+  if (target.band) {
+    // Clipped to the plot, so a wide healthy span (a weight range) shades without stretching the axis.
+    const plotBottom = svg.viewBox.baseVal.height - M.bottom;
+    const [a, b] = [y(target.band[0]), y(target.band[1])];
+    const top = Math.max(M.top, Math.min(a, b));
+    const bottom = Math.min(plotBottom, Math.max(a, b));
+    if (bottom > top) el('rect', { class: 'target-band', x: M.left, y: top, width: plotW, height: bottom - top }, svg);
+  }
+  if (typeof target.value === 'number') {
+    el('line', { class: 'target-line', x1: M.left, x2: M.left + plotW, y1: y(target.value), y2: y(target.value) }, svg);
+    // Inside the plot at the left, so it never meets the last-value label in the right margin.
+    el('text', { class: 'target-label', x: M.left + 4, y: y(target.value) - 4 }, svg).textContent = 'target';
+  }
+}
+
 function empty(container) {
   const width = Math.max(container.clientWidth, 200);
   const svg = el('svg', { viewBox: `0 0 ${width} 150` });
@@ -91,12 +112,13 @@ function empty(container) {
  * Line chart. points: [{date, value}] sorted by date, values non-null.
  * The line breaks across gaps longer than gapDays so missing stretches are not drawn as data.
  */
-export function lineChart(container, points, { from, to, format = String, gapDays = 3, label = 'Value' }) {
+export function lineChart(container, points, { from, to, format = String, gapDays = 3, label = 'Value', target = null }) {
   const draw = () => {
     container.replaceChildren();
     if (!points.length) return container.append(empty(container));
-    const { svg, x, y, plotW, plotH } = frame(container, { from, to, yValues: points.map((p) => p.value) });
-    svg.setAttribute('aria-label', `${label}, ${points.length} values from ${shortDate(from)} to ${shortDate(to)}`);
+    const { svg, x, y, plotW, plotH } = frame(container, { from, to, yValues: [...points.map((p) => p.value), ...targetValues(target)] });
+    svg.setAttribute('aria-label', `${label}, ${points.length} values from ${shortDate(from)} to ${shortDate(to)}${target?.value !== undefined && target?.value !== null ? `, target ${format(target.value)}` : ''}`);
+    drawTarget(svg, { y, plotW }, target);
 
     let d = '';
     points.forEach((p, i) => {
@@ -148,11 +170,12 @@ export function lineChart(container, points, { from, to, format = String, gapDay
  * bucketDays days starting at its date (1 for daily, 7 for weeks, about 30 for months); a point's
  * label replaces the tooltip date ("Week ending Sep 26").
  */
-export function columnChart(container, points, { from, to, format = String, label = 'Value', bucketDays = 1 }) {
+export function columnChart(container, points, { from, to, format = String, label = 'Value', bucketDays = 1, target = null }) {
   const draw = () => {
     container.replaceChildren();
     if (!points.length) return container.append(empty(container));
-    const { svg, x, y, plotW } = frame(container, { from, to, yValues: [0, ...points.map((p) => p.value)] });
+    const { svg, x, y, plotW } = frame(container, { from, to, yValues: [0, ...points.map((p) => p.value), ...targetValues(target)] });
+    drawTarget(svg, { y, plotW }, target);
     svg.setAttribute('aria-label', `${label}, ${points.length} ${bucketDays === 1 ? 'days' : 'periods'} from ${shortDate(from)} to ${shortDate(to)}`);
     const days = Math.max(1, Math.round((toMs(to) - toMs(from)) / DAY) + 1);
     const slot = (plotW / days) * bucketDays;

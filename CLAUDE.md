@@ -227,7 +227,16 @@ for, and the names of exercises the owner logged instead or on top; never the ca
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and
-best on record. Values only, no fitness-for-age labels (same rule as labs).
+best on record, plus its target (below).
+Targets (metrics/targets.js, pure; norms in config/health-targets.json with sources; fixture evals/fixtures/metrics/targets.json):
+every Health tab metric gets a suggested target from the owner's current value (90-day average; VO2 max's latest reading)
+and the healthy level for their sex and age (profile in settings: birth_year, sex, height_in): one step toward it, or
+straight to it when closer; past it, half a step, held at the cap; ranges get inside and hold; weight's range is BMI 18.5
+to 24.9 for the height; no norm means improving on their own data (said so in the reason). The owner can set any target
+(health_targets, migration 019; GET /api/targets, PUT and DELETE /api/targets/:metric, PUT /api/profile); the rest follow
+the data. The weekly summary's targets block carries each metric with data; CONTRACT says report progress as given, never
+invent a target. Age norms on these metrics are the owner's choice (2026-10-15), replacing "values only, no
+fitness-for-age labels"; labs keep no reference ranges.
 
 ## Review
 npm run review makes one structured-output call (REVIEW_MODEL, default claude-opus-5-5; REVIEW_EFFORT, default high;
@@ -316,6 +325,7 @@ The MAPS PDFs and anything transcribed from them (data/maps) are Mind Pump's cop
 put them in fixtures, or send their text anywhere; only computed facts (program, phase, week) leave this machine.
 Metrics are computed in code, never by the model.
 Anything involving medications, abnormal labs, or symptoms is flagged for physician discussion, not turned into a recommendation.
+Blood oxygen and breathing disturbances (values and targets) appear in the review only in physicianDiscussion.
 Never output em dashes, en dashes, or double hyphens in generated text.
 Never commit anything under /data, or any .csv or .xml file. Never log or print API keys.
 

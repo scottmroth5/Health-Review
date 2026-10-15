@@ -424,4 +424,15 @@ export const MIGRATIONS = [
       ALTER TABLE daily_metrics ADD COLUMN walking_asymmetry_pct REAL;
     `,
   },
+  {
+    id: '019-health-targets',
+    up: `
+      -- Targets the owner set on the Health tab; every other target is suggested live (metrics/targets.js).
+      CREATE TABLE health_targets (
+        metric TEXT PRIMARY KEY,
+        target REAL NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];

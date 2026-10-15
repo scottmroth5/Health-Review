@@ -175,6 +175,39 @@ check-in. A chart with no data in the range you picked is left out, and a line b
 back by itself once data arrives. To fill earlier days, export a past date range from Health Auto Export into the same folder;
 the app reads the new files and fills the new columns on days it already has.
 
+## Health targets
+
+Every chart on the Health tab, and the VO2 max card, shows a **target**: a dashed line on the chart, and a line above it
+such as "Target 9,500 · suggested" with **Edit** and **Why**.
+- **Suggested targets** are computed from your 90-day average (VO2 max: your latest reading) and the healthy level for
+  your sex and age. Below it, the target is one step closer, or the healthy level itself when that's nearer. Past it,
+  the target is half a step better, up to a ceiling. A range (sleep, blood oxygen, weight) aims to get inside it and
+  hold. Fill in **Your profile** (birth year, sex, height) for the age-based levels; without it, targets come from your
+  own data only. Suggestions follow your data as it changes.
+- **Your own target:** Edit, type a number, Save. It stays until you choose "Use suggested".
+- **Why** shows the healthy level, your current value and the source.
+- **The weekly review** reports progress against each target, and never sets one itself. Blood oxygen and breathing
+  disturbances stay in the physician discussion section.
+
+| Metric | Healthy level (men 50 to 59) | Source |
+|---|---|---|
+| VO2 max | Good 39.2, Excellent 43.4 ml/kg/min | Cooper Institute norms |
+| Resting heart rate | 60 bpm or lower | Copenhagen, CALIBER and Gothenburg cohorts |
+| Steps | 8,000 to 10,000 a day (6,000 to 8,000 at 60 and over) | Paluch 2022, Lancet Public Health |
+| Sleep | 7 to 9 h | AASM and Sleep Research Society |
+| Exercise minutes | 30 a day | US Physical Activity Guidelines |
+| Cardio recovery | more than 12 bpm | Cole 1999, NEJM |
+| Walking speed | about 3.2 mph | Bohannon 2011 |
+| Walking asymmetry | under 10% | iPhone mobility guidance |
+| Body fat | 11 to 21% (men 40 to 59) | Tanita, from Gallagher 2000 |
+| Visceral fat | 1 to 12 | Tanita |
+| Weight | BMI 18.5 to 24.9 for your height | NIH and CDC |
+| Blood oxygen | 95 to 100% | general clinical range |
+| Alcohol | 2 or fewer drinks a day | US Dietary Guidelines |
+
+HRV, walking heart rate, muscle mass, wrist temperature, breathing disturbances and readiness have no reliable
+published norm, so their targets improve on your own data. The norms live in `config/health-targets.json`.
+
 ## Called for vs logged
 
 The Training tab's **Called for vs logged** card compares each lifting day of a confirmed block with the workout the

@@ -12,7 +12,8 @@ import { VO2_VIEWS } from '../metrics/vo2max.js';
 import { repoPath } from '../tools/paths.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { loadDictionary } from '../metrics/dictionary.js';
-import { loadSubstitutions } from '../metrics/load.js';
+import { loadSubstitutions, loadTargets, loadProfile } from '../metrics/load.js';
+import { loadTargetConfig } from '../metrics/targets.js';
 import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
 import { currentProgram } from '../ingest/program-blocks.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../agent/advisor-chat.js';
@@ -73,7 +74,7 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  * @param {() => Date} [ctx.clock]
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig }) {
   const app = Fastify({ logger });
   const { db } = store;
   let syncing = false;
@@ -524,6 +525,60 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   // ---- settings ----
   const bpm = nullable({ type: 'integer', minimum: 40, maximum: 220 });
+  // ---- Health tab targets: suggested from norms for the owner's sex and age and their own data, editable ----
+  const targetsConfig = () => targetConfig ?? loadTargetConfig();
+  const metricParams = { type: 'object', required: ['metric'], properties: { metric: { type: 'string', pattern: '^[a-z0-9_]{1,40}$' } } };
+  const knownMetric = (metric) => {
+    if (!targetsConfig().metrics[metric]) throw badRequest(`Unknown metric ${metric}`);
+    return metric;
+  };
+  app.get('/api/targets', {
+    schema: { summary: 'Each Health tab metric: current (90-day average or latest), suggested target, the target in effect (yours or suggested), healthy level, reason and source', response: { 200: anyObject } },
+  }, async () => {
+    const today = q.localDate(clock());
+    return { profile: loadProfile(db, today), targets: loadTargets(db, today, targetsConfig()) };
+  });
+  app.put('/api/targets/:metric', {
+    schema: {
+      summary: 'Set your own target for a metric (replaces the suggestion until reset)',
+      params: metricParams,
+      body: { type: 'object', additionalProperties: false, required: ['target'], properties: { target: { type: 'number', minimum: 0, maximum: 100000 } } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => {
+    const metric = knownMetric(req.params.metric);
+    db.prepare(`INSERT INTO health_targets (metric, target, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT (metric) DO UPDATE SET target = excluded.target, updated_at = excluded.updated_at`).run(metric, req.body.target, new Date().toISOString());
+    return loadTargets(db, q.localDate(clock()), targetsConfig()).find((t) => t.metric === metric);
+  });
+  app.delete('/api/targets/:metric', { schema: { summary: 'Go back to the suggested target', params: metricParams, response: { 200: anyObject } } }, async (req) => {
+    const metric = knownMetric(req.params.metric);
+    db.prepare('DELETE FROM health_targets WHERE metric = ?').run(metric);
+    return loadTargets(db, q.localDate(clock()), targetsConfig()).find((t) => t.metric === metric);
+  });
+  app.put('/api/profile', {
+    schema: {
+      summary: 'Birth year, sex and height for age-based targets (null clears one)',
+      body: {
+        type: 'object', additionalProperties: false, minProperties: 1,
+        properties: {
+          birth_year: { type: ['integer', 'null'], minimum: 1900, maximum: 2100 },
+          sex: { type: ['string', 'null'], enum: ['male', 'female', null] },
+          height_in: { type: ['number', 'null'], minimum: 36, maximum: 96 },
+        },
+      },
+      response: { 200: anyObject },
+    },
+  }, async (req) => {
+    const today = q.localDate(clock());
+    if (req.body.birth_year && req.body.birth_year > Number(today.slice(0, 4))) throw badRequest('Birth year is in the future');
+    const upsert = db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
+    const remove = db.prepare('DELETE FROM settings WHERE key = ?');
+    for (const [k, v] of Object.entries(req.body)) (v === null ? remove.run(k) : upsert.run(k, String(v), new Date().toISOString()));
+    return loadProfile(db, today);
+  });
+
   app.get('/api/settings', { schema: { summary: 'Personal settings used by the metrics', response: { 200: anyObject } } },
     async () => q.getSettings(db));
 

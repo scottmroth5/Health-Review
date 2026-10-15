@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "note": "Norms behind the Health tab's suggested targets (metrics/targets.js). No personal data. direction: higher or lower is better, range (a healthy span), band (stay near your own baseline). For higher, healthy is the level to reach and cap the further-improvement ceiling; for lower, healthy is the level to get under and cap the floor. A metric with no norm for the owner's sex and age is suggested from their data only.",
+  "metrics": {
+    "vo2max": {
+      "label": "VO2 max",
+      "unit": " ml/kg/min",
+      "decimals": 1,
+      "direction": "higher",
+      "current": "latest",
+      "step": 1,
+      "norms": [
+        {
+          "sex": "male",
+          "ages": [
+            50,
+            59
+          ],
+          "healthy": 39.2,
+          "cap": 43.4,
+          "text": "Good 39.2 (60th percentile), Excellent 43.4 (80th)"
+        }
+      ],
+      "source": "Cooper Institute VO2 max norms for men 50 to 59 (as reprinted in Garmin's VO2 max standard ratings)"
+    },
+    "resting_hr": {
+      "label": "Resting heart rate",
+      "unit": " bpm",
+      "decimals": 0,
+      "direction": "lower",
+      "step": 2,
+      "norms": [
+        {
+          "sex": "any",
+          "ages": [
+            18,
+            120
+          ],
+          "healthy": 60,
+          "cap": 50
+        }
+      ],
+      "source": "Cohorts of middle-aged men (Copenhagen Male Study, CALIBER, Gothenburg): the lowest-risk groups were at or under about 60 bpm"
+    },
+    "steps": {
+      "label": "Steps",
+      "unit": " steps",
+      "decimals": 0,
+      "direction": "higher",
+      "step": 1000,
+      "norms": [
+        {
+          "sex": "any",
+          "ages": [
+            18,
+            59
+          ],
+          "healthy": 8000,
+          "cap": 10000
+        },
+        {
+          "sex": "any",
+          "ages": [
+            60,
+            120
+          ],
+          "healthy": 6000,
+          "cap": 8000
+        }
+      ],
+      "source": "Paluch et al. 2022, Lancet Public Health: mortality benefit levels off at 8,000 to 10,000 steps a day under 60, 6,000 to 8,000 at 60 and over",
+      "roundTo": 100
+    },
+    "sleep_total_hr": {
+      "label": "Sleep",
+      "unit": " h",
+      "decimals": 2,
+      "direction": "range",
+      "step": 0.25,
+      "norms": [
+        {
+          "sex": "any",
+          "ages": [
+            18,
+            120
+          ],
+          "low": 7,
+          "high": 9
+        }
+      ],
+      "source": "AASM and Sleep Research Society: 7 or more hours for adults (7 to 9 is the usual healthy span)"
+    },
+    "exercise_min": {
+      "label": "Exercise minutes",
+      "unit": " min",
+      "decimals": 0,
+      "direction": "higher",
+      "step": 5,
+      "norms": [
+        {
+          "sex": "any",
+          "ages": [
+            18,
+            120
+          ],
+          "healthy": 30,
+          "cap": 60
+        }
+      ],
+      "source": "US Physical Activity Guidelines: 150 to 300 minutes of moderate activity a week (about 30 a day on most days)"
+    },
+    "cardio_recovery_bpm": {
+      "label": "Cardio recovery",
+      "unit": " bpm",
+      "decimals": 0,
+      "direction": "higher",
+      "step": 2,
+      "norms": [
+        {
+          "sex": "any",
+          "ages": [
+            18,
+            120
+          ],
+          "healthy": 13,
+          "cap": 25,
+          "text": "more than 12 bpm in the first minute"
+        }
+      ],
+      "source": "Cole et al. 1999, NEJM: a heart rate drop of 12 bpm or less one minute after exercise was linked to higher mortality"
+    },
+    "walking_speed_mph": {
+      "label": "Walking speed",
+      "unit": " mph",
+      "decimals": 2,
+      "direction": "higher",
+      "step": 0.1,
+      "norms": [
+        {
+          "sex": "male",
+          "ages": [
+            50,
+            59
+          ],
+          "healthy": 3.2,
+          "cap": 3.6,
+          "text": "about 3.2 mph (1.43 m/s, the average for healthy men 50 to 59)"
+        }
+      ],
+      "source": "Bohannon and Andrews 2011, Physiotherapy: normal walking speed meta-analysis"
+    },
+    "walking_asymmetry_pct": {
+      "label": "Walking asymmetry",
+      "unit": "%",
+      "decimals": 1,
+      "direction": "lower",
+      "step": 1,
+      "norms": [
+        {
+          "sex": "any",
+          "ages": [
+            18,
+            120
+          ],
+          "healthy": 10,
+          "cap": 0
+        }
+      ],
+      "source": "iPhone mobility guidance: under about 10% is the usual range"
+    },
+    "body_fat_pct": {
+      "label": "Body fat",
+      "unit": "%",
+      "decimals": 1,
+      "direction": "lower",
+      "step": 1,
+      "norms": [
+        {
+          "sex": "male",
+          "ages": [
+            40,
+            59
+          ],
+          "healthy": 21,
+          "cap": 11,
+          "text": "11 to 21% for men 40 to 59"
+        }
+      ],
+      "source": "Tanita healthy body fat ranges (from Gallagher et al. 2000, American Journal of Clinical Nutrition)"
+    },
+    "visceral_fat": {
+      "label": "Visceral fat",
+      "unit": "",
+      "decimals": 0,
+      "direction": "lower",
+      "step": 1,
+      "norms": [
+        {
+          "sex": "any",
+          "ages": [
+            18,
+            120
+          ],
+          "healthy": 12,
+          "cap": 1,
+          "text": "a rating of 1 to 12"
+        }
+      ],
+      "source": "Tanita visceral fat rating: 1 to 12 is the healthy level, 13 to 59 too high"
+    },
+    "weight_lbs": {
+      "label": "Weight",
+      "unit": " lbs",
+      "decimals": 1,
+      "direction": "range",
+      "stepPct": 1,
+      "bmi": [
+        18.5,
+        24.9
+      ],
+      "norms": [],
+      "source": "NIH and CDC: a BMI of 18.5 to 24.9, turned into a weight range for your height"
+    },
+    "spo2_pct": {
+      "label": "Blood oxygen",
+      "unit": "%",
+      "decimals": 1,
+      "direction": "range",
+      "step": 1,
+      "norms": [
+        {
+          "sex": "any",
+          "ages": [
+            18,
+            120
+          ],
+          "low": 95,
+          "high": 100
+        }
+      ],
+      "source": "General clinical range for healthy adults: 95 to 100%. Discuss with your physician."
+    },
+    "breathing_disturbances": {
+      "label": "Breathing disturbances",
+      "unit": "",
+      "decimals": 1,
+      "direction": "lower",
+      "step": 0.5,
+      "floor": 0,
+      "norms": [],
+      "source": "No published per-night norm (Apple flags \"elevated\" against a lab level of 15 or more events an hour). Discuss with your physician."
+    },
+    "hrv_ms": {
+      "label": "Heart rate variability",
+      "unit": " ms",
+      "decimals": 0,
+      "direction": "higher",
+      "stepPct": 5,
+      "norms": [],
+      "source": "No reliable published norm for Apple Watch overnight SDNN by age"
+    },
+    "walking_hr_avg": {
+      "label": "Walking heart rate",
+      "unit": " bpm",
+      "decimals": 0,
+      "direction": "lower",
+      "step": 2,
+      "norms": [],
+      "source": "No published norm"
+    },
+    "muscle_mass_lbs": {
+      "label": "Muscle mass",
+      "unit": " lbs",
+      "decimals": 1,
+      "direction": "higher",
+      "step": 0.5,
+      "norms": [],
+      "source": "No published norm (scale-specific)"
+    },
+    "wrist_temp_f": {
+      "label": "Sleeping wrist temperature",
+      "unit": " °F",
+      "decimals": 1,
+      "direction": "band",
+      "band": 0.5,
+      "norms": [],
+      "source": "A deviation measure: what matters is staying near your own baseline"
+    },
+    "readiness": {
+      "label": "Morning readiness",
+      "unit": "",
+      "decimals": 1,
+      "direction": "higher",
+      "step": 0.5,
+      "ceiling": 10,
+      "norms": [],
+      "source": "Your own 1 to 10 rating"
+    },
+    "alcohol": {
+      "label": "Alcoholic drinks per day",
+      "unit": " drinks",
+      "decimals": 1,
+      "direction": "lower",
+      "step": 0.5,
+      "norms": [
+        {
+          "sex": "male",
+          "ages": [
+            18,
+            120
+          ],
+          "healthy": 2,
+          "cap": 0
+        },
+        {
+          "sex": "female",
+          "ages": [
+            18,
+            120
+          ],
+          "healthy": 1,
+          "cap": 0
+        }
+      ],
+      "source": "US Dietary Guidelines: 2 drinks or fewer a day for men (1 for women), on days you drink"
+    }
+  }
+}

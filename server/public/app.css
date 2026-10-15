@@ -131,6 +131,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .chart .bar { fill: var(--series-1); }
 .chart .bar.hover { opacity: 0.75; }
 .chart .crosshair { stroke: var(--muted); stroke-width: 1; }
+/* Targets: a dashed line in ink (not a series color) labelled "target", and a light band for a healthy span */
+.chart .target-line { stroke: var(--text-secondary); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.chart .target-band { fill: var(--grid); opacity: 0.55; }
+.chart .target-label { fill: var(--text-secondary); font-size: 10px; }
+.target-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 2px 0 4px; }
+.target-row .target-why { flex-basis: 100%; margin: 0; }
+.target-row .target-why summary { font-size: 0.82rem; color: var(--text-secondary); cursor: pointer; }
+.target-row .target-why p { margin: 2px 0; }
+.target-row .target-edit input { width: 7em; margin: 0 0 0 4px; display: inline-block; }
+.profile-card summary { cursor: pointer; }
+.profile-card form { margin-top: 8px; }
 .chart .empty { fill: var(--muted); font-size: 12px; }
 .chart-card details { margin-top: 4px; }
 .chart-card table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-variant-numeric: tabular-nums; }

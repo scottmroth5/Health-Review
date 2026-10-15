@@ -164,10 +164,25 @@
         </div>
         <p class="muted small" id="vo2-range"></p>
         <div id="vo2-tiles" class="tiles"></div>
+        <div id="vo2-target"></div>
         <div class="chart" id="vo2-chart"></div>
         <p class="muted small" id="vo2-summary"></p>
         <div id="vo2-table"></div>
       </div>
+
+      <details class="card profile-card" id="profile-card">
+        <summary><strong>Your profile</strong> <span id="profile-summary" class="muted small"></span></summary>
+        <p class="muted small">Used for the healthy levels for your sex and age behind each suggested target. Stored with your health data.</p>
+        <form id="profile-form">
+          <div class="grid2">
+            <label>Birth year <input type="number" name="birth_year" min="1900" max="2100" inputmode="numeric"></label>
+            <label>Sex <select name="sex"><option value="">Not set</option><option value="male">Male</option><option value="female">Female</option></select></label>
+            <label>Height, feet <input type="number" name="height_ft" min="3" max="7" inputmode="numeric"></label>
+            <label>Height, inches <input type="number" name="height_inch" min="0" max="11.5" step="0.5" inputmode="decimal"></label>
+          </div>
+          <div class="actions"><button type="submit">Save</button><span class="status" role="status"></span></div>
+        </form>
+      </details>
 
       <div class="filters" role="group" aria-label="Range">
         <button type="button" data-range="30">30 days</button>

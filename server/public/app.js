@@ -444,8 +444,104 @@ function tableView(points, format) {
 }
 
 function loadHealthTab() {
+  getTargets(true); // fresh each time the tab opens (a sync may have moved the 90-day averages)
+  loadProfileForm().catch(() => {});
   loadVo2();
   return loadHistory();
+}
+
+// ---------------- targets (suggested in code from norms for your sex and age and your own data; editable) ----------------
+
+/** All targets by metric key; one request per Health tab load (the VO2 card and the charts share it). */
+let targetsRequest = null;
+const getTargets = (fresh = false) => {
+  if (fresh || !targetsRequest) targetsRequest = api('GET', '/api/targets').catch(() => ({ profile: {}, targets: [] }));
+  return targetsRequest;
+};
+const targetsByMetric = (body) => new Map(body.targets.map((t) => [t.metric, t]));
+
+/** The chart's target option: the line at the target, and the healthy span (or your baseline band) behind it. */
+const chartTarget = (t) => (t && t.target !== null ? { value: t.target, band: t.band ?? null } : null);
+
+/**
+ * "Target 7,500 steps · suggested" with Edit (your own number, or back to the suggestion) and Why (the reason and
+ * source). Text carries the meaning; the dashed line on the chart repeats it.
+ */
+function targetRow(t, format, reload) {
+  if (!t || t.target === null) return null;
+  const row = h('div', { class: 'target-row' });
+  const show = () => {
+    const why = h('details', { class: 'target-why' }, h('summary', {}, 'Why'),
+      h('p', { class: 'small' }, t.reason),
+      h('p', { class: 'muted small' }, `Source: ${t.source}`),
+      t.setBy === 'owner' ? h('p', { class: 'muted small' }, `You set this target. The suggestion is ${format(t.suggested)}.`) : null);
+    const edit = h('button', { type: 'button', class: 'link small', onclick: editing }, 'Edit');
+    fill(row, h('span', { class: 'small' }, h('strong', {}, `Target ${format(t.target)}`), ` · ${t.setBy === 'owner' ? 'yours' : 'suggested'}`), edit, why);
+  };
+  const editing = () => {
+    const input = h('input', { type: 'number', step: 'any', min: '0', value: String(t.target), 'aria-label': `Target for ${t.label}` });
+    const status = h('span', { class: 'status', role: 'status' });
+    const done = async (fn) => {
+      try {
+        await fn();
+        getTargets(true);
+        await reload();
+      } catch (err) {
+        setStatus(status, err.message, 'error');
+      }
+    };
+    const save = h('button', { type: 'button', class: 'small', onclick: () => {
+      const v = Number(input.value);
+      if (input.value === '' || !Number.isFinite(v)) return setStatus(status, 'Enter a number', 'error');
+      done(() => api('PUT', `/api/targets/${t.metric}`, { target: v }));
+    } }, 'Save');
+    const reset = t.setBy === 'owner'
+      ? h('button', { type: 'button', class: 'ghost small', onclick: () => done(() => api('DELETE', `/api/targets/${t.metric}`)) }, `Use suggested (${format(t.suggested)})`)
+      : null;
+    fill(row, h('label', { class: 'small target-edit' }, 'Target ', input), save, reset,
+      h('button', { type: 'button', class: 'ghost small', onclick: show }, 'Cancel'), status);
+    input.focus();
+  };
+  show();
+  return row;
+}
+
+/** The profile card: birth year, sex and height (feet and inches in the form, inches stored). Open until it is complete. */
+async function loadProfileForm() {
+  const { profile } = await getTargets();
+  const f = $('#profile-form').elements;
+  f.birth_year.value = profile.birthYear ?? '';
+  f.sex.value = profile.sex ?? '';
+  f.height_ft.value = profile.heightIn ? Math.floor(profile.heightIn / 12) : '';
+  f.height_inch.value = profile.heightIn ? Math.round((profile.heightIn % 12) * 2) / 2 : '';
+  const complete = profile.birthYear && profile.sex && profile.heightIn;
+  $('#profile-card').open = !complete;
+  $('#profile-summary').textContent = complete
+    ? `${profile.sex === 'male' ? 'Male' : 'Female'}, age ${profile.age}, ${Math.floor(profile.heightIn / 12)} ft ${Math.round((profile.heightIn % 12) * 2) / 2} in`
+    : 'Add it for age-based targets';
+}
+
+function initProfileForm() {
+  const form = $('#profile-form');
+  form.addEventListener('submit', async (evt) => {
+    evt.preventDefault();
+    const f = form.elements;
+    const status = $('.status', form);
+    const ft = f.height_ft.value === '' ? null : Number(f.height_ft.value);
+    const inch = f.height_inch.value === '' ? 0 : Number(f.height_inch.value);
+    try {
+      await api('PUT', '/api/profile', {
+        birth_year: f.birth_year.value === '' ? null : Number(f.birth_year.value),
+        sex: f.sex.value || null,
+        height_in: ft === null ? null : ft * 12 + inch,
+      });
+      setStatus(status, 'Saved', 'ok');
+      getTargets(true);
+      await Promise.all([loadProfileForm(), loadVo2(), loadHistory()]);
+    } catch (err) {
+      setStatus(status, err.message, 'error');
+    }
+  });
 }
 
 async function loadHistory() {
@@ -453,7 +549,8 @@ async function loadHistory() {
   $$('[data-range]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.range) === state.range)));
   const to = state.today;
   const from = addDays(to, -(state.range - 1));
-  const data = await api('GET', `/api/history?from=${from}&to=${to}`);
+  const [data, targetBody] = await Promise.all([api('GET', `/api/history?from=${from}&to=${to}`), getTargets()]);
+  const targets = targetsByMetric(targetBody);
   const container = $('#charts');
   container.replaceChildren();
   // A chart with no data in the range is left out, and named in one line below the charts.
@@ -479,9 +576,11 @@ async function loadHistory() {
     head.append(h, latest);
     const chart = document.createElement('div');
     chart.className = 'chart';
-    card.append(head, chart, tableView(points, c.format));
+    const t = targets.get(c.key);
+    const row = targetRow(t, c.format, loadHistory);
+    card.append(head, ...(row ? [row] : []), chart, tableView(points, c.format));
     container.append(card);
-    const opts = { from, to, format: c.format, label: c.title, gapDays: c.gapDays };
+    const opts = { from, to, format: c.format, label: c.title, gapDays: c.gapDays, target: chartTarget(t) };
     (c.columns ? columnChart : lineChart)(chart, points, opts);
   }
   fill($('#charts-hidden'), hidden.length ? `No data in this range: ${hidden.join(', ')}.` : '');
@@ -1063,7 +1162,8 @@ const vo2Tile = (label, value, note) => h('div', { class: 'tile' }, h('div', { c
 async function loadVo2(view = vo2ViewChoice()) {
   try { localStorage.setItem(VO2_VIEW_KEY, view); } catch { /* storage unavailable: still works, just not remembered */ }
   $$('[data-vview]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.vview === view)));
-  const r = await api('GET', `/api/vo2max?view=${view}`);
+  const [r, targetBody] = await Promise.all([api('GET', `/api/vo2max?view=${view}`), getTargets()]);
+  const vo2Target = targetsByMetric(targetBody).get('vo2max');
   $('#vo2-range').textContent = `${niceDate(r.range.from)} to ${niceDate(r.range.to)}`;
   const change = (c, span) => (c ? vo2Tile(`Change vs ${span}`, `${signed(c.value)}${VO2_UNIT}`, `from ${c.from.value.toFixed(1)} on ${niceDate(c.from.date)}`)
     : vo2Tile(`Change vs ${span}`, 'No reading', `none within 30 days of ${span}`));
@@ -1077,8 +1177,10 @@ async function loadVo2(view = vo2ViewChoice()) {
   lineChart($('#vo2-chart'), points, {
     // The unit goes in the label, not on each value, so the end-of-line label fits.
     from: r.range.from, to: r.range.to, format: (v) => v.toFixed(1), label: `${r.bucket === 'reading' ? 'VO2 max' : 'Average VO2 max'} (ml/kg/min)`,
-    gapDays: r.bucket === 'month' ? 62 : 21,
+    gapDays: r.bucket === 'month' ? 62 : 21, target: chartTarget(vo2Target),
   });
+  const row = targetRow(vo2Target, vo2, () => loadVo2(view));
+  $('#vo2-target').replaceChildren(...(row ? [row] : []));
   const per = { reading: '', week: ', shown as weekly averages', month: ', shown as monthly averages' }[r.bucket];
   $('#vo2-summary').textContent = r.readings
     ? `Average ${vo2(r.rangeAvg)} over ${plural(r.readings, 'reading')} in this range${per}. Apple Watch estimates.`
@@ -1847,6 +1949,7 @@ async function showLog(name) {
 buildTodayForms();
 initPrompt();
 initMeds();
+initProfileForm();
 initLabs();
 $$('[data-tview]').forEach((b) => b.addEventListener('click', () => loadTraining(b.dataset.tview)));
 $('#chat-form').addEventListener('submit', sendChat);

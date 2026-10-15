@@ -54,6 +54,7 @@ export function buildSummary(week, notes, { today }) {
     program: week.program,
     ...(week.advisor ? { advisor: week.advisor } : {}),
     ...(week.programAdherence ? { programAdherence: week.programAdherence } : {}),
+    ...(week.targets?.length ? { targets: week.targets.map(compact) } : {}),
     lifts: week.lifts,
     drinking: week.drinking,
     checkins: week.checkins,
