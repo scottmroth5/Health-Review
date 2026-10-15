@@ -10,6 +10,7 @@ import { programAt, programProgress } from './blocks.js';
 import { liftProgress } from './plateau.js';
 import { advisorDue } from './advisor.js';
 import { suggestTarget, loadTargetConfig } from './targets.js';
+import { loadLabRanges } from './labs.js';
 import { repoPath } from '../tools/paths.js';
 
 export const SUBSTITUTIONS_PATH = repoPath('config', 'substitutions.json');
@@ -56,7 +57,8 @@ export function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }
     drinking_days: db.prepare('SELECT * FROM drinking_days WHERE date BETWEEN ? AND ? ORDER BY date').all(from, weekEnd),
     checkins: db.prepare('SELECT * FROM checkins WHERE date <= ? ORDER BY date').all(weekEnd),
     ...loadMedications(db),
-    lab_tests: db.prepare('SELECT id, name, panel, unit, position FROM lab_tests').all(),
+    lab_tests: db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests').all(),
+    lab_ranges: loadLabRanges(),
     lab_results: db.prepare('SELECT test_id, drawn_on, value, value_text FROM lab_results WHERE drawn_on <= ?').all(weekEnd),
     medication_doses: db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses WHERE date BETWEEN ? AND ?')
       .all(addDays(weekEnd, -6), weekEnd),

@@ -1,0 +1,38 @@
+{
+  "kind": "lab-ranges",
+  "description": "Lab reference ranges: where a value sits (below, within with bounds included, above), one-sided ranges, text values and missing ranges; the owner's range over the typical one; an alias; the weekly summary's range and status",
+  "notes": [
+    "Typical ranges from config/lab-ranges.json: Hemoglobin 13.5 to 17.5, HDL 40 or more (no upper bound), TSH Reflex 0.45 to 4.5 (alias TSH).",
+    "Hemoglobin 12.9 is below 13.5; 18 is above 17.5; 15 is within; 13.5 sits on the bound, so within.",
+    "HDL (one-sided): 38 is below 40; 55 is within (no upper bound).",
+    "A text value such as '<0.5' has no number: no status. A test with no range: no status.",
+    "The owner's range (13 to 17) replaces the typical one; an owner range with both bounds cleared means no range at all.",
+    "Summary: Hemoglobin drawn 2026-03-02 at 12.9 after 14.1 on 2025-09-01: change -1.2, range 13.5 to 17.5, below."
+  ],
+  "status": [
+    { "value": 12.9, "range": { "low": 13.5, "high": 17.5 }, "expected": "below" },
+    { "value": 18, "range": { "low": 13.5, "high": 17.5 }, "expected": "above" },
+    { "value": 15, "range": { "low": 13.5, "high": 17.5 }, "expected": "within" },
+    { "value": 13.5, "range": { "low": 13.5, "high": 17.5 }, "expected": "within" },
+    { "value": 38, "range": { "low": 40, "high": null }, "expected": "below" },
+    { "value": 55, "range": { "low": 40, "high": null }, "expected": "within" },
+    { "value": null, "range": { "low": 0, "high": 0.5 }, "expected": null },
+    { "value": 5, "range": null, "expected": null }
+  ],
+  "effective": [
+    { "test": { "name": "hemoglobin", "ref_set": 0, "ref_low": null, "ref_high": null }, "expected": { "low": 13.5, "high": 17.5, "source": "typical" } },
+    { "test": { "name": "Hemoglobin", "ref_set": 1, "ref_low": 13, "ref_high": 17 }, "expected": { "low": 13, "high": 17, "source": "yours" } },
+    { "test": { "name": "Hemoglobin", "ref_set": 1, "ref_low": null, "ref_high": null }, "expected": null },
+    { "test": { "name": "TSH", "ref_set": 0, "ref_low": null, "ref_high": null }, "expected": { "low": 0.45, "high": 4.5, "source": "typical" } },
+    { "test": { "name": "CRP", "ref_set": 0, "ref_low": null, "ref_high": null }, "expected": null }
+  ],
+  "summary": {
+    "weekEnd": "2026-03-07",
+    "tests": [{ "id": 1, "name": "Hemoglobin", "panel": "CBC", "unit": null, "position": 1, "ref_set": 0, "ref_low": null, "ref_high": null }],
+    "results": [
+      { "test_id": 1, "drawn_on": "2026-03-02", "value": 12.9, "value_text": "12.9" },
+      { "test_id": 1, "drawn_on": "2025-09-01", "value": 14.1, "value_text": "14.1" }
+    ],
+    "expected": [{ "test": "Hemoglobin", "change": -1.2, "range": { "low": 13.5, "high": 17.5 }, "rangeStatus": "below" }]
+  }
+}

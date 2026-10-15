@@ -11,6 +11,7 @@ import { addDays, lastWeekEnd } from '../metrics/stats.js';
 import { recommendPrograms } from '../metrics/advisor.js';
 import { blockAdherence } from '../metrics/adherence.js';
 import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
+import { effectiveRange, rangeStatus, typicalRange } from '../metrics/labs.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
 export const BODY_FIELDS = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat'];
@@ -619,12 +620,20 @@ export function medicationImpact(db, today) {
 // Only app results can be edited or deleted here; sheet results are changed in the sheet.
 
 /** Tests grouped by panel in sheet order, each with its results newest first, plus all draw dates. */
-export function listLabs(db) {
-  const tests = db.prepare('SELECT id, name, panel, unit, position FROM lab_tests ORDER BY position, name').all();
+/**
+ * Lab tests by panel with their results, newest first. Each test carries the range in effect (yours, or typical from
+ * config/lab-ranges.json), the typical one for "Use typical range", and each result where it sits (below, within, above).
+ */
+export function listLabs(db, rangesConfig = null) {
+  const tests = db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests ORDER BY position, name').all()
+    .map(({ ref_low, ref_high, ref_set, ...t }) => {
+      const range = effectiveRange({ name: t.name, ref_low, ref_high, ref_set }, rangesConfig);
+      return { ...t, range, typicalRange: typicalRange(t.name, rangesConfig) };
+    });
   const results = db.prepare('SELECT id, test_id, drawn_on, value, value_text, source, corrected_from, corrected_from_date FROM lab_results ORDER BY drawn_on DESC').all();
   const panels = [];
   for (const t of tests) {
-    const mine = results.filter((r) => r.test_id === t.id).map(({ test_id, ...r }) => r);
+    const mine = results.filter((r) => r.test_id === t.id).map(({ test_id, ...r }) => ({ ...r, rangeStatus: rangeStatus(r.value, t.range) }));
     const name = t.panel ?? 'Other';
     let p = panels.find((x) => x.panel === name);
     if (!p) panels.push((p = { panel: name, tests: [] }));
@@ -711,14 +720,26 @@ export function deleteLabResult(db, id) {
   return { restored: false };
 }
 
-export function updateLabTest(db, id, { unit, panel }) {
+/** Unit, panel, or reference range (your own from the lab report, either bound null; reset_range goes back to typical). */
+export function updateLabTest(db, id, { unit, panel, ref_low, ref_high, reset_range }) {
   if (!db.prepare('SELECT 1 FROM lab_tests WHERE id = ?').get(id)) throw fail(404, 'Test not found');
   const sets = [];
   const values = { id };
   if (unit !== undefined) { sets.push('unit = @unit'); values.unit = unit?.trim() || null; }
   if (panel !== undefined) { sets.push('panel = @panel'); values.panel = panel?.trim() || null; }
+  if (reset_range) {
+    sets.push('ref_low = NULL', 'ref_high = NULL', 'ref_set = 0');
+  } else if (ref_low !== undefined || ref_high !== undefined) {
+    if (ref_low !== undefined && ref_low !== null && ref_high !== undefined && ref_high !== null && ref_low > ref_high) {
+      throw fail(400, 'The low end of the range is above the high end');
+    }
+    sets.push('ref_low = @ref_low', 'ref_high = @ref_high', 'ref_set = 1');
+    values.ref_low = ref_low ?? null;
+    values.ref_high = ref_high ?? null;
+  }
+  if (!sets.length) throw fail(400, 'Nothing to change');
   db.prepare(`UPDATE lab_tests SET ${sets.join(', ')} WHERE id = @id`).run(values);
-  return db.prepare('SELECT id, name, panel, unit, position FROM lab_tests WHERE id = ?').get(id);
+  return db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE id = ?').get(id);
 }
 
 // ---- prompt sections ----

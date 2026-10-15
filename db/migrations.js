@@ -435,4 +435,14 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    id: '020-lab-ranges',
+    up: `
+      -- Reference ranges the owner entered from their lab report (ref_set 1); otherwise the typical range in
+      -- config/lab-ranges.json applies. Either bound may be NULL (one-sided).
+      ALTER TABLE lab_tests ADD COLUMN ref_low REAL;
+      ALTER TABLE lab_tests ADD COLUMN ref_high REAL;
+      ALTER TABLE lab_tests ADD COLUMN ref_set INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];

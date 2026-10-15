@@ -86,8 +86,28 @@ const labValueMatcher = (name) => {
   return new RegExp(`(?<![\\w])${escape(name)}(?![\\w])[^.;\\n\\d]{0,25}\\d`, short ? '' : 'i');
 };
 
+/** Range wording: where a lab value sits against its reference range, which is interpretation (physicianDiscussion only). */
+const RANGE_PHRASES = '(?:(?:above|below|outside|out of|within|in) (?:the |its |your )?(?:reference |normal )?range|abnormal)';
+const LEVEL_WORDS = '(?:elevated|high|low|normal)';
+
 /**
- * Medication names, lab values, and symptom words outside physicianDiscussion.
+ * A lab name with range wording: a range phrase ("above range", "abnormal") in the same clause up to 40 characters
+ * either side, or a level word right before the name ("elevated ALT") or a few words after it ("HDL was high"), so
+ * "steps were high and HDL tracking began" is not caught.
+ */
+const labRangeMatcher = (name) => {
+  const short = name.length <= 4 && name === name.toUpperCase();
+  const n = `(?<![\\w])${escape(name)}(?![\\w])`;
+  const phrase = `\\b${RANGE_PHRASES}\\b`;
+  const level = `\\b${LEVEL_WORDS}\\b`;
+  return new RegExp([
+    `${n}[^.;\\n]{0,40}?${phrase}`, `${phrase}[^.;\\n]{0,40}?${n}`,
+    `${level}\\s+${n}`, `${n}(?:\\s+\\w+){0,3}?\\s+${level}`,
+  ].join('|'), short ? '' : 'i');
+};
+
+/**
+ * Medication names, lab values, lab range wording, and symptom words outside physicianDiscussion.
  * @param {{ medicationNames: string[], labNames: string[] }} names
  */
 export function misroutedTopics(report, { medicationNames = [], labNames = [] }) {
@@ -96,6 +116,8 @@ export function misroutedTopics(report, { medicationNames = [], labNames = [] })
     // A lab name alone can be context ("sleep timing matters for glucose regulation"); a lab name
     // with a value next to it ("Glucose 101", "ALT of 62") is a lab result and must be routed.
     ...labNames.map((n) => ({ what: `lab value "${n}"`, re: labValueMatcher(n) })),
+    // "LDL was above range", "elevated ALT": a lab name with range wording is interpretation too.
+    ...labNames.map((n) => ({ what: `lab range "${n}"`, re: labRangeMatcher(n) })),
     { what: 'medication wording', re: MEDICATION_WORDS },
     { what: 'symptom wording', re: SYMPTOMS },
   ];

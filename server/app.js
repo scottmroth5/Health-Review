@@ -14,6 +14,7 @@ import { loadCatalog } from '../metrics/catalog.js';
 import { loadDictionary } from '../metrics/dictionary.js';
 import { loadSubstitutions, loadTargets, loadProfile } from '../metrics/load.js';
 import { loadTargetConfig } from '../metrics/targets.js';
+import { loadLabRanges } from '../metrics/labs.js';
 import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
 import { currentProgram } from '../ingest/program-blocks.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../agent/advisor-chat.js';
@@ -74,7 +75,7 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  * @param {() => Date} [ctx.clock]
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges }) {
   const app = Fastify({ logger });
   const { db } = store;
   let syncing = false;
@@ -484,7 +485,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // ---- labs ----
   const labValueField = { type: ['string', 'number'], maxLength: 50 };
   app.get('/api/labs', { schema: { summary: 'Lab tests by panel with their results, newest first', response: { 200: anyObject } } },
-    async () => q.listLabs(db));
+    async () => q.listLabs(db, labRanges ?? loadLabRanges()));
 
   app.post('/api/labs/results', {
     schema: {
@@ -516,9 +517,17 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.put('/api/labs/tests/:id', {
     schema: {
-      summary: "Set a test's unit or panel",
+      summary: "Set a test's unit, panel, or reference range (your lab report's; reset_range goes back to the typical one)",
       params: idParams,
-      body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { unit: text(40), panel: text(100) } },
+      body: {
+        type: 'object', additionalProperties: false, minProperties: 1,
+        properties: {
+          unit: text(40), panel: text(100),
+          ref_low: { type: ['number', 'null'], minimum: -100000, maximum: 1000000 },
+          ref_high: { type: ['number', 'null'], minimum: -100000, maximum: 1000000 },
+          reset_range: { type: 'boolean' },
+        },
+      },
       response: { 200: anyObject },
     },
   }, async (req) => q.updateLabTest(db, req.params.id, req.body));

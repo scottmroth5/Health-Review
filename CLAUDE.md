@@ -236,7 +236,13 @@ to 24.9 for the height; no norm means improving on their own data (said so in th
 (health_targets, migration 019; GET /api/targets, PUT and DELETE /api/targets/:metric, PUT /api/profile); the rest follow
 the data. The weekly summary's targets block carries each metric with data; CONTRACT says report progress as given, never
 invent a target. Age norms on these metrics are the owner's choice (2026-10-15), replacing "values only, no
-fitness-for-age labels"; labs keep no reference ranges.
+fitness-for-age labels".
+Lab ranges (metrics/labs.js; fixture evals/fixtures/metrics/labs-ranges.json): config/lab-ranges.json holds typical adult
+ranges (US conventional units, by name or alias; tests whose unit or method varies are left out); lab_tests.ref_low,
+ref_high and ref_set (migration 020) hold the owner's own, which win once set (both NULL with ref_set means no range).
+rangeStatus is below, within (bounds inclusive) or above, null without a range or a numeric value. GET /api/labs
+carries each test's range and source and each result's status; PUT /api/labs/tests/:id takes ref_low, ref_high or
+reset_range.
 
 ## Review
 npm run review makes one structured-output call (REVIEW_MODEL, default claude-opus-5-5; REVIEW_EFFORT, default high;
@@ -276,7 +282,8 @@ AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is
 exposing the server requires a login mode in server/auth.js first. Check-in and drinking scales are 1 to 10 to match
 v1 history. CBD drinks are stored in drinking_days.cbd and never counted as alcohol. The Meds tab manages medications and
 supplements (add, change, stop, start again, delete for mistakes); the weekly review takes them from there, not from the
-medical prompt section. The Labs tab shows lab_tests and lab_results by panel. The owner enters labs in the app (the March
+medical prompt section. The Labs tab shows lab_tests and lab_results by panel, with a Range column, out-of-range results
+marked with an arrow and "below range" or "above range", and a range editor in each test's detail. The owner enters labs in the app (the March
 2026 draw was imported once and marked as app results); syncing a lab sheet is supported but unused. Results can come from a lab sheet
 (LAB_RESULTS_SHEET_ID; the tab whose A1 is "Lab Test"; capitalized rows with no values are panel headings; one column
 per draw date), synced whole on every sync and replaced only when its content hash changes, or from the app (source
@@ -309,8 +316,10 @@ Genetics and medication data (prompt sections marked sensitive, and the medicati
 as part of the weekly review, which includes them every week by the owner's choice (decided 2026-09-30); each run
 records which sensitive sections it sent (names only). The summary's medications block (current list, changes, before
 and after averages) is the one place medication data enters the summary. Lab values enter only through the summary's labs
-block (latest value and change from the previous draw); there are no reference ranges by the owner's choice, so code
-never labels a value high, low or abnormal, and any interpretation of labs goes only to physician discussion. Never send any of it to another service or
+block (latest value, change from the previous draw, and its range and rangeStatus). Reference ranges are the owner's
+choice (2026-10-15, replacing "no reference ranges"): code marks a value below or above its range and never says normal
+or abnormal; ranges, statuses and any interpretation of labs go only to physician discussion (the routing check catches a
+lab name with range wording elsewhere). Never send any of it to another service or
 log its text.
 The Next program chat (agent/advisor-chat.js, POST /api/advisor/chat) sends computed training facts only: the Advisor
 ranking at the owner's current weights (scores, reasons, flags), lift statuses, the current program and week, equipment

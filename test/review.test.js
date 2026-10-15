@@ -60,6 +60,20 @@ test('routing: blood oxygen and breathing disturbance values only in physician d
   assert.ok(problems.every((p) => p.includes('"Recovery"')), 'the name without a value, and values in physician discussion, pass');
 });
 
+test('routing: a lab name with range wording is interpretation, only in physician discussion', () => {
+  const names = { medicationNames: [], labNames: ['LDL', 'ALT', 'HDL', 'Glucose'] };
+  const r = report(
+    [
+      ['Watch Outs', 'LDL was above range this draw. An elevated ALT showed up.'],
+      ['Patterns Noticed', 'HDL was high. Steps were high and glucose regulation matters for sleep. The low-carb week helped.'],
+    ],
+    [{ topic: 'LDL above range', detail: 'LDL above its reference range and an elevated ALT: discuss with your physician.' }],
+  );
+  assert.deepEqual(misroutedTopics(r, names).map((p) => p.split(' (')[0]), [
+    'lab range "LDL" in "Watch Outs"', 'lab range "ALT" in "Watch Outs"', 'lab range "HDL" in "Patterns Noticed"',
+  ]);
+});
+
 test('summary: nightBreathing is passed to the review only when there is data', () => {
   const base = computeWeek({ daily_metrics: [], workout_sessions: [], strength_sets: [], drinking_days: [], checkins: [] }, { weekEnd: '2026-09-26' });
   assert.equal(buildSummary(base, [], { today: '2026-09-27' }).nightBreathing, undefined);

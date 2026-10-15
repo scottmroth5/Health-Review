@@ -169,7 +169,7 @@ Turned on in Health Auto Export on 2026-10-15 and stored from then on: cardio re
 speed, walking asymmetry (lower is more even), heart rate (min, max, average), sleeping wrist temperature, physical effort, blood oxygen and breathing
 disturbances. The Health tab charts cardio recovery, walking heart rate and speed, wrist temperature, blood oxygen and
 breathing disturbances. The weekly review compares each with the previous week and your 28-day baseline. Blood oxygen
-and breathing disturbances are values only (no high or low labels, like labs) and appear in the review only for
+and breathing disturbances are values only (no high or low labels) and appear in the review only for
 physician discussion. The Health tab also charts weight, body fat, muscle mass and visceral fat from the Today tab
 check-in. A chart with no data in the range you picked is left out, and a line below the charts names it, so it comes
 back by itself once data arrives. To fill earlier days, export a past date range from Health Auto Export into the same folder;
@@ -207,6 +207,19 @@ such as "Target 9,500 · suggested" with **Edit** and **Why**.
 
 HRV, walking heart rate, muscle mass, wrist temperature, breathing disturbances and readiness have no reliable
 published norm, so their targets improve on your own data. The norms live in `config/health-targets.json`.
+
+## Lab reference ranges
+
+Each lab test on the Labs tab has a reference range in the Range column. It starts as a typical adult range from
+config/lab-ranges.json (US conventional units, matched by test name or alias), so check it against your lab report:
+open a test by its name, enter Low and High (either can be blank for a one-sided range) and Save range. Use typical
+range puts the typical one back. Tests whose unit or method varies (CRP, cystatin C, urine tests) start blank; add range
+enters your lab's.
+
+A result outside the range is marked "below range" or "above range" with an arrow; the app never says normal or
+abnormal. The weekly review gets each latest result's range and whether it is below, within or above it, and only
+for the physician discussion section: a lab name next to range wording ("LDL above range", "elevated ALT") anywhere
+else fails the review's checks.
 
 ## Called for vs logged
 

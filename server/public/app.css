@@ -432,3 +432,11 @@ body.demo .demo-toggle { color: var(--accent); font-weight: 600; }
 .dose-adjust { padding: 8px 4px; min-height: 44px; }
 .dose-editor { grid-column: 1 / -1; padding: 8px 0 12px; }
 .dose-editor .actions { margin-top: 4px; }
+
+/* Labs: reference range column, out-of-range marks (text and arrow, not color alone), range editor */
+.lab-range { white-space: nowrap; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.lab-out { font-weight: 600; }
+.lab-out .range-mark { font-weight: 400; font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
+.lab-range-editor { margin-top: 8px; border-top: 1px solid var(--grid); padding-top: 6px; }
+.lab-range-editor .actions label { display: inline-flex; align-items: center; gap: 4px; }
+.lab-range-editor .actions input { width: 6.5em; margin: 0; }

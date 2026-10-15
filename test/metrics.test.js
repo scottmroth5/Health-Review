@@ -19,6 +19,7 @@ import { createDictionary } from '../metrics/dictionary.js';
 import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
 import { blockAdherence, weekAdherence } from '../metrics/adherence.js';
 import { suggestTarget, loadTargetConfig } from '../metrics/targets.js';
+import { rangeStatus, effectiveRange, labsSummary, loadLabRanges } from '../metrics/labs.js';
 
 /** Expands a fixture's dailyFill (one row per day with the given values, minus skip, plus overrides). */
 function expandDaily({ from, to, skip = [], override = {}, ...values }) {
@@ -55,6 +56,14 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       const daily = expandDaily(fx.input.dailyFill);
       assertSubset(dataChecks({ ...fx.input, daily }), fx.expected);
       assertSubset(weekDataQuality(daily, fx.week.from, fx.week.to), fx.week.expected, 'week');
+      return;
+    }
+    if (fx.kind === 'lab-ranges') {
+      const config = loadLabRanges();
+      for (const c of fx.status) assert.equal(rangeStatus(c.value, c.range), c.expected, JSON.stringify(c));
+      for (const c of fx.effective) assert.deepEqual(effectiveRange(c.test, config), c.expected, c.test.name);
+      const sum = labsSummary(fx.summary.tests, fx.summary.results, fx.summary.weekEnd, config);
+      assertSubset(sum.results, fx.summary.expected, 'summary');
       return;
     }
     if (fx.kind === 'targets') {

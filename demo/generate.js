@@ -233,7 +233,7 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
     }
   }
 
-  // ---- A lab panel, two draws (values only; no reference ranges, as in the real app) ----
+  // ---- A lab panel, two draws (their typical ranges come from config/lab-ranges.json, as in the real app) ----
   const labs = [['Total Cholesterol', 'Lipid Panel', 'mg/dL', 192, 181], ['LDL Cholesterol', 'Lipid Panel', 'mg/dL', 118, 109], ['HDL Cholesterol', 'Lipid Panel', 'mg/dL', 52, 55],
     ['Triglycerides', 'Lipid Panel', 'mg/dL', 110, 96], ['Glucose', 'Metabolic Panel', 'mg/dL', 92, 90], ['Hemoglobin A1c', 'Metabolic Panel', '%', 5.4, 5.3]];
   labs.forEach(([name, panel, unit, a, b], i) => {

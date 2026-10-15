@@ -960,7 +960,20 @@ function initMeds() {
 const LAB_DRAW_COLUMNS = 4;
 let labsState = { draws: [], panels: [] };
 
-const labCell = (r) => (r ? r.value_text : '');
+/** A result and, outside its range, a text mark with an arrow ("below range"): the text carries it, not color. */
+const RANGE_MARK = { below: ['↓', 'below range'], above: ['↑', 'above range'] };
+const labCell = (r) => {
+  if (!r) return '';
+  const mark = RANGE_MARK[r.rangeStatus];
+  return mark ? h('span', { class: `lab-out ${r.rangeStatus}` }, r.value_text, h('span', { class: 'range-mark' }, ` ${mark[0]} ${mark[1]}`)) : r.value_text;
+};
+
+/** "13.5 to 17.5", "199 or less", "40 or more", or null. */
+const labRangeText = (range) => {
+  if (!range || (range.low === null && range.high === null)) return null;
+  if (range.low !== null && range.high !== null) return `${range.low} to ${range.high}`;
+  return range.high !== null ? `${range.high} or less` : `${range.low} or more`;
+};
 function labChange(t) {
   const [latest, previous] = t.results;
   if (!latest || !previous || typeof latest.value !== 'number' || typeof previous.value !== 'number') return '';
@@ -968,6 +981,33 @@ function labChange(t) {
   const d = Math.max(dec(latest.value_text), dec(previous.value_text));
   const c = Number((latest.value - previous.value).toFixed(d));
   return c === 0 ? '0' : `${c > 0 ? '+' : ''}${c}`;
+}
+
+/**
+ * The test's reference range: yours from the lab report (either bound may be empty for a one-sided range) or the
+ * typical one, with "Use typical range" to go back.
+ */
+function labRangeEditor(t) {
+  const status = h('span', { class: 'status', role: 'status' });
+  const num = (name, label, v) => h('label', {}, label, h('input', { type: 'number', step: 'any', name, value: v ?? '', 'aria-label': `${label} of the range for ${t.name}` }));
+  const low = num('ref_low', 'Low', t.range?.low);
+  const high = num('ref_high', 'High', t.range?.high);
+  const read = (l) => ($('input', l).value === '' ? null : Number($('input', l).value));
+  const run = async (body) => {
+    try { await api('PUT', `/api/labs/tests/${t.id}`, body); await loadLabs(t.id); } catch (err) { setStatus(status, err.message, 'error'); }
+  };
+  const typical = labRangeText(t.typicalRange);
+  const note = t.range?.source === 'yours'
+    ? `Your range from your lab report.${typical ? ` Typical: ${typical}.` : ''}`
+    : t.range ? "Typical adult range; check it against your lab report and enter the report's range if it differs."
+      : 'No typical range for this test (its unit or method varies). Enter the range from your lab report.';
+  return h('div', { class: 'lab-range-editor' },
+    h('p', { class: 'small' }, h('strong', {}, 'Reference range '), labRangeText(t.range) ?? 'none'),
+    h('p', { class: 'muted small' }, note),
+    h('div', { class: 'actions' }, low, high,
+      h('button', { type: 'button', class: 'ghost', onclick: () => run({ ref_low: read(low), ref_high: read(high) }) }, 'Save range'),
+      t.range?.source === 'yours' && typical ? h('button', { type: 'button', class: 'ghost', onclick: () => run({ reset_range: true }) }, `Use typical range (${typical})`) : null,
+      status));
 }
 
 function labDetail(t) {
@@ -982,6 +1022,7 @@ function labDetail(t) {
     }));
   }
   box.append(h('ul', { class: 'lab-history' }, t.results.map((r) => labResultItem(t, r))));
+  box.append(labRangeEditor(t));
   const unit = h('input', { type: 'text', maxLength: 40, value: t.unit ?? '', placeholder: 'unit, e.g. mg/dL', 'aria-label': `Unit for ${t.name}` });
   const status = h('span', { class: 'status' });
   box.append(h('div', { class: 'actions' }, unit,
@@ -1040,7 +1081,7 @@ function labResultItem(t, r) {
 
 /** One table per panel; tapping a test opens its history below the table (one at a time per panel). */
 function labPanel(panel, draws) {
-  const head = h('tr', {}, h('th', {}, 'Test'), draws.map((d) => h('th', {}, niceDate(d))), h('th', {}, 'Change'));
+  const head = h('tr', {}, h('th', {}, 'Test'), h('th', {}, 'Range'), draws.map((d) => h('th', {}, niceDate(d))), h('th', {}, 'Change'));
   const body = h('tbody', {});
   const detail = h('div', { class: 'lab-detail-slot' });
   const buttons = [];
@@ -1058,6 +1099,7 @@ function labPanel(panel, draws) {
         h('button', { type: 'button', class: 'ghost small-btn', onclick: () => nameBtn.click() }, 'Close')), labDetail(t));
     });
     body.append(h('tr', {}, h('td', {}, nameBtn),
+      h('td', { class: 'lab-range' }, labRangeText(t.range) ?? h('span', { class: 'muted' }, 'add range')),
       draws.map((d) => h('td', { class: byDate.get(d)?.source === 'ui' ? 'from-app' : null }, labCell(byDate.get(d)))),
       h('td', {}, labChange(t))));
   }

@@ -39,7 +39,7 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
     lifts: liftsForReview(data.primary_sets ?? [], weekEnd, { phases: new Map(Object.entries(data.session_phases ?? {})) }),
     drinking: drinking(data.drinking_days, data.daily_metrics, weekEnd),
     checkins: checkins(data.checkins, data.daily_metrics, weekEnd),
-    labs: labsSummary(data.lab_tests ?? [], data.lab_results ?? [], weekEnd),
+    labs: labsSummary(data.lab_tests ?? [], data.lab_results ?? [], weekEnd, data.lab_ranges ?? null),
     // Health targets (computed in code): only metrics with data, numbers only.
     targets: (data.targets ?? []).filter((t) => t.current !== null && t.target !== null).map((t) => ({
       metric: t.label, target: t.target, setBy: t.setBy, current90d: t.current, basis: t.basis,
