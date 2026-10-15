@@ -10,6 +10,23 @@ export const SHEET_ENV = {
   lab_results: 'LAB_RESULTS_SHEET_ID',
 };
 
+/** Google allows 60 Sheets read requests a minute per user; reads are spaced at least this far apart (about 54 a minute). */
+export const SHEETS_READ_GAP_MS = 1100;
+
+/**
+ * Spaces calls at least minGapMs apart, in call order (concurrent callers each get their own slot).
+ * @returns {() => Promise<void>} await it before each request
+ */
+export function createPacer(minGapMs, { now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  let next = 0;
+  return async () => {
+    const t = now();
+    const wait = Math.max(0, next - t);
+    next = Math.max(t, next) + minGapMs;
+    if (wait) await sleep(wait);
+  };
+}
+
 /**
  * Thin read-only Sheets client (easy to fake in tests). Values come back unformatted with
  * dates as serial numbers, so parsing never depends on how a cell is displayed.
@@ -19,25 +36,30 @@ export const SHEET_ENV = {
  *   readRows: (source: string, tab: string, fromRow?: number) => Promise<{ header: any[], rows: any[][], firstRowNumber: number }>
  * }}
  */
-export function createSheetsSource(auth, env = process.env) {
+export function createSheetsSource(auth, env = process.env, { minGapMs = SHEETS_READ_GAP_MS, pacer } = {}) {
   const api = sheetsApi({ version: 'v4', auth });
+  // Every Sheets read shares one pace, so export files, the Workout Log and labs together stay under Google's limit.
+  const pace = pacer ?? createPacer(minGapMs);
   const idOf = (source) => {
     const id = env[SHEET_ENV[source]];
     if (!id) throw new Error(`${SHEET_ENV[source]} is not set in .env`);
     return id;
   };
-  const values = async (source, range) =>
-    (await api.spreadsheets.values.get({
+  const values = async (source, range) => {
+    await pace();
+    return (await api.spreadsheets.values.get({
       spreadsheetId: idOf(source),
       range,
       valueRenderOption: 'UNFORMATTED_VALUE',
       dateTimeRenderOption: 'SERIAL_NUMBER',
     })).data.values ?? [];
+  };
 
   return {
     /** Whether a spreadsheet ID is configured for this source (optional sources are skipped without one). */
     has: (source) => Boolean(env[SHEET_ENV[source]]),
     async listTabs(source) {
+      await pace();
       const { data } = await api.spreadsheets.get({ spreadsheetId: idOf(source), fields: 'sheets.properties.title' });
       return (data.sheets ?? []).map((s) => s.properties.title);
     },
@@ -77,6 +99,7 @@ export function createSheetsSource(auth, env = process.env) {
     },
     /** One export file's first tab: header row plus every row, unformatted with serial dates. */
     async readFileRows(fileId) {
+      await pace();
       const values = (await api.spreadsheets.values.get({
         spreadsheetId: fileId, range: 'A1:ZZ', valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER',
       })).data.values ?? [];

@@ -261,8 +261,9 @@ export to Drive: health metrics to one folder, workout sessions to another. The 
 - **Straight from the export files (recommended).** Set `HEALTH_EXPORT_FOLDER_ID` (the health metrics folder) and
   `WORKOUT_EXPORT_FOLDER_ID` (the workout sessions folder) in `.env`; each is the long id in the folder's Drive URL.
   Each sync then lists each folder and reads only files that are new or changed since it last read them
-  (`drive_exports`), at most 200 per folder per sync. A day read again from a partial export never lowers the full
-  day already stored. The consolidated sheet of a kind with a folder set isn't read at all.
+  (`drive_exports`), at most 100 per folder per sync. Google allows 60 Sheets reads a minute, so reads are spaced
+  about a second apart and saved every 25 files; if Google still says "too many requests", the sync keeps what it read
+  and the next sync continues. A day read again from a partial export never lowers the full day already stored. The consolidated sheet of a kind with a folder set isn't read at all.
   1. Set both variables, then run `npm run google:login` once. It adds permission to list the folders (names and
      dates only); the files themselves are read with the Sheets permission you already granted.
   2. Run `npm run google:exports` to see how many files each folder holds and how many syncs the first read takes.

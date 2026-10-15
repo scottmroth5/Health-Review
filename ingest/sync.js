@@ -155,14 +155,19 @@ async function syncWholeTab({ store, source, key, parse, write, warnings, extraT
   return { rowsRead: data.rows.length + extraRows, upserted: merged.length };
 }
 
-/** Export files read per folder per sync at most (Google's read limits); the rest wait for the next sync. */
-export const EXPORT_FILES_PER_SYNC = 200;
+/** Export files read per folder per sync at most; at Google's paced read rate that is about 2 minutes a folder. */
+export const EXPORT_FILES_PER_SYNC = 100;
+/** Export files saved together; a failure later in the sync keeps the groups already saved. */
+export const EXPORT_SAVE_EVERY = 25;
+
+const isRateLimit = (err) => (err?.response?.status ?? err?.status ?? err?.code) === 429;
 
 /**
  * Health Auto Export files of one kind from its Drive folder: only files new or changed since they were last read
- * (drive_exports), oldest first. A health day from the files is merged with the day already stored by mergeHealthDays
- * (the fullest row wins, gaps filled from the others), so a partial export read after the full day never lowers it.
- * Workouts upsert on type, start and end as before.
+ * (drive_exports), oldest first, saved every 25 files. A health day from the files is merged with the day already
+ * stored by mergeHealthDays (the fullest row wins, gaps filled from the others), so a partial export read after the full
+ * day never lowers it. Workouts upsert on type, start and end as before. If Google still answers "too many requests"
+ * (reads are paced in the source), the folder stops there and the rest waits for the next sync.
  */
 async function syncExports({ store, source, kind, folderId, warnings, stamp, limit = EXPORT_FILES_PER_SYNC }) {
   const { db } = store;
@@ -170,39 +175,57 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
   const todo = (await source.listExports(folderId, kind)).filter((f) => known.get(f.id) !== f.modifiedTime);
   const batch = todo.slice(0, limit);
   const label = kind === 'health' ? 'health' : 'workout';
-  if (todo.length > batch.length) {
-    warnings.push({ source: `${label}_exports`, kind: 'files still to read', detail: `${todo.length - batch.length} ${label} export files still to read; the next syncs continue`, severity: 'info' });
-  }
-
-  const read = [];
-  const healthRecords = [];
-  const workoutRecords = [];
   const parse = kind === 'health' ? parseHealthMetrics : parseWorkoutSessions;
-  for (const f of batch) {
-    const data = await source.readFileRows(f.id);
-    const parsed = parse({ ...data, tab: f.name });
-    warnings.push(...parsed.warnings);
-    (kind === 'health' ? healthRecords : workoutRecords).push(...parsed.records);
-    read.push({ ...f, kind, rows: data.rows.length });
-  }
-
-  // Each day from the files, merged with the stored day (stored first, so a tie goes to the newer file).
-  const dates = [...new Set(healthRecords.map((r) => r.date))];
-  const storedDay = db.prepare(`SELECT date, ${HEALTH_METRIC_COLUMNS.join(', ')} FROM daily_metrics WHERE date = ?`);
-  const stored = dates.map((d) => storedDay.get(d)).filter(Boolean);
-  const days = mergeHealthDays([...stored, ...healthRecords]).filter((r) => dates.includes(r.date));
-
   const writeDay = upsertDailyMetrics(db, stamp);
   const writeWorkout = upsertWorkoutSessions(db, stamp);
+  const storedDay = db.prepare(`SELECT date, ${HEALTH_METRIC_COLUMNS.join(', ')} FROM daily_metrics WHERE date = ?`);
   const record = db.prepare(`INSERT INTO drive_exports (file_id, kind, name, modified_time, rows, synced_at) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT (file_id) DO UPDATE SET name = excluded.name, modified_time = excluded.modified_time, rows = excluded.rows, synced_at = excluded.synced_at`);
-  store.tx(() => {
-    for (const d of days) writeDay(d);
-    for (const w of workoutRecords) writeWorkout(w);
-    for (const f of read) record.run(f.id, f.kind, f.name, f.modifiedTime, f.rows, stamp);
-  });
-  const result = { filesRead: read.length, filesLeft: todo.length - batch.length };
-  return kind === 'health' ? { ...result, healthDays: days.length } : { ...result, workouts: workoutRecords.length };
+
+  let filesRead = 0;
+  const healthDays = new Set();
+  let workouts = 0;
+  let limited = false;
+  for (let i = 0; i < batch.length && !limited; i += EXPORT_SAVE_EVERY) {
+    const read = [];
+    const healthRecords = [];
+    const workoutRecords = [];
+    for (const f of batch.slice(i, i + EXPORT_SAVE_EVERY)) {
+      let data;
+      try {
+        data = await source.readFileRows(f.id);
+      } catch (err) {
+        if (!isRateLimit(err)) throw err;
+        limited = true;
+        break;
+      }
+      const parsed = parse({ ...data, tab: f.name });
+      warnings.push(...parsed.warnings);
+      (kind === 'health' ? healthRecords : workoutRecords).push(...parsed.records);
+      read.push({ ...f, rows: data.rows.length });
+    }
+    // Each day from the files, merged with the stored day (stored first, so a tie goes to the newer file).
+    const dates = [...new Set(healthRecords.map((r) => r.date))];
+    const stored = dates.map((d) => storedDay.get(d)).filter(Boolean);
+    const days = mergeHealthDays([...stored, ...healthRecords]).filter((r) => dates.includes(r.date));
+    store.tx(() => {
+      for (const d of days) writeDay(d);
+      for (const w of workoutRecords) writeWorkout(w);
+      for (const f of read) record.run(f.id, kind, f.name, f.modifiedTime, f.rows, stamp);
+    });
+    filesRead += read.length;
+    for (const d of days) healthDays.add(d.date);
+    workouts += workoutRecords.length;
+  }
+
+  const filesLeft = todo.length - filesRead;
+  if (limited) {
+    warnings.push({ source: `${label}_exports`, kind: 'read limit reached', detail: `Google's read limit reached; ${filesLeft} ${label} export files left for the next sync`, severity: 'info' });
+  } else if (filesLeft) {
+    warnings.push({ source: `${label}_exports`, kind: 'files still to read', detail: `${filesLeft} ${label} export files still to read; the next syncs continue`, severity: 'info' });
+  }
+  const result = { filesRead, filesLeft };
+  return kind === 'health' ? { ...result, healthDays: healthDays.size } : { ...result, workouts };
 }
 
 async function syncWorkoutLog({ store, source, backfill, now, warnings }) {

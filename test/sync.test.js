@@ -442,3 +442,39 @@ test('export files: without folders the consolidated sheets are read as before',
   assert.ok(src.reads.some((r) => r.source === 'health_metrics') && src.reads.some((r) => r.source === 'workout_sessions'));
   store.close();
 });
+
+test('export files: if Google still says too many requests, what was read is saved and the rest waits; the sync succeeds', async () => {
+  const { EXPORT_SAVE_EVERY } = await import('../ingest/sync.js');
+  const store = open();
+  const src = fakeSource(sheets());
+  const n = EXPORT_SAVE_EVERY + 10;
+  src.exports = Array.from({ length: n }, (_, i) => healthFile(`h${i}`, String(i).padStart(4, '0'),
+    [HEALTH, day(`2026-02-${String(1 + (i % 28)).padStart(2, '0')}`, 40, 55, 2000 + i)]));
+  const failAt = EXPORT_SAVE_EVERY + 5; // the 31st read is refused
+  const realRead = src.readFileRows.bind(src);
+  let calls = 0;
+  src.readFileRows = async (id) => {
+    calls += 1;
+    if (calls === failAt) throw Object.assign(new Error('Quota exceeded'), { response: { status: 429 } });
+    return realRead(id);
+  };
+  const { counts, warnings } = await sync(store, src, { exportFolders: { health: HF, workouts: null } });
+  assert.deepEqual([counts.health_exports.filesRead, counts.health_exports.filesLeft], [failAt - 1, n - failAt + 1]);
+  assert.equal(count(store, 'drive_exports'), failAt - 1, 'the full group of 25 and the 4 read after it are saved');
+  assert.equal(warnings.find((w) => w.kind === 'read limit reached').detail, `Google's read limit reached; ${n - failAt + 1} health export files left for the next sync`);
+  assert.equal(store.db.prepare("SELECT status FROM runs WHERE name = 'sync' ORDER BY id DESC LIMIT 1").get().status, 'ok');
+
+  src.readFileRows = realRead; // the next sync picks up the rest
+  const next = await sync(store, src, { exportFolders: { health: HF, workouts: null } });
+  assert.deepEqual([next.counts.health_exports.filesRead, next.counts.health_exports.filesLeft], [n - failAt + 1, 0]);
+  store.close();
+});
+
+test('export files: any other read error still fails the sync', async () => {
+  const store = open();
+  const src = fakeSource(sheets());
+  src.exports = [healthFile('h1', 'a', [HEALTH, day('2026-03-02', 50, 54, 9000)])];
+  src.readFileRows = async () => { throw Object.assign(new Error('Not found'), { response: { status: 404 } }); };
+  await assert.rejects(sync(store, src, { exportFolders: { health: HF, workouts: null } }), /Not found/);
+  store.close();
+});

@@ -91,7 +91,8 @@ Sheets are read unformatted with dates as serial numbers and stored as local wal
 With HEALTH_EXPORT_FOLDER_ID (health metrics) and WORKOUT_EXPORT_FOLDER_ID (workout sessions) set, each kind comes from
 Health Auto Export's own files in its Drive folder (ingest/sync.js syncExports; listed with drive.metadata.readonly and
 filtered to that kind's file names, read with the Sheets scope) instead of its consolidated sheet: only new or changed files
-(drive_exports, migration 016), at most 200 per folder per sync, and each health day merged with the stored day by
+(drive_exports, migration 016), at most 100 per folder per sync, saved every 25, every Sheets read paced 1.1 s apart
+(createPacer; Google allows 60 a minute) and a 429 ending that folder's reading for the sync rather than failing it, and each health day merged with the stored day by
 mergeHealthDays so a partial export never lowers a full day. A kind without its variable reads its consolidated sheet as below.
 Planned for the AWS move: Health Auto Export's REST API posting to an authenticated HTTPS ingest over Tailscale (no Google).
 Health metrics and workout sessions stay in Google Sheets (v1 consolidation scripts still feed them, nightly 4 to 5am).
