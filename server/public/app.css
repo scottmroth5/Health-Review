@@ -130,7 +130,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .chart .dot { fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2; }
 .chart .bar { fill: var(--series-1); }
 .chart .bar.hover { opacity: 0.75; }
-.chart .dot.partial, .chart .bar.partial { fill: var(--danger); }
+.chart .dot.partial, .chart .dot.out, .chart .bar.partial { fill: var(--danger); }
+.chart .range-line { stroke: var(--text-secondary); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart-legend { margin: 4px 0 8px; }
 .chart .crosshair { stroke: var(--muted); stroke-width: 1; }
 /* Targets: a dashed line in ink (not a series color) labelled "target", and a light band for a healthy span */
 .chart .target-line { stroke: var(--text-secondary); stroke-width: 1.5; stroke-dasharray: 5 4; }

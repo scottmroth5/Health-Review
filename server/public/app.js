@@ -1019,13 +1019,19 @@ function labRangeEditor(t) {
 
 function labDetail(t) {
   const box = h('div', { class: 'lab-detail' });
-  const numeric = [...t.results].reverse().filter((r) => typeof r.value === 'number').map((r) => ({ date: r.drawn_on, value: r.value }));
+  // Values outside the reference range get a red dot and "above range" or "below range" in the hover.
+  const numeric = [...t.results].reverse().filter((r) => typeof r.value === 'number').map((r) => (RANGE_MARK[r.rangeStatus]
+    ? { date: r.drawn_on, value: r.value, out: true, details: [RANGE_MARK[r.rangeStatus][1]] }
+    : { date: r.drawn_on, value: r.value }));
   if (numeric.length >= 2) {
     const chart = h('div', { class: 'chart' });
+    const rangeLabel = labRangeText(t.range);
     box.append(chart);
+    if (rangeLabel) box.append(h('p', { class: 'muted small chart-legend' }, `Shaded: reference range ${rangeLabel} (${t.range.source === 'yours' ? 'yours' : 'typical'})`));
     requestAnimationFrame(() => lineChart(chart, numeric, {
       from: numeric[0].date, to: numeric[numeric.length - 1].date, label: t.name, gapDays: 100000,
       format: (v) => `${v}${t.unit ? ` ${t.unit}` : ''}`,
+      range: rangeLabel ? { low: t.range.low, high: t.range.high, label: rangeLabel } : null,
     }));
   }
   box.append(h('ul', { class: 'lab-history' }, t.results.map((r) => labResultItem(t, r))));

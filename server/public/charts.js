@@ -101,6 +101,26 @@ function drawTarget(svg, { y, plotW }, target) {
   }
 }
 
+/**
+ * A reference range (labs): the band between the bounds, a one-sided range shaded to the plot edge, and a dashed line
+ * labelled "low" or "high" at each finite bound. Clipped to the plot.
+ */
+function drawRange(svg, { y, plotW }, range) {
+  if (!range) return;
+  const plotBottom = svg.viewBox.baseVal.height - M.bottom;
+  const top = Math.max(M.top, range.high === null || range.high === undefined ? M.top : y(range.high));
+  const bottom = Math.min(plotBottom, range.low === null || range.low === undefined ? plotBottom : y(range.low));
+  if (bottom > top) el('rect', { class: 'target-band', x: M.left, y: top, width: plotW, height: bottom - top }, svg);
+  for (const [bound, name] of [[range.low, 'low'], [range.high, 'high']]) {
+    if (typeof bound !== 'number') continue;
+    el('line', { class: 'range-line', x1: M.left, x2: M.left + plotW, y1: y(bound), y2: y(bound) }, svg);
+    el('text', { class: 'target-label', x: M.left + 4, y: y(bound) - 4 }, svg).textContent = name;
+  }
+}
+const rangeValues = (range) => (range ? [range.low, range.high].filter((v) => typeof v === 'number') : []);
+/** Red dot for a partial day or a value outside its reference range. */
+const flagClass = (p) => (p.partial ? 'dot partial' : p.out ? 'dot out' : null);
+
 const partialNote = (points) => {
   const n = points.filter((p) => p.partial).length;
   return n ? `, ${n} partial ${n === 1 ? 'day' : 'days'}` : '';
@@ -114,16 +134,18 @@ function empty(container) {
 }
 
 /**
- * Line chart. points: [{date, value, partial?, details?}] sorted by date, values non-null; a partial point gets a red dot.
+ * Line chart. points: [{date, value, partial?, out?, details?}] sorted by date, values non-null; a partial point or one
+ * outside the reference range (range: {low, high, label}, labs) gets a red dot.
  * The line breaks across gaps longer than gapDays so missing stretches are not drawn as data.
  */
-export function lineChart(container, points, { from, to, format = String, gapDays = 3, label = 'Value', target = null }) {
+export function lineChart(container, points, { from, to, format = String, gapDays = 3, label = 'Value', target = null, range = null }) {
   const draw = () => {
     container.replaceChildren();
     if (!points.length) return container.append(empty(container));
-    const { svg, x, y, plotW, plotH } = frame(container, { from, to, yValues: [...points.map((p) => p.value), ...targetValues(target)] });
-    svg.setAttribute('aria-label', `${label}, ${points.length} values from ${shortDate(from)} to ${shortDate(to)}${partialNote(points)}${target?.value !== undefined && target?.value !== null ? `, target ${format(target.value)}` : ''}`);
+    const { svg, x, y, plotW, plotH } = frame(container, { from, to, yValues: [...points.map((p) => p.value), ...targetValues(target), ...rangeValues(range)] });
+    svg.setAttribute('aria-label', `${label}, ${points.length} values from ${shortDate(from)} to ${shortDate(to)}${partialNote(points)}${range?.label ? `, reference range ${range.label}` : ''}${target?.value !== undefined && target?.value !== null ? `, target ${format(target.value)}` : ''}`);
     drawTarget(svg, { y, plotW }, target);
+    drawRange(svg, { y, plotW }, range);
 
     let d = '';
     points.forEach((p, i) => {
@@ -138,11 +160,11 @@ export function lineChart(container, points, { from, to, format = String, gapDay
       if (!near(i - 1) && !near(i + 1)) el('circle', { class: 'dot', cx: x(p.date), cy: y(p.value), r: 3 }, svg);
     });
 
-    // Partial days (an incomplete Apple Health export) stand out in red; the tooltip says why.
-    for (const p of points) if (p.partial) el('circle', { class: 'dot partial', cx: x(p.date), cy: y(p.value), r: 4 }, svg);
+    // Partial days (an incomplete Apple Health export) and lab values outside their range stand out in red; the tooltip says why.
+    for (const p of points) if (flagClass(p)) el('circle', { class: flagClass(p), cx: x(p.date), cy: y(p.value), r: 4 }, svg);
 
     const last = points[points.length - 1];
-    el('circle', { class: last.partial ? 'dot partial' : 'dot', cx: x(last.date), cy: y(last.value), r: 4 }, svg);
+    el('circle', { class: flagClass(last) ?? 'dot', cx: x(last.date), cy: y(last.value), r: 4 }, svg);
     el('text', { x: x(last.date) + 8, y: y(last.value) + 4, class: 'axis-end', fill: 'var(--text-secondary)', 'font-size': 11 }, svg)
       .textContent = format(last.value);
 
@@ -157,6 +179,7 @@ export function lineChart(container, points, { from, to, format = String, gapDay
       cross.setAttribute('x1', x(best.date));
       cross.setAttribute('x2', x(best.date));
       cross.setAttribute('visibility', 'visible');
+      focus.setAttribute('class', flagClass(best) ?? 'dot'); // a red point stays red under the cursor
       focus.setAttribute('cx', x(best.date));
       focus.setAttribute('cy', y(best.value));
       focus.setAttribute('visibility', 'visible');

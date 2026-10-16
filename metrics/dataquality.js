@@ -9,12 +9,18 @@ export const LOOKBACK_DAYS = 14;
 export const PARTIAL_SHARE = 0.25; // steps under a quarter of the 28-day median look like a partial export
 export const MEDIAN_DAYS = 28;
 export const MIN_MEDIAN_DAYS = 10;
+export const EXPORT_STALE_HOURS = 26; // a daily export plus slack; measured to the last sync that looked, not the clock
 const SPAN_SLACK_SEC = 120;
 const STRENGTH_TYPES = /strength|core|functional|high intensity|hiit|cross training/i;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const short = (d) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
 const list = (dates) => dates.map(short).join(', ');
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+/** Local wall-clock text (YYYY-MM-DDTHH:MM) as "Oct 15, 2:07 PM". */
+const shortTime = (stamp) => {
+  const hh = Number(stamp.slice(11, 13));
+  return `${short(stamp.slice(0, 10))}, ${hh % 12 || 12}:${stamp.slice(14, 16)} ${hh < 12 ? 'AM' : 'PM'}`;
+};
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   const m = Math.floor(s.length / 2);
@@ -61,9 +67,12 @@ export const partialDays = (daily, from, to) => partialReasons(daily, from, to).
  * @param {Array<object>} input.sessions  workout_sessions rows (type, start, end, duration_sec) for the last 14 days or more
  * @param {string[]} input.liftingDays  Workout Log days with performed sets
  * @param {string} input.today
+ * @param {{lastFileAt: string, lastFileLocal: string, lookedAt: string}|null} [input.exports]  the newest health export
+ *   file's write time (UTC ISO, and local wall clock for the message) and when a sync last looked in the folder (UTC ISO);
+ *   null when the export folder is not in use or nothing has been read
  * @returns {Array<{kind: string, severity: 'warn'|'info', dates: string[], message: string}>}
  */
-export function dataChecks({ daily = [], sessions = [], liftingDays = [], today }) {
+export function dataChecks({ daily = [], sessions = [], liftingDays = [], today, exports = null }) {
   const yesterday = addDays(today, -1);
   const from = addDays(today, -LOOKBACK_DAYS);
   const have = new Set(daily.map((r) => r.date));
@@ -75,6 +84,14 @@ export function dataChecks({ daily = [], sessions = [], liftingDays = [], today 
   else if (latest < yesterday) {
     const missing = daysBetween(latest, yesterday);
     add('health_stale', 'warn', [latest], `No Apple Health data after ${short(latest)} (${plural(missing, 'day')} missing so far). Check the Health Auto Export automation.`);
+  }
+
+  // Health Auto Export stopped writing files: a sync looked and found nothing newer for EXPORT_STALE_HOURS.
+  if (exports?.lastFileAt && exports.lookedAt) {
+    const hours = Math.floor((Date.parse(exports.lookedAt) - Date.parse(exports.lastFileAt)) / 3600000);
+    if (hours > EXPORT_STALE_HOURS) {
+      add('export_stale', 'warn', [exports.lastFileLocal.slice(0, 10)], `No new Apple Health export since ${shortTime(exports.lastFileLocal)} (${hours} hours before the last sync). Check the Health Auto Export automation on your phone.`);
+    }
   }
 
   // Missing days between the first and latest health days (days before the first row are not gaps).

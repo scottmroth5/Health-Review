@@ -217,6 +217,7 @@ open a test by its name, enter Low and High (either can be blank for a one-sided
 range puts the typical one back. Tests whose unit or method varies (CRP, cystatin C, urine tests) start blank; add range
 enters your lab's.
 
+A test's chart (open it by its name) shades the range, with a dashed line at each bound and values outside it in red.
 A result outside the range is marked "below range" or "above range" with an arrow; the app never says normal or
 abnormal. The weekly review gets each latest result's range and whether it is below, within or above it, and only
 for the physician discussion section: a lab name next to range wording ("LDL above range", "elevated ALT") anywhere
@@ -368,6 +369,9 @@ The workout sessions script needs no change: it keys rows on type, start and end
 **Data checks:** after every sync, the app checks the data. Problems show above the day on the Today tab and in the
 sync log (Activity tab). The checks look for:
 - **Apple Health data that stopped:** nothing after a given day. Today is never expected to be complete.
+- **The export automation stopped:** a sync looked in the Health Auto Export folder and found no file newer than 26 hours,
+  so the warning names when the last export was written. It counts from the last sync, so a sync that just hasn't run yet
+  never sets it off.
 - **Missing days:** gaps in the last 14 days.
 - **Partial days:** a day whose latest Health Auto Export file was written before the day ended, such as an export you
   ran by hand in the afternoon, whatever its steps. The next export written after midnight fills it in and clears it.

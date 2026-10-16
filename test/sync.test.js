@@ -396,6 +396,21 @@ test('export files: a day whose file was written before the day ended is partial
   store.close();
 });
 
+test('export files: a sync that finds nothing newer than 26 hours warns that the export automation stopped', async () => {
+  const store = open();
+  const src = fakeSource(sheets());
+  src.exports = [healthFile('h1', '2026-03-02', [HEALTH, day('2026-03-02', 50, 54, 9000)], '2026-03-02T12:00:00Z')];
+  const stale = async (now) => (await sync(store, src, { now, exportFolders: { health: HF, workouts: null } }))
+    .warnings.find((w) => w.kind === 'export_stale') ?? null;
+  assert.equal(await stale(new Date('2026-03-03T13:00:00Z')), null); // 25 hours
+  const w = await stale(new Date('2026-03-03T16:00:00Z')); // 28 hours
+  assert.match(w.detail, /^No new Apple Health export since Mar 2, .* \(28 hours before the last sync\)/);
+  // Without the export folder there is nothing to judge.
+  assert.equal((await sync(store, src, { now: new Date('2026-03-05T16:00:00Z'), exportFolders: { health: null, workouts: null } }))
+    .warnings.find((x) => x.kind === 'export_stale'), undefined);
+  store.close();
+});
+
 test('export files: each folder works alone; the other kind keeps coming from its consolidated sheet', async () => {
   const healthOnly = fakeSource(sheets());
   healthOnly.exports = [healthFile('h1', 'a', [HEALTH, day('2026-03-02', 50, 54, 9000)])];

@@ -103,7 +103,9 @@ several rows (the v1 consolidation appends one whenever Active Energy changed be
 during the day is partial): ingest/parsers.js mergeHealthDays keeps the row with the most steps and fills its gaps
 from the others; --backfill also reads the Archive tab so a day split across tabs merges once.
 Data checks (metrics/dataquality.js, pure; fixture evals/fixtures/metrics/dataquality.json) run after every sync and
-on GET /api/status: Apple Health data stale (nothing after a day before yesterday), gaps in the last 14 days, partial
+on GET /api/status: Apple Health data stale (nothing after a day before yesterday), the export automation stopped
+(export_stale: the latest sync that looked in the health export folder ran more than 26 hours after the newest file was
+written; measured to that sync, never the clock; loadDataCheckInput's lookedAt), gaps in the last 14 days, partial
 days (owner's choice, 2026-10-16: a day whose latest export file was written before the day ended, from
 daily_metrics.exported_through, migration 021, set by syncExports as the latest file time in local wall clock; a day with
 no file time, from the consolidated sheet, falls back to steps under a quarter of the 28-day median, at least 10 days of
@@ -288,7 +290,8 @@ exposing the server requires a login mode in server/auth.js first. Check-in and 
 v1 history. CBD drinks are stored in drinking_days.cbd and never counted as alcohol. The Meds tab manages medications and
 supplements (add, change, stop, start again, delete for mistakes); the weekly review takes them from there, not from the
 medical prompt section. The Labs tab shows lab_tests and lab_results by panel, with a Range column, out-of-range results
-marked with an arrow and "below range" or "above range", and a range editor in each test's detail. The owner enters labs in the app (the March
+marked with an arrow and "below range" or "above range", and a range editor in each test's detail, whose chart shades the
+range (lineChart's range option: band, dashed low and high lines, red out-of-range points, the hover says which). The owner enters labs in the app (the March
 2026 draw was imported once and marked as app results); syncing a lab sheet is supported but unused. Results can come from a lab sheet
 (LAB_RESULTS_SHEET_ID; the tab whose A1 is "Lab Test"; capitalized rows with no values are panel headings; one column
 per draw date), synced whole on every sync and replaced only when its content hash changes, or from the app (source

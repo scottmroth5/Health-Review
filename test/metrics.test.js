@@ -56,6 +56,11 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       const daily = expandDaily(fx.input.dailyFill);
       assertSubset(dataChecks({ ...fx.input, daily }), fx.expected);
       assertSubset(weekDataQuality(daily, fx.week.from, fx.week.to), fx.week.expected, 'week');
+      for (const c of fx.exportCases ?? []) {
+        const found = dataChecks({ ...fx.input, daily, exports: c.exports }).find((f) => f.kind === 'export_stale') ?? null;
+        if (c.expected === null) assert.equal(found, null, c.note);
+        else assertSubset(found, c.expected, c.note);
+      }
       return;
     }
     if (fx.kind === 'lab-ranges') {
