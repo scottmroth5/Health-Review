@@ -46,7 +46,7 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import Anthropic from '@anthropic-ai/sdk';
 import { openHealthStore } from '../db/store.js';
-import { createReviewClaude, withFallbacks, DEFAULT_REVIEW_MODEL } from '../agent/claude.js';
+import { createReviewClaude, DEFAULT_REVIEW_MODEL } from '../agent/claude.js';
 import { prepareReview, runReview } from '../agent/review.js';
 import { countWords } from '../agent/validate.js';
 import { SPEC, gradeDraft } from './grade-review.js';
@@ -110,13 +110,15 @@ async function runCase(input, ctx) {
   try {
     const today = addDays(input.weekEnd, 1);
     const prep = prepareReview(store.db, { weekEnd: input.weekEnd, today });
-    const inner = withFallbacks(new Anthropic({ maxRetries: 3, timeout: 20 * 60 * 1000 }));
+    const sdk = new Anthropic({ maxRetries: 3, timeout: 20 * 60 * 1000 });
     const calls = [];
-    const recording = { messages: { create: async (params) => {
-      const response = await inner.messages.create(params);
+    // Records every call on either endpoint (fallbacks go through the beta one).
+    const record = (api) => ({ create: async (params) => {
+      const response = await api.create(params);
       calls.push({ params, response });
       return response;
-    } } };
+    } });
+    const recording = { messages: record(sdk.messages), beta: { messages: record(sdk.beta.messages) } };
     const quiet = { info() {}, warn() {}, error() {} };
     const result = await runReview({
       store, claude: createReviewClaude({ client: recording }), weekEnd: input.weekEnd, today,

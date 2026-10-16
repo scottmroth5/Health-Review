@@ -85,9 +85,10 @@ test('suggest: the request holds exercise names only; kept proposals extend the 
     { name: 'use blue band', action: 'ignore', existing_id: null, new_exercise: null, reason: 'a note' },
     { name: 'Mystery Move', action: 'unsure', existing_id: null, new_exercise: null, reason: 'no implement' },
   ] };
-  const fake = { messages: { create: async (p) => { sent.push(p); return {
+  const { fakeClaudeClient } = await import('./helpers.js');
+  const fake = fakeClaudeClient(async (p) => { sent.push(p); return {
     id: 'msg_test', model: 'claude-sonnet-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(reply) }],
-    usage: { input_tokens: 10, output_tokens: 10 } }; } } };
+    usage: { input_tokens: 10, output_tokens: 10 } }; });
   const names = ['Flat Barbell Press', 'Cable Lateral Raise', 'use blue band', 'Mystery Move'];
   const out = await suggestMappings({ claude: createReviewClaude({ client: fake }), names, dictionary: createDictionary(DICT) });
   assert.equal(out.length, 4);

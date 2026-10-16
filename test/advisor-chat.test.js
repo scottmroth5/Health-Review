@@ -6,7 +6,7 @@ import { createCatalog } from '../metrics/catalog.js';
 import { createDictionary } from '../metrics/dictionary.js';
 import { createReviewClaude } from '../agent/claude.js';
 import { askAdvisor, chatContext, CHAT_CONTRACT } from '../agent/advisor-chat.js';
-import { silentLogger } from './helpers.js';
+import { fakeClaudeClient, silentLogger } from './helpers.js';
 
 const TODAY = new Date(2026, 2, 9, 12, 0); // local 2026-03-09
 const phase = (exercises, extra = {}) => [{ name: 'Phase 1', weeks: [1, 4], workouts_per_week: 3, workouts: [{ name: 'A', exercises }], ...extra }];
@@ -28,7 +28,7 @@ function seeded() {
   return store;
 }
 const response = (r) => ({ id: 'msg_test', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(r) }], usage: { input_tokens: 800, output_tokens: 300 } });
-const fakeClaude = (drafts, prompts = []) => createReviewClaude({ client: { messages: { create: async (p) => { prompts.push(p); return response(drafts[Math.min(prompts.length, drafts.length) - 1]); } } } });
+const fakeClaude = (drafts, prompts = []) => createReviewClaude({ client: fakeClaudeClient(async (p) => { prompts.push(p); return response(drafts[Math.min(prompts.length, drafts.length) - 1]); }) });
 
 test('chat context: computed training facts only; no medications, labs or blueprint focus text', () => {
   const store = seeded();

@@ -6,10 +6,10 @@ import { addDays } from '../metrics/stats.js';
 import { findDashes, stripDashes, allowedNumbers, ungroundedNumbers, misroutedTopics } from '../agent/validate.js';
 import { buildSystem, renderReport, CONTRACT } from '../agent/instructions.js';
 import { buildSummary } from '../agent/summary.js';
-import { withFallbacks, createReviewClaude } from '../agent/claude.js';
+import { createReviewClaude } from '../agent/claude.js';
 import { runReview, prepareReview } from '../agent/review.js';
 import { computeWeek } from '../metrics/index.js';
-import { silentLogger } from './helpers.js';
+import { fakeClaudeClient, silentLogger } from './helpers.js';
 
 const report = (sections, physicianDiscussion = []) => ({ sections: sections.map(([title, body]) => ({ title, body })), physicianDiscussion });
 
@@ -144,10 +144,10 @@ test('summary: strength keeps only this week\'s exercises; empty metrics dropped
 // ---- client ----
 test('fallbacks: on for supported models via the beta endpoint, plain call otherwise', async () => {
   const calls = [];
-  const sdk = { messages: { create: async (p) => calls.push(['plain', p]) }, beta: { messages: { create: async (p) => calls.push(['beta', p]) } } };
-  const client = withFallbacks(sdk);
-  await client.messages.create({ model: 'claude-opus-5-5' });
-  await client.messages.create({ model: 'claude-haiku-4-5' });
+  const reply = (kind) => async (p) => { calls.push([kind, p]); return { id: 'm', model: p.model, stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }], usage: {} }; };
+  const claude = createReviewClaude({ client: { messages: { create: reply('plain') }, beta: { messages: { create: reply('beta') } } } });
+  await claude.send({ model: 'claude-opus-5-5', maxTokens: 10, prompt: 'hi' });
+  await claude.send({ model: 'claude-haiku-4-5', maxTokens: 10, prompt: 'hi' });
   assert.deepEqual(calls.map(([kind, p]) => [kind, p.fallbacks ?? null, p.betas ?? null]), [
     ['beta', 'default', ['server-side-fallback-2026-07-01']],
     ['plain', null, null],
@@ -179,7 +179,7 @@ test('review: a draft breaking the rules is retried with the problems listed; th
     report([['Weekly Wins', 'HRV hit 99 ms — great. Keep taking Sample Statin.']]),
     report([['Weekly Wins', 'HRV averaged 49 ms over 2 days.']], [{ topic: 'Sample Statin', detail: 'Discuss timing with your physician.' }]),
   ];
-  const fake = { messages: { create: async (p) => { prompts.push(p); return response(drafts[prompts.length - 1]); } } };
+  const fake = fakeClaudeClient(async (p) => { prompts.push(p); return response(drafts[prompts.length - 1]); });
   const r = await runReview({ store, claude: createReviewClaude({ client: fake }), weekEnd: '2026-09-26', today: '2026-09-27', logger: silentLogger });
 
   assert.equal(r.attempts, 2);
@@ -209,7 +209,7 @@ test('review: a draft breaking the rules is retried with the problems listed; th
 test('review: problems left after the retry are saved as warnings; dashes are stripped in code', async () => {
   const store = seededStore();
   const draft = report([['Weekly Wins', 'Slept 9.9 hours — a record.']]);
-  const fake = { messages: { create: async () => response(draft) } };
+  const fake = fakeClaudeClient(async () => response(draft));
   const r = await runReview({ store, claude: createReviewClaude({ client: fake }), weekEnd: '2026-09-26', today: '2026-09-27', logger: silentLogger });
   assert.deepEqual(r.warnings, ['numbers not in the summary: 9.9']);
   const saved = store.db.prepare('SELECT report_md, warnings FROM reviews').get();
@@ -220,7 +220,7 @@ test('review: problems left after the retry are saved as warnings; dashes are st
 
 test('review: a truncated response fails the run instead of saving half a report (v1 bug fixed)', async () => {
   const store = seededStore();
-  const fake = { messages: { create: async () => response(report([['Weekly Wins', 'ok']]), 'max_tokens') } };
+  const fake = fakeClaudeClient(async () => response(report([['Weekly Wins', 'ok']]), 'max_tokens'));
   await assert.rejects(runReview({ store, claude: createReviewClaude({ client: fake }), weekEnd: '2026-09-26', today: '2026-09-27', logger: silentLogger }), ClaudeTruncatedError);
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM reviews').get().n, 0);
   assert.deepEqual(JSON.parse(store.db.prepare("SELECT summary FROM runs WHERE name = 'review'").get().summary), { weekEnd: '2026-09-26', error: 'ClaudeTruncatedError' });

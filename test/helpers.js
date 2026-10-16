@@ -44,4 +44,7 @@ export function fakeSource(tabs) {
   };
 }
 
+/** A fake Anthropic SDK client: the same create for the plain and beta Messages endpoints (fallbacks use the beta one). */
+export const fakeClaudeClient = (create) => ({ messages: { create }, beta: { messages: { create } } });
+
 export const silentLogger = { info() {}, warn() {}, error() {}, log() {} };
