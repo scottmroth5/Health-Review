@@ -396,6 +396,8 @@ async function syncNow() {
 const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const fmt = (digits, unit = '') => (v) => `${v.toLocaleString(undefined, { maximumFractionDigits: digits })}${unit}`;
 
+const PARTIAL_LINE = 'Partial day: the Apple Health export was incomplete';
+
 const CHARTS = [
   { key: 'hrv_ms', title: 'Heart rate variability', from: 'metrics', format: fmt(0, ' ms') },
   { key: 'resting_hr', title: 'Resting heart rate', from: 'metrics', format: fmt(0, ' bpm') },
@@ -436,7 +438,7 @@ function tableView(points, format) {
   for (const p of [...points].reverse()) {
     const row = body.insertRow();
     row.insertCell().textContent = p.date;
-    row.insertCell().textContent = format(p.value);
+    row.insertCell().textContent = p.partial ? `${format(p.value)} (partial)` : format(p.value);
   }
   scroll.append(table);
   details.append(summary, scroll);
@@ -555,8 +557,12 @@ async function loadHistory() {
   container.replaceChildren();
   // A chart with no data in the range is left out, and named in one line below the charts.
   const hidden = [];
+  const partial = new Set(data.partialDays ?? []);
   for (const c of CHARTS.filter((x) => !(state.demo && isDrinkingChart(x)))) {
-    const points = data[c.from].filter((r) => r[c.key] !== null && r[c.key] !== undefined).map((r) => ({ date: r.date, value: r[c.key] }));
+    // Apple Health days that look like a partial export are marked (red, with a hover line) and left out of the avg.
+    const points = data[c.from].filter((r) => r[c.key] !== null && r[c.key] !== undefined).map((r) => (c.from === 'metrics' && partial.has(r.date)
+      ? { date: r.date, value: r[c.key], partial: true, details: [PARTIAL_LINE] }
+      : { date: r.date, value: r[c.key] }));
     if (!points.length) {
       hidden.push(c.title);
       continue;
@@ -569,8 +575,9 @@ async function loadHistory() {
     h.textContent = c.title;
     const latest = document.createElement('span');
     latest.className = 'latest';
-    if (points.length) {
-      const avg = points.reduce((s, p) => s + p.value, 0) / points.length;
+    const full = points.filter((p) => !p.partial);
+    if (full.length) {
+      const avg = full.reduce((s, p) => s + p.value, 0) / full.length;
       latest.textContent = `avg ${c.format(avg)}`;
     }
     head.append(h, latest);

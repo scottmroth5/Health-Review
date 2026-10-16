@@ -132,6 +132,8 @@ days); blood oxygen and breathing disturbances form the summary's nightBreathing
 CONTRACT treats like lab values and prepareReview routes like lab names (NIGHT_BREATHING_NAMES). The Health tab charts
 all but heart rate min, max and average and physical effort, plus the check-in's weight, body fat, muscle mass and visceral
 fat; a chart with no data in the selected range is left out and named in one line below the charts (#charts-hidden).
+Partial days (GET /api/history partialDays, by dataquality.js partialDays) are drawn red on the Apple Health charts with a
+hover line, labeled in the table view, and left out of each card's avg; check-in and drink charts are not marked.
 Medications (metrics/medications.js): each dose or timing period is a row in medication_periods; stopped_on is the first
 day it no longer applied, so a change closes one period and opens the next on the same date. Start, change and stop
 events are derived, never stored. Impact compares the 28 days before an event with days 7 to 34 after it (minimums 14

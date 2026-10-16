@@ -96,7 +96,19 @@ test('history returns metrics, check-ins and drinks in the range', async () => {
   const withBody = (await app.inject('/api/history?from=2026-03-01&to=2026-03-09')).json();
   const c = withBody.checkins.find((x) => x.date === '2026-03-03');
   assert.deepEqual([c.weight_lbs, c.body_fat_pct, c.muscle_mass_lbs, c.visceral_fat], [181.2, 20.5, 79.1, 9]);
+  assert.deepEqual(withBody.partialDays, []);
   assert.equal((await app.inject('/api/history?from=2026-03-09&to=2026-03-01')).statusCode, 400);
+  await done();
+});
+
+test('history lists likely partial Apple Health days (steps under a quarter of the 28 days before)', async () => {
+  const { app, db, done } = await setup();
+  const ins = db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES (?, ?, 'x')");
+  for (let d = 1; d <= 12; d += 1) ins.run(`2026-02-${String(d).padStart(2, '0')}`, 8000);
+  ins.run('2026-02-13', 1500); // under 2,000, a quarter of the 8,000 median
+  ins.run('2026-02-14', 7000);
+  const h = (await app.inject('/api/history?from=2026-02-10&to=2026-02-14')).json();
+  assert.deepEqual(h.partialDays, ['2026-02-13']);
   await done();
 });
 

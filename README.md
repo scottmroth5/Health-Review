@@ -171,7 +171,8 @@ disturbances. The Health tab charts cardio recovery, walking heart rate and spee
 breathing disturbances. The weekly review compares each with the previous week and your 28-day baseline. Blood oxygen
 and breathing disturbances are values only (no high or low labels) and appear in the review only for
 physician discussion. The Health tab also charts weight, body fat, muscle mass and visceral fat from the Today tab
-check-in. A chart with no data in the range you picked is left out, and a line below the charts names it, so it comes
+check-in. A day that looks like a partial export (steps under a quarter of your usual day) is drawn in red on the Apple
+Health charts, its hover says so, and it is left out of the card's average. A chart with no data in the range you picked is left out, and a line below the charts names it, so it comes
 back by itself once data arrives. To fill earlier days, export a past date range from Health Auto Export into the same folder;
 the app reads the new files and fills the new columns on days it already has.
 

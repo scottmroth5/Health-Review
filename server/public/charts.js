@@ -101,6 +101,11 @@ function drawTarget(svg, { y, plotW }, target) {
   }
 }
 
+const partialNote = (points) => {
+  const n = points.filter((p) => p.partial).length;
+  return n ? `, ${n} partial ${n === 1 ? 'day' : 'days'}` : '';
+};
+
 function empty(container) {
   const width = Math.max(container.clientWidth, 200);
   const svg = el('svg', { viewBox: `0 0 ${width} 150` });
@@ -109,7 +114,7 @@ function empty(container) {
 }
 
 /**
- * Line chart. points: [{date, value}] sorted by date, values non-null.
+ * Line chart. points: [{date, value, partial?, details?}] sorted by date, values non-null; a partial point gets a red dot.
  * The line breaks across gaps longer than gapDays so missing stretches are not drawn as data.
  */
 export function lineChart(container, points, { from, to, format = String, gapDays = 3, label = 'Value', target = null }) {
@@ -117,7 +122,7 @@ export function lineChart(container, points, { from, to, format = String, gapDay
     container.replaceChildren();
     if (!points.length) return container.append(empty(container));
     const { svg, x, y, plotW, plotH } = frame(container, { from, to, yValues: [...points.map((p) => p.value), ...targetValues(target)] });
-    svg.setAttribute('aria-label', `${label}, ${points.length} values from ${shortDate(from)} to ${shortDate(to)}${target?.value !== undefined && target?.value !== null ? `, target ${format(target.value)}` : ''}`);
+    svg.setAttribute('aria-label', `${label}, ${points.length} values from ${shortDate(from)} to ${shortDate(to)}${partialNote(points)}${target?.value !== undefined && target?.value !== null ? `, target ${format(target.value)}` : ''}`);
     drawTarget(svg, { y, plotW }, target);
 
     let d = '';
@@ -133,8 +138,11 @@ export function lineChart(container, points, { from, to, format = String, gapDay
       if (!near(i - 1) && !near(i + 1)) el('circle', { class: 'dot', cx: x(p.date), cy: y(p.value), r: 3 }, svg);
     });
 
+    // Partial days (an incomplete Apple Health export) stand out in red; the tooltip says why.
+    for (const p of points) if (p.partial) el('circle', { class: 'dot partial', cx: x(p.date), cy: y(p.value), r: 4 }, svg);
+
     const last = points[points.length - 1];
-    el('circle', { class: 'dot', cx: x(last.date), cy: y(last.value), r: 4 }, svg);
+    el('circle', { class: last.partial ? 'dot partial' : 'dot', cx: x(last.date), cy: y(last.value), r: 4 }, svg);
     el('text', { x: x(last.date) + 8, y: y(last.value) + 4, class: 'axis-end', fill: 'var(--text-secondary)', 'font-size': 11 }, svg)
       .textContent = format(last.value);
 
@@ -176,7 +184,7 @@ export function columnChart(container, points, { from, to, format = String, labe
     if (!points.length) return container.append(empty(container));
     const { svg, x, y, plotW } = frame(container, { from, to, yValues: [0, ...points.map((p) => p.value), ...targetValues(target)] });
     drawTarget(svg, { y, plotW }, target);
-    svg.setAttribute('aria-label', `${label}, ${points.length} ${bucketDays === 1 ? 'days' : 'periods'} from ${shortDate(from)} to ${shortDate(to)}`);
+    svg.setAttribute('aria-label', `${label}, ${points.length} ${bucketDays === 1 ? 'days' : 'periods'} from ${shortDate(from)} to ${shortDate(to)}${partialNote(points)}`);
     const days = Math.max(1, Math.round((toMs(to) - toMs(from)) / DAY) + 1);
     const slot = (plotW / days) * bucketDays;
     const w = Math.max(2, Math.min(24, slot > 6 ? slot - 2 : slot * 0.75)); // 2px surface gap once there is room
@@ -188,7 +196,7 @@ export function columnChart(container, points, { from, to, format = String, labe
         const r = w >= 8 ? Math.min(4, (base - top) / 2) : 0; // 4px rounded data end, square at the baseline
         const left = cx - w / 2;
         const bar = el('path', {
-          class: 'bar',
+          class: p.partial ? 'bar partial' : 'bar',
           d: `M${left},${base}V${top + r}Q${left},${top} ${left + r},${top}H${left + w - r}Q${left + w},${top} ${left + w},${top + r}V${base}Z`,
         }, svg);
         bar.dataset.date = p.date;

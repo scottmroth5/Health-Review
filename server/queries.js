@@ -10,7 +10,7 @@ import { liftProgress } from '../metrics/plateau.js';
 import { addDays, lastWeekEnd } from '../metrics/stats.js';
 import { recommendPrograms } from '../metrics/advisor.js';
 import { blockAdherence } from '../metrics/adherence.js';
-import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
+import { dataChecks, partialDays, weekDataQuality } from '../metrics/dataquality.js';
 import { effectiveRange, rangeStatus, typicalRange } from '../metrics/labs.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
@@ -75,7 +75,10 @@ export const deleteDrinking = (db, date) => db.prepare('DELETE FROM drinking_day
 // ---- history ----
 
 export function history(db, from, to) {
+  // Likely partial Apple Health exports in the range, by the data checks' rule (steps against the 28 days before).
+  const steps = db.prepare('SELECT date, steps FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(addDays(from, -28), to);
   return {
+    partialDays: partialDays(steps, from, to),
     metrics: db.prepare(`SELECT date, hrv_ms, resting_hr, sleep_total_hr, steps, exercise_min, cardio_recovery_bpm, walking_hr_avg,
       walking_speed_mph, walking_asymmetry_pct, wrist_temp_f, spo2_pct, breathing_disturbances FROM daily_metrics
       WHERE date BETWEEN ? AND ? ORDER BY date`).all(from, to),
