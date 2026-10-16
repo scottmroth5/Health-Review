@@ -95,7 +95,6 @@ test('forward: new lifting days join the in-progress confirmed block with progra
   const db = store.db;
   const LOG = ['Date', 'Prime', 'Exercise', 'Weight 1', 'Set 1', 'Workout'];
   const data = {
-    health_metrics: { Sheet1: [['Date/Time']] }, workout_sessions: { Sheet1: [['Type', 'Start', 'End']] },
     workout_log: { 2026: [LOG, [serial('2026-03-02'), '', 'Squat', 100, 5, 'Symmetry Foundation 1 - Phase 1']] },
   };
   const source = fakeSource(data);

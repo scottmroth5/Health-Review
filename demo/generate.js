@@ -264,7 +264,7 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
     'Sample reply (made up for the demo; the chat is off here): with strength counting double, Sample Strength leads. It runs three sessions a week, so it fits your schedule.',
     JSON.stringify([]), null, 'sample');
   const insertRun = db.prepare("INSERT INTO runs (name, meta, status, started_at, finished_at, duration_ms, calls, cost_usd, summary) VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)");
-  insertRun.run('sync', '{"backfill":false}', `${addDays(today, -1)}T12:00:00.000Z`, `${addDays(today, -1)}T12:00:05.000Z`, 5000, 0, 0, '{"counts":{"health_metrics":{"upserted":30}},"warnings":0}');
+  insertRun.run('sync', '{"backfill":false}', `${addDays(today, -1)}T12:00:00.000Z`, `${addDays(today, -1)}T12:00:05.000Z`, 5000, 0, 0, '{"counts":{"health_exports":{"filesRead":1,"filesLeft":0,"healthDays":1},"workout_exports":{"filesRead":1,"filesLeft":0,"workouts":1}},"warnings":0}');
   insertRun.run('review', '{"model":"sample"}', `${lastSaturday}T15:00:00.000Z`, `${lastSaturday}T15:03:00.000Z`, 180000, 1, 0, '{"attempts":1,"warnings":0}');
 
   // ---- The app's own pipeline: normalize names, detect blocks (confirmed), phases from workout names ----

@@ -1,9 +1,8 @@
 import { sheets as sheetsApi } from '@googleapis/sheets';
 
-// Env var holding each source spreadsheet's ID.
+// Env var holding each source spreadsheet's ID. Apple Health comes from Health Auto Export's files instead (the v1
+// consolidated health and workout sheets are retired).
 export const SHEET_ENV = {
-  health_metrics: 'HEALTH_METRICS_SHEET_ID',
-  workout_sessions: 'WORKOUT_SESSIONS_SHEET_ID',
   workout_log: 'WORKOUT_LOG_SHEET_ID',
   drinking_log: 'DRINKING_LOG_SHEET_ID',
   weekly_checkin: 'WEEKLY_CHECKIN_SHEET_ID',

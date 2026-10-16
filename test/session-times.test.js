@@ -1,10 +1,8 @@
-// The consolidated Workout Sessions sheet ran 3 hours late; the one-off fix and the import shift. Synthetic values only.
+// The consolidated Workout Sessions sheet ran 3 hours late; the one-off fix of stored rows. Synthetic values only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
 import { fixSessionTimes, moveHours } from '../ingest/session-times.js';
-import { runSync } from '../ingest/sync.js';
-import { fakeSource, serial, silentLogger } from './helpers.js';
 
 const EXPORT_STAMP = '2026-10-15T16:10:54.853Z';
 const SHEET_STAMP = '2026-10-15T11:00:03.386Z';
@@ -57,19 +55,5 @@ test('the fix: a move that would land on an export workout of the same type and 
   const before = all(store);
   assert.throws(() => fixSessionTimes(store, { apply: true }), /would land on stored ones/);
   assert.deepEqual(all(store), before);
-  store.close();
-});
-
-test('the consolidated sheet path now saves workout times 3 hours earlier (export files are read as they are)', async () => {
-  const store = openHealthStore(':memory:');
-  const SESSIONS = ['Type', 'Start', 'End', 'Duration', 'Avg Heart Rate (bpm)'];
-  const src = fakeSource({
-    health_metrics: { Sheet1: [['Date/Time', 'Step Count (steps)']] },
-    workout_sessions: { Sheet1: [SESSIONS, ['Outdoor Run', serial('2026-03-02', 9, 15), serial('2026-03-02', 9, 52, 30), (37.5 + 180) / 1440, 148]] },
-    workout_log: {},
-  });
-  await runSync({ store, source: src, now: new Date(2026, 2, 9, 7), logger: silentLogger, catalog: null, exportFolders: {} });
-  assert.deepEqual(store.db.prepare('SELECT start, end, duration_sec FROM workout_sessions').get(),
-    { start: '2026-03-02T06:15:00', end: '2026-03-02T06:52:30', duration_sec: 2250 });
   store.close();
 });

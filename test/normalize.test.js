@@ -85,7 +85,6 @@ test('normalize: sync rewrites the normalized columns after a Workout Log tab is
   const store = openHealthStore(':memory:');
   const LOG = ['Date', 'Prime', 'Exercise', 'Weight 1', 'Set 1'];
   const data = {
-    health_metrics: { Sheet1: [['Date/Time']] }, workout_sessions: { Sheet1: [['Type', 'Start', 'End']] },
     workout_log: { 2026: [LOG, [serial('2026-03-02'), '', 'Squats', 100, 5]] },
   };
   const source = fakeSource(data);

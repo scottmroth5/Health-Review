@@ -317,54 +317,29 @@ change, or something bothering you, and Claude answers in light of the ranking a
 ## Sheets pipeline and data checks
 
 Apple Health and Apple Watch data start in Health Auto Export on your phone, which writes one Google Sheets file per
-export to Drive: health metrics to one folder, workout sessions to another. The app can read them two ways:
-- **Straight from the export files (recommended).** Set `HEALTH_EXPORT_FOLDER_ID` (the health metrics folder) and
-  `WORKOUT_EXPORT_FOLDER_ID` (the workout sessions folder) in `.env`; each is the long id in the folder's Drive URL.
-  Each sync then lists each folder and reads only files that are new or changed since it last read them
-  (`drive_exports`), at most 100 per folder per sync. Google allows 60 Sheets reads a minute, so reads are spaced
-  about a second apart and saved every 25 files; if Google still says "too many requests", the sync keeps what it read
-  and the next sync continues. A day read again from a partial export never lowers the full day already stored. The consolidated sheet of a kind with a folder set isn't read at all.
-  1. Set both variables, then run `npm run google:login` once. It adds permission to list the folders (names and
-     dates only); the files themselves are read with the Sheets permission you already granted.
-  2. Run `npm run google:exports` to see how many files each folder holds and how many syncs the first read takes.
-  3. Run `npm run sync`. After a week of matching data, turn off the two Apps Script triggers. The consolidated sheets
-     stay as they are, as an archive.
+day to Drive: health metrics to one folder, workout sessions to another. The app reads those files directly. Set
+`HEALTH_EXPORT_FOLDER_ID` (the health metrics folder) and `WORKOUT_EXPORT_FOLDER_ID` (the workout sessions folder) in
+`.env`; each is the long id in the folder's Drive URL.
+- **What a sync reads:** each folder is listed, and only files that are new or changed since the last read
+  (`drive_exports`) are read, at most 100 per folder per sync.
+- **Google's limit:** 60 Sheets reads a minute, so reads are spaced about a second apart and saved every 25 files. If
+  Google still says "too many requests", the sync keeps what it read and the next sync continues.
+- **Partial exports:** a day read again from a partial export never lowers the full day already stored.
+- **A missing variable:** that kind is skipped and the sync log says so.
 
-  Each variable works on its own, so you can switch one kind at a time; remove a variable to go back to that kind's
-  consolidated sheet.
+To set it up:
+1. Set both variables, then run `npm run google:login` once. It adds permission to list the folders (names and dates
+   only); the files themselves are read with the Sheets permission you already granted.
+2. Run `npm run google:exports` to see how many files each folder holds and how many syncs the first read takes.
+3. Run `npm run sync`.
 
-  The first read showed that the consolidated workout sheet put every workout's start and end 3 hours late (the export
-  files match Fitness). `npm run fix:session-times` moved the stored workouts back once, and the consolidated path
-  now corrects times as it reads them.
-- **Through the consolidated sheets (the v1 path).** v1 Apps Scripts consolidate the export files into two sheets
-  nightly, and the app reads the sheets at 7am. The rest of this section is about that path.
+To fill earlier days, export a past date range from Health Auto Export into the same folders.
 
-**The patched health consolidation script** is at `tools/apps-script/ConsolidateHealthMetrics.gs`. It's your
-current script, with its archive (after 1 month), purge (after 1 year), locks and trigger setup unchanged. Only the
-duplicate rule changed:
-- Your script keyed rows on Date/Time plus Active Energy, so a day exported partly done and again later got a second
-  row.
-- The patched script keeps one row per day in both the main and Archive tabs, keeping the copy with more steps.
-- Consolidation now writes in batches.
-
-To install it:
-1. Back up the sheet first: File > Make a copy.
-2. Open Extensions > Apps Script on the Consolidated Apple Health Metrics sheet.
-3. Replace the contents of the file that holds `consolidateHealthMetrics`, `archiveHealthData` and `purgeHealthData`
-   with this file.
-   - Leave the file with your constants (`HEALTH_FOLDER_ID`, `HEALTH_MAIN_SHEET_NAME` and the rest) as it is. This
-     file uses them and doesn't redefine them.
-4. Run `consolidateHealthMetrics` once and check the log. It reports new days and days replaced by a fuller export.
-   The nightly, archive and purge triggers can stay as they are.
-5. Optionally, run `collapseHealthDuplicateDays` once, to remove the duplicate rows already in the main and Archive
-   tabs. The app merges them correctly either way.
-
-Rows the purge deletes from the sheet after a year stay in the app's database, which keeps your full history.
-
-The workout sessions script needs no change: it keys rows on type, start and end, and there are no duplicates.
-
-**Time zone:** the sheet is set to America/New_York. That causes the 3-hour shift in workout Duration cells and the
-03:00 stamps on health dates. Leave it as it is. The app corrects both, and changing it could move workout start times.
+**The consolidated sheets are retired (2026-10-16).** The v1 Apps Scripts that consolidated the export files into two
+sheets are no longer read by the app, so you can turn off their triggers. `HEALTH_METRICS_SHEET_ID` and
+`WORKOUT_SESSIONS_SHEET_ID` can come out of `.env`. Days already stored from those sheets stay in the database. Their
+3-hour workout time shift was fixed once in the stored rows (`npm run fix:session-times`, 2026-10-15).
+`tools/apps-script/ConsolidateHealthMetrics.gs` is kept for reference only.
 
 **Data checks:** after every sync, the app checks the data. Problems show above the day on the Today tab and in the
 sync log (Activity tab). The checks look for:

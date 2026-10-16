@@ -32,7 +32,7 @@ Health specific logic stays in this repo; never add it to agent-core.
                     contract eval: review-cases.json (real weeks by date only, synthetic overlays), grade-review.js
                     (shared grading), run-review-eval.mjs (runner from the claude-api skill scaffold)
 /tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core);
-                    apps-script/ConsolidateHealthMetrics.gs (the fixed v1 consolidation the owner pastes into Apps Script)
+                    apps-script/ConsolidateHealthMetrics.gs (the fixed v1 consolidation; retired 2026-10-16, reference only)
 /demo               the separate demo instance's made-up data: generate.js (seeded generator, run through the app's own
                     normalization, block detection and phases), catalog.json (invented "Sample" programs, never MAPS),
                     substitutions.json
@@ -47,8 +47,8 @@ node --test test/google.test.js   run one suite
 npm run google:login              one-time Google sign-in (read-only Sheets); saves data/google/token.json
 npm run google:exports            count Health Auto Export's files in HEALTH_EXPORT_FOLDER_ID and WORKOUT_EXPORT_FOLDER_ID
 npm run google:check              verify read access to each *_SHEET_ID in .env (prints tab names and row counts only)
-npm run sync                      copy the Sheets into data/health.db (prints counts and warnings only)
-npm run sync -- --backfill        one-time full import, including the v1 drinking log and weekly check-ins
+npm run sync                      copy Health Auto Export's new files and the Workout Log into data/health.db (prints counts and warnings only)
+npm run sync -- --backfill        one-time full import: every Workout Log year tab, the v1 drinking log and weekly check-ins
 powershell -ExecutionPolicy Bypass -File scripts\register-sync-task.ps1   (re)register the daily 7am sync task
                                   ("Health-Review daily sync"; runs scripts\sync-daily.cmd, logs to data\logs\sync.log)
 powershell -ExecutionPolicy Bypass -File scripts\register-review-task.ps1   (re)register the review task: Sunday 8am, catch-ups Monday and Tuesday
@@ -89,19 +89,15 @@ GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
 ## Data
 Sheets are read unformatted with dates as serial numbers and stored as local wall-clock text; no time zone conversion.
-With HEALTH_EXPORT_FOLDER_ID (health metrics) and WORKOUT_EXPORT_FOLDER_ID (workout sessions) set, each kind comes from
-Health Auto Export's own files in its Drive folder (ingest/sync.js syncExports; listed with drive.metadata.readonly and
-filtered to that kind's file names, read with the Sheets scope) instead of its consolidated sheet: only new or changed files
+Apple Health comes only from Health Auto Export's own day files, one Drive folder per kind: HEALTH_EXPORT_FOLDER_ID (health
+metrics) and WORKOUT_EXPORT_FOLDER_ID (workout sessions) (ingest/sync.js syncExports; listed with drive.metadata.readonly and
+filtered to that kind's file names, read with the Sheets scope): only new or changed files
 (drive_exports, migration 016), at most 100 per folder per sync, saved every 25, every Sheets read paced 1.1 s apart
 (createPacer; Google allows 60 a minute) and a 429 ending that folder's reading for the sync rather than failing it, and each health day merged with the stored day by
-mergeHealthDays so a partial export never lowers a full day. A kind without its variable reads its consolidated sheet as below.
+mergeHealthDays so a partial export never lowers a full day. A missing folder variable skips that kind with a warn line.
+The v1 consolidated health and workout sheets (and their Apps Script) are retired (owner's choice, 2026-10-16) and never
+read; days stored from them stay, have no exported_through, and keep the steps rule for partial days.
 Planned for the AWS move: Health Auto Export's REST API posting to an authenticated HTTPS ingest over Tailscale (no Google).
-Health metrics and workout sessions stay in Google Sheets (v1 consolidation scripts still feed them, nightly 4 to 5am).
-Every sync reads the whole first tab of each (the consolidated tab, whatever it is named); the owner trims it into an
-Archive tab, so a row-number watermark could skip rows, and archived rows stay in the database. A health day can have
-several rows (the v1 consolidation appends one whenever Active Energy changed between exports, and an export made
-during the day is partial): ingest/parsers.js mergeHealthDays keeps the row with the most steps and fills its gaps
-from the others; --backfill also reads the Archive tab so a day split across tabs merges once.
 Data checks (metrics/dataquality.js, pure; fixture evals/fixtures/metrics/dataquality.json) run after every sync and
 on GET /api/status: Apple Health data stale (nothing after a day before yesterday), the export automation stopped
 (export_stale: the latest sync that looked in the health export folder ran more than 26 hours after the newest file was
@@ -117,12 +113,12 @@ read the current year (and last year in January), and a tab is replaced only whe
 Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI owns them now and imports never
 overwrite UI rows. The Workout Log can hold planned future workouts with weights but no reps: metrics count only sets
 with reps, time, or distance, on dates up to today. Text in the log's date column (illness, injury, vacation) is kept
-in workout_log_notes; treat it as symptom data under the hard rules. The consolidated Workout Sessions sheet runs 3 hours
-late in Start, End and Duration alike (the v1 Apps Script copied between files in different time zones; the export files
-are right, confirmed against Fitness 2026-10-15): ingest/parsers.js sessionDuration removes it from Duration, sync.js
-parseConsolidatedSessions moves Start and End back, migration 012 repaired stored durations, and the one-off
+in workout_log_notes; treat it as symptom data under the hard rules. History: the retired consolidated Workout Sessions
+sheet ran 3 hours late in Start, End and Duration alike (the v1 Apps Script copied between files in different time zones;
+the export files are right, confirmed against Fitness 2026-10-15): migration 012 repaired stored durations, and the one-off
 npm run fix:session-times (ingest/session-times.js, run 2026-10-15) moved stored starts and ends back and deleted the late
-twins of export rows. A duration that fits neither way is NULL and minutes come from start to end.
+twins of export rows. ingest/parsers.js sessionDuration still drops a Duration 3 hours longer than the workout's span; a
+duration that fits neither way is NULL and minutes come from start to end.
 
 ## Metrics
 The review week is the 7 days ending on the most recent Saturday before today; the baseline is the 28 days before it;

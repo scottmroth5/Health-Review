@@ -13,14 +13,22 @@ const CHECKIN = ['Week Ending (Saturday) ', 'Morning Readiness (1-10)', 'Avg Ene
 
 const day = (d, hrv, rhr, steps) => [serial(d, 3), hrv, rhr, steps];
 const NOW = new Date(2026, 2, 9, 7, 0); // local 2026-03-09
-// The sparse fake sheets trip the post-sync data checks (their own tests are below); most tests look at import warnings only.
+// The sparse fake data trips the post-sync data checks (their own tests are below); most tests look at import warnings only.
 // Data checks and the exercise-name typo count run after every import; tests of the import itself leave them out.
 const importWarnings = (warnings) => warnings.filter((w) => w.source !== 'data_check' && w.source !== 'exercise_names');
 
+// Apple Health comes from Health Auto Export's files in two Drive folders (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID).
+const HF = 'health-folder';
+const WF = 'workout-folder';
+const healthFile = (id, name, values, modifiedTime = '2026-03-02T09:00:00Z') => ({ folder: HF, id, name: `Apple Health Metrics-HealthMetrics-${name}`, modifiedTime, values });
+const workoutFile = (id, name, values, modifiedTime = '2026-03-02T09:00:00Z') => ({ folder: WF, id, name: `Workout session metrics-${name}`, modifiedTime, values });
+const walk = [SESSIONS, ['Outdoor Walk', serial('2026-03-02', 18), serial('2026-03-02', 18, 30), 30 / 1440, 110]];
+const both = { health: HF, workouts: WF };
+const RUN = ['Outdoor Run', serial('2026-03-02', 6, 15), serial('2026-03-02', 6, 52, 30), 37.5 / 1440, 148];
+
+/** The Google Sheets that are still read: the Workout Log, and the drinking log and check-ins (backfill only). */
 function sheets() {
   return {
-    health_metrics: { Sheet1: [HEALTH, day('2026-03-01', 45, 56, 7000), day('2026-03-02', 48, 55, 8000)], Last7Days: [HEALTH] },
-    workout_sessions: { Sheet1: [SESSIONS, ['Outdoor Run', serial('2026-03-02', 6, 15), serial('2026-03-02', 6, 52, 30), 37.5 / 1440, 148]] },
     workout_log: {
       2025: [LOG, [serial('2025-12-29'), '', 'Squat', 135, 5]],
       2026: [LOG, [serial('2026-03-02'), 'A1', 'Squat', 185, 5, 205, 3, '', 'Legs A'], ['', 'A2', 'Plank', '', ':45']],
@@ -32,13 +40,24 @@ function sheets() {
   };
 }
 
+/** The sheets plus two health day files and one workout file. */
+function source(data = sheets()) {
+  const s = fakeSource(data);
+  s.exports = [
+    healthFile('d1', '2026-03-01', [HEALTH, day('2026-03-01', 45, 56, 7000)]),
+    healthFile('d2', '2026-03-02', [HEALTH, day('2026-03-02', 48, 55, 8000)]),
+    workoutFile('r1', '2026-03-02', [SESSIONS, RUN]),
+  ];
+  return s;
+}
+
 const open = () => openHealthStore(':memory:');
-const sync = (store, source, opts = {}) => runSync({ store, source, now: NOW, logger: silentLogger, catalog: null, ...opts });
+const sync = (store, src, opts = {}) => runSync({ store, source: src, now: NOW, logger: silentLogger, catalog: null, exportFolders: both, ...opts });
 const count = (store, table) => store.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 
 test('backfill imports every source, all year tabs, and skips filtered and backup tabs', async () => {
   const store = open();
-  const { counts, warnings } = await sync(store, fakeSource(sheets()), { backfill: true });
+  const { counts, warnings } = await sync(store, source(), { backfill: true });
   assert.deepEqual(importWarnings(warnings), []);
   assert.equal(count(store, 'daily_metrics'), 2);
   assert.equal(count(store, 'workout_sessions'), 1);
@@ -52,116 +71,69 @@ test('backfill imports every source, all year tabs, and skips filtered and backu
   store.close();
 });
 
-test('every sync reads the whole first tab, so new rows anywhere are picked up', async () => {
+test('a normal sync reads only new or changed export files; the drinking log is read on backfill only', async () => {
   const store = open();
-  const data = sheets();
-  const source = fakeSource(data);
-  await sync(store, source, { backfill: true });
-
-  data.health_metrics.Sheet1.push(day('2026-03-03', 50, 54, 9000));
-  source.reads.length = 0;
-  const { counts } = await sync(store, source);
-
-  assert.deepEqual(source.reads.find((r) => r.source === 'health_metrics'), { source: 'health_metrics', tab: 'Sheet1', fromRow: 2 });
-  assert.equal(counts.health_metrics.rowsRead, 3);
+  const src = source();
+  await sync(store, src, { backfill: true });
+  src.exports.push(healthFile('d3', '2026-03-03', [HEALTH, day('2026-03-03', 50, 54, 9000)], '2026-03-04T09:00:00Z'));
+  src.reads.length = 0;
+  const { counts } = await sync(store, src);
+  assert.deepEqual(src.reads.filter((r) => r.file), [{ file: 'd3' }]);
+  assert.deepEqual([counts.health_exports.filesRead, counts.workout_exports.filesRead], [1, 0]);
   assert.equal(store.db.prepare("SELECT hrv_ms FROM daily_metrics WHERE date = '2026-03-03'").get().hrv_ms, 50);
   assert.equal(counts.drinking_log, undefined, 'drinking log is only read on backfill');
   store.close();
 });
 
-test('duplicate health days: the row with the most steps is kept, its gaps filled from the other rows', async () => {
+test('the retired consolidated sheets are never read; a missing folder variable skips that kind with a warning', async () => {
   const store = open();
-  const data = sheets();
-  data.health_metrics.Sheet1.push([serial('2026-03-03', 3), 44, '', 3200]); // the only row with steps
-  data.health_metrics.Sheet1.push([serial('2026-03-03', 3), 49, 54, '']); // later export missing steps
-  await sync(store, fakeSource(data), { backfill: true });
-  assert.deepEqual(store.db.prepare("SELECT hrv_ms, resting_hr, steps FROM daily_metrics WHERE date = '2026-03-03'").get(), { hrv_ms: 44, resting_hr: 54, steps: 3200 });
-  assert.equal(count(store, 'daily_metrics'), 3);
+  const src = source();
+  const { counts, warnings } = await sync(store, src, { exportFolders: { health: HF, workouts: null } });
+  assert.equal(counts.health_exports.filesRead, 2);
+  assert.equal(counts.workout_exports, undefined);
+  assert.equal(count(store, 'workout_sessions'), 0);
+  assert.deepEqual(importWarnings(warnings).map((w) => [w.source, w.detail, w.severity]),
+    [['workout_exports', 'WORKOUT_EXPORT_FOLDER_ID is not set, so Apple Watch workouts were not synced', 'warn']]);
+  const none = await sync(store, src, { exportFolders: {} });
+  assert.deepEqual(importWarnings(none.warnings).map((w) => w.detail), [
+    'HEALTH_EXPORT_FOLDER_ID is not set, so Apple Health metrics were not synced',
+    'WORKOUT_EXPORT_FOLDER_ID is not set, so Apple Watch workouts were not synced',
+  ]);
+  assert.ok(!src.reads.some((r) => r.source === 'health_metrics' || r.source === 'workout_sessions'));
   store.close();
 });
 
-test('a partial export appended after the full day never replaces it (v1 duplicate rows)', async () => {
+test('after a sync, data checks flag stale Apple Health data', async () => {
   const store = open();
-  const data = sheets();
-  data.health_metrics.Sheet1.push(day('2026-03-03', 47, 55, 6000)); // the full day
-  data.health_metrics.Sheet1.push(day('2026-03-03', 52, 58, 400)); // a run made early in the day, appended later
-  await sync(store, fakeSource(data));
-  assert.deepEqual(store.db.prepare("SELECT hrv_ms, resting_hr, steps FROM daily_metrics WHERE date = '2026-03-03'").get(), { hrv_ms: 47, resting_hr: 55, steps: 6000 });
-  // When the full day only arrives on a later sync, it replaces the partial one stored before.
-  data.health_metrics.Sheet1.push(day('2026-03-04', 50, 56, 4000));
-  await sync(store, fakeSource(data));
-  data.health_metrics.Sheet1.push(day('2026-03-04', 49, 55, 11000));
-  await sync(store, fakeSource(data));
-  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-03-04'").get().steps, 11000);
-  store.close();
-});
-
-test('after a sync, data checks flag stale Apple Health data; days with several rows are noted by date', async () => {
-  const store = open();
-  const data = sheets(); // health rows end on 2026-03-02; the sync runs on 2026-03-09
-  data.health_metrics.Sheet1.push(day('2026-03-02', 52, 58, 400));
-  const { counts, warnings } = await sync(store, fakeSource(data));
+  const { counts, warnings } = await sync(store, source()); // health days end on 2026-03-02; the sync runs on 2026-03-09
   const stale = warnings.find((w) => w.kind === 'health_stale');
   assert.equal(stale.source, 'data_check');
   assert.equal(stale.detail, 'No Apple Health data after Mar 2 (6 days missing so far). Check the Health Auto Export automation.');
   assert.ok(counts.data_checks.warn >= 1);
-  const several = warnings.find((w) => w.kind === 'several rows for one day');
-  assert.equal(several.detail, '1 day(s) had more than one row (the app keeps the fullest): 2026-03-02');
-  store.close();
-});
-
-test('backfill reads the Archive tab too, so a day split across it and the data tab keeps the full row', async () => {
-  const store = open();
-  const data = sheets();
-  data.health_metrics.Archive = [HEALTH, day('2026-02-20', 46, 55, 15000)];
-  data.health_metrics.Sheet1.push(day('2026-02-20', 51, 57, 9000));
-  await sync(store, fakeSource(data)); // the daily sync reads the data tab only
-  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-02-20'").get().steps, 9000);
-  await sync(store, fakeSource(data), { backfill: true });
-  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-02-20'").get().steps, 15000);
   store.close();
 });
 
 test('exact duplicate workout sessions are stored once', async () => {
   const store = open();
-  const data = sheets();
-  data.workout_sessions.Sheet1.push([...data.workout_sessions.Sheet1[1]]);
-  await sync(store, fakeSource(data), { backfill: true });
+  const src = source();
+  src.exports.push(workoutFile('r2', '2026-03-02-again', [SESSIONS, [...RUN]]));
+  await sync(store, src, { backfill: true });
   assert.equal(count(store, 'workout_sessions'), 1);
-  store.close();
-});
-
-test('rows archived off the tab stay in the database; a trimmed tab that grows again loses nothing', async () => {
-  const store = open();
-  const data = sheets();
-  for (let i = 3; i <= 20; i++) data.health_metrics.Sheet1.push(day(`2026-02-${String(i).padStart(2, '0')}`, 40 + i, 60, 5000));
-  const source = fakeSource(data);
-  await sync(store, source, { backfill: true });
-  const before = count(store, 'daily_metrics');
-
-  // Archived down to one row, then refilled past the old length before the next sync.
-  data.health_metrics.Sheet1 = [HEALTH, day('2026-03-05', 51, 53, 9500)];
-  for (let i = 1; i <= 25; i++) data.health_metrics.Sheet1.push(day(`2026-04-${String(i).padStart(2, '0')}`, 45, 55, 6000));
-  await sync(store, source);
-
-  assert.equal(count(store, 'daily_metrics'), before + 26);
-  assert.equal(store.db.prepare("SELECT hrv_ms FROM daily_metrics WHERE date = '2026-03-05'").get().hrv_ms, 51);
-  assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM daily_metrics WHERE date LIKE '2026-02-%'").get().n, 18, 'archived days kept');
   store.close();
 });
 
 test('Workout Log: unchanged tabs are skipped, edited tabs replaced, deleted rows removed', async () => {
   const store = open();
   const data = sheets();
-  const source = fakeSource(data);
-  await sync(store, source, { backfill: true });
+  const src = source(data);
+  await sync(store, src, { backfill: true });
 
-  let { counts } = await sync(store, source);
+  let { counts } = await sync(store, src);
   assert.deepEqual([counts.workout_log.tabsRead, counts.workout_log.tabsReplaced], [1, 0], 'only the current year is read, and it is unchanged');
 
   data.workout_log['2026'][1][3] = 190; // edit a weight
   data.workout_log['2026'].pop(); // delete the plank row
-  ({ counts } = await sync(store, source));
+  ({ counts } = await sync(store, src));
   assert.equal(counts.workout_log.tabsReplaced, 1);
   const rows = store.db.prepare('SELECT e.exercise, s.set_no, s.weight_lbs FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id WHERE e.tab_year = 2026 ORDER BY s.set_no').all();
   assert.deepEqual(rows, [{ exercise: 'Squat', set_no: 1, weight_lbs: 190 }, { exercise: 'Squat', set_no: 2, weight_lbs: 205 }]);
@@ -171,8 +143,7 @@ test('Workout Log: unchanged tabs are skipped, edited tabs replaced, deleted row
 
 test('Workout Log: in January the previous year tab is synced too', async () => {
   const store = open();
-  const source = fakeSource(sheets());
-  const { counts } = await sync(store, source, { now: new Date(2026, 0, 10) });
+  const { counts } = await sync(store, source(), { now: new Date(2026, 0, 10) });
   assert.equal(counts.workout_log.tabsRead, 2);
   store.close();
 });
@@ -181,7 +152,7 @@ test('backfill never overwrites drinking days or check-ins entered in the UI', a
   const store = open();
   store.db.prepare("INSERT INTO drinking_days (date, beers, source, updated_at) VALUES ('2026-03-06', 5, 'ui', 'x')").run();
   store.db.prepare("INSERT INTO checkins (date, cadence, readiness, source, updated_at) VALUES ('2026-03-07', 'daily', 9, 'ui', 'x')").run();
-  const { counts } = await sync(store, fakeSource(sheets()), { backfill: true });
+  const { counts } = await sync(store, source(), { backfill: true });
   assert.equal(store.db.prepare("SELECT beers FROM drinking_days WHERE date = '2026-03-06'").get().beers, 5);
   assert.equal(store.db.prepare("SELECT readiness FROM checkins WHERE date = '2026-03-07'").get().readiness, 9);
   assert.deepEqual([counts.drinking_log.imported, counts.drinking_log.keptFromUi], [1, 1]);
@@ -191,21 +162,21 @@ test('backfill never overwrites drinking days or check-ins entered in the UI', a
 
 test('each sync is recorded as a run with counts only', async () => {
   const store = open();
-  await sync(store, fakeSource(sheets()), { backfill: true });
+  await sync(store, source(), { backfill: true });
   const run = store.db.prepare("SELECT name, status, meta, summary FROM runs WHERE name = 'sync'").get();
   assert.equal(run.status, 'ok');
   assert.deepEqual(JSON.parse(run.meta), { backfill: true });
   const summary = JSON.parse(run.summary);
-  assert.equal(summary.counts.health_metrics.upserted, 2);
+  assert.deepEqual(summary.counts.health_exports, { filesRead: 2, filesLeft: 0, healthDays: 2 });
   assert.doesNotMatch(run.summary, /Dinner|Squat|fine/, 'no cell text in the run record');
   store.close();
 });
 
 test('a failed sync is recorded as an error run and rethrown', async () => {
   const store = open();
-  const data = sheets();
-  data.health_metrics.Sheet1[0] = ['When', 'HRV'];
-  await assert.rejects(sync(store, fakeSource(data), { backfill: true }), /no "Date\/Time" column/);
+  const src = source();
+  src.exports[0].values[0] = ['When', 'HRV'];
+  await assert.rejects(sync(store, src, { backfill: true }), /no "Date\/Time" column/);
   assert.equal(store.db.prepare("SELECT status FROM runs WHERE name = 'sync'").get().status, 'error');
   store.close();
 });
@@ -224,13 +195,13 @@ const withLabs = (lab) => ({ ...sheets(), lab_results: { Notes: [['Something els
 
 test('labs: imported from the tab headed "Lab Test"; unchanged sheets are not rewritten', async () => {
   const store = open();
-  const source = fakeSource(withLabs(LAB()));
-  const { counts } = await sync(store, source);
+  const src = source(withLabs(LAB()));
+  const { counts } = await sync(store, src);
   assert.deepEqual(counts.lab_results, { tab: 'Labs', changed: true, tests: 3, draws: 2, results: 6, keptFromApp: 0 });
   assert.deepEqual(store.db.prepare('SELECT name, panel, position FROM lab_tests ORDER BY position').all().map((t) => [t.name, t.panel, t.position]), [
     ['Cholesterol', 'LIPID PANEL', 1], ['LDL Calculated', 'LIPID PANEL', 2], ['PSA', 'OTHER', 3],
   ]);
-  assert.deepEqual((await sync(store, source)).counts.lab_results, { tab: 'Labs', changed: false });
+  assert.deepEqual((await sync(store, src)).counts.lab_results, { tab: 'Labs', changed: false });
   store.close();
 });
 
@@ -260,7 +231,7 @@ test('labs: edits and removed draw columns are reflected; app results are kept a
 
 test('labs: without a lab sheet ID the sync skips labs and carries on', async () => {
   const store = open();
-  const { counts } = await sync(store, fakeSource(sheets()));
+  const { counts } = await sync(store, source());
   assert.match(counts.lab_results.skipped, /no lab sheet/);
   assert.equal(count(store, 'daily_metrics'), 2);
   store.close();
@@ -292,45 +263,6 @@ test('labs: a sheet result corrected in the app (value or date) is kept by sync,
   store.close();
 });
 
-test('raw sheets sync from the first tab, whatever it is named; other tabs are ignored', async () => {
-  const store = open();
-  const data = sheets();
-  data.health_metrics = {
-    'Consolidated Health': [HEALTH, day('2026-03-01', 45, 56, 7000), day('2026-03-02', 48, 55, 8000)],
-    Archive: [HEALTH, day('2025-01-01', 30, 70, 100)],
-    Last7Days: [HEALTH],
-  };
-  const source = fakeSource(data);
-  await sync(store, source);
-  assert.deepEqual([...new Set(source.reads.filter((r) => r.source === 'health_metrics').map((r) => r.tab))], ['Consolidated Health']);
-  assert.deepEqual(store.db.prepare('SELECT date FROM daily_metrics ORDER BY date').all().map((r) => r.date), ['2026-03-01', '2026-03-02']);
-  store.close();
-});
-
-test('a renamed first tab duplicates nothing and replaces the old sync state', async () => {
-  const store = open();
-  const data = sheets();
-  for (let i = 3; i <= 20; i++) data.health_metrics.Sheet1.push(day(`2026-02-${String(i).padStart(2, '0')}`, 40 + i, 60, 5000));
-  const source = fakeSource(data);
-  await sync(store, source, { backfill: true });
-  const daysBefore = count(store, 'daily_metrics');
-  const sessionsBefore = count(store, 'workout_sessions');
-
-  // The owner renames the data tabs and adds an archive after them.
-  const rename = (s, name) => { data[s] = { [name]: data[s].Sheet1, Archive: [data[s].Sheet1[0]] }; };
-  rename('health_metrics', 'Consolidated Health');
-  rename('workout_sessions', 'Consolidated Sessions');
-  data.health_metrics['Consolidated Health'].push(day('2026-03-03', 50, 54, 9000));
-
-  await sync(store, source);
-  await sync(store, source);
-  assert.equal(count(store, 'daily_metrics'), daysBefore + 1);
-  assert.equal(count(store, 'workout_sessions'), sessionsBefore);
-  assert.deepEqual(store.db.prepare("SELECT tab FROM sync_state WHERE source IN ('health_metrics', 'workout_sessions') ORDER BY source").all().map((r) => r.tab),
-    ['Consolidated Health', 'Consolidated Sessions']);
-  store.close();
-});
-
 test('after a sync, an info line counts exercise names that look like typos (npm run log:typos)', async () => {
   const { createDictionary } = await import('../metrics/dictionary.js');
   const dictionary = createDictionary({ version: 1, exercises: [
@@ -338,19 +270,13 @@ test('after a sync, an info line counts exercise names that look like typos (npm
     { id: 'sing-arm-row', name: 'Sing-Arm Row', implement: 'dumbbell', pattern: 'horizontal pull', primary: false },
   ] });
   const store = open();
-  const { warnings } = await sync(store, fakeSource(sheets()), { dictionary });
+  const { warnings } = await sync(store, source(), { dictionary });
   const line = warnings.find((w) => w.source === 'exercise_names');
   assert.deepEqual([line.detail, line.severity], ['1 exercise name looks like a typo; see npm run log:typos', 'info']);
   store.close();
 });
 
 // ---- Health Auto Export files read straight from Drive (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID) ----
-const HF = 'health-folder';
-const WF = 'workout-folder';
-const healthFile = (id, name, values, modifiedTime = '2026-03-02T09:00:00Z') => ({ folder: HF, id, name: `Apple Health Metrics-HealthMetrics-${name}`, modifiedTime, values });
-const workoutFile = (id, name, values, modifiedTime = '2026-03-02T09:00:00Z') => ({ folder: WF, id, name: `Workout session metrics-${name}`, modifiedTime, values });
-const walk = [SESSIONS, ['Outdoor Walk', serial('2026-03-02', 18), serial('2026-03-02', 18, 30), 30 / 1440, 110]];
-const both = { health: HF, workouts: WF };
 
 test('export files: with both folders set, health and workouts come from the files; neither consolidated sheet is read', async () => {
   const store = open();
@@ -411,26 +337,6 @@ test('export files: a sync that finds nothing newer than 26 hours warns that the
   store.close();
 });
 
-test('export files: each folder works alone; the other kind keeps coming from its consolidated sheet', async () => {
-  const healthOnly = fakeSource(sheets());
-  healthOnly.exports = [healthFile('h1', 'a', [HEALTH, day('2026-03-02', 50, 54, 9000)])];
-  let store = open();
-  let { counts } = await sync(store, healthOnly, { exportFolders: { health: HF, workouts: null } });
-  assert.equal(counts.health_exports.filesRead, 1);
-  assert.equal(counts.workout_sessions.upserted, 1);
-  assert.ok(!healthOnly.reads.some((r) => r.source === 'health_metrics'));
-  assert.ok(healthOnly.reads.some((r) => r.source === 'workout_sessions'));
-  store.close();
-
-  const workoutsOnly = fakeSource(sheets());
-  workoutsOnly.exports = [workoutFile('w1', 'a', walk)];
-  store = open();
-  ({ counts } = await sync(store, workoutsOnly, { exportFolders: { health: null, workouts: WF } }));
-  assert.equal(counts.workout_exports.filesRead, 1);
-  assert.equal(counts.health_metrics.upserted, 2);
-  assert.ok(!workoutsOnly.reads.some((r) => r.source === 'workout_sessions'));
-  store.close();
-});
 
 test('export files: a file of the other kind in a folder is ignored', async () => {
   const store = open();
@@ -473,14 +379,6 @@ test('export files: at most 200 per folder per sync, oldest first; the rest wait
   store.close();
 });
 
-test('export files: without folders the consolidated sheets are read as before', async () => {
-  const store = open();
-  const src = fakeSource(sheets());
-  const { counts } = await sync(store, src, { exportFolders: {} });
-  assert.equal(counts.health_exports, undefined);
-  assert.ok(src.reads.some((r) => r.source === 'health_metrics') && src.reads.some((r) => r.source === 'workout_sessions'));
-  store.close();
-});
 
 test('export files: if Google still says too many requests, what was read is saved and the rest waits; the sync succeeds', async () => {
   const { EXPORT_SAVE_EVERY } = await import('../ingest/sync.js');

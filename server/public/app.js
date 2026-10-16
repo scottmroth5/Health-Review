@@ -381,8 +381,9 @@ async function syncNow() {
   $('#sync-status').textContent = 'Syncing...';
   try {
     const r = await api('POST', '/api/sync');
-    const added = (r.counts.health_metrics?.upserted ?? 0) + (r.counts.workout_sessions?.upserted ?? 0);
-    $('#sync-status').textContent = `Synced (${added} rows checked${r.warnings ? `, ${r.warnings} warnings in the sync log` : ''})`;
+    const files = (n, what) => `${n} ${what} ${n === 1 ? 'file' : 'files'}`;
+    const read = `${files(r.counts.health_exports?.filesRead ?? 0, 'health')} and ${files(r.counts.workout_exports?.filesRead ?? 0, 'workout')} read`;
+    $('#sync-status').textContent = `Synced: ${read}${r.warnings ? `, ${r.warnings} warnings in the sync log` : ''}`;
     renderDataChecks((await api('GET', '/api/status')).dataChecks);
   } catch (err) {
     $('#sync-status').textContent = `Sync failed: ${err.message}`;

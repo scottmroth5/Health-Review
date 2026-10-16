@@ -1,8 +1,8 @@
-// Copies the Google Sheets into the local database, adding only what is new.
-//  - Health metrics and workout sessions: the whole first tab (the v1 scripts' consolidated tab,
-//    whatever it is named) is read every sync and upserted by natural key. Health days merge field
-//    by field (later non-empty values win), which removes v1's partial-day duplicates. Rows the
-//    owner archives off that tab stay in the database.
+// Copies Apple Health and the Google Sheets into the local database, adding only what is new.
+//  - Health metrics and workout sessions: Health Auto Export's own day files in their two Drive folders
+//    (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID), only files new or changed since last read. Each health day is
+//    merged with the stored day, so a partial export never lowers a full one. The v1 consolidated sheets are retired
+//    (2026-10-16) and never read; a missing folder variable skips that kind with a warning.
 //  - Workout Log: one tab per year. A tab is replaced only when its content hash changed, so
 //    edits and deletions in the sheet are picked up. Normal syncs read the current year (and
 //    last year during January); backfill reads every year tab.
@@ -25,7 +25,6 @@ import {
 } from './parsers.js';
 import { canonicalSetCounts, normalizeAll, unmappedNames } from './normalize.js';
 import { typoCandidates } from '../metrics/name-typos.js';
-import { moveHours, SHEET_LATE_HOURS } from './session-times.js';
 import { assignForward, refreshPhases } from './program-blocks.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
@@ -45,8 +44,7 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
  * @param {object|null} [options.dictionary]  exercise dictionary; defaults to config/exercise-dictionary.json when present
  * @param {object} [options.logger]
  * @param {{ health?: string|null, workouts?: string|null }} [options.exportFolders]  Health Auto Export's Drive folders
- *   (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID): a kind with a folder comes from its export files, one without
- *   from its consolidated sheet
+ *   (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID); a kind without one is skipped with a warning
  * @returns {Promise<{ counts: object, warnings: object[] }>}
  */
 export async function runSync({ store, source, backfill = false, now = new Date(), logger = console, dictionary, catalog,
@@ -56,26 +54,13 @@ export async function runSync({ store, source, backfill = false, now = new Date(
   const warnings = [];
   const stamp = now.toISOString();
   try {
-    // Each kind reads Health Auto Export's own files from its Drive folder when one is set (the consolidated sheet and
-    // its Apps Script are skipped), otherwise its consolidated sheet.
-    if (exportFolders.health) {
-      counts.health_exports = await syncExports({ store, source, kind: 'health', folderId: exportFolders.health, warnings, stamp });
-    } else {
-      // Backfill also reads the Archive tab (rows trimmed off the data tab), so duplicate days split across the two
-      // merge once; the daily sync reads the data tab only.
-      const healthArchive = backfill ? (await source.listTabs('health_metrics')).filter((t) => /^archive$/i.test(t)) : [];
-      counts.health_metrics = await syncWholeTab({
-        store, source, key: 'health_metrics', parse: parseHealthMetrics, warnings,
-        write: upsertDailyMetrics(store.db, stamp), extraTabs: healthArchive, merge: mergeHealthDays,
-      });
-    }
-    if (exportFolders.workouts) {
-      counts.workout_exports = await syncExports({ store, source, kind: 'workouts', folderId: exportFolders.workouts, warnings, stamp });
-    } else {
-      counts.workout_sessions = await syncWholeTab({
-        store, source, key: 'workout_sessions', parse: parseConsolidatedSessions, warnings,
-        write: upsertWorkoutSessions(store.db, stamp),
-      });
+    // Apple Health comes only from Health Auto Export's files, one Drive folder per kind.
+    for (const [kind, key, env, what] of [
+      ['health', 'health_exports', 'HEALTH_EXPORT_FOLDER_ID', 'Apple Health metrics'],
+      ['workouts', 'workout_exports', 'WORKOUT_EXPORT_FOLDER_ID', 'Apple Watch workouts'],
+    ]) {
+      if (exportFolders[kind]) counts[key] = await syncExports({ store, source, kind, folderId: exportFolders[kind], warnings, stamp });
+      else warnings.push({ source: key, kind: 'folder not set', detail: `${env} is not set, so ${what} were not synced`, severity: 'warn' });
     }
     counts.workout_log = await syncWorkoutLog({ store, source, backfill, now, warnings });
     if (counts.workout_log.tabsReplaced) {
@@ -127,47 +112,6 @@ async function dataTab(source, key) {
 function saveState(db, key, tab, data) {
   db.prepare('DELETE FROM sync_state WHERE source = ? AND tab <> ?').run(key, tab);
   setState(db, key, tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, headerHash: hash(data.header) });
-}
-
-// The consolidated tabs are trimmed into an Archive tab from time to time, so a row-number watermark
-// could skip rows after the tab shrinks and grows again. Reading the whole tab is cheap and the
-// upserts are idempotent.
-// extraTabs (read before the data tab, as they hold older rows) are parsed too, and merge combines every tab's
-// records so a day split across tabs is written once.
-async function syncWholeTab({ store, source, key, parse, write, warnings, extraTabs = [], merge = (records) => records }) {
-  const tab = await dataTab(source, key);
-  const all = [];
-  let extraRows = 0;
-  for (const extra of extraTabs) {
-    const more = await source.readRows(key, extra);
-    const parsed = parse({ ...more, tab: extra });
-    warnings.push(...parsed.warnings);
-    all.push(...parsed.records);
-    extraRows += more.rows.length;
-  }
-  const data = await source.readRows(key, tab);
-  const { records, warnings: w } = parse({ ...data, tab });
-  warnings.push(...w);
-  all.push(...records);
-  const merged = merge(all);
-  store.tx(() => {
-    for (const r of merged) write(r);
-    saveState(store.db, key, tab, data);
-  });
-  return { rowsRead: data.rows.length + extraRows, upserted: merged.length };
-}
-
-/**
- * The consolidated Workout Sessions sheet puts every start and end 3 hours late (the v1 Apps Script copied rows between
- * files in different time zones; confirmed against Fitness, 2026-10-15); Health Auto Export's own files are right. Its
- * Duration cells carry the same 3 hours, which sessionDuration already removes.
- */
-function parseConsolidatedSessions(input) {
-  const parsed = parseWorkoutSessions(input);
-  return {
-    ...parsed,
-    records: parsed.records.map((r) => ({ ...r, start: moveHours(r.start, -SHEET_LATE_HOURS), end: moveHours(r.end, -SHEET_LATE_HOURS) })),
-  };
 }
 
 /** Export files read per folder per sync at most; at Google's paced read rate that is about 2 minutes a folder. */
