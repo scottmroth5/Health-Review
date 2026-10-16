@@ -445,4 +445,16 @@ export const MIGRATIONS = [
       ALTER TABLE lab_tests ADD COLUMN ref_set INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    id: '021-exported-through',
+    up: `
+      -- When the latest Health Auto Export file holding the day was written (local wall clock, YYYY-MM-DDTHH:MM). A file
+      -- written before the day ended cannot hold all of it, so the day is partial (metrics/dataquality.js). NULL for days
+      -- from the consolidated sheet. Backfilled from the files already read (one day per file, named by its date).
+      ALTER TABLE daily_metrics ADD COLUMN exported_through TEXT;
+      UPDATE daily_metrics SET exported_through = (
+        SELECT strftime('%Y-%m-%dT%H:%M', MAX(e.modified_time), 'localtime') FROM drive_exports e
+        WHERE e.kind = 'health' AND substr(e.name, -10) = daily_metrics.date);
+    `,
+  },
 ];

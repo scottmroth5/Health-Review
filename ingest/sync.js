@@ -15,6 +15,7 @@ import { createTracer } from '@scottmroth5/agent-core';
 import {
   HEALTH_METRIC_COLUMNS,
   parseHealthMetrics,
+  localStamp,
   mergeHealthDays,
   parseWorkoutSessions,
   parseWorkoutLogTab,
@@ -193,6 +194,8 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
   const writeDay = upsertDailyMetrics(db, stamp);
   const writeWorkout = upsertWorkoutSessions(db, stamp);
   const storedDay = db.prepare(`SELECT date, ${HEALTH_METRIC_COLUMNS.join(', ')} FROM daily_metrics WHERE date = ?`);
+  // The latest file time holding each day; an older file read later never lowers it (MAX, NULL treated as earliest).
+  const markExported = db.prepare("UPDATE daily_metrics SET exported_through = MAX(COALESCE(exported_through, ''), ?) WHERE date = ?");
   const record = db.prepare(`INSERT INTO drive_exports (file_id, kind, name, modified_time, rows, synced_at) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT (file_id) DO UPDATE SET name = excluded.name, modified_time = excluded.modified_time, rows = excluded.rows, synced_at = excluded.synced_at`);
 
@@ -204,6 +207,7 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
     const read = [];
     const healthRecords = [];
     const workoutRecords = [];
+    const exportedThrough = new Map(); // date -> latest local file time among this batch's files
     for (const f of batch.slice(i, i + EXPORT_SAVE_EVERY)) {
       let data;
       try {
@@ -216,6 +220,10 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
       const parsed = parse({ ...data, tab: f.name });
       warnings.push(...parsed.warnings);
       (kind === 'health' ? healthRecords : workoutRecords).push(...parsed.records);
+      if (kind === 'health') {
+        const at = localStamp(f.modifiedTime);
+        for (const r of parsed.records) if (!(exportedThrough.get(r.date) > at)) exportedThrough.set(r.date, at);
+      }
       read.push({ ...f, rows: data.rows.length });
     }
     // Each day from the files, merged with the stored day (stored first, so a tie goes to the newer file).
@@ -224,6 +232,7 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
     const days = mergeHealthDays([...stored, ...healthRecords]).filter((r) => dates.includes(r.date));
     store.tx(() => {
       for (const d of days) writeDay(d);
+      for (const [date, at] of exportedThrough) markExported.run(at, date);
       for (const w of workoutRecords) writeWorkout(w);
       for (const f of read) record.run(f.id, kind, f.name, f.modifiedTime, f.rows, stamp);
     });

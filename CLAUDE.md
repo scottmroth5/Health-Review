@@ -104,7 +104,10 @@ during the day is partial): ingest/parsers.js mergeHealthDays keeps the row with
 from the others; --backfill also reads the Archive tab so a day split across tabs merges once.
 Data checks (metrics/dataquality.js, pure; fixture evals/fixtures/metrics/dataquality.json) run after every sync and
 on GET /api/status: Apple Health data stale (nothing after a day before yesterday), gaps in the last 14 days, partial
-days (steps under a quarter of the 28-day median, at least 10 days of it), lifting days with no Apple Watch strength
+days (owner's choice, 2026-10-16: a day whose latest export file was written before the day ended, from
+daily_metrics.exported_through, migration 021, set by syncExports as the latest file time in local wall clock; a day with
+no file time, from the consolidated sheet, falls back to steps under a quarter of the 28-day median, at least 10 days of
+it; partialReasons says which), lifting days with no Apple Watch strength
 workout (info only), durations longer than their start-to-end span, and impossible values. Findings name dates and
 counts only; warnings show on the Today tab, all go to the sync log, and the weekly summary's dataQuality carries the
 week's missing and partial days (only when there are any), which CONTRACT says to treat as incomplete, never as bad days. The Workout Log has one tab per year: normal syncs

@@ -131,6 +131,13 @@ export function mergeHealthDays(records) {
   });
 }
 
+/** An instant (Drive's modifiedTime, ISO UTC) as local wall-clock text, YYYY-MM-DDTHH:MM, like every stored time. */
+export function localStamp(iso) {
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // ---- Consolidated Apple Workout Sessions ----
 const SESSION_FIELDS = {
   type: 'Type',

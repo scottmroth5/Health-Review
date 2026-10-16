@@ -75,8 +75,8 @@ export const deleteDrinking = (db, date) => db.prepare('DELETE FROM drinking_day
 // ---- history ----
 
 export function history(db, from, to) {
-  // Likely partial Apple Health exports in the range, by the data checks' rule (steps against the 28 days before).
-  const steps = db.prepare('SELECT date, steps FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(addDays(from, -28), to);
+  // Partial Apple Health days in the range, by the data checks' rule (exported before the day ended, else low steps).
+  const steps = db.prepare('SELECT date, steps, exported_through FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(addDays(from, -28), to);
   return {
     partialDays: partialDays(steps, from, to),
     metrics: db.prepare(`SELECT date, hrv_ms, resting_hr, sleep_total_hr, steps, exercise_min, cardio_recovery_bpm, walking_hr_avg,
@@ -241,7 +241,7 @@ export const REVIEW_DUE_HOUR = 9;
 export function reviewStatus(db, today, now = new Date()) {
   const weekEnd = lastWeekEnd(today);
   const weekFrom = addDays(weekEnd, -6);
-  const daily = db.prepare('SELECT date, steps FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(addDays(weekFrom, -28), weekEnd);
+  const daily = db.prepare('SELECT date, steps, exported_through FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(addDays(weekFrom, -28), weekEnd);
   const { missingDays, suspectedPartialDays } = weekDataQuality(daily, weekFrom, weekEnd);
   const saved = db.prepare('SELECT summary_json FROM reviews WHERE week_ending = ?').get(weekEnd);
   const hasReview = !!saved;

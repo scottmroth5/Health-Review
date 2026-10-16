@@ -1,7 +1,8 @@
 // Data checks run after every sync (pure). They catch the kinds of problems that went unnoticed before: an Apple
 // Health export that stopped or skipped days, a partial day kept instead of the full one, workouts not exported,
 // a workout duration longer than the workout (the 3-hour shift coming back) and impossible values. Findings name
-// dates and counts only. Today is never expected to be complete.
+// dates and counts only. Today is never expected to be complete. A partial day is one whose export file was written
+// before the day ended, or (days from the consolidated sheet, no file time) one with far fewer steps than usual.
 import { addDays, daysBetween } from './stats.js';
 
 export const LOOKBACK_DAYS = 14;
@@ -28,17 +29,31 @@ function days(from, to) {
 }
 
 /**
- * Days whose steps are under a quarter of the median of the 28 days before them (at least 10 of those days logged).
- * @param {Array<{date: string, steps?: number|null}>} daily
+ * Partial days and why. A day with exported_through (when its latest Health Auto Export file was written, local wall
+ * clock) is partial when that is before the day ended (export_early), whatever its steps. A day without one (from the
+ * consolidated sheet) falls back to steps under a quarter of the median of the 28 days before it, with at least 10 of
+ * those days logged (low_steps).
+ * @param {Array<{date: string, steps?: number|null, exported_through?: string|null}>} daily
+ * @returns {Array<{date: string, reason: 'export_early'|'low_steps'}>}
  */
-export function partialDays(daily, from, to) {
+export function partialReasons(daily, from, to) {
+  const exported = new Map(daily.filter((r) => r.exported_through).map((r) => [r.date, r.exported_through]));
   const steps = new Map(daily.filter((r) => r.steps !== null && r.steps !== undefined).map((r) => [r.date, r.steps]));
-  return days(from, to).filter((d) => {
-    if (!steps.has(d)) return false;
+  const out = [];
+  for (const d of days(from, to)) {
+    if (exported.has(d)) {
+      if (exported.get(d) < `${addDays(d, 1)}T00:00`) out.push({ date: d, reason: 'export_early' });
+      continue;
+    }
+    if (!steps.has(d)) continue;
     const before = days(addDays(d, -MEDIAN_DAYS), addDays(d, -1)).filter((x) => steps.has(x)).map((x) => steps.get(x));
-    return before.length >= MIN_MEDIAN_DAYS && steps.get(d) < PARTIAL_SHARE * median(before);
-  });
+    if (before.length >= MIN_MEDIAN_DAYS && steps.get(d) < PARTIAL_SHARE * median(before)) out.push({ date: d, reason: 'low_steps' });
+  }
+  return out;
 }
+
+/** Dates of partialReasons. */
+export const partialDays = (daily, from, to) => partialReasons(daily, from, to).map((p) => p.date);
 
 /**
  * @param {object} input
@@ -67,9 +82,16 @@ export function dataChecks({ daily = [], sessions = [], liftingDays = [], today 
   const gaps = latest ? days(from, yesterday).filter((d) => d > first && d < latest && !have.has(d)) : [];
   if (gaps.length) add('health_gap', 'warn', gaps, `No Apple Health data on ${list(gaps)}.`);
 
-  const partial = partialDays(daily, from, yesterday);
+  const partial = partialReasons(daily, from, yesterday);
   if (partial.length) {
-    add('partial_day', 'warn', partial, `${list(partial)} ${partial.length === 1 ? 'looks' : 'look'} like a partial Apple Health export (steps under a quarter of your usual day).`);
+    const early = partial.filter((p) => p.reason === 'export_early').map((p) => p.date);
+    const low = partial.filter((p) => p.reason === 'low_steps').map((p) => p.date);
+    const one = early.length === 1;
+    const message = [
+      early.length && `${list(early)} ${one ? 'was' : 'were'} exported before the day ended, so ${one ? 'it is' : 'they are'} a partial Apple Health export until the next full export fills ${one ? 'it' : 'them'} in.`,
+      low.length && `${list(low)} ${low.length === 1 ? 'looks' : 'look'} like a partial Apple Health export (steps under a quarter of your usual day).`,
+    ].filter(Boolean).join(' ');
+    add('partial_day', 'warn', partial.map((p) => p.date), message);
   }
 
   const watched = new Set(sessions.filter((s) => STRENGTH_TYPES.test(s.type ?? '')).map((s) => s.start.slice(0, 10)));

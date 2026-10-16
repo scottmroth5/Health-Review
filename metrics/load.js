@@ -200,7 +200,7 @@ export function loadAdvisorInput(db, asOf, catalog) {
  * Workout Log days with performed sets in the last 14 days. */
 export function loadDataCheckInput(db, today) {
   return {
-    daily: db.prepare(`SELECT date, steps, resting_hr, sleep_total_hr, exercise_min FROM daily_metrics
+    daily: db.prepare(`SELECT date, steps, resting_hr, sleep_total_hr, exercise_min, exported_through FROM daily_metrics
       WHERE date BETWEEN ? AND ? ORDER BY date`).all(addDays(today, -45), today),
     sessions: db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE start >= ? ORDER BY start').all(addDays(today, -30)),
     liftingDays: db.prepare(`SELECT DISTINCT e.date FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id

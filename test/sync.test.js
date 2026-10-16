@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
 import { runSync } from '../ingest/sync.js';
+import { buildApp } from '../server/app.js';
 import { fakeSource, serial, silentLogger } from './helpers.js';
 
 const HEALTH = ['Date/Time', 'Heart Rate Variability (ms)', 'Resting Heart Rate (bpm)', 'Step Count (steps)'];
@@ -369,6 +370,29 @@ test('export files: with both folders set, health and workouts come from the fil
   src.exports[0].modifiedTime = '2026-03-03T09:00:00Z';
   const again = (await sync(store, src, { exportFolders: both })).counts;
   assert.deepEqual([again.health_exports.filesRead, again.workout_exports.filesRead], [1, 0]);
+  store.close();
+});
+
+test('export files: a day whose file was written before the day ended is partial until a later file arrives', async () => {
+  const store = open();
+  const src = fakeSource(sheets());
+  // Mid-day UTC times, so the local date is the same in any US time zone.
+  src.exports = [healthFile('h1', '2026-03-02', [HEALTH, day('2026-03-02', 50, 54, 9000)], '2026-03-02T15:00:00Z')];
+  await sync(store, src, { exportFolders: { health: HF, workouts: null } });
+  const through = () => store.db.prepare("SELECT exported_through FROM daily_metrics WHERE date = '2026-03-02'").pluck().get();
+  assert.match(through(), /^2026-03-02T\d\d:\d\d$/);
+  const partial = async () => (await buildApp({ store, clock: () => new Date(2026, 2, 5, 12) }))
+    .inject('/api/history?from=2026-03-01&to=2026-03-04').then((r) => r.json().partialDays);
+  assert.deepEqual(await partial(), ['2026-03-02']);
+
+  src.exports[0].modifiedTime = '2026-03-04T15:00:00Z'; // the full day, exported later
+  await sync(store, src, { exportFolders: { health: HF, workouts: null } });
+  assert.match(through(), /^2026-03-04T/);
+  assert.deepEqual(await partial(), []);
+
+  src.exports.push(healthFile('h0', '2026-03-02-old', [HEALTH, day('2026-03-02', 50, 54, 4000)], '2026-03-02T16:00:00Z'));
+  await sync(store, src, { exportFolders: { health: HF, workouts: null } }); // an older file read later never lowers it
+  assert.match(through(), /^2026-03-04T/);
   store.close();
 });
 

@@ -171,7 +171,7 @@ disturbances. The Health tab charts cardio recovery, walking heart rate and spee
 breathing disturbances. The weekly review compares each with the previous week and your 28-day baseline. Blood oxygen
 and breathing disturbances are values only (no high or low labels) and appear in the review only for
 physician discussion. The Health tab also charts weight, body fat, muscle mass and visceral fat from the Today tab
-check-in. A day that looks like a partial export (steps under a quarter of your usual day) is drawn in red on the Apple
+check-in. A partial day (see the data checks below) is drawn in red on the Apple
 Health charts, its hover says so, and it is left out of the card's average. A chart with no data in the range you picked is left out, and a line below the charts names it, so it comes
 back by itself once data arrives. To fill earlier days, export a past date range from Health Auto Export into the same folder;
 the app reads the new files and fills the new columns on days it already has.
@@ -369,7 +369,10 @@ The workout sessions script needs no change: it keys rows on type, start and end
 sync log (Activity tab). The checks look for:
 - **Apple Health data that stopped:** nothing after a given day. Today is never expected to be complete.
 - **Missing days:** gaps in the last 14 days.
-- **Partial days:** a day whose steps are under a quarter of your usual day, which is how a partial export looks.
+- **Partial days:** a day whose latest Health Auto Export file was written before the day ended, such as an export you
+  ran by hand in the afternoon, whatever its steps. The next export written after midnight fills it in and clears it.
+  Days from the old consolidated sheet have no file time, so for them a partial day is one whose steps are under a
+  quarter of your usual day.
 - **Lifting without a watch workout:** a Workout Log day with no Apple Watch strength workout. This one appears in the
   sync log only, since you may simply not have worn the watch.
 - **A workout longer than its start-to-end time:** the Duration shift coming back.
