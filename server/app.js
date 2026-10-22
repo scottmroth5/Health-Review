@@ -261,6 +261,14 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req) => q.vo2max(db, req.query.view, q.localDate(clock())));
 
+  app.get('/api/cardio-zones', {
+    schema: {
+      summary: 'Cardio minutes by heart rate zone: daily (30d, 90d) or weekly (1y) buckets, minutes per zone from per-minute heart rate, minutes with no heart rate detail, and the zone bounds',
+      querystring: { type: 'object', required: ['view'], properties: { view: { type: 'string', enum: Object.keys(q.CARDIO_ZONE_VIEWS) } } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => q.cardioZoneView(db, req.query.view, q.localDate(clock())));
+
   // ---- history, reviews ----
   app.get('/api/history', {
     schema: {

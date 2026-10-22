@@ -3,7 +3,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact, doseText, ingredientsOf, weeklyCheckoffs } from '../metrics/medications.js';
-import { loadAdherenceInput, loadConfirmedBlocks, loadAdvisorInput, loadDataCheckInput, loadMedications, loadPrimarySets, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
+import { loadAdherenceInput, loadConfirmedBlocks, loadAdvisorInput, loadDataCheckInput, loadMedications, loadMetricSettings, loadPrimarySets, loadProfile, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
+import { cardioZones, zoneBounds, zoneBuckets } from '../metrics/zones.js';
 import { trainingView } from '../metrics/volume.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
 import { liftProgress } from '../metrics/plateau.js';
@@ -307,6 +308,22 @@ export function lifts(db, today) {
 export function vo2max(db, view, today) {
   const rows = db.prepare('SELECT date, vo2max FROM daily_metrics WHERE vo2max IS NOT NULL AND date <= ? ORDER BY date').all(today);
   return vo2maxReport(rows, view, today);
+}
+
+/** Health tab: views of the cardio minutes by heart rate zone card (day buckets, or Sunday-to-Saturday weeks). */
+export const CARDIO_ZONE_VIEWS = { '30d': { days: 30 }, '90d': { days: 90 }, '1y': { weeks: 52 } };
+
+/** Cardio minutes by heart rate zone for one view, with the zone bounds (null without a Zone 2 range or birth year). */
+export function cardioZoneView(db, view, today) {
+  const buckets = zoneBuckets(today, CARDIO_ZONE_VIEWS[view]);
+  const from = buckets[0].from;
+  const to = buckets.at(-1).to;
+  const { zone2 } = loadMetricSettings(db);
+  const bounds = zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, birthYear: loadProfile(db, today).birthYear, year: Number(today.slice(0, 4)) });
+  const sessions = db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE start >= ? AND start < ? ORDER BY start')
+    .all(from, `${addDays(to, 1)}`);
+  const samples = db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE start >= ? AND start < ?').all(from, `${addDays(to, 1)}`);
+  return { view, bucket: buckets.length && buckets[0].from === buckets[0].to ? 'day' : 'week', bounds, buckets: cardioZones({ sessions, samples, bounds, buckets }) };
 }
 
 /** The Program Advisor's ranking as of today (Training tab); available false without the MAPS catalog. */

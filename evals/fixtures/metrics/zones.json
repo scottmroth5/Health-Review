@@ -1,0 +1,42 @@
+{
+  "kind": "zones",
+  "description": "Heart rate zones from a saved Zone 2 range and an age maximum; cardio minutes per day and week split by zone from per-minute samples; minutes with no sample counted apart",
+  "notes": [
+    "Zone 2 is 110 to 125 bpm; born 1970, so in 2026 the age is 56 and the maximum is 208 - 0.7 x 56 = 168.8, rounded 169.",
+    "Zones 3 to 5 split 125 to 169 evenly: step (169 - 125) / 3 = 14.667; Zone 3 tops at round(139.667) = 140, Zone 4 at round(154.333) = 154. So Zone 1 is up to 109, Zone 2 110 to 125, Zone 3 126 to 140, Zone 4 141 to 154, Zone 5 155 and up.",
+    "zoneOf: 109.9 is under 110, Zone 1; 110 and 125 are Zone 2; 125.5 is over 125, Zone 3; 140 Zone 3; 141 and 154 Zone 4; 154.5 and 200 Zone 5.",
+    "Mar 2: an Elliptical of 1,200 s (20 minutes) with 20 samples (5 at 105, 10 at 118, 3 at 130, 1 at 150, 1 at 160) counts Zones 5, 10, 3, 1, 1 and no gap; an Outdoor Walk of 1,800 s (30 minutes) with 20 samples at 100 adds 20 to Zone 1 and 30 - 20 = 10 minutes with no detail. A strength workout that day is left out (not cardio). Day: Zones 25, 10, 3, 1, 1, no detail 10, total 50.",
+    "Mar 4: an Outdoor Walk of 900 s (15 minutes) with no samples: no detail 15, total 15. Mar 1 and Mar 3 have nothing.",
+    "Week of Mar 1 to Mar 7 (today Wednesday Mar 4, the week ends Saturday Mar 7): Zones 25, 10, 3, 1, 1, no detail 25, total 65.",
+    "Without bounds (no Zone 2 range), Mar 2's 50 minutes are all no detail."
+  ],
+  "bounds": { "input": { "zone2Low": 110, "zone2High": 125, "birthYear": 1970, "year": 2026 },
+    "expected": { "maxHr": 169, "zones": [
+      { "zone": 1, "low": null, "high": 109 }, { "zone": 2, "low": 110, "high": 125 }, { "zone": 3, "low": 126, "high": 140 },
+      { "zone": 4, "low": 141, "high": 154 }, { "zone": 5, "low": 155, "high": null } ] } },
+  "zoneOf": [[109.9, 1], [110, 2], [125, 2], [125.5, 3], [140, 3], [141, 4], [154, 4], [154.5, 5], [200, 5]],
+  "sessions": [
+    { "type": "Elliptical", "start": "2026-03-02T10:00:00", "end": "2026-03-02T10:20:00", "duration_sec": 1200 },
+    { "type": "Outdoor Walk", "start": "2026-03-02T18:00:00", "end": "2026-03-02T18:30:00", "duration_sec": 1800 },
+    { "type": "Traditional Strength Training", "start": "2026-03-02T12:00:00", "end": "2026-03-02T13:00:00", "duration_sec": 3600 },
+    { "type": "Outdoor Walk", "start": "2026-03-04T07:00:00", "end": "2026-03-04T07:15:00", "duration_sec": 900 }
+  ],
+  "sampleRuns": [
+    { "type": "Elliptical", "start": "2026-03-02T10:00:00", "bpm": 105, "count": 5 },
+    { "type": "Elliptical", "start": "2026-03-02T10:00:00", "bpm": 118, "count": 10 },
+    { "type": "Elliptical", "start": "2026-03-02T10:00:00", "bpm": 130, "count": 3 },
+    { "type": "Elliptical", "start": "2026-03-02T10:00:00", "bpm": 150, "count": 1 },
+    { "type": "Elliptical", "start": "2026-03-02T10:00:00", "bpm": 160, "count": 1 },
+    { "type": "Outdoor Walk", "start": "2026-03-02T18:00:00", "bpm": 100, "count": 20 },
+    { "type": "Traditional Strength Training", "start": "2026-03-02T12:00:00", "bpm": 130, "count": 10 }
+  ],
+  "today": "2026-03-04",
+  "days": { "count": 4, "expected": [
+    { "from": "2026-03-01", "to": "2026-03-01", "total": 0, "zones": [0, 0, 0, 0, 0], "noDetail": 0 },
+    { "from": "2026-03-02", "to": "2026-03-02", "total": 50, "zones": [25, 10, 3, 1, 1], "noDetail": 10 },
+    { "from": "2026-03-03", "to": "2026-03-03", "total": 0, "zones": [0, 0, 0, 0, 0], "noDetail": 0 },
+    { "from": "2026-03-04", "to": "2026-03-04", "total": 15, "zones": [0, 0, 0, 0, 0], "noDetail": 15 } ] },
+  "weeks": { "count": 1, "expected": [
+    { "from": "2026-03-01", "to": "2026-03-07", "total": 65, "zones": [25, 10, 3, 1, 1], "noDetail": 25 } ] },
+  "noBounds": { "day": "2026-03-02", "expected": { "total": 50, "zones": [0, 0, 0, 0, 0], "noDetail": 50 } }
+}

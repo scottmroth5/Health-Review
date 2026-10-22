@@ -9,7 +9,7 @@ export function sessionKind(type) {
   return 'cardio';
 }
 
-const minutesOf = (s) => {
+export const minutesOf = (s) => {
   if (s.duration_sec !== null && s.duration_sec !== undefined) return s.duration_sec / 60;
   return (Date.parse(`${s.end}Z`) - Date.parse(`${s.start}Z`)) / 60000;
 };

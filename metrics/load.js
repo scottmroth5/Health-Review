@@ -197,17 +197,21 @@ export function loadAdvisorInput(db, asOf, catalog) {
 }
 
 /** What the data checks (metrics/dataquality.js) read as of a date: 45 days of health rows, 30 days of workouts, the
- * Workout Log days with performed sets in the last 14 days, and the newest health export file with when a sync last
- * looked for one. lookedAt: a sync passes its own time (or null without the export folder); otherwise the latest ok sync
- * that read the health export folder. */
-export function loadDataCheckInput(db, today, { lookedAt } = {}) {
-  const file = db.prepare(`SELECT MAX(modified_time) AS at, strftime('%Y-%m-%dT%H:%M', MAX(modified_time), 'localtime') AS local
-    FROM drive_exports WHERE kind = 'health'`).get();
-  const looked = lookedAt !== undefined ? lookedAt
-    : db.prepare(`SELECT started_at FROM runs WHERE name = 'sync' AND status = 'ok' AND summary LIKE '%"health_exports"%'
-      ORDER BY id DESC LIMIT 1`).pluck().get() ?? null;
+ * Workout Log days with performed sets in the last 14 days, and for each export folder the newest file with when a sync
+ * last looked for one. lookedAt and workoutsLookedAt: a sync passes its own time (or null without that folder);
+ * otherwise the latest ok sync that read that folder. */
+export function loadDataCheckInput(db, today, { lookedAt, workoutsLookedAt } = {}) {
+  const newest = (kind, key, given) => {
+    const file = db.prepare(`SELECT MAX(modified_time) AS at, strftime('%Y-%m-%dT%H:%M', MAX(modified_time), 'localtime') AS local
+      FROM drive_exports WHERE kind = ?`).get(kind);
+    const looked = given !== undefined ? given
+      : db.prepare(`SELECT started_at FROM runs WHERE name = 'sync' AND status = 'ok' AND summary LIKE ?
+        ORDER BY id DESC LIMIT 1`).pluck().get(`%"${key}"%`) ?? null;
+    return file?.at && looked ? { lastFileAt: file.at, lastFileLocal: file.local, lookedAt: looked } : null;
+  };
   return {
-    exports: file?.at && looked ? { lastFileAt: file.at, lastFileLocal: file.local, lookedAt: looked } : null,
+    exports: newest('health', 'health_exports', lookedAt),
+    workoutExports: newest('workouts', 'workout_exports', workoutsLookedAt),
     daily: db.prepare(`SELECT date, steps, resting_hr, sleep_total_hr, exercise_min, exported_through FROM daily_metrics
       WHERE date BETWEEN ? AND ? ORDER BY date`).all(addDays(today, -45), today),
     sessions: db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE start >= ? ORDER BY start').all(addDays(today, -30)),

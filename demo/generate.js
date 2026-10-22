@@ -200,6 +200,23 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
     }
   }
 
+  // Per-minute heart rate (the JSON workout export) for cardio workouts in the last 60 days, from its own stream so
+  // nothing above changes; older workouts have none (the tile shows them as no detail), and a few minutes drop out.
+  const r5 = random(seed + 4);
+  const insertHr = db.prepare('INSERT INTO workout_hr_samples (type, start, t, avg_bpm, min_bpm, max_bpm) VALUES (?, ?, ?, ?, ?, ?)');
+  const cardioRows = db.prepare(`SELECT type, start, duration_sec, avg_hr FROM workout_sessions
+    WHERE type IN ('Outdoor Walk', 'High Intensity Interval Training') AND start >= ?`).all(addDays(today, -60));
+  for (const s of cardioRows) {
+    const minutes = Math.round(s.duration_sec / 60);
+    const t0 = Date.parse(`${s.start}Z`);
+    for (let i = 0; i < minutes; i++) {
+      if (r5.next() < 0.04) continue; // the watch missed a reading
+      const hiit = s.type === 'High Intensity Interval Training';
+      const bpm = Math.round(hiit ? s.avg_hr + (i % 4 < 2 ? 14 : -12) + r5.normal(0, 4) : s.avg_hr + 8 * Math.sin(i / 6) + r5.normal(0, 3));
+      insertHr.run(s.type, s.start, new Date(t0 + i * 60000).toISOString().slice(0, 16), bpm, bpm - r5.int(1, 4), bpm + r5.int(1, 4));
+    }
+  }
+
   // ---- Check-ins (most days), a weight trend, a few drink days ----
   const insertCheckin = db.prepare(`INSERT INTO checkins (date, cadence, readiness, energy, mood, stress, nutrition, weight_lbs, body_measured_on, notes, source, updated_at)
     VALUES (?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, 'ui', ?)`);

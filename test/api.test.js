@@ -567,3 +567,29 @@ test('status reports today and the last sync run', async () => {
   assert.equal(status.lastSync.status, 'ok');
   await done();
 });
+
+test('cardio zones: minutes per zone from per-minute heart rate, gaps as no detail; bounds need Zone 2 and a birth year', async () => {
+  const { app, db, done } = await setup();
+  db.prepare(`INSERT INTO workout_sessions (type, start, end, duration_sec, updated_at) VALUES
+    ('Elliptical', '2026-03-02T10:00:00', '2026-03-02T10:10:00', 600, 'x'),
+    ('Functional Strength Training', '2026-03-02T11:00:00', '2026-03-02T11:30:00', 1800, 'x')`).run();
+  const ins = db.prepare("INSERT INTO workout_hr_samples (type, start, t, avg_bpm) VALUES ('Elliptical', '2026-03-02T10:00:00', ?, ?)");
+  [100, 115, 118, 130, 160].forEach((bpm, i) => ins.run(`2026-03-02T10:0${i}`, bpm));
+  const day = async () => (await app.inject('/api/cardio-zones?view=30d')).json();
+
+  let r = await day();
+  assert.equal(r.bounds, null);
+  assert.deepEqual(r.buckets.find((b) => b.from === '2026-03-02'), { from: '2026-03-02', to: '2026-03-02', total: 10, zones: [0, 0, 0, 0, 0], noDetail: 10 });
+
+  await put(app, '/api/settings', { zone2_low_bpm: 110, zone2_high_bpm: 125 });
+  await put(app, '/api/profile', { birth_year: 1970 });
+  r = await day();
+  assert.deepEqual([r.view, r.bucket, r.buckets.length, r.buckets.at(-1).from], ['30d', 'day', 30, '2026-03-09']);
+  assert.equal(r.bounds.maxHr, 169);
+  // 100 Zone 1; 115 and 118 Zone 2; 130 Zone 3; 160 Zone 5; 10 minutes less 5 samples is 5 with no detail; strength left out.
+  assert.deepEqual(r.buckets.find((b) => b.from === '2026-03-02'), { from: '2026-03-02', to: '2026-03-02', total: 10, zones: [1, 2, 1, 0, 1], noDetail: 5 });
+  const year = (await app.inject('/api/cardio-zones?view=1y')).json();
+  assert.deepEqual([year.bucket, year.buckets.length, year.buckets.at(-1).to], ['week', 52, '2026-03-14']);
+  assert.equal((await app.inject('/api/cardio-zones?view=7d')).statusCode, 400);
+  await done();
+});

@@ -197,7 +197,8 @@ export function lineChart(container, points, { from, to, format = String, gapDay
 }
 
 /**
- * Column chart. points: [{date, value, label?, details?}] (zero buckets included). Each column covers
+ * Column chart. points: [{date, value, label?, details?, segments?}] (zero buckets included); segments
+ * ([{value, cls}], bottom to top, summing to value) stack one bar in several classes (colors). Each column covers
  * bucketDays days starting at its date (1 for daily, 7 for weeks, about 30 for months); a point's
  * label replaces the tooltip date ("Week ending Sep 26").
  */
@@ -212,25 +213,38 @@ export function columnChart(container, points, { from, to, format = String, labe
     const slot = (plotW / days) * bucketDays;
     const w = Math.max(2, Math.min(24, slot > 6 ? slot - 2 : slot * 0.75)); // 2px surface gap once there is room
     const base = y(0);
+    // A column from bottom to top, with a 4px rounded data end when it is the top of the bar (square elsewhere).
+    const column = (left, bottom, top, rounded, cls, date) => {
+      const r = rounded && w >= 8 ? Math.min(4, (bottom - top) / 2) : 0;
+      const bar = el('path', {
+        class: cls,
+        d: `M${left},${bottom}V${top + r}Q${left},${top} ${left + r},${top}H${left + w - r}Q${left + w},${top} ${left + w},${top + r}V${bottom}Z`,
+      }, svg);
+      bar.dataset.date = date;
+    };
     for (const p of points) {
       const cx = x(p.date) + ((bucketDays - 1) / 2) * (plotW / days); // centre of the bucket
-      if (p.value > 0) {
-        const top = y(p.value);
-        const r = w >= 8 ? Math.min(4, (base - top) / 2) : 0; // 4px rounded data end, square at the baseline
-        const left = cx - w / 2;
-        const bar = el('path', {
-          class: p.partial ? 'bar partial' : 'bar',
-          d: `M${left},${base}V${top + r}Q${left},${top} ${left + r},${top}H${left + w - r}Q${left + w},${top} ${left + w},${top + r}V${base}Z`,
-        }, svg);
-        bar.dataset.date = p.date;
+      const left = cx - w / 2;
+      if (p.segments) {
+        // Stacked: segments bottom to top, each its own class (color), a 2px surface gap between them.
+        const shown = p.segments.filter((s) => s.value > 0);
+        let sum = 0;
+        shown.forEach((s, i) => {
+          const bottom = y(sum) - (i ? 1 : 0);
+          sum += s.value;
+          const top = y(sum) + (i < shown.length - 1 ? 1 : 0);
+          if (bottom - top > 0.5) column(left, bottom, top, i === shown.length - 1, `bar seg ${s.cls}`, p.date);
+        });
+      } else if (p.value > 0) {
+        column(left, base, y(p.value), true, p.partial ? 'bar partial' : 'bar', p.date);
       }
       const hit = el('rect', { x: cx - Math.max(slot, 6) / 2, y: 0, width: Math.max(slot, 6), height: base, fill: 'transparent' }, svg);
       hit.addEventListener('pointermove', (evt) => {
-        svg.querySelector(`.bar[data-date="${p.date}"]`)?.classList.add('hover');
+        svg.querySelectorAll(`.bar[data-date="${p.date}"]`).forEach((b) => b.classList.add('hover'));
         showTip(evt, p.date, `${label}: ${format(p.value)}`, p.label, p.details);
       });
       hit.addEventListener('pointerleave', () => {
-        svg.querySelector(`.bar[data-date="${p.date}"]`)?.classList.remove('hover');
+        svg.querySelectorAll(`.bar[data-date="${p.date}"]`).forEach((b) => b.classList.remove('hover'));
         hideTip();
       });
     }

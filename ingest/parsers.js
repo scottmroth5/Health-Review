@@ -201,6 +201,69 @@ export function parseWorkoutSessions({ header, rows, firstRowNumber, tab }) {
   return { records, warnings };
 }
 
+// ---- Health Auto Export JSON workouts (Export Version 2) ----
+// "2026-10-22 14:32:17 -0400": the phone's local wall clock, kept as written (no time zone conversion).
+const JSON_TIME = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}):\d{2}/;
+/** The local minute of a JSON time, YYYY-MM-DDTHH:MM, or null. */
+const jsonMinute = (s) => {
+  const m = JSON_TIME.exec(String(s ?? ''));
+  return m ? `${m[1]}T${m[2]}` : null;
+};
+const qty = (v, units) => (v && typeof v.qty === 'number' && (!units || v.units === units) ? v.qty : null);
+
+/**
+ * One file's workouts: a record per workout in the workout_sessions shape (start and end to the minute, like every
+ * stored workout; ":00" seconds) and its per-minute heart rate from heartRateData (t is the local minute; Avg, Min and
+ * Max bpm). A quantity in units other than the expected ones (kcal, bpm, mi, mi/hr, ft, count/min) is left empty with a
+ * warning rather than converted by guess. Never logs values.
+ * @returns {{ records: object[], samples: Array<{type, start, t, avg_bpm, min_bpm, max_bpm}>, warnings: object[] }}
+ */
+export function parseWorkoutJson(json, { file } = {}) {
+  const source = 'workout_json';
+  const warnings = [];
+  const records = [];
+  const samples = [];
+  const workouts = json?.data?.workouts;
+  if (!Array.isArray(workouts)) throw new Error('Workout JSON has no data.workouts list (is it a Health Auto Export Workouts export, Version 2?)');
+  workouts.forEach((w, i) => {
+    const warn = (kind, detail) => warnings.push({ source, tab: file, row: i + 1, kind, ...(detail ? { detail } : {}) });
+    const type = text(w?.name);
+    const startMin = jsonMinute(w?.start);
+    const endMin = jsonMinute(w?.end);
+    if (!type || !startMin || !endMin) return warn('missing name, start or end');
+    const unitChecked = (field, value, units) => {
+      if (value === undefined || value === null) return null;
+      const n = qty(value, units);
+      if (n === null) warn('unexpected units', `${field} not in ${units}`);
+      return n;
+    };
+    const start = `${startMin}:00`;
+    const record = {
+      type, start, end: `${endMin}:00`,
+      duration_sec: typeof w.duration === 'number' && w.duration > 0 ? Math.round(w.duration) : null,
+      total_energy_kcal: unitChecked('totalEnergy', w.totalEnergy, 'kcal'),
+      active_energy_kcal: unitChecked('activeEnergyBurned', w.activeEnergyBurned, 'kcal'),
+      max_hr: unitChecked('maxHeartRate', w.maxHeartRate, 'bpm'),
+      avg_hr: unitChecked('avgHeartRate', w.avgHeartRate, 'bpm'),
+      distance_mi: unitChecked('distance', w.distance, 'mi'),
+      avg_speed_mph: unitChecked('speed', w.speed, 'mi/hr'),
+      step_count: Array.isArray(w.stepCount) && w.stepCount.length ? Math.round(w.stepCount.reduce((s, x) => s + (x?.qty ?? 0), 0)) : null,
+      step_cadence_spm: unitChecked('stepCadence', w.stepCadence, 'count/min'),
+      elevation_up_ft: unitChecked('elevationUp', w.elevationUp, 'ft'),
+      swim_stroke_count: null, swim_stroke_cadence_spm: null, flights_climbed: null, elevation_down_ft: null,
+    };
+    records.push(record);
+    const seen = new Set();
+    for (const h of Array.isArray(w.heartRateData) ? w.heartRateData : []) {
+      const t = jsonMinute(h?.date);
+      if (!t || typeof h.Avg !== 'number' || seen.has(t)) continue; // one sample a minute
+      seen.add(t);
+      samples.push({ type, start, t, avg_bpm: h.Avg, min_bpm: typeof h.Min === 'number' ? h.Min : null, max_bpm: typeof h.Max === 'number' ? h.Max : null });
+    }
+  });
+  return { records, samples, warnings };
+}
+
 // ---- Workout Log (one tab per year) ----
 const BAND_COLORS = ['black', 'red', 'purple', 'orange', 'gray', 'grey', 'blue', 'green', 'yellow'];
 const BAND = new RegExp(`^(?:band-?)?(${BAND_COLORS.join('|')})(?:band)?$`);

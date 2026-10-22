@@ -1,5 +1,5 @@
 // Counts Health Auto Export's files in its two Drive folders (HEALTH_EXPORT_FOLDER_ID for health metrics,
-// WORKOUT_EXPORT_FOLDER_ID for workout sessions) before the sync reads them directly. Prints counts and file dates only,
+// WORKOUT_JSON_FOLDER_ID for JSON workouts) before the sync reads them directly. Prints counts and file dates only,
 // never file names or contents.
 //   npm run google:exports
 import { getGoogleAuth } from '../tools/google/auth.js';
@@ -9,7 +9,7 @@ import { EXPORT_FILES_PER_SYNC } from '../ingest/sync.js';
 
 const FOLDERS = [
   { kind: 'health', env: 'HEALTH_EXPORT_FOLDER_ID', label: 'Health metrics folder' },
-  { kind: 'workouts', env: 'WORKOUT_EXPORT_FOLDER_ID', label: 'Workout sessions folder' },
+  { kind: 'workouts', env: 'WORKOUT_JSON_FOLDER_ID', label: 'Workouts folder (JSON)' },
 ];
 
 async function main() {

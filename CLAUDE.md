@@ -45,7 +45,7 @@ Health specific logic stays in this repo; never add it to agent-core.
 npm test                          run unit tests, including metric fixtures
 node --test test/google.test.js   run one suite
 npm run google:login              one-time Google sign-in (read-only Sheets); saves data/google/token.json
-npm run google:exports            count Health Auto Export's files in HEALTH_EXPORT_FOLDER_ID and WORKOUT_EXPORT_FOLDER_ID
+npm run google:exports            count Health Auto Export's files in HEALTH_EXPORT_FOLDER_ID and WORKOUT_JSON_FOLDER_ID
 npm run google:check              verify read access to each *_SHEET_ID in .env (prints tab names and row counts only)
 npm run sync                      copy Health Auto Export's new files and the Workout Log into data/health.db (prints counts and warnings only)
 npm run sync -- --backfill        one-time full import: every Workout Log year tab, the v1 drinking log and weekly check-ins
@@ -89,9 +89,15 @@ GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
 ## Data
 Sheets are read unformatted with dates as serial numbers and stored as local wall-clock text; no time zone conversion.
-Apple Health comes only from Health Auto Export's own day files, one Drive folder per kind: HEALTH_EXPORT_FOLDER_ID (health
-metrics) and WORKOUT_EXPORT_FOLDER_ID (workout sessions) (ingest/sync.js syncExports; listed with drive.metadata.readonly and
-filtered to that kind's file names, read with the Sheets scope): only new or changed files
+Apple Health comes only from Health Auto Export's own day files, one Drive folder per kind (ingest/sync.js syncExports;
+listed with drive.metadata.readonly and filtered to that kind's file names): HEALTH_EXPORT_FOLDER_ID holds health metrics
+as Google Sheets files (read with the Sheets scope); WORKOUT_JSON_FOLDER_ID holds workouts as JSON (Workouts automation,
+Export Version 2, Include Workout Metrics, grouped by minute; HealthAutoExport-YYYY-MM-DD.json; downloaded with
+drive.readonly, owner's choice 2026-10-22, reading only that folder). ingest/parsers.js parseWorkoutJson keeps start and end
+to the minute like every stored workout and each workout's heartRateData as workout_hr_samples (migration 022: one row a
+local minute, Avg, Min and Max bpm); a stored workout of the same type starting within a minute is the same one (its
+values fill gaps, then it is replaced), so re-exports never duplicate. The Sheets-format workout export (broken by iOS
+27.0.1) is retired; its stored rows stay. Both folders: only new or changed files
 (drive_exports, migration 016), at most 100 per folder per sync, saved every 25, every Sheets read paced 1.1 s apart
 (createPacer; Google allows 60 a minute) and a 429 ending that folder's reading for the sync rather than failing it, and each health day merged with the stored day by
 mergeHealthDays so a partial export never lowers a full day. A missing folder variable skips that kind with a warn line.
@@ -101,7 +107,8 @@ Planned for the AWS move: Health Auto Export's REST API posting to an authentica
 Data checks (metrics/dataquality.js, pure; fixture evals/fixtures/metrics/dataquality.json) run after every sync and
 on GET /api/status: Apple Health data stale (nothing after a day before yesterday), the export automation stopped
 (export_stale: the latest sync that looked in the health export folder ran more than 26 hours after the newest file was
-written; measured to that sync, never the clock; loadDataCheckInput's lookedAt), gaps in the last 14 days, partial
+written; workout_export_stale: the same for the workouts folder at 72 hours, as a rest day can write no file; measured to
+that sync, never the clock; loadDataCheckInput's lookedAt and workoutsLookedAt), gaps in the last 14 days, partial
 days (owner's choice, 2026-10-16: a day whose latest export file was written before the day ended, from
 daily_metrics.exported_through, migration 021, set by syncExports as the latest file time in local wall clock; a day with
 no file time, from the consolidated sheet, falls back to steps under a quarter of the 28-day median, at least 10 days of
@@ -227,6 +234,13 @@ then the fill rule), changed (same movement pattern), then skipped and added; on
 GET /api/program/adherence?block= (loadAdherenceInput, loadConfirmedBlocks in metrics/load.js) feeds the Training tab's
 card. The weekly summary's programAdherence (weekAdherence) carries the review week's counts, sets logged against called
 for, and the names of exercises the owner logged instead or on top; never the catalog's own exercise names (MAPS rule).
+Heart rate zones (metrics/zones.js, pure; fixture evals/fixtures/metrics/zones.json): Zone 2 is the saved range (settings
+zone2_low_bpm and zone2_high_bpm), Zone 1 below it, Zones 3 to 5 split evenly from its top to 208 - 0.7 x age (profile
+birth year; above it is Zone 5). Each per-minute sample counts one minute in the zone of its Avg; cardio workout minutes
+with no sample (gaps, workouts before the JSON export) are noDetail, never guessed from the average; strength is left out
+(cardio.js sessionKind). GET /api/cardio-zones?view=30d|90d|1y (daily, or Sunday-to-Saturday weeks) feeds the Health tab's
+"Cardio minutes by heart rate zone" card (stacked columnChart segments on one blue ramp, gray for no detail); bounds are null
+without a Zone 2 range or birth year. The weekly review does not use zones yet.
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and

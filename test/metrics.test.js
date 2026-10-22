@@ -20,6 +20,7 @@ import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
 import { blockAdherence, weekAdherence } from '../metrics/adherence.js';
 import { suggestTarget, loadTargetConfig } from '../metrics/targets.js';
 import { rangeStatus, effectiveRange, labsSummary, loadLabRanges } from '../metrics/labs.js';
+import { zoneBounds, zoneOf, cardioZones, zoneBuckets } from '../metrics/zones.js';
 
 /** Expands a fixture's dailyFill (one row per day with the given values, minus skip, plus overrides). */
 function expandDaily({ from, to, skip = [], override = {}, ...values }) {
@@ -57,10 +58,23 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       assertSubset(dataChecks({ ...fx.input, daily }), fx.expected);
       assertSubset(weekDataQuality(daily, fx.week.from, fx.week.to), fx.week.expected, 'week');
       for (const c of fx.exportCases ?? []) {
-        const found = dataChecks({ ...fx.input, daily, exports: c.exports }).find((f) => f.kind === 'export_stale') ?? null;
+        const found = dataChecks({ ...fx.input, daily, exports: c.exports ?? null, workoutExports: c.workoutExports ?? null })
+          .find((f) => f.kind === (c.kind ?? 'export_stale')) ?? null;
         if (c.expected === null) assert.equal(found, null, c.note);
         else assertSubset(found, c.expected, c.note);
       }
+      return;
+    }
+    if (fx.kind === 'zones') {
+      const bounds = zoneBounds(fx.bounds.input);
+      assert.deepEqual(bounds, fx.bounds.expected);
+      for (const [bpm, zone] of fx.zoneOf) assert.equal(zoneOf(bpm, bounds), zone, `zoneOf(${bpm})`);
+      const samples = fx.sampleRuns.flatMap((r) => Array.from({ length: r.count }, () => ({ type: r.type, start: r.start, avg_bpm: r.bpm })));
+      const run = (buckets, b = bounds) => cardioZones({ sessions: fx.sessions, samples, bounds: b, buckets });
+      assert.deepEqual(run(zoneBuckets(fx.today, { days: fx.days.count })), fx.days.expected);
+      assert.deepEqual(run(zoneBuckets(fx.today, { weeks: fx.weeks.count })), fx.weeks.expected);
+      const [noBounds] = run([{ from: fx.noBounds.day, to: fx.noBounds.day }], null);
+      assertSubset(noBounds, fx.noBounds.expected);
       return;
     }
     if (fx.kind === 'lab-ranges') {

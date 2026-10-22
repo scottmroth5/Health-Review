@@ -176,6 +176,19 @@ Health charts, its hover says so, and it is left out of the card's average. A ch
 back by itself once data arrives. To fill earlier days, export a past date range from Health Auto Export into the same folder;
 the app reads the new files and fills the new columns on days it already has.
 
+## Cardio minutes by heart rate zone
+
+The Health tab's zones card shows cardio minutes per day (30 or 90 days) or per week (1 year), each bar split by heart rate
+zone:
+- **Zone 2** is your saved range (Settings, on the Prompt tab).
+- **Zone 1** is below it.
+- **Zones 3 to 5** split the span from its top to an estimated maximum heart rate from your age (208 - 0.7 x age; birth
+  year in Your profile), evenly.
+
+Each minute counts in the zone of that minute's average heart rate, from the JSON workout export. Workout time with no
+minute-by-minute heart rate (workouts from before that export, or moments the watch missed) shows in gray, never guessed
+from the workout's average. Strength workouts are left out. Hover a bar for minutes per zone; the table lists them too.
+
 ## Health targets
 
 Every chart on the Health tab, and the VO2 max card, shows a **target**: a dashed line on the chart, and a line above it
@@ -316,10 +329,17 @@ change, or something bothering you, and Claude answers in light of the ranking a
 
 ## Sheets pipeline and data checks
 
-Apple Health and Apple Watch data start in Health Auto Export on your phone, which writes one Google Sheets file per
-day to Drive: health metrics to one folder, workout sessions to another. The app reads those files directly. Set
-`HEALTH_EXPORT_FOLDER_ID` (the health metrics folder) and `WORKOUT_EXPORT_FOLDER_ID` (the workout sessions folder) in
-`.env`; each is the long id in the folder's Drive URL.
+Apple Health and Apple Watch data start in Health Auto Export on your phone, which writes one file per day to Drive:
+health metrics as Google Sheets files to one folder, and workouts as JSON files to another. The app reads those files
+directly. Set `HEALTH_EXPORT_FOLDER_ID` (the health metrics folder) and `WORKOUT_JSON_FOLDER_ID` (the JSON workouts folder)
+in `.env`; each is the long id in the folder's Drive URL.
+
+**The workouts automation** in Health Auto Export: type Workouts, format JSON, Export Version 2, Include Workout Metrics
+on, time grouping Minutes, route data off, destination that Google Drive folder, daily. Each workout then carries its heart
+rate minute by minute, which the Health tab's zones card uses. Reading JSON files needs Google's read-only Drive permission
+(`npm run google:login` once); the app reads only the configured folder. A JSON workout matching one stored earlier (same
+type, starting within a minute) replaces it, so exporting a past range again never duplicates. (The older Sheets-format
+workout export broke with iOS 27.0.1 and is no longer read; workouts already stored from it stay.)
 - **What a sync reads:** each folder is listed, and only files that are new or changed since the last read
   (`drive_exports`) are read, at most 100 per folder per sync.
 - **Google's limit:** 60 Sheets reads a minute, so reads are spaced about a second apart and saved every 25 files. If
@@ -344,6 +364,7 @@ sheets are no longer read by the app, so you can turn off their triggers. `HEALT
 **Data checks:** after every sync, the app checks the data. Problems show above the day on the Today tab and in the
 sync log (Activity tab). The checks look for:
 - **Apple Health data that stopped:** nothing after a given day. Today is never expected to be complete.
+- **The workouts export stopped:** the same for the JSON workouts folder at 72 hours, since a rest day can write no file.
 - **The export automation stopped:** a sync looked in the Health Auto Export folder and found no file newer than 26 hours,
   so the warning names when the last export was written. It counts from the last sync, so a sync that just hasn't run yet
   never sets it off.

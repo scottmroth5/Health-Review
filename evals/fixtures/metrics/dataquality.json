@@ -36,6 +36,8 @@
   "exportCases": [
     {"note":"Looked 27 hours after the newest file (Mar 18 14:07 UTC to Mar 19 17:07 UTC): warns.","exports":{"lastFileAt":"2026-03-18T14:07:00.000Z","lastFileLocal":"2026-03-18T10:07","lookedAt":"2026-03-19T17:07:00.000Z"},"expected":{"kind":"export_stale","severity":"warn","dates":["2026-03-18"],"message":"No new Apple Health export since Mar 18, 10:07 AM (27 hours before the last sync). Check the Health Auto Export automation on your phone."}},
     {"note":"Looked 25 hours after: no warning yet.","exports":{"lastFileAt":"2026-03-18T14:07:00.000Z","lastFileLocal":"2026-03-18T10:07","lookedAt":"2026-03-19T15:07:00.000Z"},"expected":null},
-    {"note":"No export folder in use (exports null): no warning.","exports":null,"expected":null}
+    {"note":"No export folder in use (exports null): no warning.","exports":null,"expected":null},
+    {"note":"Workouts folder: looked 73 hours after the newest file (Mar 16 14:00 UTC to Mar 19 15:00 UTC) warns; health is not judged here.","kind":"workout_export_stale","workoutExports":{"lastFileAt":"2026-03-16T14:00:00.000Z","lastFileLocal":"2026-03-16T10:00","lookedAt":"2026-03-19T15:00:00.000Z"},"expected":{"kind":"workout_export_stale","severity":"warn","dates":["2026-03-16"],"message":"No new workout export since Mar 16, 10:00 AM (73 hours before the last sync). Check the Health Auto Export Workouts automation on your phone."}},
+    {"note":"Workouts folder: 71 hours is not stale (a rest day can write no file).","kind":"workout_export_stale","workoutExports":{"lastFileAt":"2026-03-16T14:00:00.000Z","lastFileLocal":"2026-03-16T10:00","lookedAt":"2026-03-19T13:00:00.000Z"},"expected":null}
   ]
 }

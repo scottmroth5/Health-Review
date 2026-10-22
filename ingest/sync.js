@@ -1,7 +1,8 @@
 // Copies Apple Health and the Google Sheets into the local database, adding only what is new.
-//  - Health metrics and workout sessions: Health Auto Export's own day files in their two Drive folders
-//    (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID), only files new or changed since last read. Each health day is
-//    merged with the stored day, so a partial export never lowers a full one. The v1 consolidated sheets are retired
+//  - Health metrics and workouts: Health Auto Export's own day files in their two Drive folders, only files new or
+//    changed since last read. Health metrics (HEALTH_EXPORT_FOLDER_ID) are Google Sheets files; each day is merged with
+//    the stored day, so a partial export never lowers a full one. Workouts (WORKOUT_JSON_FOLDER_ID) are JSON files
+//    (Workouts export, Version 2) with each workout's per-minute heart rate. The v1 consolidated sheets are retired
 //    (2026-10-16) and never read; a missing folder variable skips that kind with a warning.
 //  - Workout Log: one tab per year. A tab is replaced only when its content hash changed, so
 //    edits and deletions in the sheet are picked up. Normal syncs read the current year (and
@@ -17,7 +18,7 @@ import {
   parseHealthMetrics,
   localStamp,
   mergeHealthDays,
-  parseWorkoutSessions,
+  parseWorkoutJson,
   parseWorkoutLogTab,
   parseDrinkingLog,
   parseWeeklyCheckins,
@@ -44,11 +45,11 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
  * @param {object|null} [options.dictionary]  exercise dictionary; defaults to config/exercise-dictionary.json when present
  * @param {object} [options.logger]
  * @param {{ health?: string|null, workouts?: string|null }} [options.exportFolders]  Health Auto Export's Drive folders
- *   (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID); a kind without one is skipped with a warning
+ *   (HEALTH_EXPORT_FOLDER_ID, WORKOUT_JSON_FOLDER_ID); a kind without one is skipped with a warning
  * @returns {Promise<{ counts: object, warnings: object[] }>}
  */
 export async function runSync({ store, source, backfill = false, now = new Date(), logger = console, dictionary, catalog,
-  exportFolders = { health: process.env.HEALTH_EXPORT_FOLDER_ID || null, workouts: process.env.WORKOUT_EXPORT_FOLDER_ID || null } }) {
+  exportFolders = { health: process.env.HEALTH_EXPORT_FOLDER_ID || null, workouts: process.env.WORKOUT_JSON_FOLDER_ID || null } }) {
   const run = createTracer({ store, logger }).startRun('sync', { backfill });
   const counts = {};
   const warnings = [];
@@ -57,7 +58,7 @@ export async function runSync({ store, source, backfill = false, now = new Date(
     // Apple Health comes only from Health Auto Export's files, one Drive folder per kind.
     for (const [kind, key, env, what] of [
       ['health', 'health_exports', 'HEALTH_EXPORT_FOLDER_ID', 'Apple Health metrics'],
-      ['workouts', 'workout_exports', 'WORKOUT_EXPORT_FOLDER_ID', 'Apple Watch workouts'],
+      ['workouts', 'workout_exports', 'WORKOUT_JSON_FOLDER_ID', 'Apple Watch workouts'],
     ]) {
       if (exportFolders[kind]) counts[key] = await syncExports({ store, source, kind, folderId: exportFolders[kind], warnings, stamp });
       else warnings.push({ source: key, kind: 'folder not set', detail: `${env} is not set, so ${what} were not synced`, severity: 'warn' });
@@ -76,7 +77,7 @@ export async function runSync({ store, source, backfill = false, now = new Date(
       counts.weekly_checkin = await importOnce({ store, source, key: 'weekly_checkin', parse: parseWeeklyCheckins, write: upsertCheckins(store.db, stamp), warnings });
     }
     // Data checks (stale or missing Apple Health days, an export automation that stopped, partial days, workouts not exported, impossible values).
-    const checks = dataChecks(loadDataCheckInput(store.db, localDay(now), { lookedAt: exportFolders.health ? stamp : null }));
+    const checks = dataChecks(loadDataCheckInput(store.db, localDay(now), { lookedAt: exportFolders.health ? stamp : null, workoutsLookedAt: exportFolders.workouts ? stamp : null }));
     for (const c of checks) warnings.push({ source: 'data_check', kind: c.kind, detail: c.message, severity: c.severity });
     counts.data_checks = { warn: checks.filter((c) => c.severity === 'warn').length, info: checks.filter((c) => c.severity === 'info').length };
     const typos = typoCount(store.db, dictionary);
@@ -125,7 +126,9 @@ const isRateLimit = (err) => (err?.response?.status ?? err?.status ?? err?.code)
  * Health Auto Export files of one kind from its Drive folder: only files new or changed since they were last read
  * (drive_exports), oldest first, saved every 25 files. A health day from the files is merged with the day already
  * stored by mergeHealthDays (the fullest row wins, gaps filled from the others), so a partial export read after the full
- * day never lowers it. Workouts upsert on type, start and end as before. If Google still answers "too many requests"
+ * day never lowers it. JSON workouts upsert on type, start and end (a stored workout of the same type starting within a
+ * minute is the same one: its fields fill gaps and it is replaced), and each workout's per-minute heart rate is replaced
+ * whole. If Google still answers "too many requests"
  * (reads are paced in the source), the folder stops there and the rest waits for the next sync.
  */
 async function syncExports({ store, source, kind, folderId, warnings, stamp, limit = EXPORT_FILES_PER_SYNC }) {
@@ -134,9 +137,8 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
   const todo = (await source.listExports(folderId, kind)).filter((f) => known.get(f.id) !== f.modifiedTime);
   const batch = todo.slice(0, limit);
   const label = kind === 'health' ? 'health' : 'workout';
-  const parse = kind === 'health' ? parseHealthMetrics : parseWorkoutSessions;
   const writeDay = upsertDailyMetrics(db, stamp);
-  const writeWorkout = upsertWorkoutSessions(db, stamp);
+  const writeWorkout = writeJsonWorkout(db, stamp);
   const storedDay = db.prepare(`SELECT date, ${HEALTH_METRIC_COLUMNS.join(', ')} FROM daily_metrics WHERE date = ?`);
   // The latest file time holding each day; an older file read later never lowers it (MAX, NULL treated as earliest).
   const markExported = db.prepare("UPDATE daily_metrics SET exported_through = MAX(COALESCE(exported_through, ''), ?) WHERE date = ?");
@@ -146,29 +148,37 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
   let filesRead = 0;
   const healthDays = new Set();
   let workouts = 0;
+  let hrSamples = 0;
   let limited = false;
   for (let i = 0; i < batch.length && !limited; i += EXPORT_SAVE_EVERY) {
     const read = [];
     const healthRecords = [];
     const workoutRecords = [];
+    const hrRecords = [];
     const exportedThrough = new Map(); // date -> latest local file time among this batch's files
     for (const f of batch.slice(i, i + EXPORT_SAVE_EVERY)) {
       let data;
       try {
-        data = await source.readFileRows(f.id);
+        data = kind === 'health' ? await source.readFileRows(f.id) : await source.readFileJson(f.id);
       } catch (err) {
         if (!isRateLimit(err)) throw err;
         limited = true;
         break;
       }
-      const parsed = parse({ ...data, tab: f.name });
-      warnings.push(...parsed.warnings);
-      (kind === 'health' ? healthRecords : workoutRecords).push(...parsed.records);
       if (kind === 'health') {
+        const parsed = parseHealthMetrics({ ...data, tab: f.name });
+        warnings.push(...parsed.warnings);
+        healthRecords.push(...parsed.records);
         const at = localStamp(f.modifiedTime);
         for (const r of parsed.records) if (!(exportedThrough.get(r.date) > at)) exportedThrough.set(r.date, at);
+        read.push({ ...f, rows: data.rows.length });
+      } else {
+        const parsed = parseWorkoutJson(data, { file: f.name });
+        warnings.push(...parsed.warnings);
+        workoutRecords.push(...parsed.records);
+        hrRecords.push(...parsed.samples);
+        read.push({ ...f, rows: parsed.records.length });
       }
-      read.push({ ...f, rows: data.rows.length });
     }
     // Each day from the files, merged with the stored day (stored first, so a tie goes to the newer file).
     const dates = [...new Set(healthRecords.map((r) => r.date))];
@@ -177,12 +187,13 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
     store.tx(() => {
       for (const d of days) writeDay(d);
       for (const [date, at] of exportedThrough) markExported.run(at, date);
-      for (const w of workoutRecords) writeWorkout(w);
+      for (const w of workoutRecords) writeWorkout(w, hrRecords.filter((h) => h.type === w.type && h.start === w.start));
       for (const f of read) record.run(f.id, kind, f.name, f.modifiedTime, f.rows, stamp);
     });
     filesRead += read.length;
     for (const d of days) healthDays.add(d.date);
     workouts += workoutRecords.length;
+    hrSamples += hrRecords.length;
   }
 
   const filesLeft = todo.length - filesRead;
@@ -192,7 +203,7 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
     warnings.push({ source: `${label}_exports`, kind: 'files still to read', detail: `${filesLeft} ${label} export files still to read; the next syncs continue`, severity: 'info' });
   }
   const result = { filesRead, filesLeft };
-  return kind === 'health' ? { ...result, healthDays: healthDays.size } : { ...result, workouts };
+  return kind === 'health' ? { ...result, healthDays: healthDays.size } : { ...result, workouts, hrSamples };
 }
 
 async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
@@ -358,13 +369,37 @@ function upsertDailyMetrics(db, stamp) {
   return (r) => stmt.run({ ...r, updated_at: stamp });
 }
 
-function upsertWorkoutSessions(db, stamp) {
-  const cols = ['duration_sec', 'total_energy_kcal', 'active_energy_kcal', 'max_hr', 'avg_hr', 'distance_mi', 'avg_speed_mph',
-    'step_count', 'step_cadence_spm', 'swim_stroke_count', 'swim_stroke_cadence_spm', 'flights_climbed', 'elevation_up_ft', 'elevation_down_ft'];
-  const stmt = db.prepare(`INSERT INTO workout_sessions (type, start, end, ${cols.join(', ')}, updated_at)
+const WORKOUT_COLUMNS = ['duration_sec', 'total_energy_kcal', 'active_energy_kcal', 'max_hr', 'avg_hr', 'distance_mi', 'avg_speed_mph',
+  'step_count', 'step_cadence_spm', 'swim_stroke_count', 'swim_stroke_cadence_spm', 'flights_climbed', 'elevation_up_ft', 'elevation_down_ft'];
+/** Local wall-clock text (YYYY-MM-DDTHH:MM:SS) moved by whole minutes. */
+const shiftMinutes = (t, n) => new Date(Date.parse(`${t}Z`) + n * 60000).toISOString().slice(0, 19);
+
+/**
+ * Writes one JSON workout and its per-minute heart rate. A stored workout of the same type starting within a minute
+ * (the earlier Sheets export rounded times its own way) is the same workout: its values fill this one's gaps, then it
+ * is replaced, so a re-export never duplicates. Values the file lacks never erase stored ones (COALESCE).
+ */
+function writeJsonWorkout(db, stamp) {
+  const cols = WORKOUT_COLUMNS;
+  const near = db.prepare('SELECT * FROM workout_sessions WHERE type = ? AND start BETWEEN ? AND ? AND NOT (start = ? AND end = ?)');
+  const drop = db.prepare('DELETE FROM workout_sessions WHERE type = ? AND start = ? AND end = ?');
+  const dropSamples = db.prepare('DELETE FROM workout_hr_samples WHERE type = ? AND start = ?');
+  const upsert = db.prepare(`INSERT INTO workout_sessions (type, start, end, ${cols.join(', ')}, updated_at)
     VALUES (@type, @start, @end, ${cols.map((c) => `@${c}`).join(', ')}, @updated_at)
-    ON CONFLICT (type, start, end) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(', ')}, updated_at = excluded.updated_at`);
-  return (r) => stmt.run({ ...r, updated_at: stamp });
+    ON CONFLICT (type, start, end) DO UPDATE SET ${cols.map((c) => `${c} = COALESCE(excluded.${c}, workout_sessions.${c})`).join(', ')},
+      updated_at = excluded.updated_at`);
+  const sample = db.prepare('INSERT OR REPLACE INTO workout_hr_samples (type, start, t, avg_bpm, min_bpm, max_bpm) VALUES (?, ?, ?, ?, ?, ?)');
+  return (w, samples) => {
+    const merged = { ...w };
+    for (const old of near.all(w.type, shiftMinutes(w.start, -1), shiftMinutes(w.start, 1), w.start, w.end)) {
+      for (const c of cols) if (merged[c] === null || merged[c] === undefined) merged[c] = old[c];
+      drop.run(old.type, old.start, old.end);
+      dropSamples.run(old.type, old.start);
+    }
+    upsert.run({ ...merged, updated_at: stamp });
+    dropSamples.run(w.type, w.start);
+    for (const s of samples) sample.run(s.type, s.start, s.t, s.avg_bpm, s.min_bpm, s.max_bpm);
+  };
 }
 
 // Imported rows never replace a day entered in the UI. Returns 1 when written, 0 when kept.

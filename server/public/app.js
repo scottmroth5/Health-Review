@@ -450,6 +450,7 @@ function loadHealthTab() {
   getTargets(true); // fresh each time the tab opens (a sync may have moved the 90-day averages)
   loadProfileForm().catch(() => {});
   loadVo2();
+  loadZones().catch((err) => { $('#zones-summary').textContent = `Could not load this (${err.message}). If the app was just updated, restart the server.`; });
   return loadHistory();
 }
 
@@ -1244,6 +1245,55 @@ async function loadVo2(view = vo2ViewChoice()) {
   $('#vo2-table').replaceChildren(tableView(points.map((p) => ({ date: p.label ?? p.date, value: p.value })), vo2));
 }
 
+// ---------------- cardio minutes by heart rate zone (Health tab) ----------------
+const ZONES_VIEW_KEY = 'hr.zonesView';
+function zonesViewChoice() {
+  try { return localStorage.getItem(ZONES_VIEW_KEY) || '30d'; } catch { return '30d'; }
+}
+/** "under 110 bpm", "110 to 125 bpm", "155 bpm and up". */
+const zoneRange = (z) => (z.low === null ? `under ${z.high + 1} bpm` : z.high === null ? `${z.low} bpm and up` : `${z.low} to ${z.high} bpm`);
+const minutesText = (n) => `${n.toLocaleString()} min`;
+
+async function loadZones(view = zonesViewChoice()) {
+  try { localStorage.setItem(ZONES_VIEW_KEY, view); } catch { /* storage unavailable: still works, just not remembered */ }
+  $$('[data-zview]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.zview === view)));
+  const r = await api('GET', `/api/cardio-zones?view=${view}`);
+  const weekly = r.bucket === 'week';
+  const zoneLabel = (i) => (r.bounds ? `Zone ${i + 1} (${zoneRange(r.bounds.zones[i])})` : `Zone ${i + 1}`);
+  // Legend: one swatch per zone with its bpm range, then minutes with no heart rate detail.
+  fill($('#zones-legend'),
+    ...(r.bounds ? r.bounds.zones.map((z, i) => h('li', {}, h('span', { class: `swatch z${i + 1}`, 'aria-hidden': 'true' }), zoneLabel(i))) : []),
+    h('li', {}, h('span', { class: 'swatch znd', 'aria-hidden': 'true' }), 'No heart rate detail'));
+  const points = r.buckets.map((b) => ({
+    date: b.from,
+    value: b.total,
+    label: weekly ? `Week ending ${niceDate(b.to)}` : undefined,
+    segments: [...b.zones.map((v, i) => ({ value: v, cls: `z${i + 1}` })), { value: b.noDetail, cls: 'znd' }],
+    details: [...b.zones.map((v, i) => (v ? `${zoneLabel(i)}: ${minutesText(v)}` : null)), b.noDetail ? `No heart rate detail: ${minutesText(b.noDetail)}` : null].filter(Boolean),
+  }));
+  const first = r.buckets[0];
+  const last = r.buckets.at(-1);
+  columnChart($('#zones-chart'), points, { from: first.from, to: weekly ? last.from : last.to, format: minutesText, label: 'Cardio minutes', bucketDays: weekly ? 7 : 1 });
+
+  const total = r.buckets.reduce((s, b) => s + b.total, 0);
+  const noDetail = r.buckets.reduce((s, b) => s + b.noDetail, 0);
+  const perZone = [0, 1, 2, 3, 4].map((i) => r.buckets.reduce((s, b) => s + b.zones[i], 0));
+  $('#zones-summary').textContent = total
+    ? `${minutesText(total)} of cardio in this range${r.bounds && total > noDetail ? `, ${minutesText(perZone[1])} of it in Zone 2` : ''}. Walks, elliptical, HIIT and other cardio; strength workouts are left out.`
+    : 'No cardio workouts in this range.';
+  $('#zones-note').textContent = !r.bounds
+    ? 'Zones need your Zone 2 range (Settings, on the Prompt tab) and your birth year (Your profile, below).'
+    : `Zone 2 is your saved range; Zones 3 to 5 split the span up to ${r.bounds.maxHr} bpm, an estimate from your age (208 - 0.7 x age). Each minute counts in the zone of its average heart rate.${noDetail ? ' Gray is workout time with no minute-by-minute heart rate (before the JSON export, or gaps in the watch reading).' : ''}`;
+
+  // Table: one row per day or week with minutes per zone.
+  const head = ['', ...[1, 2, 3, 4, 5].map((n) => `Zone ${n}`), 'No detail', 'Total'];
+  const rows = [...r.buckets].reverse().filter((b) => b.total).map((b) => h('tr', {},
+    h('td', {}, weekly ? `Week ending ${niceDate(b.to)}` : niceDate(b.from)),
+    ...b.zones.map((v) => h('td', {}, String(v))), h('td', {}, String(b.noDetail)), h('td', {}, String(b.total))));
+  fill($('#zones-table'), h('details', {}, h('summary', {}, 'Table'),
+    h('div', { class: 'table-scroll' }, h('table', {}, h('thead', {}, h('tr', {}, head.map((t) => h('th', {}, t)))), h('tbody', {}, rows)))));
+}
+
 async function loadTrainingTab() {
   if (!state.today) await loadStatus();
   // A card whose data fails says so rather than showing "Loading..." forever (for example an old server
@@ -2015,6 +2065,7 @@ $('#chat-clear').addEventListener('click', async () => {
   loadChat();
 });
 $$('[data-vview]').forEach((b) => b.addEventListener('click', () => loadVo2(b.dataset.vview)));
+$$('[data-zview]').forEach((b) => b.addEventListener('click', () => loadZones(b.dataset.zview)));
 $$('[data-log]').forEach((b) => b.addEventListener('click', () => showLog(b.dataset.log)));
 $$('[data-range]').forEach((b) => b.addEventListener('click', () => {
   state.range = Number(b.dataset.range);

@@ -73,16 +73,17 @@ export function createSheetsSource(auth, env = process.env, { minGapMs = SHEETS_
       return { header, rows, firstRowNumber: fromRow };
     },
     /**
-     * Health Auto Export's own export files of one kind ('health' or 'workouts') in a Drive folder (Google Sheets
-     * files), oldest name first: kind, id, name and modified time. Files of the other kind are left out. Metadata only
-     * (drive.metadata.readonly); contents come through readFileRows.
+     * Health Auto Export's own export files of one kind in a Drive folder, oldest name first: kind, id, name and
+     * modified time. 'health' files are Google Sheets (read with readFileRows); 'workouts' files are JSON (Workouts
+     * export, Version 2; read with readFileJson). Files of another kind are left out. Metadata only.
      */
     async listExports(folderId, kind) {
       const files = [];
       let pageToken;
+      const mime = kind === 'workouts' ? 'application/json' : 'application/vnd.google-apps.spreadsheet';
       do {
         const params = new URLSearchParams({
-          q: `'${folderId.replaceAll("'", "\\'")}' in parents and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+          q: `'${folderId.replaceAll("'", "\\'")}' in parents and mimeType = '${mime}' and trashed = false`,
           fields: 'nextPageToken, files(id, name, modifiedTime)',
           pageSize: '1000',
           orderBy: 'name',
@@ -105,12 +106,18 @@ export function createSheetsSource(auth, env = process.env, { minGapMs = SHEETS_
       const [header = [], ...rows] = values;
       return { header, rows, firstRowNumber: 2 };
     },
+    /** One JSON export file, parsed (drive.readonly; the caller only passes ids listed from its configured folder). */
+    async readFileJson(fileId) {
+      await pace();
+      const { data } = await auth.request({ url: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, responseType: 'json' });
+      return typeof data === 'string' ? JSON.parse(data) : data;
+    },
   };
 }
 
-/** Which Health Auto Export file a name is (the patterns the v1 Apps Scripts used), or null. */
+/** Which Health Auto Export file a name is, or null: health metrics (Google Sheets) or JSON workouts (one file a day). */
 export function exportKind(name) {
   if (/Apple Health Metrics-HealthMetrics/i.test(name)) return 'health';
-  if (/Workout session metrics/i.test(name)) return 'workouts';
+  if (/^HealthAutoExport-\d{4}-\d{2}-\d{2}\.json$/i.test(name)) return 'workouts';
   return null;
 }

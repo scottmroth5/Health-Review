@@ -10,6 +10,7 @@ export const PARTIAL_SHARE = 0.25; // steps under a quarter of the 28-day median
 export const MEDIAN_DAYS = 28;
 export const MIN_MEDIAN_DAYS = 10;
 export const EXPORT_STALE_HOURS = 26; // a daily export plus slack; measured to the last sync that looked, not the clock
+export const WORKOUT_EXPORT_STALE_HOURS = 72; // longer: a rest day may write no workout file
 const SPAN_SLACK_SEC = 120;
 const STRENGTH_TYPES = /strength|core|functional|high intensity|hiit|cross training/i;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -70,9 +71,11 @@ export const partialDays = (daily, from, to) => partialReasons(daily, from, to).
  * @param {{lastFileAt: string, lastFileLocal: string, lookedAt: string}|null} [input.exports]  the newest health export
  *   file's write time (UTC ISO, and local wall clock for the message) and when a sync last looked in the folder (UTC ISO);
  *   null when the export folder is not in use or nothing has been read
+ * @param {{lastFileAt: string, lastFileLocal: string, lookedAt: string}|null} [input.workoutExports]  the same for the
+ *   JSON workouts folder (judged at WORKOUT_EXPORT_STALE_HOURS)
  * @returns {Array<{kind: string, severity: 'warn'|'info', dates: string[], message: string}>}
  */
-export function dataChecks({ daily = [], sessions = [], liftingDays = [], today, exports = null }) {
+export function dataChecks({ daily = [], sessions = [], liftingDays = [], today, exports = null, workoutExports = null }) {
   const yesterday = addDays(today, -1);
   const from = addDays(today, -LOOKBACK_DAYS);
   const have = new Set(daily.map((r) => r.date));
@@ -86,12 +89,20 @@ export function dataChecks({ daily = [], sessions = [], liftingDays = [], today,
     add('health_stale', 'warn', [latest], `No Apple Health data after ${short(latest)} (${plural(missing, 'day')} missing so far). Check the Health Auto Export automation.`);
   }
 
-  // Health Auto Export stopped writing files: a sync looked and found nothing newer for EXPORT_STALE_HOURS.
-  if (exports?.lastFileAt && exports.lookedAt) {
-    const hours = Math.floor((Date.parse(exports.lookedAt) - Date.parse(exports.lastFileAt)) / 3600000);
-    if (hours > EXPORT_STALE_HOURS) {
-      add('export_stale', 'warn', [exports.lastFileLocal.slice(0, 10)], `No new Apple Health export since ${shortTime(exports.lastFileLocal)} (${hours} hours before the last sync). Check the Health Auto Export automation on your phone.`);
-    }
+  // Health Auto Export stopped writing files: a sync looked and found nothing newer for EXPORT_STALE_HOURS (health) or
+  // WORKOUT_EXPORT_STALE_HOURS (workouts).
+  const stale = (e, limit) => {
+    if (!e?.lastFileAt || !e.lookedAt) return null;
+    const hours = Math.floor((Date.parse(e.lookedAt) - Date.parse(e.lastFileAt)) / 3600000);
+    return hours > limit ? hours : null;
+  };
+  const healthHours = stale(exports, EXPORT_STALE_HOURS);
+  if (healthHours !== null) {
+    add('export_stale', 'warn', [exports.lastFileLocal.slice(0, 10)], `No new Apple Health export since ${shortTime(exports.lastFileLocal)} (${healthHours} hours before the last sync). Check the Health Auto Export automation on your phone.`);
+  }
+  const workoutHours = stale(workoutExports, WORKOUT_EXPORT_STALE_HOURS);
+  if (workoutHours !== null) {
+    add('workout_export_stale', 'warn', [workoutExports.lastFileLocal.slice(0, 10)], `No new workout export since ${shortTime(workoutExports.lastFileLocal)} (${workoutHours} hours before the last sync). Check the Health Auto Export Workouts automation on your phone.`);
   }
 
   // Missing days between the first and latest health days (days before the first row are not gaps).

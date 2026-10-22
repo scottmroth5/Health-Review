@@ -3,10 +3,9 @@ import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
 import { runSync } from '../ingest/sync.js';
 import { buildApp } from '../server/app.js';
-import { fakeSource, serial, silentLogger } from './helpers.js';
+import { fakeSource, jsonWorkout, serial, silentLogger } from './helpers.js';
 
 const HEALTH = ['Date/Time', 'Heart Rate Variability (ms)', 'Resting Heart Rate (bpm)', 'Step Count (steps)'];
-const SESSIONS = ['Type', 'Start', 'End', 'Duration', 'Avg Heart Rate (bpm)'];
 const LOG = ['Date', 'Prime', 'Exercise', 'Weight 1', 'Set 1', 'Weight 2', 'Set 2', 'Post', 'Workout', 'Comment'];
 const DRINKS = ['Date', 'Number of Beers', 'Number of glasses of wine', 'Number of glasses of bourbon', 'Other Mixed Drink', 'Total Drinks', 'Setting', 'Mood before Drinking (1-10)', 'Mood After Drinking (1-10)', 'Notes'];
 const CHECKIN = ['Week Ending (Saturday) ', 'Morning Readiness (1-10)', 'Avg Energy (1-10)', 'Avg Mood (1-10)', 'Stress Level (1-10)', 'Nutrition Quality (1-10)', 'Notes'];
@@ -17,14 +16,14 @@ const NOW = new Date(2026, 2, 9, 7, 0); // local 2026-03-09
 // Data checks and the exercise-name typo count run after every import; tests of the import itself leave them out.
 const importWarnings = (warnings) => warnings.filter((w) => w.source !== 'data_check' && w.source !== 'exercise_names');
 
-// Apple Health comes from Health Auto Export's files in two Drive folders (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID).
+// Apple Health comes from Health Auto Export's files in two Drive folders (HEALTH_EXPORT_FOLDER_ID, WORKOUT_JSON_FOLDER_ID).
 const HF = 'health-folder';
 const WF = 'workout-folder';
 const healthFile = (id, name, values, modifiedTime = '2026-03-02T09:00:00Z') => ({ folder: HF, id, name: `Apple Health Metrics-HealthMetrics-${name}`, modifiedTime, values });
-const workoutFile = (id, name, values, modifiedTime = '2026-03-02T09:00:00Z') => ({ folder: WF, id, name: `Workout session metrics-${name}`, modifiedTime, values });
-const walk = [SESSIONS, ['Outdoor Walk', serial('2026-03-02', 18), serial('2026-03-02', 18, 30), 30 / 1440, 110]];
+const workoutFile = (id, date, workouts, modifiedTime = '2026-03-02T09:00:00Z') => ({ folder: WF, id, name: `HealthAutoExport-${date}.json`, modifiedTime, json: { data: { workouts } } });
+const walk = [jsonWorkout('Outdoor Walk', '2026-03-02 18:00:00', '2026-03-02 18:30:00', { avgHr: 110, hr: [100, 110, 120] })];
 const both = { health: HF, workouts: WF };
-const RUN = ['Outdoor Run', serial('2026-03-02', 6, 15), serial('2026-03-02', 6, 52, 30), 37.5 / 1440, 148];
+const RUN = () => jsonWorkout('Outdoor Run', '2026-03-02 06:15:20', '2026-03-02 06:52:30', { avgHr: 148 });
 
 /** The Google Sheets that are still read: the Workout Log, and the drinking log and check-ins (backfill only). */
 function sheets() {
@@ -46,7 +45,7 @@ function source(data = sheets()) {
   s.exports = [
     healthFile('d1', '2026-03-01', [HEALTH, day('2026-03-01', 45, 56, 7000)]),
     healthFile('d2', '2026-03-02', [HEALTH, day('2026-03-02', 48, 55, 8000)]),
-    workoutFile('r1', '2026-03-02', [SESSIONS, RUN]),
+    workoutFile('r1', '2026-03-02', [RUN()]),
   ];
   return s;
 }
@@ -93,11 +92,11 @@ test('the retired consolidated sheets are never read; a missing folder variable 
   assert.equal(counts.workout_exports, undefined);
   assert.equal(count(store, 'workout_sessions'), 0);
   assert.deepEqual(importWarnings(warnings).map((w) => [w.source, w.detail, w.severity]),
-    [['workout_exports', 'WORKOUT_EXPORT_FOLDER_ID is not set, so Apple Watch workouts were not synced', 'warn']]);
+    [['workout_exports', 'WORKOUT_JSON_FOLDER_ID is not set, so Apple Watch workouts were not synced', 'warn']]);
   const none = await sync(store, src, { exportFolders: {} });
   assert.deepEqual(importWarnings(none.warnings).map((w) => w.detail), [
     'HEALTH_EXPORT_FOLDER_ID is not set, so Apple Health metrics were not synced',
-    'WORKOUT_EXPORT_FOLDER_ID is not set, so Apple Watch workouts were not synced',
+    'WORKOUT_JSON_FOLDER_ID is not set, so Apple Watch workouts were not synced',
   ]);
   assert.ok(!src.reads.some((r) => r.source === 'health_metrics' || r.source === 'workout_sessions'));
   store.close();
@@ -116,7 +115,7 @@ test('after a sync, data checks flag stale Apple Health data', async () => {
 test('exact duplicate workout sessions are stored once', async () => {
   const store = open();
   const src = source();
-  src.exports.push(workoutFile('r2', '2026-03-02-again', [SESSIONS, [...RUN]]));
+  src.exports.push(workoutFile('r2', '2026-03-03', [RUN()])); // the same workout in a second file
   await sync(store, src, { backfill: true });
   assert.equal(count(store, 'workout_sessions'), 1);
   store.close();
@@ -276,7 +275,7 @@ test('after a sync, an info line counts exercise names that look like typos (npm
   store.close();
 });
 
-// ---- Health Auto Export files read straight from Drive (HEALTH_EXPORT_FOLDER_ID, WORKOUT_EXPORT_FOLDER_ID) ----
+// ---- Health Auto Export files read straight from Drive (HEALTH_EXPORT_FOLDER_ID, WORKOUT_JSON_FOLDER_ID) ----
 
 test('export files: with both folders set, health and workouts come from the files; neither consolidated sheet is read', async () => {
   const store = open();
@@ -284,7 +283,7 @@ test('export files: with both folders set, health and workouts come from the fil
   src.exports = [healthFile('h1', '2026-03-02', [HEALTH, day('2026-03-02', 50, 54, 9000)]), workoutFile('w1', '2026-03-02', walk)];
   const { counts } = await sync(store, src, { exportFolders: both });
   assert.deepEqual(counts.health_exports, { filesRead: 1, filesLeft: 0, healthDays: 1 });
-  assert.deepEqual(counts.workout_exports, { filesRead: 1, filesLeft: 0, workouts: 1 });
+  assert.deepEqual(counts.workout_exports, { filesRead: 1, filesLeft: 0, workouts: 1, hrSamples: 3 });
   assert.equal(counts.health_metrics, undefined);
   assert.equal(counts.workout_sessions, undefined);
   assert.ok(!src.reads.some((r) => r.source === 'health_metrics' || r.source === 'workout_sessions'), 'consolidated sheets untouched');
@@ -338,10 +337,34 @@ test('export files: a sync that finds nothing newer than 26 hours warns that the
 });
 
 
+test('JSON workouts: per-minute heart rate is stored; a stored workout starting within a minute is the same one', async () => {
+  const store = open();
+  // A workout stored earlier (the old Sheets export) with fields the JSON lacks, its start a minute later.
+  store.db.prepare(`INSERT INTO workout_sessions (type, start, end, flights_climbed, avg_hr, updated_at)
+    VALUES ('Outdoor Walk', '2026-03-02T18:01:00', '2026-03-02T18:30:00', 4, 99, 'x')`).run();
+  const src = fakeSource(sheets());
+  src.exports = [workoutFile('w1', '2026-03-02', walk)];
+  await sync(store, src, { exportFolders: { health: null, workouts: WF } });
+  assert.deepEqual(store.db.prepare('SELECT start, end, avg_hr, flights_climbed, duration_sec FROM workout_sessions').all(),
+    [{ start: '2026-03-02T18:00:00', end: '2026-03-02T18:30:00', avg_hr: 110, flights_climbed: 4, duration_sec: 1800 }]);
+  assert.deepEqual(store.db.prepare('SELECT t, avg_bpm, min_bpm, max_bpm FROM workout_hr_samples ORDER BY t').all(), [
+    { t: '2026-03-02T18:00', avg_bpm: 100, min_bpm: 98, max_bpm: 102 },
+    { t: '2026-03-02T18:01', avg_bpm: 110, min_bpm: 108, max_bpm: 112 },
+    { t: '2026-03-02T18:02', avg_bpm: 120, min_bpm: 118, max_bpm: 122 },
+  ]);
+
+  // A re-export with fuller heart rate replaces the samples; nothing is duplicated.
+  src.exports[0] = workoutFile('w1', '2026-03-02', [jsonWorkout('Outdoor Walk', '2026-03-02 18:00:40', '2026-03-02 18:30:10', { avgHr: 112, hr: [101, 111, 121, 125] })], '2026-03-03T09:00:00Z');
+  await sync(store, src, { exportFolders: { health: null, workouts: WF } });
+  assert.equal(count(store, 'workout_sessions'), 1);
+  assert.equal(count(store, 'workout_hr_samples'), 4);
+  store.close();
+});
+
 test('export files: a file of the other kind in a folder is ignored', async () => {
   const store = open();
   const src = fakeSource(sheets());
-  src.exports = [healthFile('h1', 'a', [HEALTH, day('2026-03-02', 50, 54, 9000)]), { ...workoutFile('stray', 'a', walk), folder: HF }];
+  src.exports = [healthFile('h1', 'a', [HEALTH, day('2026-03-02', 50, 54, 9000)]), { ...workoutFile('stray', '2026-03-02', walk), folder: HF }];
   const { counts } = await sync(store, src, { exportFolders: { health: HF, workouts: null } });
   assert.equal(counts.health_exports.filesRead, 1);
   assert.ok(!src.reads.some((r) => r.file === 'stray'));
@@ -367,7 +390,7 @@ test('export files: at most 200 per folder per sync, oldest first; the rest wait
   const n = EXPORT_FILES_PER_SYNC + 5;
   src.exports = [
     ...Array.from({ length: n }, (_, i) => healthFile(`h${i}`, String(i).padStart(4, '0'), [HEALTH, day('2026-03-01', 40, 55, 1000 + i)])),
-    workoutFile('w1', 'a', walk),
+    workoutFile('w1', '2026-03-02', walk),
   ];
   const first = await sync(store, src, { exportFolders: both });
   assert.equal(first.counts.health_exports.filesRead, EXPORT_FILES_PER_SYNC);

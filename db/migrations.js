@@ -457,4 +457,21 @@ export const MIGRATIONS = [
         WHERE e.kind = 'health' AND substr(e.name, -10) = daily_metrics.date);
     `,
   },
+  {
+    id: '022-workout-hr-samples',
+    up: `
+      -- Per-minute heart rate during each workout, from Health Auto Export's JSON workouts (heartRateData): t is the
+      -- local minute (YYYY-MM-DDTHH:MM); the workout is keyed by type and start like workout_sessions. Raw samples, so
+      -- heart rate zones are computed from the owner's current settings (metrics/zones.js).
+      CREATE TABLE workout_hr_samples (
+        type TEXT NOT NULL,
+        start TEXT NOT NULL,
+        t TEXT NOT NULL,
+        avg_bpm REAL NOT NULL,
+        min_bpm REAL,
+        max_bpm REAL,
+        PRIMARY KEY (type, start, t)
+      );
+    `,
+  },
 ];
