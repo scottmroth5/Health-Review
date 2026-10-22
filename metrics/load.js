@@ -52,6 +52,9 @@ export function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }
     daily_metrics: db.prepare('SELECT * FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(from, nextMorning),
     workout_sessions: db.prepare('SELECT * FROM workout_sessions WHERE start >= ? AND start < ? ORDER BY start')
       .all(from, `${nextMorning}`),
+    // Per-minute heart rate for those workouts (heart rate zones, metrics/zones.js), and the birth year the zones need.
+    workout_hr_samples: db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE start >= ? AND start < ?').all(from, `${nextMorning}`),
+    birth_year: loadProfile(db, weekEnd).birthYear,
     // About 13 months, for the 12-month volume trend (the 28-day strength metrics filter their own window).
     strength_sets: loadStrengthSets(db, addDays(weekEnd, -400), weekEnd),
     drinking_days: db.prepare('SELECT * FROM drinking_days WHERE date BETWEEN ? AND ? ORDER BY date').all(from, weekEnd),

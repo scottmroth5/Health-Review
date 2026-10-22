@@ -4,7 +4,7 @@
 // Auto Export's per-minute heart rate (workout_hr_samples): each sample counts one minute in the zone of its average.
 // Workout minutes with no sample (gaps, or workouts from before the JSON export) are "no heart rate detail", never
 // guessed from the workout's average.
-import { addDays } from './stats.js';
+import { addDays, windows } from './stats.js';
 import { sessionKind, minutesOf } from './cardio.js';
 
 /**
@@ -80,4 +80,23 @@ export function zoneBuckets(today, { days = null, weeks = null }) {
     const to = addDays(lastSat, -7 * (weeks - 1 - i));
     return { from: addDays(to, -6), to };
   });
+}
+
+/**
+ * The weekly review's heart rate zones: the review week's cardio minutes per zone and the 28-day baseline's weekly
+ * average (each whole-minute figure rounded on its own), with the zone bounds. Null without bounds or with no cardio in
+ * either window.
+ */
+export function weekZones({ sessions, samples, bounds, weekEnd }) {
+  if (!bounds) return null;
+  const w = windows(weekEnd);
+  const [week, base] = cardioZones({ sessions, samples, bounds, buckets: [w.week, w.baseline] });
+  if (!week.total && !base.total) return null;
+  const perWeek = (n) => Math.round(n / 4); // the baseline is 28 days
+  return {
+    zones: bounds.zones,
+    maxHr: bounds.maxHr,
+    week: { minutes: week.zones, noDetail: week.noDetail, total: week.total },
+    baselineWeeklyAvg: { minutes: base.zones.map(perWeek), noDetail: perWeek(base.noDetail), total: perWeek(base.total) },
+  };
 }

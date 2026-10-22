@@ -20,7 +20,7 @@ import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
 import { blockAdherence, weekAdherence } from '../metrics/adherence.js';
 import { suggestTarget, loadTargetConfig } from '../metrics/targets.js';
 import { rangeStatus, effectiveRange, labsSummary, loadLabRanges } from '../metrics/labs.js';
-import { zoneBounds, zoneOf, cardioZones, zoneBuckets } from '../metrics/zones.js';
+import { zoneBounds, zoneOf, cardioZones, zoneBuckets, weekZones } from '../metrics/zones.js';
 
 /** Expands a fixture's dailyFill (one row per day with the given values, minus skip, plus overrides). */
 function expandDaily({ from, to, skip = [], override = {}, ...values }) {
@@ -75,6 +75,11 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       assert.deepEqual(run(zoneBuckets(fx.today, { weeks: fx.weeks.count })), fx.weeks.expected);
       const [noBounds] = run([{ from: fx.noBounds.day, to: fx.noBounds.day }], null);
       assertSubset(noBounds, fx.noBounds.expected);
+      const review = weekZones({ sessions: fx.sessions, samples, bounds, weekEnd: fx.review.weekEnd });
+      assertSubset(review, fx.review.expected);
+      assert.deepEqual(review.zones, fx.bounds.expected.zones);
+      assert.equal(weekZones({ sessions: fx.sessions, samples, bounds: null, weekEnd: fx.review.weekEnd }), null);
+      assert.equal(weekZones({ sessions: fx.sessions, samples, bounds, weekEnd: '2026-06-06' }), null, 'no cardio in either window');
       return;
     }
     if (fx.kind === 'lab-ranges') {

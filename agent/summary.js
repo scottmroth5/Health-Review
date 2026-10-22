@@ -49,6 +49,7 @@ export function buildSummary(week, notes, { today }) {
     recovery,
     ...(week.nightBreathing ? { nightBreathing: week.nightBreathing } : {}),
     cardio: week.cardio,
+    ...(week.heartRateZones ? { heartRateZones: week.heartRateZones } : {}),
     strength,
     trainingVolume: week.trainingVolume,
     program: week.program,

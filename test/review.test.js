@@ -383,3 +383,21 @@ test('summary: lift plateau statuses reach the review grounded; lifts not traine
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'Deadlift is regressing: best estimated max 327 against 350, down 6.6%.']]), allowed), []);
   store.close();
 });
+
+test('summary: heartRateZones from per-minute heart rate, only with a Zone 2 range and a birth year', () => {
+  const store = seededStore();
+  const { db } = store;
+  db.prepare("INSERT INTO workout_sessions (type, start, end, duration_sec, avg_hr, updated_at) VALUES ('Elliptical', '2026-09-22T10:00:00', '2026-09-22T10:05:00', 300, 118, 'x')").run();
+  const ins = db.prepare("INSERT INTO workout_hr_samples (type, start, t, avg_bpm) VALUES ('Elliptical', '2026-09-22T10:00:00', ?, ?)");
+  [105, 115, 120, 130].forEach((bpm, i) => ins.run(`2026-09-22T10:0${i}`, bpm));
+  const zones = () => prepareReview(db, { weekEnd: '2026-09-26', today: '2026-09-27' }).summary.heartRateZones;
+  assert.equal(zones(), undefined, 'no Zone 2 range yet');
+  for (const [k, v] of [['zone2_low_bpm', '110'], ['zone2_high_bpm', '125'], ['birth_year', '1970']]) {
+    db.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, 'x')").run(k, v);
+  }
+  const z = zones();
+  assert.deepEqual(z.week, { minutes: [1, 2, 1, 0, 0], noDetail: 1, total: 5 });
+  assert.equal(z.maxHr, 169);
+  assert.equal(z.zones[1].low, 110);
+  store.close();
+});

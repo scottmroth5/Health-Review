@@ -189,6 +189,9 @@ Each minute counts in the zone of that minute's average heart rate, from the JSO
 minute-by-minute heart rate (workouts from before that export, or moments the watch missed) shows in gray, never guessed
 from the workout's average. Strength workouts are left out. Hover a bar for minutes per zone; the table lists them too.
 
+The weekly review gets the same numbers for the review week and the weekly average of the 4 weeks before it, so it can
+comment on how hard your cardio was. Minutes with no heart rate reading are reported as unknown, not as easy minutes.
+
 ## Health targets
 
 Every chart on the Health tab, and the VO2 max card, shows a **target**: a dashed line on the chart, and a line above it

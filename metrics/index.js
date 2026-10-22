@@ -2,6 +2,7 @@
 import { windows } from './stats.js';
 import { recovery, nightBreathing } from './recovery.js';
 import { cardio } from './cardio.js';
+import { weekZones, zoneBounds } from './zones.js';
 import { strength } from './strength.js';
 import { drinking } from './drinking.js';
 import { checkins } from './checkins.js';
@@ -28,6 +29,10 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
     // Blood oxygen and breathing disturbances: values only, for physician discussion (null with no data).
     nightBreathing: nightBreathing(data.daily_metrics, weekEnd),
     cardio: cardio(data.workout_sessions, weekEnd, { zone2 }),
+    heartRateZones: weekZones({
+      sessions: data.workout_sessions, samples: data.workout_hr_samples ?? [], weekEnd,
+      bounds: zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, birthYear: data.birth_year, year: Number(weekEnd.slice(0, 4)) }),
+    }),
     strength: strength(data.strength_sets, weekEnd),
     trainingVolume: volumeTrend(data.strength_sets, weekEnd),
     program: data.program ?? null,

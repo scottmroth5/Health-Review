@@ -240,7 +240,7 @@ birth year; above it is Zone 5). Each per-minute sample counts one minute in the
 with no sample (gaps, workouts before the JSON export) are noDetail, never guessed from the average; strength is left out
 (cardio.js sessionKind). GET /api/cardio-zones?view=30d|90d|1y (daily, or Sunday-to-Saturday weeks) feeds the Health tab's
 "Cardio minutes by heart rate zone" card (stacked columnChart segments on one blue ramp, gray for no detail); bounds are null
-without a Zone 2 range or birth year. The weekly review does not use zones yet.
+without a Zone 2 range or birth year. The weekly summary carries heartRateZones (weekZones: the week and the 28-day baseline's weekly average per zone, noDetail apart, the bounds; absent without bounds or cardio); CONTRACT says report as given, noDetail is unknown and never Zone 1, and its Zone 2 minutes beat cardio.zone2 (whole sessions by average).
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and
