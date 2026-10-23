@@ -49,11 +49,14 @@ npm test                          run unit tests, including metric fixtures (CI 
 npm run check:personal -- --all   personal-data and secrets check of every tracked file (the pre-commit hook checks staged
                                   files; npm install turns the hook on; private terms go in data/private-terms.txt)
 node --test test/google.test.js   run one suite
-npm run google:login              one-time Google sign-in (read-only Sheets); saves data/google/token.json
+npm run google:login              one-time Google sign-in (read-only Sheets and Drive, drive.file for backups); saves
+                                  data/google/token.json (copied into the server's data/google at cutover)
 npm run google:exports            count Health Auto Export's files in HEALTH_EXPORT_FOLDER_ID and WORKOUT_JSON_FOLDER_ID
 npm run google:check              verify read access to each *_SHEET_ID in .env (prints tab names and row counts only)
 npm run sync                      copy Health Auto Export's new files and the Workout Log into data/health.db (prints counts and warnings only)
 npm run sync -- --backfill        one-time full import: every Workout Log year tab, the v1 drinking log and weekly check-ins
+The register-*-task.ps1 lines are the PC's Windows tasks, until cutover only: on the server the SCHEDULE_ lines in its .env
+run the same jobs (never both at once), and afterwards the PC is the development machine with no tasks.
 powershell -ExecutionPolicy Bypass -File scripts\register-sync-task.ps1   (re)register the daily 7am sync task
                                   ("Health-Review daily sync"; runs scripts\sync-daily.cmd, logs to data\logs\sync.log)
 powershell -ExecutionPolicy Bypass -File scripts\register-review-task.ps1   (re)register the review task: Sunday 8am, catch-ups Monday and Tuesday
@@ -378,11 +381,19 @@ other) plus the review eval's results.jsonl usage priced with agent-core's prici
 exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
-Health data may be stored or synced off this machine (cloud storage, backups, a future hosted deployment) only if it is
-encrypted at rest and in transit (owner's choice, 2026-10-05): TLS for every transfer, and encryption at rest with keys
-the owner controls. For files in consumer cloud storage (Google Drive and the like), encrypt before upload, and never
-store the key or password with the data. Never store, sync or send it unencrypted, never put it in CI, and never
-commit it. This is about where data is kept; what may be sent to the Claude API is governed by the rules below.
+The owner's machine is the owner's own computer plus the servers the owner runs in their own AWS account (owner's choice,
+2026-10-23): today one Lightsail instance at SITE_ADDRESS (deploy/), reached only over TLS (Caddy, Let's Encrypt) and
+only after Google sign-in as an allowed email, with Health Auto Export posting over HTTPS with INGEST_TOKEN. Its address,
+IP, users and keys stay out of the repo (public).
+Health data and the MAPS catalog and PDFs may live there (/opt/health-review/data, never in the image, the repo, CI,
+GitHub secrets, logs or the demo). After the move the PC is the development machine. Lightsail encrypts its disks and
+snapshots with AWS-managed keys, not keys the owner controls: an accepted temporary exception (2026-10-23) until the
+move to RDS plus EC2 with a KMS customer-managed key; nothing else is excepted.
+Anywhere else, health data may be stored or synced (cloud storage, backups) only if it is encrypted at rest and in
+transit (owner's choice, 2026-10-05): TLS for every transfer, and encryption at rest with keys the owner controls. For
+files in consumer cloud storage (Google Drive and the like), encrypt before upload, and never store the key or password
+with the data. Never store, sync or send it unencrypted, never put it in CI, and never commit it. This is about where
+data is kept; what may be sent to the Claude API is governed by the rules below.
 The approved off-machine copy is the nightly backup (tools/backup): an online SQLite snapshot that must pass its
 integrity check, packed with the MAPS catalog, gzipped, then AES-256-GCM with a scrypt key from
 HEALTH_BACKUP_PASSPHRASE (.env only, never uploaded or logged) and a fresh salt and nonce per file, verified by
@@ -415,7 +426,8 @@ The exercise-name assist (npm run log:unmapped -- --suggest) sends exercise name
 dictionary's own names), and only after the owner types yes; never weights, dates, set counts or other log data
 (owner's choice, 2026-10-02). Its proposals reach the dictionary only through --accept.
 The MAPS PDFs and anything transcribed from them (data/maps) are Mind Pump's copyrighted material: never commit them,
-put them in fixtures, or send their text anywhere; only computed facts (program, phase, week) leave this machine.
+put them in fixtures or the image, or send their text anywhere; only computed facts (program, phase, week) leave the
+owner's machine (as defined above, so the server may hold them in its data folder).
 Metrics are computed in code, never by the model.
 Anything involving medications, abnormal labs, or symptoms is flagged for physician discussion, not turned into a recommendation.
 Blood oxygen and breathing disturbances (values and targets) appear in the review only in physicianDiscussion.

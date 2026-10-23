@@ -2,13 +2,81 @@
 
 [![CI](https://github.com/scottmroth5/Health-Review/actions/workflows/ci.yml/badge.svg)](https://github.com/scottmroth5/Health-Review/actions/workflows/ci.yml)
 
-A weekly health review agent that runs on its owner's machine. Health data is kept locally, and anything stored off the machine must be encrypted at rest and in transit (see [PRIVACY.md](PRIVACY.md));
-[CLAUDE.md](CLAUDE.md) has the architecture, commands and rules. This page covers the training log's
-exercise dictionary and program blocks.
+A weekly health review agent that runs on its owner's machines: a server in the owner's own AWS account, with the
+owner's PC for development. Health data stays on those machines, and any other copy must be encrypted at rest and in
+transit (see [PRIVACY.md](PRIVACY.md)). [CLAUDE.md](CLAUDE.md) has the architecture, commands and rules. This page covers
+hosting, running locally, and the training log's exercise dictionary and program blocks.
 
 Every push to main runs the tests in New York time and in UTC, `npm audit` and a secrets check on GitHub. On this
 computer, `npm install` turns on a pre-commit hook that blocks any commit containing a value from `.env`, a term from
 `data/private-terms.txt` (gitignored, one per line), a secret-shaped string, or a file from `data/`.
+
+## Hosting
+
+The app runs on one Lightsail server as three containers (`deploy/compose.yml`):
+- **The app:** at `SITE_ADDRESS`. Only Google sign-in as an email in `AUTH_ALLOWED_EMAILS` gets in.
+- **The demo:** at `DEMO_SITE_ADDRESS`. It is public and read-only, holds made-up data only, and never sees the app's
+  settings or data.
+- **Caddy:** HTTPS for both, with certificates from Let's Encrypt.
+
+The server's addresses, users and keys live only on the server and in GitHub's secrets, never in this repo.
+
+**Deploying.** A push to `main` deploys on its own:
+1. CI passes.
+2. The Deploy workflow builds the image (code only) and publishes it as `ghcr.io/scottmroth5/health-review:sha-<commit>`.
+3. It signs in to the server with a deploy key that can run only `deploy.sh`.
+4. The server starts the new image. If the app or the demo doesn't answer `/api/health` within two minutes, the server
+   goes back to the last good image.
+
+To deploy an earlier tag or roll back by hand: Actions, Deploy, Run workflow. On the server, `./deploy.sh status` shows
+what is running.
+
+**On the server:**
+- **Data:** `/opt/health-review/data` holds the database, the MAPS catalog and PDFs, and `google/token.json`. Every
+  deploy keeps it, and the nightly encrypted backup covers it.
+- **Settings:** `/opt/health-review/.env` (owner deploy, mode 600). `deploy/cloud.env.example` lists its names.
+
+**Server settings:**
+
+| Setting | What it does |
+|---|---|
+| `OWNER_TZ` | Your time zone, default `America/New_York`. It sets every "today", the review week and the schedule, whatever the server's own zone. |
+| `AUTH_MODE` | `none` (local only, the default), `google` (the server) or `demo`. |
+| `PUBLIC_URL`, `AUTH_ALLOWED_EMAILS`, `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_WEB_CLIENT_SECRET`, `SESSION_SECRET` | Google sign-in. The redirect URI is `PUBLIC_URL` + `/auth/google/callback`. |
+| `APPLE_SOURCE` | `rest` on the server: Health Auto Export posts to the app. Blank or `drive` reads the Drive folders. |
+| `INGEST_TOKEN` | The bearer token Health Auto Export sends to `/api/ingest/health` and `/api/ingest/workouts`. |
+| `SCHEDULE_SYNC`, `SCHEDULE_REVIEW`, `SCHEDULE_BACKUP`, `SCHEDULE_RESTORE_TEST` | The in-app schedule, for example `daily 07:00`, `Sun,Mon,Tue 08:00`, `daily 23:00` and `monthly 1 05:00`. A missing line turns that job off. |
+
+**Storage and encryption.**
+- **Disks:** Lightsail encrypts the server's disk and snapshots with keys AWS manages. You accept this for now, until a
+  later move to RDS and EC2 with a key you control in KMS.
+- **Backups:** the nightly backup is still encrypted with your own passphrase before it leaves the server.
+
+## Running locally
+
+After the move, this PC is for development. Health data reaches the server, not the PC.
+
+```
+npm install           # also turns on the pre-commit check
+npm start             # http://localhost:5188, AUTH_MODE=none, bound to this computer only
+npm run demo          # the demo on http://localhost:5189
+npm test
+```
+
+The local `.env` leaves `AUTH_MODE`, `APPLE_SOURCE` and the `SCHEDULE_` lines blank or commented out. Its Drive folder
+variables still let `npm run sync` read Health Auto Export's Drive files.
+
+**Windows tasks, until cutover only.** Before the move, the PC ran everything through Task Scheduler:
+- **Daily sync** at 7am: `scripts\register-sync-task.ps1`.
+- **Weekly review**: Sunday 8am, with catch-ups Monday and Tuesday: `scripts\register-review-task.ps1`.
+- **Nightly backup** at 11pm: `scripts\register-backup-task.ps1`.
+- **The server** at sign-in: `scripts\register-server-task.ps1`.
+
+Run each with `powershell -ExecutionPolicy Bypass -File <script>`.
+
+At cutover, turn off the tasks when the server's `SCHEDULE_` lines go on, and never run both. `npm run server:restart`
+stops the local server and starts its task again; `npm run server:stop` stops it. Ending the task in Task Scheduler
+alone leaves node running.
 
 ## Exercise dictionary
 
@@ -367,7 +435,7 @@ header `Authorization: Bearer <INGEST_TOKEN>`. The server sets `APPLE_SOURCE=res
 - **Google's limit:** 60 Sheets reads a minute, so reads are spaced about a second apart and saved every 25 files. If
   Google still says "too many requests", the sync keeps what it read and the next sync continues.
 - **Partial exports:** a day read again from a partial export never lowers the full day already stored.
-- **A missing variable:** that kind is skipped and the sync log says so.
+- **A missing variable:** that kind is skipped with a warning.
 
 To set it up:
 1. Set both variables, then run `npm run google:login` once. It adds permission to list the folders (names and dates
@@ -383,20 +451,20 @@ sheets are no longer read by the app, so you can turn off their triggers. `HEALT
 3-hour workout time shift was fixed once in the stored rows (`npm run fix:session-times`, 2026-10-15).
 `tools/apps-script/ConsolidateHealthMetrics.gs` is kept for reference only.
 
-**Data checks:** after every sync, the app checks the data. Problems show above the day on the Today tab and in the
-sync log (Activity tab). The checks look for:
+**Data checks:** after every sync, the app checks the data. Problems show above the day on the Today tab, and
+`npm run sync` prints them all (the server's `[sync]` line gives only their count). The checks look for:
 - **Apple Health data that stopped:** nothing after a given day. Today is never expected to be complete.
 - **The workouts export stopped:** the same for the JSON workouts folder at 72 hours, since a rest day can write no file.
 - **The export automation stopped:** a sync looked in the Health Auto Export folder and found no file newer than 26 hours,
   so the warning names when the last export was written. It counts from the last sync, so a sync that just hasn't run yet
-  never sets it off.
+  never sets it off. On the server (`APPLE_SOURCE=rest`) it counts from the last successful post instead.
 - **Missing days:** gaps in the last 14 days.
 - **Partial days:** a day whose latest Health Auto Export file was written before the day ended, such as an export you
   ran by hand in the afternoon, whatever its steps. The next export written after midnight fills it in and clears it.
   Days from the old consolidated sheet have no file time, so for them a partial day is one whose steps are under a
   quarter of your usual day.
 - **Lifting without a watch workout:** a Workout Log day with no Apple Watch strength workout. This one appears in the
-  sync log only, since you may simply not have worn the watch.
+  output of `npm run sync` only, since you may simply not have worn the watch.
 - **A workout longer than its start-to-end time:** the Duration shift coming back.
 - **Impossible values.**
 
@@ -408,17 +476,13 @@ run with the dates (Activity tab). From 9am on Sunday, while last week has no re
 why and offer **Run review now**, which syncs first. While days are still missing the button reads **Run anyway** and
 asks first. From the command line, `npm run review -- --force` writes it anyway, and `-- --dry-run` shows the check.
 
-**Catch-up runs.** The scheduled task also runs Monday and Tuesday at 8am. Once the week's review exists those runs do
-nothing (no sync, no cost); otherwise they try again, so a week skipped on Sunday for a late Apple Health export is
-usually written by Monday. Re-run `scripts\register-review-task.ps1` after updating to pick up the extra days.
+**Catch-up runs.** The scheduled review also runs Monday and Tuesday at 8am (`SCHEDULE_REVIEW=Sun,Mon,Tue 08:00` on
+the server). Once the week's review exists those runs do nothing (no sync, no cost); otherwise they try again, so a week
+skipped on Sunday for a late Apple Health export is usually written by Monday.
 
 **Rewrite with the full week.** If a review was written while days were missing or partial (with Run anyway, or
 `--force`) and those days arrive later, the Today and Reviews tabs offer **Rewrite with the full week** (about $0.35).
 It replaces that week's review. Nothing rewrites a review automatically.
-
-**Restarting the server.** `npm run server:restart` stops the running server and starts the "Health-Review server"
-task again, then waits for it to answer; run it after updating the code. `npm run server:stop` stops it. Ending the
-task in Task Scheduler alone leaves the server running, because Windows does not stop the node process it started.
 
 **What it costs:** the Activity tab's Claude API spend card shows this month, this year and all time, plus the last 12
 months and each year split into reviews, the Next program chat and evals. Reviews and chat come from the recorded runs;
@@ -438,6 +502,8 @@ npm run demo:build    # rebuild the demo database from scratch, which also reset
   and no `.env`, so no API keys are in reach.
 - **Off in the demo:** sync, reviews and the Claude chat. A banner says it's sample data.
 - **Your instance keeps running:** on 5188, as before. The two share only code.
+- **Hosted:** the server runs the same demo at `DEMO_SITE_ADDRESS` with `AUTH_MODE=demo`. It refuses every change, and
+  its made-up database is rebuilt in memory on each restart.
 - **The data:** about 15 months, made up by `demo/generate.js` from a fixed seed, so every build is the same for a
   given day. It includes:
   - Apple Health days and workouts, with a planted gap and a partial day so the data checks have something to show
@@ -452,12 +518,10 @@ npm run demo:build    # rebuild the demo database from scratch, which also reset
 
 - **Users and logins** (deferred, 2026-10-07): register users, tie your data to your login, mark a user as demo or
   real, and give each demo user an isolated copy of the demo data while the base never changes. Until then, the
-  separate demo instance covers showing the app.
-  - Exposing the server beyond this computer first needs a login mode in `server/auth.js`, and HTTPS.
-- **Apple data without Google, with the move to AWS** (chosen 2026-10-15): replace the Drive read with Health Auto
-  Export's REST API automation, posting JSON to an authenticated HTTPS ingest endpoint reached over Tailscale (encrypted
-  between phone and server, nothing open to the internet). Apple Health and Apple Watch data then never pass through
-  Google, which also removes the last unencrypted cloud copy of them. Needs the login mode above first.
+  separate demo instance covers showing the app. Google sign-in for one allowed email is in place (`AUTH_MODE=google`).
+- **Keys you control** (after the Lightsail move): RDS plus EC2 with a KMS customer-managed key, which ends the
+  temporary AWS-managed-key exception.
+- **An iPhone app** using the same API.
 
 ## Encrypted backups
 
@@ -479,8 +543,12 @@ nothing else in your Drive.
    --check-passphrase` checks it's set.
 2. **Google permission:** in Google Cloud, add the `.../auth/drive.file` scope to the app's consent screen. Then run
    `npm run google:login` again to grant it.
-3. **Schedule:** register the nightly task with
-   `powershell -ExecutionPolicy Bypass -File scripts\register-backup-task.ps1`.
+3. **Schedule:** on the server, `SCHEDULE_BACKUP=daily 23:00` in `.env`. On the PC before cutover, the nightly task
+   (see Running locally).
+
+**Monthly restore test:** `SCHEDULE_RESTORE_TEST=monthly 1 05:00` (or `npm run backup:test`) decrypts the newest backup
+into a temporary folder, checks its integrity, compares row counts with the live database, and deletes it. A failure
+shows on the Today tab.
 
 **USB copies:** `npm run backup -- --to E:\HealthBackups` writes the same encrypted file to a folder, with no upload.
 
@@ -488,4 +556,4 @@ nothing else in your Drive.
 file path instead of `latest`). It decrypts it, checks it and writes it to a new file. It never overwrites
 `data/health.db`, and it prints the steps to swap the restored file in.
 
-Runs appear on the Activity tab, with the Backup log.
+Runs appear on the Activity tab, under Scheduled jobs.
