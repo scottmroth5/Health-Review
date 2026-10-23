@@ -1,8 +1,14 @@
 # Health Review
 
+[![CI](https://github.com/scottmroth5/Health-Review/actions/workflows/ci.yml/badge.svg)](https://github.com/scottmroth5/Health-Review/actions/workflows/ci.yml)
+
 A weekly health review agent that runs on its owner's machine. Health data is kept locally, and anything stored off the machine must be encrypted at rest and in transit (see [PRIVACY.md](PRIVACY.md));
 [CLAUDE.md](CLAUDE.md) has the architecture, commands and rules. This page covers the training log's
 exercise dictionary and program blocks.
+
+Every push to main runs the tests in New York time and in UTC, `npm audit` and a secrets check on GitHub. On this
+computer, `npm install` turns on a pre-commit hook that blocks any commit containing a value from `.env`, a term from
+`data/private-terms.txt` (gitignored, one per line), a secret-shaped string, or a file from `data/`.
 
 ## Exercise dictionary
 

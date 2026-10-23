@@ -1,0 +1,3 @@
+#!/bin/sh
+# Blocks commits that contain personal data or secrets (scripts/check-personal.js). Turned on by npm install (prepare).
+exec node scripts/check-personal.js

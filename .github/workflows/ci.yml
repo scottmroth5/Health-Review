@@ -1,0 +1,36 @@
+# Tests on every push to main and every pull request. No secrets and no real data: the tests use synthetic fixtures only.
+# The suite runs in New York time and in UTC, so a calendar-day bug that only shows on a UTC server fails here
+# (tools/time.js, OWNER_TZ). The personal-data check runs its always-on part here (forbidden paths, secret shapes);
+# the .env and private-terms part runs in the pre-commit hook on the owner's computer.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (${{ matrix.tz }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: [America/New_York, UTC]
+    env:
+      TZ: ${{ matrix.tz }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Known vulnerabilities in what the app ships (dev tools excluded); high or critical fails the build.
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm test
+      - run: npm run check:personal -- --all

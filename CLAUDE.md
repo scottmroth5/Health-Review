@@ -42,7 +42,9 @@ Health specific logic stays in this repo; never add it to agent-core.
 /legacy contains the v1 scripts for reference only. Do not modify or import from them.
 
 ## Commands
-npm test                          run unit tests, including metric fixtures
+npm test                          run unit tests, including metric fixtures (CI runs them under TZ=America/New_York and UTC)
+npm run check:personal -- --all   personal-data and secrets check of every tracked file (the pre-commit hook checks staged
+                                  files; npm install turns the hook on; private terms go in data/private-terms.txt)
 node --test test/google.test.js   run one suite
 npm run google:login              one-time Google sign-in (read-only Sheets); saves data/google/token.json
 npm run google:exports            count Health Auto Export's files in HEALTH_EXPORT_FOLDER_ID and WORKOUT_JSON_FOLDER_ID
