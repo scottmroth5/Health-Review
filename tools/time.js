@@ -51,3 +51,22 @@ export function localStamp(instant, tz = ownerTz()) {
   const p = zonedParts(instant, tz);
   return `${p.year}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}`;
 }
+
+/**
+ * The instant at which the owner's wall clock reads date at hh:mm (for schedules). On the spring-forward night a
+ * missing time (2:30 that day) gives the instant an hour later; in the repeated fall-back hour it gives the first.
+ * @param {string} date  YYYY-MM-DD in the owner's zone
+ */
+export function zonedInstant(date, hour, minute, tz = ownerTz()) {
+  const [y, m, d] = date.split('-').map(Number);
+  const wanted = Date.UTC(y, m - 1, d, hour, minute);
+  // Start from the wall clock read as UTC, then correct by the zone's offset at that instant (twice, for DST edges).
+  let t = wanted;
+  for (let i = 0; i < 3; i += 1) {
+    const p = zonedParts(new Date(t), tz);
+    const seen = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+    if (seen === wanted) return new Date(t);
+    t += wanted - seen;
+  }
+  return new Date(t);
+}

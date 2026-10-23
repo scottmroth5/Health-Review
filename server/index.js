@@ -2,10 +2,12 @@
 // Locally AUTH_MODE=none binds to 127.0.0.1. On the server AUTH_MODE=google (or demo for the public demo) with HOST=0.0.0.0
 // behind Caddy (TRUST_PROXY). Google sign-in for the sync loads on the first sync.
 import { openHealthStore } from '../db/store.js';
-import { getGoogleAuth } from '../tools/google/auth.js';
 import { repoPath } from '../tools/paths.js';
-import { createSheetsSource } from '../ingest/sheets.js';
-import { runSync, appleSource } from '../ingest/sync.js';
+import { appleSource } from '../ingest/sync.js';
+import { syncJob } from '../jobs/sync.js';
+import { weeklyReview } from '../jobs/review.js';
+import { backupJob } from '../jobs/backup.js';
+import { createScheduler, runsLookup, schedulesFromEnv } from './scheduler.js';
 import { buildApp } from './app.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { runReview } from '../agent/review.js';
@@ -29,6 +31,7 @@ const auth = { settings };
 const quiet = { info() {}, warn() {}, error() {} };
 let store;
 let app;
+let scheduler = null; // the main instance's in-app schedule (never in the demo)
 if (demo) {
   // The demo instance: made-up data in its own database (built from demo/generate.js when missing), the made-up
   // catalog and substitutions, its own log folder, and no Google sync, review or chat. Never opens data/health.db.
@@ -45,7 +48,7 @@ if (demo) {
   // The Claude client for the Next program chat and the manual review run, made on first use (needs ANTHROPIC_API_KEY in .env).
   const claude = (() => { let c; return () => (c ??= createReviewClaude()); })();
   const services = {
-    sync: () => runSync({ store, source: createSheetsSource(getGoogleAuth()), logger: quiet }),
+    sync: () => syncJob({ store }),
     claude,
     // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.
     review: ({ weekEnd, today }) => runReview({
@@ -53,14 +56,32 @@ if (demo) {
       model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
     }),
   };
+  // The in-app schedule (SCHEDULE_* in .env; none set, nothing runs). The same jobs as the npm scripts (jobs/).
+  const runners = {
+    sync: async () => { const { counts, warnings } = await services.sync(); console.log(`[sync] ok ${JSON.stringify(counts)} warnings=${warnings.length}`); },
+    review: async () => {
+      const r = await weeklyReview({ store, claude, sync: services.sync, scheduled: true });
+      console.log(`[review] ${r.status} week ending ${r.weekEnd}${r.syncError ? ' (sync failed first)' : ''}`);
+    },
+    backup: async () => { const r = await backupJob({ store }); console.log(`[backup] ok ${r.name} ${r.bytes} bytes`); },
+  };
+  scheduler = createScheduler({
+    jobs: schedulesFromEnv().filter((j) => runners[j.name]).map((j) => ({ ...j, run: runners[j.name] })),
+    runs: runsLookup(store.db),
+  });
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
-  app = await buildApp({ store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: repoPath('data', 'evals', 'review') });
+  app = await buildApp({
+    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: repoPath('data', 'evals', 'review'),
+    schedule: () => scheduler.status(),
+  });
 }
 await app.listen({ host, port });
 console.log(`Health Review${demo ? ' (demo data)' : ''}: http://localhost:${port}  (API contract: http://localhost:${port}/api/openapi.json)`);
+scheduler?.start();
 
 const shutdown = async () => {
+  scheduler?.stop();
   await app.close();
   store.close();
   process.exit(0);

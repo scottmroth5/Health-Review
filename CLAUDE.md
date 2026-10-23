@@ -297,7 +297,16 @@ from daily_metrics or a likely partial export is skipped, recorded as a 'skipped
 sent. GET /api/reviews/status (overdue: no review and a run was tried or it is past 9am on the Sunday after) drives a notice
 on the Today and Reviews tabs; POST /api/reviews/run syncs, applies the same gate (force to override), and writes the review
 in the background through services.review (main instance only; never in the demo). A failed manual run keeps its error name only.
-The task passes --scheduled: a Monday or Tuesday catch-up does nothing once the week's review exists. A review whose saved
+Scheduling (server/scheduler.js, ported from Job-Agent; test/scheduler.test.js): while the server runs, SCHEDULE_SYNC
+("daily 07:00"), SCHEDULE_REVIEW ("Sun,Mon,Tue 08:00"), SCHEDULE_BACKUP ("daily 23:00") and SCHEDULE_RESTORE_TEST
+("monthly 1 05:00") run the same jobs as the npm scripts (jobs/sync.js syncJob, jobs/review.js weeklyReview with
+scheduled true, jobs/backup.js backupJob). Times are in OWNER_TZ (tools/time.js zonedInstant), never the host's zone. A
+missing or blank line turns that job off, so the PC (lines commented out) runs nothing and keeps its Windows tasks until
+the move; a bad spec stops the server rather than silently disabling a job. A run missed within 12 hours runs on start
+when the job has not run since; a job never overlaps itself (in this process, or a run of that name marked running in the
+last 30 minutes). GET /api/jobs carries each job's schedule and next run for the Activity tab; [schedule] lines go to
+stdout. The restore test's job arrives with the monthly restore test.
+The scheduled review (and the Windows task's --scheduled): a Monday or Tuesday catch-up does nothing once the week's review exists. A review whose saved
 summary has dataQuality (written with gaps) gets rewriteAvailable once the week is complete; the notice offers Rewrite with
 the full week (POST /api/reviews/run overwrites the week's review); nothing rewrites automatically.
 server-start.cmd runs stop-server.ps1 -KeepTask first, so starting the task replaces a leftover server (it holds port 5188

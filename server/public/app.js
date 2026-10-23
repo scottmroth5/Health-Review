@@ -2083,15 +2083,17 @@ async function showRun(id) {
 
 /** Scheduled jobs: each job's last run (and the ones before it), and the last Health Auto Export posts. */
 async function loadJobs() {
-  const { jobs, ingest } = await api('GET', '/api/jobs');
+  const { jobs, ingest, schedule = [] } = await api('GET', '/api/jobs');
   const runLine = (r) => `${when(r.started_at)}, ${RUN_STATUS[r.status] ?? r.status}${r.duration_ms != null ? `, ${seconds(r.duration_ms)}` : ''}`;
   const rows = jobs.map((j) => {
     const [last, ...before] = j.runs;
+    const s = schedule.find((x) => x.name === j.name);
     return h('li', {},
       h('span', { class: `dot ${last?.status ?? ''}`, 'aria-hidden': 'true' }),
       h('span', {}, h('b', {}, runLabel(j.name)), ' ',
         h('span', { class: 'muted small' }, last ? runLine(last) : 'has not run yet'),
-        before.length ? h('span', { class: 'muted small' }, `; before that: ${before.map((r) => `${when(r.started_at)} ${RUN_STATUS[r.status] ?? r.status}`).join(', ')}`) : null));
+        before.length ? h('span', { class: 'muted small' }, `; before that: ${before.map((r) => `${when(r.started_at)} ${RUN_STATUS[r.status] ?? r.status}`).join(', ')}`) : null,
+        h('span', { class: 'muted small' }, s ? `. Scheduled ${s.schedule}${s.running ? ', running now' : s.next ? `, next ${when(s.next)}` : ''}` : '. Not scheduled in this app')));
   });
   const posts = ingest.length
     ? h('ul', { class: 'plain-list' }, ...ingest.map((p) => h('li', {},
