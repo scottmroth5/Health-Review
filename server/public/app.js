@@ -4,7 +4,10 @@ import { DEMO_KEY, demoFromLocation, redactReview, isDrinkingChart } from './dem
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// The public demo is read-only: a change is refused here, before any request (the server refuses it too).
+const READ_ONLY_MESSAGE = 'This is a read-only demo with made-up data, so changes are turned off.';
 async function api(method, url, body) {
+  if (state.readOnly && method !== 'GET') throw new Error(READ_ONLY_MESSAGE);
   const res = await fetch(url, {
     method,
     headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
@@ -21,7 +24,7 @@ function setStatus(node, message, kind = '') {
   node.className = `status ${kind}`;
 }
 
-const state = { today: null, day: null, range: 30, demo: false };
+const state = { today: null, day: null, range: 30, demo: false, readOnly: false };
 
 // ---------------- demo mode ----------------
 // Hides drinking and CBD on screen for showing the app to others (see demo.js). Saved in this browser only.
@@ -270,6 +273,19 @@ function renderDataChecks(checks = []) {
   fill($('#data-checks'), checks.map((c) => h('li', {}, h('span', { 'aria-hidden': 'true' }, '⚠ '), c.message)));
 }
 
+/** Google sign-in: the signed-in address and a Sign out button in the header. */
+async function loadAccount() {
+  const me = await api('GET', '/api/me').catch(() => null);
+  if (me?.authMode !== 'google' || !me.email) return;
+  $('#account-email').textContent = me.email;
+  $('#account').hidden = false;
+  $('#sign-out').addEventListener('click', async () => {
+    await fetch('/auth/logout', { method: 'POST' });
+    location.href = '/auth/signed-out';
+  });
+}
+loadAccount();
+
 async function loadStatus() {
   const s = await api('GET', '/api/status');
   state.today = s.today;
@@ -280,6 +296,10 @@ async function loadStatus() {
   // The demo instance (npm run demo): a banner, no sync, and no privacy toggle (there is nothing real to hide).
   const demoInstance = s.instance === 'demo';
   $('#instance-banner').hidden = !demoInstance;
+  // The public demo (AUTH_MODE=demo): write controls are hidden (body.read-only in app.css) and changes are refused.
+  state.readOnly = Boolean(s.readOnly);
+  document.body.classList.toggle('read-only', state.readOnly);
+  if (state.readOnly) $('#instance-banner').textContent = 'Demo: everything here is made-up sample data, and changes are turned off.';
   $('#sync-now').hidden = s.sync === false;
   document.querySelector('.demo-toggle').hidden = demoInstance;
   if (demoInstance) document.title = 'Health Review (demo data)';

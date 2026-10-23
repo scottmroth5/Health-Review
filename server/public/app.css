@@ -458,3 +458,10 @@ body.demo .demo-toggle { color: var(--accent); font-weight: 600; }
 .lab-range-editor { margin-top: 8px; border-top: 1px solid var(--grid); padding-top: 6px; }
 .lab-range-editor .actions label { display: inline-flex; align-items: center; gap: 4px; }
 .lab-range-editor .actions input { width: 6.5em; margin: 0; }
+
+/* Signed-in account (google mode) */
+.account { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-secondary); }
+/* The public read-only demo: hide the controls that would change data (the server refuses them anyway). */
+body.read-only form button[type="submit"], body.read-only button.danger, body.read-only #sync-now,
+body.read-only .actions button:not([data-range]):not([data-vview]):not([data-zview]):not([data-zgroup]),
+body.read-only #add-section { display: none !important; }

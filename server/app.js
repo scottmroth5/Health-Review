@@ -1,10 +1,11 @@
 // The Health Review API and UI. Every route has a JSON schema; /api/openapi.json is the contract
 // the UI (and any future backend) follows.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
 import fastifyStatic from '@fastify/static';
 import { registerAuth } from './auth.js';
+import { registerSecurityHeaders, registerRateLimits, errorReply, DEMO_REQUEST_LIMIT } from './security.js';
 import * as q from './queries.js';
 import { TIMINGS } from '../metrics/medications.js';
 import { VIEWS } from '../metrics/volume.js';
@@ -61,6 +62,8 @@ const sectionFields = {
   sensitive: { type: 'boolean' },
 };
 
+const VERSION = JSON.parse(readFileSync(repoPath('package.json'), 'utf8')).version;
+
 const badRequest = (message) => Object.assign(new Error(message), { statusCode: 400 });
 
 /**
@@ -71,12 +74,19 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  * @param {'main'|'demo'} [ctx.instance]  'demo' marks the made-up-data instance (the UI shows a banner)
  * @param {{ chat?: boolean }} [ctx.features]  chat false turns the Next program chat off (the demo instance)
  * @param {string} [ctx.publicDir]   static UI to serve; skipped when missing
- * @param {string} [ctx.authMode]
+ * @param {string} [ctx.authMode]  none (default), google or demo (server/auth.js)
+ * @param {{ settings?: object, exchange?: Function, now?: () => number }} [ctx.auth]  google mode's settings (authSettings) and,
+ *   in tests, a fake Google exchange
+ * @param {boolean|number|string} [ctx.trustProxy]  Fastify trustProxy: set behind Caddy so req.ip is the client's address
  * @param {() => Date} [ctx.clock]
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges }) {
-  const app = Fastify({ logger });
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, trustProxy = false, clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges }) {
+  const app = Fastify({ logger, trustProxy });
+  // Every route's method and path, so tests can check each write route (demo mode refuses them all).
+  const routeList = [];
+  app.addHook('onRoute', (r) => { for (const method of [r.method].flat()) routeList.push({ method, url: r.url }); });
+  app.decorate('routeList', routeList);
   const { db } = store;
   let syncing = false;
   // The manual review run: one at a time, in the background; the last failure is kept as its error name only.
@@ -85,12 +95,20 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   await app.register(swagger, {
     openapi: { info: { title: 'Health Review API', version: '1.0.0', description: 'Local health tracking and weekly review' } },
   });
-  registerAuth(app, { mode: authMode });
+  // Security headers always; rate limits once the server can be reached from outside (sign-in, refused requests, and every
+  // request in the public demo); then the sign-in check (server/auth.js).
+  registerSecurityHeaders(app, { https: String(auth.settings?.publicUrl ?? '').startsWith('https://') });
+  if (authMode !== 'none') registerRateLimits(app, { all: authMode === 'demo' ? DEMO_REQUEST_LIMIT : null, now: auth.now });
+  registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now });
+
+  // The deploy health check: open in every mode, status and version only.
+  app.get('/api/health', {
+    schema: { summary: 'Health check for the deploy (no sign-in needed): status and version only', response: { 200: { type: 'object', properties: { status: { type: 'string' }, version: { type: 'string' } } } } },
+  }, async () => ({ status: 'ok', version: VERSION }));
 
   app.setErrorHandler((err, req, reply) => {
-    const status = err.statusCode ?? (err.validation ? 400 : 500);
-    if (status >= 500) req.log.error(err);
-    reply.code(status).send({ error: status >= 500 ? 'Server error' : err.message });
+    const { status, body } = errorReply(err, req);
+    reply.code(status).send(body);
   });
 
   const requireDate = (date) => {
@@ -128,7 +146,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.get('/api/status', { schema: { summary: 'Today, the last sync, and data check warnings as of today (stale or missing Apple Health days, partial days, impossible values)', response: { 200: anyObject } } }, async () => {
     const today = q.localDate(clock());
-    return { today, instance, sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today) };
+    return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today) };
   });
 
   // ---- one day ----

@@ -300,8 +300,16 @@ advisor wording ("prescription") tripped the medication check; v4 reworded it to
 the first draft (v3 was the same prompt as v2, a single lucky pass).
 
 ## UI and API
-AUTH_MODE=none binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS rebinding);
-exposing the server requires a login mode in server/auth.js first. Check-in and drinking scales are 1 to 10 to match
+Access (server/auth.js, server/session.js, server/security.js; ported from Job-Agent, test/auth.test.js):
+AUTH_MODE=none (local default) binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS
+rebinding). AUTH_MODE=google: Google sign-in with GOOGLE_WEB_CLIENT_ID and GOOGLE_WEB_CLIENT_SECRET, callback
+/auth/google/callback built from PUBLIC_URL (redirect URI PUBLIC_URL + that path), AUTH_ALLOWED_EMAILS re-checked on every
+request, hr_session cookie signed with SESSION_SECRET (30 days, HttpOnly, SameSite=Lax, Secure on https), same-origin
+required on writes, TRUST_PROXY set behind Caddy; open without a session: /auth/*, GET /api/health (status and version,
+the deploy check) and /api/ingest/* (its own token). AUTH_MODE=demo: no sign-in, every non-GET request gets 403 (the
+test enumerates the route table through app.routeList, so new write routes are covered), /api/status readOnly true hides
+write controls (body.read-only) and api() refuses changes before sending. Security headers (CSP, nosniff, frame DENY,
+HSTS on https) always; rate limits (sign-in, refused requests, the demo's request cap) when not none. Check-in and drinking scales are 1 to 10 to match
 v1 history. CBD drinks are stored in drinking_days.cbd and never counted as alcohol. The Meds tab manages medications and
 supplements (add, change, stop, start again, delete for mistakes); the weekly review takes them from there, not from the
 medical prompt section. The Labs tab shows lab_tests and lab_results by panel, with a Range column, out-of-range results
