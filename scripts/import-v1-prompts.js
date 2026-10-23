@@ -4,11 +4,11 @@
 //   npm run prompts:import-v1
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { repoPath } from '../tools/paths.js';
+import { dataPath } from '../tools/paths.js';
 import { openHealthStore } from '../db/store.js';
 import { listSections, createSection, updateSection } from '../server/queries.js';
 
-const DIR = repoPath('data', 'v1-export', 'prompts');
+const DIR = dataPath('v1-export', 'prompts');
 const FILE = /^PROMPT_(\d+)_([A-Za-z0-9_]+)\.txt$/;
 const SENSITIVE = /MEDICAL|GENETIC/i;
 

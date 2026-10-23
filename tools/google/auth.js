@@ -1,7 +1,7 @@
 // Copied from Job-Agent's tools/google/auth.js; only the scopes differ. Candidate to move into agent-core.
 import { existsSync, readFileSync } from 'node:fs';
 import { OAuth2Client } from 'google-auth-library';
-import { repoPath } from '../paths.js';
+import { dataPath } from '../paths.js';
 
 /**
  * Read the health spreadsheets, and manage only the files this app creates in Google Drive (the encrypted
@@ -13,8 +13,8 @@ import { repoPath } from '../paths.js';
 export const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.metadata.readonly', 'https://www.googleapis.com/auth/drive.readonly'];
 
-export const CLIENT_SECRET_PATH = repoPath('data', 'google', 'client_secret.json');
-export const TOKEN_PATH = repoPath('data', 'google', 'token.json');
+export const CLIENT_SECRET_PATH = dataPath('google', 'client_secret.json');
+export const TOKEN_PATH = dataPath('google', 'token.json');
 
 /**
  * OAuth client ID and secret: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET when set (cloud),

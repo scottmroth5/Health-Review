@@ -23,7 +23,8 @@ Health specific logic stays in this repo; never add it to agent-core.
                     program-blocks.js (blocks, sessions, review operations)
 /config             exercise-dictionary.json: canonical exercises and name variants (names only; see README.md);
                     substitutions.json: home equipment, what fills a cable or machine slot, and the avoid list
-/db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides)
+/db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides; the data folder
+                    is DATA_DIR when set, tools/paths.js dataPath, which the container mounts at /app/data)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Demo mode (header checkbox, or ?demo=1 / ?demo=0; saved per browser, server/public/demo.js) hides
@@ -36,6 +37,8 @@ Health specific logic stays in this repo; never add it to agent-core.
 /demo               the separate demo instance's made-up data: generate.js (seeded generator, run through the app's own
                     normalization, block detection and phases), catalog.json (invented "Sample" programs, never MAPS),
                     substitutions.json
+/jobs               the scheduled jobs shared by the npm scripts and the in-app scheduler: sync, review, backup,
+                    restore-check (the monthly restore test)
 /scripts            command-line entry points
 /test               node:test suites with synthetic fixtures only
 /data               gitignored; local health datastore and exports; google/ holds the OAuth client_secret.json and token.json
@@ -70,6 +73,10 @@ npm run server:stop               stop it (ending the task alone leaves node run
 npm run demo                      the demo instance on http://localhost:5189: data/demo/demo.db only (built when missing),
                                   no .env, no sync, review or chat (server/demo.js sets HEALTH_INSTANCE=demo)
 npm run demo:build                rebuild data/demo/demo.db from demo/generate.js (also the demo's reset)
+docker build -t health-review .   the server image (Dockerfile; code only: .dockerignore keeps data/, .env, sign-in files,
+                                  backups and MAPS files out; runs as uid 1000, DATA_DIR=/app/data, HEALTHCHECK on
+                                  /api/health). The demo runs the same image: AUTH_MODE=demo, no env file, a read-only root
+                                  and an empty tmpfs /app/data, where it builds its made-up database at start
 npm run backup                    encrypted backup of data/health.db and data/maps/programs.json to the "Health-Review
                                   backups" folder in Google Drive (-- --to <folder> writes it to a folder instead, such as
                                   a USB drive; -- --check-passphrase checks HEALTH_BACKUP_PASSPHRASE in .env)

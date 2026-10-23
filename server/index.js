@@ -2,7 +2,7 @@
 // Locally AUTH_MODE=none binds to 127.0.0.1. On the server AUTH_MODE=google (or demo for the public demo) with HOST=0.0.0.0
 // behind Caddy (TRUST_PROXY). Google sign-in for the sync loads on the first sync.
 import { openHealthStore } from '../db/store.js';
-import { repoPath } from '../tools/paths.js';
+import { repoPath, dataPath } from '../tools/paths.js';
 import { appleSource } from '../ingest/sync.js';
 import { syncJob } from '../jobs/sync.js';
 import { weeklyReview } from '../jobs/review.js';
@@ -77,7 +77,7 @@ if (demo) {
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
   app = await buildApp({
-    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: repoPath('data', 'evals', 'review'),
+    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'),
     schedule: () => scheduler.status(),
   });
 }

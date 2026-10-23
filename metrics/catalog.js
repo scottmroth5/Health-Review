@@ -3,10 +3,10 @@
 // copyrighted material, so it lives under data/ (gitignored) and only computed facts from it (program, phase,
 // week) ever leave this machine. Everything works without it: phases are simply unknown.
 import { existsSync, readFileSync } from 'node:fs';
-import { repoPath } from '../tools/paths.js';
+import { dataPath } from '../tools/paths.js';
 import { PROGRAMS } from './programs.js';
 
-export const CATALOG_PATH = repoPath('data', 'maps', 'programs.json');
+export const CATALOG_PATH = dataPath('maps', 'programs.json');
 const PROGRAM_NAMES = PROGRAMS.map(([name]) => name);
 
 /** "2-5" -> { min: 2, max: 5 }; "3" -> { min: 3, max: 3 }; anything else -> null. */

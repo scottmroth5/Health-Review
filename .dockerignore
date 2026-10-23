@@ -1,0 +1,23 @@
+# Health data and secrets never enter the image (the same rules as .gitignore and the hard rules, enforced again here).
+.env
+.env.*
+data/
+*.pem
+*.hrbk
+*.csv
+*.xml
+client_secret*.json
+token*.json
+MAPS*
+**/MAPS*
+
+# Not needed to run the server, or rebuilt inside the image.
+node_modules/
+.git/
+.githooks/
+.github/
+legacy/
+deploy/
+evals/fixtures/v1/
+Dockerfile
+.dockerignore

@@ -13,9 +13,9 @@ import { typoCandidates } from '../metrics/name-typos.js';
 import { DICTIONARY_PATH, createDictionary, loadDictionary } from '../metrics/dictionary.js';
 import { applySuggestions, suggestMappings, SUGGEST_MODEL } from '../agent/suggest-exercises.js';
 import { createReviewClaude } from '../agent/claude.js';
-import { repoPath } from '../tools/paths.js';
+import { dataPath } from '../tools/paths.js';
 
-const PROPOSALS = repoPath('data', 'exercise-proposals.json');
+const PROPOSALS = dataPath('exercise-proposals.json');
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };
 const top = arg('--top') ? Number(arg('--top')) : Infinity;
 

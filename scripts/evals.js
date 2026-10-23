@@ -8,9 +8,9 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { repoPath } from '../tools/paths.js';
+import { repoPath, dataPath } from '../tools/paths.js';
 
-const FLOW = repoPath('data', 'evals', 'review');
+const FLOW = dataPath('evals', 'review');
 const STATE = {
   metrics: [
     { id: 'first_clean', label: '1st draft ok', kind: 'binary' },

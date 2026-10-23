@@ -6,7 +6,7 @@ import { checkPassphrase } from '../tools/backup/crypto.js';
 import { createDriveClient } from '../tools/backup/drive.js';
 import { runBackup } from '../tools/backup/run.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
-import { repoPath } from '../tools/paths.js';
+import { dataPath } from '../tools/paths.js';
 import { localDate } from '../server/queries.js';
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} };
@@ -25,7 +25,7 @@ export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_
     const r = await runBackup({
       db: store.db,
       passphrase,
-      extras: [{ name: 'programs.json', path: repoPath('data', 'maps', 'programs.json') }],
+      extras: [{ name: 'programs.json', path: dataPath('maps', 'programs.json') }],
       drive: toDir ? null : drive ?? createDriveClient(getGoogleAuth()),
       toDir,
       date,

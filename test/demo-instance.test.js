@@ -60,3 +60,9 @@ test('demo instance: reports itself, refuses sync and chat, shows only its own r
   store.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('demo database: builds with no arguments (the demo container starts with an empty data folder)', () => {
+  const path = join(dir, 'defaults.db');
+  const counts = buildDemoDatabase({ path });
+  assert.ok(counts.days > 300, 'about a year and a half of made-up days, ending today');
+});

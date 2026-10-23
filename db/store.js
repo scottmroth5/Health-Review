@@ -1,8 +1,8 @@
 import { openStore } from '@scottmroth5/agent-core';
-import { repoPath } from '../tools/paths.js';
+import { dataPath } from '../tools/paths.js';
 import { MIGRATIONS } from './migrations.js';
 
-export const DEFAULT_DB_PATH = repoPath('data', 'health.db');
+export const DEFAULT_DB_PATH = dataPath('health.db');
 
 /**
  * Opens the local health database (agent-core's runs tables plus this app's tables).

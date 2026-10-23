@@ -2,11 +2,12 @@
 // faked, nothing touches the network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openHealthStore } from '../db/store.js';
-import { runBackup } from '../tools/backup/run.js';
+import { backupName } from '../tools/backup/run.js';
+import { encrypt, pack } from '../tools/backup/crypto.js';
 import { restoreTest } from '../tools/backup/restore-check.js';
 import { restoreTestJob } from '../jobs/restore-check.js';
 import { dataCheckWarnings } from '../server/queries.js';
@@ -34,7 +35,15 @@ function liveStore() {
   return store;
 }
 
-const backupOf = async (store, drive, date = '2026-03-12') => runBackup({ db: store.db, passphrase: PASS, drive, date });
+// A backup in the real format (encrypt(pack([health.db]))) built straight from the database file, without runBackup's
+// temp snapshot folder, so this file never races test/backup.test.js's count of those folders (files run in parallel).
+const FAST = { logN: 14, r: 8, p: 1 };
+const backupOf = async (store, drive, date = '2026-03-12') => {
+  store.db.pragma('wal_checkpoint(TRUNCATE)');
+  const data = encrypt(pack([{ name: 'health.db', data: readFileSync(store.db.name) }]), PASS, FAST);
+  const r = await drive.upload('folder-1', backupName(date), data);
+  return { driveFileId: r.id, name: r.name };
+};
 
 test('restore test: a good backup passes; rows added since are differences, not failures; nothing is left in temp', async () => {
   const store = liveStore();

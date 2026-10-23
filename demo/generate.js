@@ -14,10 +14,10 @@ import { createCatalog } from '../metrics/catalog.js';
 import { addDays, daysBetween } from '../metrics/stats.js';
 import { normalizeAll } from '../ingest/normalize.js';
 import { detect, writeDetected, refreshPhases } from '../ingest/program-blocks.js';
-import { repoPath } from '../tools/paths.js';
+import { repoPath, dataPath } from '../tools/paths.js';
 import { localDate as ownerDate } from '../tools/time.js';
 
-export const DEMO_DB_PATH = repoPath('data', 'demo', 'demo.db');
+export const DEMO_DB_PATH = dataPath('demo', 'demo.db');
 export const DEMO_CATALOG_PATH = repoPath('demo', 'catalog.json');
 export const DEMO_SUBSTITUTIONS_PATH = repoPath('demo', 'substitutions.json');
 export const DEFAULT_SEED = 20261007;
@@ -299,7 +299,7 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
 }
 
 /** Builds a fresh demo database file (replacing any old one). */
-export function buildDemoDatabase({ path = DEMO_DB_PATH, today, seed = DEFAULT_SEED } = {}) {
+export function buildDemoDatabase({ path = DEMO_DB_PATH, today = ownerDate(), seed = DEFAULT_SEED } = {}) {
   mkdirSync(dirname(path), { recursive: true });
   for (const suffix of ['', '-wal', '-shm']) if (existsSync(path + suffix)) rmSync(path + suffix);
   const store = openHealthStore(path);
