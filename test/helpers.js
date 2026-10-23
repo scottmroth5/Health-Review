@@ -32,7 +32,7 @@ export function fakeSource(tabs) {
     exports: [],
     async listExports(folderId, kind) {
       const { exportKind } = await import('../ingest/sheets.js');
-      return this.exports.filter((f) => f.folder === folderId && exportKind(f.name) === kind)
+      return this.exports.filter((f) => f.folder === folderId && exportKind(f.name, kind) === kind)
         .map(({ values: _, folder: __, json: ___, ...f }) => ({ ...f, kind })).sort((a, b) => a.name.localeCompare(b.name));
     },
     async readFileRows(fileId) {

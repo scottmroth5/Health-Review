@@ -349,6 +349,19 @@ rate minute by minute, which the Health tab's zones card uses. Reading JSON file
 (`npm run google:login` once); the app reads only the configured folder. A JSON workout matching one stored earlier (same
 type, starting within a minute) replaces it, so exporting a past range again never duplicates. (The older Sheets-format
 workout export broke with iOS 27.0.1 and is no longer read; workouts already stored from it stay.)
+
+**The health metrics automation** exports JSON (Export Version 2, Time Grouping: Day) into the health folder; the app
+reads those files as well as the older Google Sheets ones. A past date range exported this way lacks the day's totals
+(steps, exercise minutes, stand time), so history is never overwritten by it; each day gets its totals from the nightly
+export once the day is over.
+
+**Stand hours** need their own automation: the daily JSON undercounts them. Add one named "Stand Hours" with only Apple
+Stand Hour, JSON, Version 2, **Time Grouping: Hours**, into its own folder, and set `STAND_EXPORT_FOLDER_ID` to that
+folder. Each hour with standing is kept, so a day's count builds up across exports and never double counts.
+
+**On the server** the same automations post to the app instead of Drive (Health Auto Export's REST API automation):
+`https://<site>/api/ingest/health` (health metrics and stand hours) and `https://<site>/api/ingest/workouts`, with the
+header `Authorization: Bearer <INGEST_TOKEN>`. The server sets `APPLE_SOURCE=rest`, so it reads no Drive folder.
 - **What a sync reads:** each folder is listed, and only files that are new or changed since the last read
   (`drive_exports`) are read, at most 100 per folder per sync.
 - **Google's limit:** 60 Sheets reads a minute, so reads are spaced about a second apart and saved every 25 files. If

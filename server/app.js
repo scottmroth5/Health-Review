@@ -21,6 +21,16 @@ import { currentProgram } from '../ingest/program-blocks.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../agent/advisor-chat.js';
 // agent-core prices calls but does not export its price table yet; import it by path until a release exports it.
 import { costFromUsage } from '../node_modules/@scottmroth5/agent-core/src/pricing.js';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createRateLimiter } from './security.js';
+import { parseHealthJson } from '../ingest/health-json.js';
+import { parseWorkoutJson } from '../ingest/parsers.js';
+import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
+import { localStamp } from '../tools/time.js';
+
+/** Health Auto Export's posts: the largest daily workout file is about 165 KB, so 5 MB holds weeks of them. */
+export const INGEST_BODY_LIMIT = 5 * 1024 * 1024;
+export const INGEST_RATE_LIMIT = { windowMs: 15 * 60 * 1000, max: 30 };
 
 const nullable = (schema) => ({ ...schema, type: [schema.type, 'null'] });
 const scale = nullable({ type: 'integer', minimum: 1, maximum: 10 });
@@ -77,11 +87,13 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  * @param {string} [ctx.authMode]  none (default), google or demo (server/auth.js)
  * @param {{ settings?: object, exchange?: Function, now?: () => number }} [ctx.auth]  google mode's settings (authSettings) and,
  *   in tests, a fake Google exchange
+ * @param {{ token?: string|null, apple?: 'drive'|'rest' }} [ctx.ingest]  INGEST_TOKEN for POST /api/ingest/* (none: those
+ *   routes answer 503) and where Apple data comes from (APPLE_SOURCE), which the "export stopped" check follows
  * @param {boolean|number|string} [ctx.trustProxy]  Fastify trustProxy: set behind Caddy so req.ip is the client's address
  * @param {() => Date} [ctx.clock]
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, trustProxy = false, clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges }) {
   const app = Fastify({ logger, trustProxy });
   // Every route's method and path, so tests can check each write route (demo mode refuses them all).
   const routeList = [];
@@ -146,7 +158,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.get('/api/status', { schema: { summary: 'Today, the last sync, and data check warnings as of today (stale or missing Apple Health days, partial days, impossible values)', response: { 200: anyObject } } }, async () => {
     const today = q.localDate(clock());
-    return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today) };
+    return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }) };
   });
 
   // ---- one day ----
@@ -286,6 +298,51 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req) => q.cardioZoneView(db, req.query.view, q.localDate(clock()), req.query.group));
+
+  // ---- Health Auto Export REST ingest (the server: APPLE_SOURCE=rest) ----
+  // Open to the internet without a Google session (server/auth.js), so each post carries Authorization: Bearer
+  // INGEST_TOKEN, compared in constant time. JSON only, 5 MB at most, 30 posts per 15 minutes per address. The data goes
+  // through the same parsers and writers as the Drive files (ingest/apply.js); ingest_log keeps metadata only.
+  const ingestLimiter = createRateLimiter(INGEST_RATE_LIMIT);
+  const tokenHash = ingest.token ? createHash('sha256').update(ingest.token).digest() : null;
+  const ingestGuard = async (req, reply) => {
+    if (!tokenHash) return reply.code(503).send({ error: 'Ingest is not set up on this server (INGEST_TOKEN).' });
+    const r = ingestLimiter.hit(req.ip);
+    if (!r.allowed) return reply.code(429).header('retry-after', String(r.retryAfterSeconds)).send({ error: 'Too many posts from this address. Try again later.' });
+    const given = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ''))?.[1] ?? '';
+    if (!timingSafeEqual(createHash('sha256').update(given).digest(), tokenHash)) return reply.code(401).send({ error: 'Missing or wrong ingest token.' });
+    if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) return reply.code(415).send({ error: 'Send JSON (Content-Type: application/json).' });
+  };
+  const logIngest = db.prepare('INSERT INTO ingest_log (id, received_at, route, result, counts, error) VALUES (?, ?, ?, ?, ?, ?)');
+  const ingestRoute = (route, summary, apply) => app.post(`/api/ingest/${route}`, {
+    bodyLimit: INGEST_BODY_LIMIT,
+    onRequest: ingestGuard,
+    schema: { summary, body: { type: 'object' }, response: { 200: anyObject } },
+  }, async (req, reply) => {
+    const received = clock();
+    try {
+      const counts = apply(req.body, received);
+      logIngest.run(randomUUID(), received.toISOString(), route, 'ok', JSON.stringify(counts), null);
+      return { ok: true, ...counts };
+    } catch (err) {
+      logIngest.run(randomUUID(), received.toISOString(), route, 'error', null, err.name);
+      return reply.code(400).send({ error: err.message });
+    }
+  });
+  ingestRoute('health', "Health Auto Export's health metrics (JSON, Version 2, grouped by day; Apple Stand Hour grouped by hour), stored like the Drive files", (body, received) => {
+    const parsed = parseHealthJson(body, { file: 'post' });
+    const at = localStamp(received); // received now: a day posted before it ended is partial
+    let result;
+    store.tx(() => {
+      result = applyHealthDays(db, { records: parsed.records, exportedThrough: new Map(parsed.records.map((r) => [r.date, at])), standHours: parsed.standHours }, received.toISOString());
+    });
+    return { days: result.days.length, standHours: parsed.standHours.length, warnings: parsed.warnings.length };
+  });
+  ingestRoute('workouts', "Health Auto Export's workouts (JSON, Version 2, with per-minute heart rate), stored like the Drive files", (body, received) => {
+    const parsed = parseWorkoutJson(body, { file: 'post' });
+    store.tx(() => applyWorkouts(db, parsed.records, parsed.samples, received.toISOString()));
+    return { workouts: parsed.records.length, hrSamples: parsed.samples.length, warnings: parsed.warnings.length };
+  });
 
   // ---- history, reviews ----
   app.get('/api/history', {

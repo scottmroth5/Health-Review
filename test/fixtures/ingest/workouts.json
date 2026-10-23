@@ -1,0 +1,16 @@
+{
+  "data": {
+    "workouts": [
+      { "name": "Outdoor Walk", "start": "2026-03-01 17:00:20 -0500", "end": "2026-03-01 17:30:10 -0500", "duration": 1790,
+        "avgHeartRate": { "qty": 105, "units": "bpm" }, "maxHeartRate": { "qty": 121, "units": "bpm" },
+        "activeEnergyBurned": { "qty": 150.5, "units": "kcal" }, "distance": { "qty": 1.6, "units": "mi" },
+        "heartRateData": [
+          { "date": "2026-03-01 17:00:00 -0500", "Avg": 98, "Min": 95, "Max": 101, "units": "bpm", "source": "Sample Watch" },
+          { "date": "2026-03-01 17:01:00 -0500", "Avg": 104, "Min": 100, "Max": 108, "units": "bpm", "source": "Sample Watch" },
+          { "date": "2026-03-01 17:02:00 -0500", "Avg": 112, "Min": 109, "Max": 115, "units": "bpm", "source": "Sample Watch" }
+        ] },
+      { "name": "Traditional Strength Training", "start": "2026-03-02 10:00:00 -0500", "end": "2026-03-02 10:45:00 -0500", "duration": 2700,
+        "avgHeartRate": { "qty": 112, "units": "bpm" }, "heartRateData": [] }
+    ]
+  }
+}

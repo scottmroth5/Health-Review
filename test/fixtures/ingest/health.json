@@ -1,0 +1,29 @@
+{
+  "data": {
+    "metrics": [
+      { "name": "step_count", "units": "count", "data": [
+        { "date": "2026-03-01 00:00:00 -0500", "qty": 8123.4, "source": "Sample Watch|Sample Phone" },
+        { "date": "2026-03-02 00:00:00 -0500", "qty": 9500, "source": "Sample Watch" } ] },
+      { "name": "active_energy", "units": "kcal", "data": [
+        { "date": "2026-03-01 00:00:00 -0500", "qty": 610.5 },
+        { "date": "2026-03-02 00:00:00 -0500", "qty": 702.25 } ] },
+      { "name": "apple_exercise_time", "units": "min", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 41 }] },
+      { "name": "apple_stand_time", "units": "min", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 120 }] },
+      { "name": "apple_stand_hour", "units": "count", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 7 }] },
+      { "name": "heart_rate_variability", "units": "ms", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 44.5 }] },
+      { "name": "resting_heart_rate", "units": "count/min", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 56 }] },
+      { "name": "respiratory_rate", "units": "count/min", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 14.2 }] },
+      { "name": "heart_rate", "units": "count/min", "data": [{ "date": "2026-03-01 00:00:00 -0500", "Min": 50, "Avg": 71.5, "Max": 150 }] },
+      { "name": "sleep_analysis", "units": "hr", "data": [{ "date": "2026-03-01 00:00:00 -0500", "totalSleep": 7.25, "asleep": 0, "inBed": 0,
+        "core": 4.1, "deep": 1.05, "rem": 2.1, "awake": 0.4, "sleepStart": "2026-02-28 23:10:00 -0500", "sleepEnd": "2026-03-01 06:50:00 -0500" }] },
+      { "name": "vo2_max", "units": "ml/(kg·min)", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 41.3 }] },
+      { "name": "walking_speed", "units": "mi/hr", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 3.1 }] },
+      { "name": "walking_heart_rate_average", "units": "count/min", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 98 }] },
+      { "name": "walking_asymmetry_percentage", "units": "%", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 2.5 }] },
+      { "name": "blood_oxygen_saturation", "units": "%", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 96.5 }] },
+      { "name": "physical_effort", "units": "kcal/hr·kg", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 1.9 }] },
+      { "name": "cardio_recovery", "units": "count/min", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 25 }] },
+      { "name": "dietary_water", "units": "fl_oz_us", "data": [{ "date": "2026-03-01 00:00:00 -0500", "qty": 64 }] }
+    ]
+  }
+}

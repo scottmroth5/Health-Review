@@ -5,7 +5,7 @@ import { openHealthStore } from '../db/store.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
 import { repoPath } from '../tools/paths.js';
 import { createSheetsSource } from '../ingest/sheets.js';
-import { runSync } from '../ingest/sync.js';
+import { runSync, appleSource } from '../ingest/sync.js';
 import { buildApp } from './app.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { runReview } from '../agent/review.js';
@@ -53,7 +53,9 @@ if (demo) {
       model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
     }),
   };
-  app = await buildApp({ store, services, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, evalDir: repoPath('data', 'evals', 'review') });
+  // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
+  const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
+  app = await buildApp({ store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: repoPath('data', 'evals', 'review') });
 }
 await app.listen({ host, port });
 console.log(`Health Review${demo ? ' (demo data)' : ''}: http://localhost:${port}  (API contract: http://localhost:${port}/api/openapi.json)`);

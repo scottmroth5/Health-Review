@@ -110,7 +110,21 @@ values fill gaps, then it is replaced), so re-exports never duplicate. The Sheet
 mergeHealthDays so a partial export never lowers a full day. A missing folder variable skips that kind with a warn line.
 The v1 consolidated health and workout sheets (and their Apps Script) are retired (owner's choice, 2026-10-16) and never
 read; days stored from them stay, have no exported_through, and keep the steps rule for partial days.
-Planned for the AWS move: Health Auto Export's REST API posting to an authenticated HTTPS ingest over Tailscale (no Google).
+Health metrics as JSON (ingest/health-json.js parseHealthJson; Export Version 2, Time Grouping Day; checked against stored
+days 2026-10-23: 21 metrics matched on every full day): files of any automation name in the health folder (kind health_json;
+the Sheets files stay kind health) and in STAND_EXPORT_FOLDER_ID. Units are checked per metric (a mismatch is skipped with a
+warning); readings not grouped by day are skipped. Past-range exports lack the day's totals (steps, exercise, stand time),
+and the merge keeps stored ones. Stand hours: the Day-grouped apple_stand_hour undercounts (7 vs the ring's 16), so it is
+ignored; a separate "Stand Hours" automation (Apple Stand Hour only, Time Grouping Hours) gives qty 1 per hour with standing,
+kept in stand_hour_samples (migration 023), and stand_hours = MAX(stored, distinct hours), since one export may hold part of
+a day. ingest/apply.js applyHealthDays, writeJsonWorkout and applyWorkouts are the one write path for the Drive files and
+the REST posts.
+REST ingest (the server, APPLE_SOURCE=rest; the default drive keeps reading the Drive folders, and rest reads none):
+POST /api/ingest/health and /api/ingest/workouts take Health Auto Export's REST automation payloads (the same JSON), with
+Authorization: Bearer INGEST_TOKEN (SHA-256 then timingSafeEqual; no token set: 503), application/json only (415), 5 MB
+(413), 30 posts per 15 minutes per address (429); open without a Google session, refused in the demo. The receipt time
+(owner time) is exported_through. ingest_log (migration 023) keeps time, route, result, counts and error name, never the
+body. With rest, the "export stopped" check counts from the last accepted post of each route (test/ingest.test.js).
 Data checks (metrics/dataquality.js, pure; fixture evals/fixtures/metrics/dataquality.json) run after every sync and
 on GET /api/status: Apple Health data stale (nothing after a day before yesterday), the export automation stopped
 (export_stale: the latest sync that looked in the health export folder ran more than 26 hours after the newest file was

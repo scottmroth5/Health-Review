@@ -132,8 +132,8 @@ export function lastSync(db) {
 }
 
 /** Data check warnings as of today (info findings, such as a lifting day without a watch workout, stay in the sync log). */
-export function dataCheckWarnings(db, today) {
-  return dataChecks(loadDataCheckInput(db, today)).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }));
+export function dataCheckWarnings(db, today, { apple = 'drive', now = new Date() } = {}) {
+  return dataChecks(loadDataCheckInput(db, today, { apple, now })).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }));
 }
 
 // ---- called for vs logged ----

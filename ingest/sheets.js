@@ -80,7 +80,7 @@ export function createSheetsSource(auth, env = process.env, { minGapMs = SHEETS_
     async listExports(folderId, kind) {
       const files = [];
       let pageToken;
-      const mime = kind === 'workouts' ? 'application/json' : 'application/vnd.google-apps.spreadsheet';
+      const mime = kind === 'health' ? 'application/vnd.google-apps.spreadsheet' : 'application/json';
       do {
         const params = new URLSearchParams({
           q: `'${folderId.replaceAll("'", "\\'")}' in parents and mimeType = '${mime}' and trashed = false`,
@@ -91,7 +91,7 @@ export function createSheetsSource(auth, env = process.env, { minGapMs = SHEETS_
         });
         const { data } = await auth.request({ url: `https://www.googleapis.com/drive/v3/files?${params}` });
         for (const f of data.files ?? []) {
-          if (exportKind(f.name) === kind) files.push({ kind, id: f.id, name: f.name, modifiedTime: f.modifiedTime });
+          if (exportKind(f.name, kind) === kind) files.push({ kind, id: f.id, name: f.name, modifiedTime: f.modifiedTime });
         }
         pageToken = data.nextPageToken;
       } while (pageToken);
@@ -116,8 +116,11 @@ export function createSheetsSource(auth, env = process.env, { minGapMs = SHEETS_
 }
 
 /** Which Health Auto Export file a name is, or null: health metrics (Google Sheets) or JSON workouts (one file a day). */
-export function exportKind(name) {
+export function exportKind(name, wanted = null) {
   if (/Apple Health Metrics-HealthMetrics/i.test(name)) return 'health';
   if (/^HealthAutoExport-\d{4}-\d{2}-\d{2}\.json$/i.test(name)) return 'workouts';
+  // Health metrics as JSON are named after their automation ("Apple Health Metrics-DATE.json", "Stand Hours-DATE.json"),
+  // so in a health folder any dated JSON file counts; the parser checks its shape (data.metrics).
+  if (wanted === 'health_json' && /-\d{4}-\d{2}-\d{2}\.json$/i.test(name)) return 'health_json';
   return null;
 }

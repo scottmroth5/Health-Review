@@ -474,4 +474,39 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    id: '023-ingest-and-stand-hours',
+    up: `
+      -- Hours with standing, from Health Auto Export's hour-grouped Apple Stand Hour export (date and hour in the owner's
+      -- wall clock). A day's stand_hours is the distinct hours recorded (ingest/apply.js), so exports holding part of a
+      -- day add up and a re-sent hour counts once.
+      CREATE TABLE stand_hour_samples (
+        date TEXT NOT NULL,
+        hour INTEGER NOT NULL CHECK (hour BETWEEN 0 AND 23),
+        PRIMARY KEY (date, hour)
+      );
+      -- One row per accepted Health Auto Export REST post (POST /api/ingest/*): metadata only, never the body.
+      CREATE TABLE ingest_log (
+        id TEXT PRIMARY KEY,
+        received_at TEXT NOT NULL,
+        route TEXT NOT NULL CHECK (route IN ('health', 'workouts')),
+        result TEXT NOT NULL CHECK (result IN ('ok', 'error')),
+        counts TEXT,
+        error TEXT
+      );
+      CREATE INDEX ingest_log_received ON ingest_log (route, received_at);
+      -- Health metrics as JSON files (health_json): SQLite cannot change a CHECK, so the table is rebuilt with its rows.
+      CREATE TABLE drive_exports_new (
+        file_id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('health', 'health_json', 'workouts')),
+        name TEXT NOT NULL,
+        modified_time TEXT NOT NULL,
+        rows INTEGER NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      INSERT INTO drive_exports_new SELECT file_id, kind, name, modified_time, rows, synced_at FROM drive_exports;
+      DROP TABLE drive_exports;
+      ALTER TABLE drive_exports_new RENAME TO drive_exports;
+    `,
+  },
 ];

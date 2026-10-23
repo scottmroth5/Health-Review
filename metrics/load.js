@@ -203,19 +203,24 @@ export function loadAdvisorInput(db, asOf, catalog) {
 /** What the data checks (metrics/dataquality.js) read as of a date: 45 days of health rows, 30 days of workouts, the
  * Workout Log days with performed sets in the last 14 days, and for each export folder the newest file with when a sync
  * last looked for one. lookedAt and workoutsLookedAt: a sync passes its own time (or null without that folder);
- * otherwise the latest ok sync that read that folder. */
-export function loadDataCheckInput(db, today, { lookedAt, workoutsLookedAt } = {}) {
-  const newest = (kind, key, given) => {
-    const file = db.prepare('SELECT MAX(modified_time) AS at FROM drive_exports WHERE kind = ?').get(kind);
+ * otherwise the latest ok sync that read that folder. With apple 'rest' (the server), the newest is the last accepted
+ * ingest post of that kind (ingest_log) and it is judged against now, since posts arrive on their own. */
+export function loadDataCheckInput(db, today, { lookedAt, workoutsLookedAt, apple = 'drive', now = new Date() } = {}) {
+  const newest = (kinds, key, given) => {
+    const file = db.prepare(`SELECT MAX(modified_time) AS at FROM drive_exports WHERE kind IN (${kinds.map(() => '?').join(', ')})`).get(...kinds);
     if (file?.at) file.local = localStamp(file.at); // the owner's zone, not SQLite's host 'localtime'
     const looked = given !== undefined ? given
       : db.prepare(`SELECT started_at FROM runs WHERE name = 'sync' AND status = 'ok' AND summary LIKE ?
         ORDER BY id DESC LIMIT 1`).pluck().get(`%"${key}"%`) ?? null;
     return file?.at && looked ? { lastFileAt: file.at, lastFileLocal: file.local, lookedAt: looked } : null;
   };
+  const lastPost = (route) => {
+    const at = db.prepare("SELECT MAX(received_at) FROM ingest_log WHERE route = ? AND result = 'ok'").pluck().get(route);
+    return at ? { lastFileAt: at, lastFileLocal: localStamp(at), lookedAt: now.toISOString() } : null;
+  };
   return {
-    exports: newest('health', 'health_exports', lookedAt),
-    workoutExports: newest('workouts', 'workout_exports', workoutsLookedAt),
+    exports: apple === 'rest' ? lastPost('health') : newest(['health', 'health_json'], 'health_exports', lookedAt),
+    workoutExports: apple === 'rest' ? lastPost('workouts') : newest(['workouts'], 'workout_exports', workoutsLookedAt),
     daily: db.prepare(`SELECT date, steps, resting_hr, sleep_total_hr, exercise_min, exported_through FROM daily_metrics
       WHERE date BETWEEN ? AND ? ORDER BY date`).all(addDays(today, -45), today),
     sessions: db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE start >= ? ORDER BY start').all(addDays(today, -30)),
