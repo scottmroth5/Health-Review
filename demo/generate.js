@@ -15,6 +15,7 @@ import { addDays, daysBetween } from '../metrics/stats.js';
 import { normalizeAll } from '../ingest/normalize.js';
 import { detect, writeDetected, refreshPhases } from '../ingest/program-blocks.js';
 import { repoPath } from '../tools/paths.js';
+import { localDate as ownerDate } from '../tools/time.js';
 
 export const DEMO_DB_PATH = repoPath('data', 'demo', 'demo.db');
 export const DEMO_CATALOG_PATH = repoPath('demo', 'catalog.json');
@@ -309,10 +310,7 @@ export function buildDemoDatabase({ path = DEMO_DB_PATH, today, seed = DEFAULT_S
   }
 }
 
-const localToday = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const localToday = () => ownerDate(); // the owner's date (OWNER_TZ), whatever the host's zone
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };

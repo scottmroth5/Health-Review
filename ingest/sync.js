@@ -30,6 +30,7 @@ import { assignForward, refreshPhases } from './program-blocks.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
 import { existsSync } from 'node:fs';
+import { localDate, zonedParts } from '../tools/time.js';
 
 const V1_SOURCE = 'v1-sheet';
 
@@ -208,8 +209,8 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
 
 async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
   const yearTabs = (await source.listTabs('workout_log')).filter((t) => /^\d{4}$/.test(t)).sort();
-  const year = now.getFullYear();
-  const inJanuary = now.getMonth() === 0 && now.getDate() <= 28;
+  const { year, month, day } = zonedParts(now);
+  const inJanuary = month === 1 && day <= 28;
   const wanted = backfill ? yearTabs : yearTabs.filter((t) => Number(t) === year || (inJanuary && Number(t) === year - 1));
   const result = { tabsRead: wanted.length, tabsReplaced: 0, exercises: 0, sets: 0, notes: 0 };
 
@@ -327,7 +328,8 @@ async function importOnce({ store, source, key, parse, write, warnings }) {
   return { rowsRead: data.rows.length, imported: written, keptFromUi: records.length - written };
 }
 
-const localDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** The owner's date of an instant (OWNER_TZ), whatever the host's zone. */
+const localDay = (d) => localDate(d);
 
 // Replaced Workout Log rows lose their normalized columns, so they are rewritten from the dictionary.
 // A missing or broken dictionary is a warning, never a failed sync.

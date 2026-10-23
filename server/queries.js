@@ -1,6 +1,7 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { localDate as ownerDate, zonedParts } from '../tools/time.js';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact, doseText, ingredientsOf, weeklyCheckoffs } from '../metrics/medications.js';
 import { loadAdherenceInput, loadConfirmedBlocks, loadAdvisorInput, loadDataCheckInput, loadMedications, loadMetricSettings, loadPrimarySets, loadProfile, loadSessionPhases, loadStrengthSets } from '../metrics/load.js';
@@ -29,11 +30,8 @@ export function isValidDate(text) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === text;
 }
 
-/** Local calendar date of a Date as 'YYYY-MM-DD'. */
-export function localDate(date = new Date()) {
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
+/** The owner's calendar date (OWNER_TZ, tools/time.js) of a Date as 'YYYY-MM-DD', whatever the host's zone. */
+export const localDate = (date = new Date()) => ownerDate(date);
 
 // ---- one day ----
 
@@ -196,9 +194,9 @@ export function spend(db, { evalDir, price, today }) {
     m[kind] += usd;
     m.total += usd;
   };
-  const runs = db.prepare(`SELECT name, substr(started_at, 1, 7) AS month, SUM(cost_usd) AS usd FROM runs
-    WHERE cost_usd > 0 GROUP BY name, month`).all();
-  for (const r of runs) add(r.month, SPEND_KINDS[r.name] ?? 'other', r.usd);
+  // started_at is UTC; each run counts in the owner's month (a run at 9pm on the 31st in New York is that month).
+  const runs = db.prepare('SELECT name, started_at, cost_usd AS usd FROM runs WHERE cost_usd > 0').all();
+  for (const r of runs) add(localDate(new Date(r.started_at)).slice(0, 7), SPEND_KINDS[r.name] ?? 'other', r.usd);
   let unpriced = 0;
   for (const e of price ? evalSpendRows(evalDir, price) : []) {
     if (!e.priced) unpriced += 1;
@@ -253,7 +251,7 @@ export function reviewStatus(db, today, now = new Date()) {
   const run = db.prepare(`SELECT status, started_at, finished_at, summary FROM runs
     WHERE name = 'review' AND json_extract(meta, '$.weekEnd') = ? ORDER BY id DESC LIMIT 1`).get(weekEnd);
   const lastRun = run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
-  const due = today > addDays(weekEnd, 1) || now.getHours() >= REVIEW_DUE_HOUR;
+  const due = today > addDays(weekEnd, 1) || zonedParts(now).hour >= REVIEW_DUE_HOUR;
   return {
     weekEnd,
     hasReview,

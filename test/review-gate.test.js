@@ -52,11 +52,11 @@ test('reviewStatus: a likely partial export blocks it (under a quarter of the 28
 test('reviewStatus: overdue only from 9am on the Sunday after, or once a run was tried', () => {
   const s = store();
   fillDays(s.db);
-  assert.equal(reviewStatus(s.db, '2026-03-08', new Date(2026, 2, 8, 7, 0)).overdue, false);
-  assert.equal(reviewStatus(s.db, '2026-03-08', new Date(2026, 2, 8, 9, 0)).overdue, true);
+  assert.equal(reviewStatus(s.db, '2026-03-08', new Date('2026-03-08T07:00:00-04:00')).overdue, false);
+  assert.equal(reviewStatus(s.db, '2026-03-08', new Date('2026-03-08T09:00:00-04:00')).overdue, true);
   s.db.prepare("INSERT INTO runs (name, meta, status, started_at, summary) VALUES ('review', ?, 'skipped', 'x', ?)")
     .run(JSON.stringify({ weekEnd: WEEK_END }), JSON.stringify({ weekEnd: WEEK_END, missingDays: ['2026-03-07'], partialDays: [] }));
-  const early = reviewStatus(s.db, '2026-03-08', new Date(2026, 2, 8, 8, 5));
+  const early = reviewStatus(s.db, '2026-03-08', new Date('2026-03-08T08:05:00-04:00'));
   assert.equal(early.overdue, true);
   assert.equal(early.lastRun.status, 'skipped');
   assert.deepEqual(early.lastRun.summary.missingDays, ['2026-03-07']);

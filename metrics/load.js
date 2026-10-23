@@ -12,6 +12,7 @@ import { advisorDue } from './advisor.js';
 import { suggestTarget, loadTargetConfig } from './targets.js';
 import { loadLabRanges } from './labs.js';
 import { repoPath } from '../tools/paths.js';
+import { localStamp } from '../tools/time.js';
 
 export const SUBSTITUTIONS_PATH = repoPath('config', 'substitutions.json');
 /** config/substitutions.json: home equipment, swaps and the avoid list. */
@@ -205,8 +206,8 @@ export function loadAdvisorInput(db, asOf, catalog) {
  * otherwise the latest ok sync that read that folder. */
 export function loadDataCheckInput(db, today, { lookedAt, workoutsLookedAt } = {}) {
   const newest = (kind, key, given) => {
-    const file = db.prepare(`SELECT MAX(modified_time) AS at, strftime('%Y-%m-%dT%H:%M', MAX(modified_time), 'localtime') AS local
-      FROM drive_exports WHERE kind = ?`).get(kind);
+    const file = db.prepare('SELECT MAX(modified_time) AS at FROM drive_exports WHERE kind = ?').get(kind);
+    if (file?.at) file.local = localStamp(file.at); // the owner's zone, not SQLite's host 'localtime'
     const looked = given !== undefined ? given
       : db.prepare(`SELECT started_at FROM runs WHERE name = 'sync' AND status = 'ok' AND summary LIKE ?
         ORDER BY id DESC LIMIT 1`).pluck().get(`%"${key}"%`) ?? null;

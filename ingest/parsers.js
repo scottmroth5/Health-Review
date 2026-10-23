@@ -2,6 +2,7 @@
 // Each takes { header, rows, firstRowNumber, tab } and returns { records, warnings }.
 // Warnings carry sheet row numbers and a kind, never cell text, so they are safe to print.
 import { serialToDate, serialToDateTime, serialToSeconds, parseUsDate } from './serial.js';
+import { localStamp as ownerStamp } from '../tools/time.js';
 
 const isEmpty = (v) => v === '' || v === null || v === undefined;
 const isBlankRow = (row) => !row?.some((c) => !isEmpty(c));
@@ -131,12 +132,8 @@ export function mergeHealthDays(records) {
   });
 }
 
-/** An instant (Drive's modifiedTime, ISO UTC) as local wall-clock text, YYYY-MM-DDTHH:MM, like every stored time. */
-export function localStamp(iso) {
-  const d = new Date(iso);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+/** An instant (Drive's modifiedTime, ISO UTC) as the owner's wall-clock text (OWNER_TZ), YYYY-MM-DDTHH:MM, like every stored time. */
+export const localStamp = (iso) => ownerStamp(iso);
 
 // ---- Consolidated Apple Workout Sessions ----
 const SESSION_FIELDS = {

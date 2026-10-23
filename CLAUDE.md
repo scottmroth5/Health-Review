@@ -88,6 +88,11 @@ Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, G
 GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
 ## Data
+Time zone: OWNER_TZ (default America/New_York; tools/time.js, Intl, no library) decides every "today", the review week,
+the review's due hour, file write times (localStamp), the January Workout Log tab rule and spend months, never the host's
+zone, so a server on UTC gives the same results. Never use getHours/getDate/toLocale* or SQLite 'localtime' for these
+(migration 021 used 'localtime' once, on the owner's New York machine, so its stored values are right). Tests pass under
+both TZ=UTC and TZ=America/New_York (test/time.test.js holds the Saturday 11:30 pm case).
 Sheets are read unformatted with dates as serial numbers and stored as local wall-clock text; no time zone conversion.
 Apple Health comes only from Health Auto Export's own day files, one Drive folder per kind (ingest/sync.js syncExports;
 listed with drive.metadata.readonly and filtered to that kind's file names): HEALTH_EXPORT_FOLDER_ID holds health metrics
