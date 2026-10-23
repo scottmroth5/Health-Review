@@ -83,6 +83,9 @@ deploy/                           the server (/opt/health-review): compose.yml (
                                   log), deploy.sh (deploy <tag>, rollback, up, pull, status; reads SSH_ORIGINAL_COMMAND for
                                   the forced deploy key, health checks app and demo, rolls back on failure; state in
                                   ./state, owned by deploy), cloud.env.example (the server .env's names, placeholders)
+.github/workflows/deploy.yml      after CI passes on a push to main: build ghcr.io/scottmroth5/health-review (sha-<7>, latest;
+                                  a public package, code only), then, only when the repository variable DEPLOY_ENABLED is
+                                  true, SSH as deploy and run deploy.sh deploy <tag>; manual runs deploy a tag or roll back
 npm run backup                    encrypted backup of data/health.db and data/maps/programs.json to the "Health-Review
                                   backups" folder in Google Drive (-- --to <folder> writes it to a folder instead, such as
                                   a USB drive; -- --check-passphrase checks HEALTH_BACKUP_PASSPHRASE in .env)

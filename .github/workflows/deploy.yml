@@ -1,0 +1,131 @@
+# Builds the server image and deploys it to the cloud server.
+#
+# Automatic: after CI passes on a push to main, build the image, publish it to GitHub Container Registry
+# (ghcr.io/<owner>/health-review, tags sha-<commit> and latest), then deploy that tag over SSH.
+# Manual (Actions tab > Deploy > Run workflow): deploy any published tag again, or roll back to the previous one.
+#
+# The deploy step stays off until the server exists: set the repository variable DEPLOY_ENABLED to true
+# (Settings > Secrets and variables > Actions > Variables) once these repository secrets are in place:
+#   DEPLOY_HOST          the server's static IP address
+#   DEPLOY_USER          the SSH user deploy.sh runs as: deploy (in the docker group; owns /opt/health-review/state)
+#   DEPLOY_SSH_KEY       private half of the deploy key; its authorized_keys line forces /opt/health-review/deploy.sh
+#   DEPLOY_KNOWN_HOSTS   the server's host key line (ssh-keyscan <address>), so GitHub never trusts an impostor
+# GitHub holds nothing else: the app's secrets and data stay on the server.
+# The image holds code only (Dockerfile, .dockerignore), so its package is public: after the first build, set
+# ghcr.io/<owner>/health-review to Public (the package's settings), and the server pulls it without signing in.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: deploy a tag, or roll back to the previous good image
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      tag:
+        description: image tag to deploy (e.g. sha-1a2b3c4); empty builds and deploys the current main
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: Build and publish image
+    # After a passing CI run on a push to main, or a manual run that asks for a fresh build.
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy' && inputs.tag == '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.names.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The exact commit CI tested, not whatever main is now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - id: names
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/${owner}/health-review" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.names.outputs.image }}:${{ steps.names.outputs.tag }}
+            ${{ steps.names.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha || github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to server
+    needs: image
+    # Runs after a fresh image, or on its own for a manual deploy of an existing tag or a rollback.
+    if: >-
+      always() && vars.DEPLOY_ENABLED == 'true' &&
+      (needs.image.result == 'success' || (needs.image.result == 'skipped' && github.event_name == 'workflow_dispatch'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Choose what to run
+        id: cmd
+        env:
+          ACTION: ${{ inputs.action }}
+          INPUT_TAG: ${{ inputs.tag }}
+          BUILT_TAG: ${{ needs.image.outputs.tag }}
+        run: |
+          if [ "$ACTION" = "rollback" ]; then
+            echo "command=rollback" >> "$GITHUB_OUTPUT"
+          else
+            tag="${BUILT_TAG:-$INPUT_TAG}"
+            if ! echo "$tag" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'; then
+              echo "Not an image tag: $tag" >&2
+              exit 1
+            fi
+            echo "command=deploy $tag" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run deploy.sh on the server
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER_NAME: ${{ secrets.DEPLOY_USER }}
+          COMMAND: ${{ steps.cmd.outputs.command }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20 \
+            "${USER_NAME}@${HOST}" "$COMMAND"
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
