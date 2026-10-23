@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createDriveClient } from '../tools/backup/drive.js';
 import { DRIVE_FOLDER, restoreBackup } from '../tools/backup/run.js';
+import { newestBackup } from '../tools/backup/restore-check.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
 
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -17,8 +18,7 @@ async function main() {
   let file;
   if (which === 'latest') {
     const drive = createDriveClient(getGoogleAuth());
-    const folder = await drive.ensureFolder(DRIVE_FOLDER);
-    const newest = (await drive.list(folder)).filter((f) => /^health-\d{4}-\d{2}-\d{2}\.hrbk$/.test(f.name)).sort((a, b) => b.name.localeCompare(a.name))[0];
+    const newest = await newestBackup(drive, DRIVE_FOLDER);
     if (!newest) throw new Error(`No backups found in the "${DRIVE_FOLDER}" folder`);
     console.log(`Downloading ${newest.name}...`);
     file = await drive.download(newest.id);

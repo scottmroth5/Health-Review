@@ -74,6 +74,8 @@ npm run backup                    encrypted backup of data/health.db and data/ma
                                   backups" folder in Google Drive (-- --to <folder> writes it to a folder instead, such as
                                   a USB drive; -- --check-passphrase checks HEALTH_BACKUP_PASSPHRASE in .env)
 npm run backup:restore -- --file latest --out data/restored.db   decrypt a backup into a NEW file (never over health.db)
+npm run backup:test               the restore test: decrypt the newest backup into the OS temp folder, integrity check,
+                                  compare tables by row count with the live database, delete it (-- --file <path> for a file)
 powershell -ExecutionPolicy Bypass -File scripts\register-backup-task.ps1   (re)register the 11pm nightly backup
                                   ("Health-Review nightly backup"; runs scripts\backup-nightly.cmd, logs to data\logs\backup.log)
 powershell -ExecutionPolicy Bypass -File scripts\register-server-task.ps1   (re)register and start the server at sign-in
@@ -305,7 +307,7 @@ missing or blank line turns that job off, so the PC (lines commented out) runs n
 the move; a bad spec stops the server rather than silently disabling a job. A run missed within 12 hours runs on start
 when the job has not run since; a job never overlaps itself (in this process, or a run of that name marked running in the
 last 30 minutes). GET /api/jobs carries each job's schedule and next run for the Activity tab; [schedule] lines go to
-stdout. The restore test's job arrives with the monthly restore test.
+stdout. The restore test runs jobs/restore-check.js restoreTestJob.
 The scheduled review (and the Windows task's --scheduled): a Monday or Tuesday catch-up does nothing once the week's review exists. A review whose saved
 summary has dataQuality (written with gaps) gets rewriteAvailable once the week is complete; the notice offers Rewrite with
 the full week (POST /api/reviews/run overwrites the week's review); nothing rewrites automatically.
@@ -370,6 +372,12 @@ integrity check, packed with the MAPS catalog, gzipped, then AES-256-GCM with a 
 HEALTH_BACKUP_PASSPHRASE (.env only, never uploaded or logged) and a fresh salt and nonce per file, verified by
 decrypting before it is uploaded over HTTPS with the drive.file scope (the app sees only files it created). Plaintext
 snapshots exist only in the OS temp folder and are deleted on every exit path. Kept: 7 nightly, 3 weekly, 1 monthly.
+The monthly restore test (tools/backup/restore-check.js restoreTest, jobs/restore-check.js; SCHEDULE_RESTORE_TEST,
+npm run backup:test) proves the newest backup can be read: decrypted into a new OS temp folder (deleted on every exit
+path), integrity checked, and compared with the live database by table row counts only. It fails on a decrypt or integrity
+failure, a table missing from the backup (unless the backup predates the migration that added it), or a table empty in
+the backup that holds 10+ rows live; other differences are recorded (a backup is a day old, and some rows are replaced on
+purpose). Each result is a 'restore-test' run; a failed last run is a warning on the Today tab until a later one passes.
 Send the Claude API computed summaries only, never raw exports. The one exception is the owner's own notes from the review
 week (check-in, drinking, Workout Log comments and date-column notes), sent as written by the owner's choice (2026-10-01).
 Genetics and medication data (prompt sections marked sensitive, and the medications tracker) go to the Claude API only

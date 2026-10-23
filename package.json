@@ -32,7 +32,8 @@
     "demo:build": "node demo/generate.js",
     "demo": "node server/demo.js",
     "check:personal": "node scripts/check-personal.js",
-    "prepare": "node scripts/install-hooks.js"
+    "prepare": "node scripts/install-hooks.js",
+    "backup:test": "node --env-file=.env scripts/backup-verify.js"
   },
   "keywords": [],
   "author": "",

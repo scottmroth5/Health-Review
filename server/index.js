@@ -7,6 +7,7 @@ import { appleSource } from '../ingest/sync.js';
 import { syncJob } from '../jobs/sync.js';
 import { weeklyReview } from '../jobs/review.js';
 import { backupJob } from '../jobs/backup.js';
+import { restoreTestJob } from '../jobs/restore-check.js';
 import { createScheduler, runsLookup, schedulesFromEnv } from './scheduler.js';
 import { buildApp } from './app.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
@@ -64,6 +65,10 @@ if (demo) {
       console.log(`[review] ${r.status} week ending ${r.weekEnd}${r.syncError ? ' (sync failed first)' : ''}`);
     },
     backup: async () => { const r = await backupJob({ store }); console.log(`[backup] ok ${r.name} ${r.bytes} bytes`); },
+    'restore-test': async () => {
+      const r = await restoreTestJob({ store });
+      console.log(`[restore-test] ${r.ok ? 'ok' : 'failed'} ${r.file} tables=${r.tables} problems=${r.problems.length}`);
+    },
   };
   scheduler = createScheduler({
     jobs: schedulesFromEnv().filter((j) => runners[j.name]).map((j) => ({ ...j, run: runners[j.name] })),

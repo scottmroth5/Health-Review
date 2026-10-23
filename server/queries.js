@@ -139,7 +139,16 @@ export function lastSync(db) {
 
 /** Data check warnings as of today (info findings, such as a lifting day without a watch workout, stay in the sync log). */
 export function dataCheckWarnings(db, today, { apple = 'drive', now = new Date() } = {}) {
-  return dataChecks(loadDataCheckInput(db, today, { apple, now })).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }));
+  const warnings = dataChecks(loadDataCheckInput(db, today, { apple, now })).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }));
+  // The backup restore test (jobs/restore-check.js): its last run failing stays a warning until a later one passes.
+  const test = db.prepare("SELECT status, started_at, summary FROM runs WHERE name = 'restore-test' AND status IN ('ok', 'error') ORDER BY id DESC LIMIT 1").get();
+  if (test?.status === 'error') {
+    const s = parseJson(test.summary) ?? {};
+    const why = s.problems?.[0] ?? s.error ?? 'see the Activity tab';
+    const day = localDate(new Date(test.started_at));
+    warnings.push({ kind: 'restore_test_failed', dates: [day], message: `The last backup restore test failed (${day}): ${why}. Run npm run backup:test to try again.` });
+  }
+  return warnings;
 }
 
 // ---- called for vs logged ----
