@@ -1,0 +1,5 @@
+# Files that run on Linux (the server, the git hook) keep LF line endings on every checkout, Windows included.
+*.sh text eol=lf
+deploy/* text eol=lf
+.githooks/* text eol=lf
+Dockerfile text eol=lf
