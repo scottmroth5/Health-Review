@@ -333,7 +333,7 @@
       <div id="sections"></div>
     </section>
 
-    <!-- Activity: runs recorded by syncs and reviews, and the scheduled tasks' logs -->
+    <!-- Activity: runs recorded by syncs, reviews and backups, each job's last runs, and Health Auto Export posts -->
     <section id="view-activity" class="view" hidden>
       <p class="muted small">Every sync and weekly review, from the scheduled tasks, Sync now or the terminal. Counts and costs only: report and prompt text are never logged.</p>
       <section class="card" id="spend" aria-labelledby="spend-title">
@@ -344,17 +344,11 @@
         <nav class="activity-list card" id="activity-list" aria-label="Recent runs"></nav>
         <div class="activity-output card" id="activity-detail"></div>
       </div>
-      <div class="card">
-        <div class="training-head">
-          <h2>Scheduled task logs</h2>
-          <div class="filters" role="group" aria-label="Log">
-            <button type="button" data-log="sync">Sync log</button>
-            <button type="button" data-log="review">Review log</button>
-            <button type="button" data-log="backup">Backup log</button>
-          </div>
-        </div>
-        <div class="console" id="activity-log" aria-live="polite"></div>
-      </div>
+      <section class="card" aria-labelledby="jobs-title">
+        <h2 id="jobs-title">Scheduled jobs</h2>
+        <p class="muted small">The last runs of each job, from the app's own records (no log files). Status, times and counts only.</p>
+        <div id="jobs-body"><p class="muted small">Loading…</p></div>
+      </section>
     </section>
   </main>
 

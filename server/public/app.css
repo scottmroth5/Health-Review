@@ -318,10 +318,9 @@ h3.sub { font-size: 0.9rem; margin: 14px 0 6px; color: var(--text-secondary); fo
 @media (prefers-reduced-motion: reduce) { .dot.running { animation: none; } }
 .activity-head { margin-bottom: 8px; }
 .activity-output .plain-list { margin-bottom: 8px; }
-.console { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.8rem; line-height: 1.45; background: var(--surface-0);
-  border-radius: 8px; padding: 8px 10px; max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; }
-.console-line.run-start { color: var(--text-secondary); margin-top: 6px; }
-.console-line.bad { color: var(--danger); }
+/* Scheduled jobs (Activity tab): one line per job, newest run first */
+.job-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.job-list li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--grid); overflow-wrap: anywhere; }
 .activity-grid > * { min-width: 0; }
 .tiles.three { grid-template-columns: repeat(3, 1fr); }
 .spend-table-wrap { overflow-x: auto; }

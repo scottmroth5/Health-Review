@@ -19,7 +19,7 @@ const strip = ({ updated_at, exported_through, ...r }) => r;
 
 async function server({ token = TOKEN, authMode = 'none', auth = {} } = {}) {
   const store = openHealthStore(':memory:');
-  const app = await buildApp({ store, authMode, auth, ingest: { token, apple: 'rest' }, clock: () => NOW });
+  const app = await buildApp({ store, authMode, auth, ingest: { token, apple: 'rest' }, clock: () => NOW, log: silentLogger });
   const post = (route, payload, headers = {}) => app.inject({
     method: 'POST', url: `/api/ingest/${route}`, payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers },

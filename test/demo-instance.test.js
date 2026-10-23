@@ -37,10 +37,10 @@ test('demo data: the same seed and day give the same data; every exercise maps; 
   assert.ok(loadDemoCatalog().programs.every((p) => p.name.startsWith('Sample ')), 'made-up program names only');
 });
 
-test('demo instance: reports itself, refuses sync and chat, reads its own logs, ranks the made-up programs', async () => {
+test('demo instance: reports itself, refuses sync and chat, shows only its own runs, ranks the made-up programs', async () => {
   const store = openHealthStore(join(dir, 'a.db'));
   const app = await buildApp({ store, clock: () => new Date(2026, 9, 7, 12), instance: 'demo', features: { chat: false },
-    catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')), logDir: join(dir, 'logs') });
+    catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')) });
   const status = (await app.inject('/api/status')).json();
   assert.equal(status.instance, 'demo');
   assert.equal(status.sync, false);
@@ -50,7 +50,7 @@ test('demo instance: reports itself, refuses sync and chat, reads its own logs, 
   assert.equal((await app.inject('/api/reviews/status')).json().canRun, false);
   assert.equal((await app.inject({ method: 'POST', url: '/api/reviews/run', payload: {} })).statusCode, 503);
   assert.equal((await app.inject({ method: 'POST', url: '/api/advisor/chat', payload: { text: 'hi' } })).statusCode, 503);
-  assert.deepEqual((await app.inject('/api/logs/sync')).json().lines, [], 'never the main instance logs');
+  assert.deepEqual((await app.inject('/api/jobs')).json().ingest, [], 'its own database only');
   const advisor = (await app.inject('/api/advisor')).json();
   assert.equal(advisor.available, true);
   assert.ok(advisor.ranking.length >= 2 && advisor.ranking.every((r) => r.program.startsWith('Sample ')));

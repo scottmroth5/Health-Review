@@ -508,14 +508,9 @@ test('VO2 max: each view returns its points and tiles; unknown views are refused
   await done();
 });
 
-test('activity: runs newest first with counts and Claude calls; logs read by name only', async () => {
-  const { mkdtempSync, writeFileSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const logDir = mkdtempSync(join(tmpdir(), 'hr-logs-'));
-  writeFileSync(join(logDir, 'sync.log'), ['==== Mon 10/05/2026  7:00:01', '[sync] ok: 0 calls', 'health_metrics: {"rowsRead":35}', ''].join('\n'));
+test("activity: runs newest first with counts and Claude calls; each job's last runs and the ingest posts, with no log files", async () => {
   const store = openHealthStore(':memory:');
-  const app = await buildApp({ store, clock: () => TODAY, logDir });
+  const app = await buildApp({ store, clock: () => TODAY });
   const run = store.db.prepare(`INSERT INTO runs (name, meta, status, started_at, finished_at, duration_ms, calls, cost_usd, summary)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   run.run('sync', '{"backfill":false}', 'ok', '2026-03-08T12:00:00Z', '2026-03-08T12:00:03Z', 3000, 0, null, '{"counts":{"health_metrics":{"rowsRead":35}},"warnings":1}');
@@ -530,10 +525,13 @@ test('activity: runs newest first with counts and Claude calls; logs read by nam
   assert.deepEqual([detail.meta, detail.summary, detail.calls.length, detail.calls[0].model], [{ weekEnd: '2026-03-07' }, { sections: 9, attempts: 1 }, 1, 'claude-opus-5-5']);
   assert.equal((await app.inject('/api/runs/999')).statusCode, 404);
 
-  assert.deepEqual((await app.inject('/api/logs/sync?lines=2')).json(), { name: 'sync', lines: ['[sync] ok: 0 calls', 'health_metrics: {"rowsRead":35}'] });
-  assert.deepEqual((await app.inject('/api/logs/review')).json(), { name: 'review', lines: [] }, 'no review log yet');
-  assert.equal((await app.inject('/api/logs/..%2F.env')).statusCode, 400, 'only the named logs can be read');
-  assert.equal((await app.inject('/api/logs/health')).statusCode, 400);
+  store.db.prepare(`INSERT INTO ingest_log (id, received_at, route, result, counts, error)
+    VALUES ('a', '2026-03-09T11:00:00Z', 'health', 'ok', '{"days":2}', NULL)`).run();
+  const jobs = (await app.inject('/api/jobs')).json();
+  assert.deepEqual(jobs.jobs.map((j) => [j.name, j.runs.length]), [['sync', 1], ['review', 1], ['backup', 0], ['restore-test', 0]]);
+  assert.deepEqual(jobs.jobs[0].runs[0].summary, { counts: { health_metrics: { rowsRead: 35 } }, warnings: 1 });
+  assert.deepEqual(jobs.ingest, [{ received_at: '2026-03-09T11:00:00Z', route: 'health', result: 'ok', counts: { days: 2 }, error: null }]);
+  assert.equal((await app.inject('/api/logs/sync')).statusCode, 404, 'log files are no longer served');
   await app.close();
   store.close();
 });

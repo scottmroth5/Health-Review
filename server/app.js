@@ -91,9 +91,11 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  *   routes answer 503) and where Apple data comes from (APPLE_SOURCE), which the "export stopped" check follows
  * @param {boolean|number|string} [ctx.trustProxy]  Fastify trustProxy: set behind Caddy so req.ip is the client's address
  * @param {() => Date} [ctx.clock]
+ * @param {{ info: Function, warn: Function }} [ctx.log]  one line per event on stdout (counts and names only; never health,
+ *   prompt or report text), so docker compose logs shows what ran
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, catalog, dictionary, substitutions, logDir = repoPath('data', 'logs'), features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges }) {
   const app = Fastify({ logger, trustProxy });
   // Every route's method and path, so tests can check each write route (demo mode refuses them all).
   const routeList = [];
@@ -147,14 +149,12 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     schema: { summary: 'One run with its counts and Claude calls (metadata only)', params: idParams, response: { 200: anyObject } },
   }, async (req, reply) => q.getRun(db, req.params.id) ?? reply.code(404).send({ error: 'Run not found' }));
 
-  app.get('/api/logs/:name', {
+  app.get('/api/jobs', {
     schema: {
-      summary: 'The last lines of a scheduled task log (sync, review or backup)',
-      params: { type: 'object', required: ['name'], properties: { name: { type: 'string', enum: q.LOG_NAMES } } },
-      querystring: { type: 'object', properties: { lines: { type: 'integer', minimum: 1, maximum: 2000, default: 200 } } },
-      response: { 200: { type: 'object', properties: { name: { type: 'string' }, lines: { type: 'array', items: { type: 'string' } } } } },
+      summary: "Each scheduled job's last runs (sync, review, backup, restore test) and the last Health Auto Export posts: status, times and counts only",
+      response: { 200: anyObject },
     },
-  }, async (req) => ({ name: req.params.name, lines: q.readLog(logDir, req.params.name, req.query.lines) }));
+  }, async () => q.jobsActivity(db));
 
   app.get('/api/status', { schema: { summary: 'Today, the last sync, and data check warnings as of today (stale or missing Apple Health days, partial days, impossible values)', response: { 200: anyObject } } }, async () => {
     const today = q.localDate(clock());
@@ -323,9 +323,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     try {
       const counts = apply(req.body, received);
       logIngest.run(randomUUID(), received.toISOString(), route, 'ok', JSON.stringify(counts), null);
+      log.info(`[ingest] ${route} ok ${JSON.stringify(counts)}`);
       return { ok: true, ...counts };
     } catch (err) {
       logIngest.run(randomUUID(), received.toISOString(), route, 'error', null, err.name);
+      log.warn(`[ingest] ${route} error ${err.name}`);
       return reply.code(400).send({ error: err.message });
     }
   });
@@ -396,7 +398,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       }
       reviewRun.weekEnd = status.weekEnd;
       services.review({ weekEnd: status.weekEnd, today: q.localDate(clock()) })
-        .catch((err) => { reviewRun.error = err.name === 'Error' ? 'Review failed' : err.name; })
+        .then(() => log.info(`[review] ok week ending ${status.weekEnd}`))
+        .catch((err) => { reviewRun.error = err.name === 'Error' ? 'Review failed' : err.name; log.warn(`[review] failed week ending ${status.weekEnd}: ${err.name}`); })
         .finally(() => { reviewRun.running = false; });
       return reply.code(202).send({ started: true, weekEnd: status.weekEnd });
     } catch (err) {
@@ -417,6 +420,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     syncing = true;
     try {
       const { counts, warnings } = await services.sync();
+      log.info(`[sync] ok ${JSON.stringify(counts)} warnings=${warnings.length}`);
       return { counts, warnings: warnings.length };
     } finally {
       syncing = false;

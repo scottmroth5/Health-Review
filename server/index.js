@@ -38,7 +38,7 @@ if (demo) {
   store = openHealthStore(DEMO_DB_PATH);
   app = await buildApp({
     store, services: {}, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, instance: 'demo', features: { chat: false },
-    catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')), logDir: repoPath('data', 'demo', 'logs'),
+    catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')),
   });
 } else {
   store = openHealthStore();

@@ -116,14 +116,20 @@ export function getRun(db, id) {
   };
 }
 
-export const LOG_NAMES = ['sync', 'review', 'backup'];
+/** The scheduled jobs the Activity tab follows (their runs are recorded by the tracer, so no log file is needed). */
+export const JOB_NAMES = ['sync', 'review', 'backup', 'restore-test'];
 
-/** The last lines of a scheduled task's log (data/logs/<name>.log); empty when it does not exist yet. */
-export function readLog(dir, name, lines = 200) {
-  if (!LOG_NAMES.includes(name)) throw new Error(`Unknown log ${name}`);
-  const path = join(dir, `${name}.log`);
-  if (!existsSync(path)) return [];
-  return readFileSync(path, 'utf8').split(/\r?\n/).filter((l, i, all) => l !== '' || i < all.length - 1).slice(-lines);
+/**
+ * Each scheduled job's last runs, and the last Health Auto Export posts (ingest_log), newest first. Metadata only:
+ * status, times and counts, never report, prompt or health text.
+ */
+export function jobsActivity(db, { runs = 5, posts = 20 } = {}) {
+  const last = db.prepare('SELECT id, status, started_at, finished_at, duration_ms, summary FROM runs WHERE name = ? ORDER BY id DESC LIMIT ?');
+  return {
+    jobs: JOB_NAMES.map((name) => ({ name, runs: last.all(name, runs).map((r) => ({ ...r, summary: parseJson(r.summary) })) })),
+    ingest: db.prepare('SELECT received_at, route, result, counts, error FROM ingest_log ORDER BY received_at DESC LIMIT ?').all(posts)
+      .map((r) => ({ ...r, counts: parseJson(r.counts) })),
+  };
 }
 
 export function lastSync(db) {

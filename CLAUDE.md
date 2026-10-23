@@ -340,8 +340,12 @@ sheet's copy, and undoing restores the original. Sheet results cannot be deleted
 prompt_sections (edited on the Prompt tab; every save and delete copies the old row to prompt_section_versions);
 sensitive sections are included in the weekly review (WEEKLY_INCLUDES_SENSITIVE in agent/prompts.js) and badged in the UI;
 buildInstructions leaves them out unless a caller opts in.
-The Activity tab lists runs (GET /api/runs, /api/runs/:id: the tracer's runs and run_calls, metadata only) and the scheduled
-tasks' logs (GET /api/logs/sync|review, the last lines of data/logs; only those two names can be read).
+The Activity tab lists runs (GET /api/runs, /api/runs/:id: the tracer's runs and run_calls, metadata only) and, under
+Scheduled jobs, each job's last runs (sync, review, backup, restore-test) plus the last Health Auto Export posts
+(GET /api/jobs, queries.js jobsActivity: runs and ingest_log only). It reads no log files (the Windows tasks still write
+data/logs until the move, but nothing serves them). The server logs one line per event to stdout through buildApp's log
+(console by default): [sync] ok with counts, [review] ok or failed with the week, [ingest] route ok or error; counts and
+names only, never health, prompt or report text, so docker compose logs shows what ran.
 GET /api/spend (queries.js spend) totals estimated Claude API cost by month and year: runs.cost_usd by kind (review, advisor-chat,
 other) plus the review eval's results.jsonl usage priced with agent-core's pricing.js (imported by path until agent-core
 exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.

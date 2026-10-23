@@ -1985,13 +1985,13 @@ function initPrompt() {
 }
 
 // ---------------- activity ----------------
-const RUN_LABELS = { sync: 'Sync', review: 'Weekly review', 'review-eval': 'Review eval', backup: 'Encrypted backup' };
+const RUN_LABELS = { sync: 'Sync', review: 'Weekly review', 'review-eval': 'Review eval', backup: 'Encrypted backup', 'restore-test': 'Backup restore test' };
 const runLabel = (name) => RUN_LABELS[name] ?? name;
 const RUN_STATUS = { running: 'running', ok: 'finished', error: 'failed', failed: 'failed', skipped: 'skipped (Apple Health data missing)' };
 const when = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
 const seconds = (ms) => (ms == null ? '' : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60000)} min`);
 const usd = (v) => (v ? `$${v.toFixed(4)}` : '');
-const activity = { selected: null, log: 'sync', timer: null };
+const activity = { selected: null, timer: null };
 
 /** A run's summary as label: value lines (nested objects flattened to "source rows read"). */
 function summaryLines(obj, prefix = '') {
@@ -2054,7 +2054,7 @@ async function loadActivity() {
     }));
     await showRun(activity.selected);
   }
-  await showLog(activity.log);
+  await loadJobs();
   // Follow a run that is still going.
   if (runs.some((r) => r.status === 'running') && location.hash === '#activity') activity.timer = setTimeout(loadActivity, 3000);
 }
@@ -2081,13 +2081,24 @@ async function showRun(id) {
         h('td', {}, c.cache_read_tokens.toLocaleString()), h('td', {}, usd(c.cost_usd)), h('td', {}, seconds(c.duration_ms))))))) : null);
 }
 
-async function showLog(name) {
-  activity.log = name;
-  $$('[data-log]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.log === name)));
-  const { lines } = await api('GET', `/api/logs/${name}?lines=200`);
-  const box = $('#activity-log');
-  box.replaceChildren(...(lines.length ? lines : ['No log yet.']).map((l) => h('div', { class: `console-line${/^====/.test(l) ? ' run-start' : ''}${/failed|\berror:|\[\w+\] error|\b[1-9]\d* errors\b/i.test(l) ? ' bad' : ''}` }, l)));
-  box.scrollTop = box.scrollHeight;
+/** Scheduled jobs: each job's last run (and the ones before it), and the last Health Auto Export posts. */
+async function loadJobs() {
+  const { jobs, ingest } = await api('GET', '/api/jobs');
+  const runLine = (r) => `${when(r.started_at)}, ${RUN_STATUS[r.status] ?? r.status}${r.duration_ms != null ? `, ${seconds(r.duration_ms)}` : ''}`;
+  const rows = jobs.map((j) => {
+    const [last, ...before] = j.runs;
+    return h('li', {},
+      h('span', { class: `dot ${last?.status ?? ''}`, 'aria-hidden': 'true' }),
+      h('span', {}, h('b', {}, runLabel(j.name)), ' ',
+        h('span', { class: 'muted small' }, last ? runLine(last) : 'has not run yet'),
+        before.length ? h('span', { class: 'muted small' }, `; before that: ${before.map((r) => `${when(r.started_at)} ${RUN_STATUS[r.status] ?? r.status}`).join(', ')}`) : null));
+  });
+  const posts = ingest.length
+    ? h('ul', { class: 'plain-list' }, ...ingest.map((p) => h('li', {},
+      h('span', {}, `${when(p.received_at)} ${p.route}`),
+      h('strong', {}, p.result === 'ok' ? Object.entries(p.counts ?? {}).map(([k, v]) => `${v} ${k}`).join(', ') : `error (${p.error})`))))
+    : h('p', { class: 'muted small' }, 'No Health Auto Export posts yet (they arrive on the server, where APPLE_SOURCE=rest).');
+  fill($('#jobs-body'), h('ul', { class: 'job-list' }, rows), h('h3', { class: 'sub' }, 'Health Auto Export posts'), posts);
 }
 
 // ---------------- start ----------------
@@ -2106,7 +2117,6 @@ $('#chat-clear').addEventListener('click', async () => {
 $$('[data-vview]').forEach((b) => b.addEventListener('click', () => loadVo2(b.dataset.vview)));
 $$('[data-zview]').forEach((b) => b.addEventListener('click', () => loadZones(b.dataset.zview)));
 $$('[data-zgroup]').forEach((b) => b.addEventListener('click', () => loadZones(zonesViewChoice(), b.dataset.zgroup)));
-$$('[data-log]').forEach((b) => b.addEventListener('click', () => showLog(b.dataset.log)));
 $$('[data-range]').forEach((b) => b.addEventListener('click', () => {
   state.range = Number(b.dataset.range);
   loadHistory();
