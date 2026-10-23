@@ -1,0 +1,98 @@
+# The server: the app's container behind Caddy, which gets and renews the HTTPS certificates on its own. Adapted from
+# Job Agent's. Lives on the server at /opt/health-review/compose.yml with deploy.sh, Caddyfile and .env beside it.
+# deploy.sh sets IMAGE_TAG; by hand: IMAGE_TAG=<tag> docker compose up -d
+#
+# Only Caddy is reachable from outside (ports 80 and 443). The app listens on the private Docker network.
+# demo is the public, read-only demo at DEMO_SITE_ADDRESS: the same image on made-up data, with none of the app's
+# secrets or data, a fresh made-up database on every start, and its own small memory and CPU limits.
+# Every service restarts on its own after the server's 04:30 automatic reboots (restart: unless-stopped).
+
+name: health-review
+
+services:
+  app:
+    image: ${IMAGE:-ghcr.io/scottmroth5/health-review}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # Every setting and secret, from the server's own .env (never in GitHub or the image).
+    env_file: .env
+    environment:
+      # Fixed for the container, whatever .env says: data on the mounted disk, reachable by Caddy, one proxy hop.
+      DATA_DIR: /app/data
+      HOST: 0.0.0.0
+      PORT: "5188"
+      TRUST_PROXY: "1"
+    volumes:
+      # The database, the MAPS catalog and PDFs, and the Google sign-in files. Survives every deploy.
+      - ./data:/app/data
+    expose:
+      - "5188"
+    init: true
+    stop_grace_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  demo:
+    image: ${IMAGE:-ghcr.io/scottmroth5/health-review}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # No env_file: the demo never sees the app's API keys, Google files, session secret or ingest token.
+    environment:
+      AUTH_MODE: demo
+      PUBLIC_URL: https://${DEMO_SITE_ADDRESS:?set DEMO_SITE_ADDRESS in .env}
+      DATA_DIR: /app/data
+      HOST: 0.0.0.0
+      PORT: "5188"
+      TRUST_PROXY: "1"
+    # The demo instance: builds its made-up database in the empty /app/data, then serves it. A restart resets it.
+    command: ["node", "server/demo.js"]
+    # Nothing on disk survives or is shared: the code is read-only and the made-up data lives in memory.
+    read_only: true
+    tmpfs:
+      - /app/data:size=64m,uid=1000,gid=1000,mode=0700
+      - /tmp:size=16m
+    expose:
+      - "5188"
+    init: true
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 100
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "2"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+      - demo
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      # The public addresses, e.g. health.example.com. Set in the server's .env.
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+      DEMO_SITE_ADDRESS: ${DEMO_SITE_ADDRESS:?set DEMO_SITE_ADDRESS in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  # Caddy's certificates and keys. Kept so a restart never asks Let's Encrypt for a new certificate.
+  caddy_data:
+  caddy_config:

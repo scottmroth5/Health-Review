@@ -77,6 +77,12 @@ docker build -t health-review .   the server image (Dockerfile; code only: .dock
                                   backups and MAPS files out; runs as uid 1000, DATA_DIR=/app/data, HEALTHCHECK on
                                   /api/health). The demo runs the same image: AUTH_MODE=demo, no env file, a read-only root
                                   and an empty tmpfs /app/data, where it builds its made-up database at start
+deploy/                           the server (/opt/health-review): compose.yml (app with .env and ./data, demo with no env
+                                  file or volume, caddy:2 on 80/443; all restart: unless-stopped for the 04:30 reboots),
+                                  Caddyfile (SITE_ADDRESS, DEMO_SITE_ADDRESS, automatic HTTPS, demo noindex, no access
+                                  log), deploy.sh (deploy <tag>, rollback, up, pull, status; reads SSH_ORIGINAL_COMMAND for
+                                  the forced deploy key, health checks app and demo, rolls back on failure; state in
+                                  ./state, owned by deploy), cloud.env.example (the server .env's names, placeholders)
 npm run backup                    encrypted backup of data/health.db and data/maps/programs.json to the "Health-Review
                                   backups" folder in Google Drive (-- --to <folder> writes it to a folder instead, such as
                                   a USB drive; -- --check-passphrase checks HEALTH_BACKUP_PASSPHRASE in .env)
