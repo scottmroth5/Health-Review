@@ -71,9 +71,24 @@ export function cardioZones({ sessions, samples, bounds, buckets }) {
   });
 }
 
-/** Day buckets for the last `days` days ending today, or `weeks` Sunday-to-Saturday weeks ending with this one. */
-export function zoneBuckets(today, { days = null, weeks = null }) {
+/**
+ * Day buckets for the last `days` days ending today, `weeks` Sunday-to-Saturday weeks ending with this one, or the
+ * calendar months overlapping the last `monthsOver` days (whole months from the 1st; the current month runs to today).
+ */
+export function zoneBuckets(today, { days = null, weeks = null, monthsOver = null }) {
   if (days) return Array.from({ length: days }, (_, i) => addDays(today, i - days + 1)).map((d) => ({ from: d, to: d }));
+  if (monthsOver) {
+    const out = [];
+    let first = `${addDays(today, 1 - monthsOver).slice(0, 7)}-01`;
+    while (first <= today) {
+      const [y, m] = first.split('-').map(Number);
+      const next = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
+      const last = addDays(next, -1);
+      out.push({ from: first, to: last < today ? last : today });
+      first = next;
+    }
+    return out;
+  }
   const dow = new Date(`${today}T00:00:00Z`).getUTCDay(); // 0 Sunday
   const lastSat = addDays(today, 6 - dow);
   return Array.from({ length: weeks }, (_, i) => {

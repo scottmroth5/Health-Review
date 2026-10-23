@@ -310,12 +310,17 @@ export function vo2max(db, view, today) {
   return vo2maxReport(rows, view, today);
 }
 
-/** Health tab: views of the cardio minutes by heart rate zone card (day buckets, or Sunday-to-Saturday weeks). */
-export const CARDIO_ZONE_VIEWS = { '30d': { days: 30 }, '90d': { days: 90 }, '1y': { weeks: 52 } };
+/**
+ * Health tab: ranges of the cardio minutes by heart rate zone card, each grouped by day, Sunday-to-Saturday week or
+ * calendar month; group defaults to days for 30 and 90 days and weeks for a year.
+ */
+export const CARDIO_ZONE_VIEWS = { '30d': { days: 30, weeks: 5, group: 'day' }, '90d': { days: 90, weeks: 13, group: 'day' }, '1y': { days: 365, weeks: 52, group: 'week' } };
+export const CARDIO_ZONE_GROUPS = ['day', 'week', 'month'];
 
-/** Cardio minutes by heart rate zone for one view, with the zone bounds (null without a Zone 2 range or birth year). */
-export function cardioZoneView(db, view, today) {
-  const buckets = zoneBuckets(today, CARDIO_ZONE_VIEWS[view]);
+/** Cardio minutes by heart rate zone for one range and grouping, with the zone bounds (null without a Zone 2 range or birth year). */
+export function cardioZoneView(db, view, today, group = CARDIO_ZONE_VIEWS[view].group) {
+  const v = CARDIO_ZONE_VIEWS[view];
+  const buckets = zoneBuckets(today, group === 'day' ? { days: v.days } : group === 'week' ? { weeks: v.weeks } : { monthsOver: v.days });
   const from = buckets[0].from;
   const to = buckets.at(-1).to;
   const { zone2 } = loadMetricSettings(db);
@@ -323,7 +328,7 @@ export function cardioZoneView(db, view, today) {
   const sessions = db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE start >= ? AND start < ? ORDER BY start')
     .all(from, `${addDays(to, 1)}`);
   const samples = db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE start >= ? AND start < ?').all(from, `${addDays(to, 1)}`);
-  return { view, bucket: buckets.length && buckets[0].from === buckets[0].to ? 'day' : 'week', bounds, buckets: cardioZones({ sessions, samples, bounds, buckets }) };
+  return { view, bucket: group, bounds, buckets: cardioZones({ sessions, samples, bounds, buckets }) };
 }
 
 /** The Program Advisor's ranking as of today (Training tab); available false without the MAPS catalog. */

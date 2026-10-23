@@ -137,6 +137,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .chart .dot.partial, .chart .dot.out, .chart .bar.partial { fill: var(--danger); }
 .chart .bar.seg.z1 { fill: var(--zone-1); } .chart .bar.seg.z2 { fill: var(--zone-2); } .chart .bar.seg.z3 { fill: var(--zone-3); }
 .chart .bar.seg.z4 { fill: var(--zone-4); } .chart .bar.seg.z5 { fill: var(--zone-5); } .chart .bar.seg.znd { fill: var(--zone-none); }
+.zone-filters { display: flex; flex-wrap: wrap; gap: 0 12px; }
 .zone-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0; padding: 0; font-size: 0.8rem; color: var(--text-secondary); }
 .zone-legend li { display: flex; align-items: center; gap: 6px; }
 .zone-legend .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }

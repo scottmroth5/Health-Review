@@ -73,6 +73,7 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
       const run = (buckets, b = bounds) => cardioZones({ sessions: fx.sessions, samples, bounds: b, buckets });
       assert.deepEqual(run(zoneBuckets(fx.today, { days: fx.days.count })), fx.days.expected);
       assert.deepEqual(run(zoneBuckets(fx.today, { weeks: fx.weeks.count })), fx.weeks.expected);
+      assert.deepEqual(run(zoneBuckets(fx.today, { monthsOver: fx.months.over })), fx.months.expected);
       const [noBounds] = run([{ from: fx.noBounds.day, to: fx.noBounds.day }], null);
       assertSubset(noBounds, fx.noBounds.expected);
       const review = weekZones({ sessions: fx.sessions, samples, bounds, weekEnd: fx.review.weekEnd });

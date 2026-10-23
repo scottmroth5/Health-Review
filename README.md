@@ -178,8 +178,8 @@ the app reads the new files and fills the new columns on days it already has.
 
 ## Cardio minutes by heart rate zone
 
-The Health tab's zones card shows cardio minutes per day (30 or 90 days) or per week (1 year), each bar split by heart rate
-zone:
+The Health tab's zones card shows cardio minutes over 30 days, 90 days or a year, with a Days / Weeks / Months switch
+(weeks run Sunday to Saturday; the current month runs to today). Each bar is split by heart rate zone:
 - **Zone 2** is your saved range (Settings, on the Prompt tab).
 - **Zone 1** is below it.
 - **Zones 3 to 5** split the span from its top to an estimated maximum heart rate from your age (208 - 0.7 x age; birth

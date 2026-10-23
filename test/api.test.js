@@ -590,6 +590,16 @@ test('cardio zones: minutes per zone from per-minute heart rate, gaps as no deta
   assert.deepEqual(r.buckets.find((b) => b.from === '2026-03-02'), { from: '2026-03-02', to: '2026-03-02', total: 10, zones: [1, 2, 1, 0, 1], noDetail: 5 });
   const year = (await app.inject('/api/cardio-zones?view=1y')).json();
   assert.deepEqual([year.bucket, year.buckets.length, year.buckets.at(-1).to], ['week', 52, '2026-03-14']);
+  const get = async (url) => (await app.inject(url)).json();
+  const weeks = await get('/api/cardio-zones?view=30d&group=week');
+  assert.deepEqual([weeks.bucket, weeks.buckets.length, weeks.buckets[0].from, weeks.buckets.at(-1).to], ['week', 5, '2026-02-08', '2026-03-14']);
+  const days = await get('/api/cardio-zones?view=1y&group=day');
+  assert.deepEqual([days.bucket, days.buckets.length, days.buckets.at(-1).from], ['day', 365, '2026-03-09']);
+  const months = await get('/api/cardio-zones?view=1y&group=month');
+  assert.deepEqual([months.bucket, months.buckets.length, months.buckets[0].from, months.buckets.at(-1).from, months.buckets.at(-1).to],
+    ['month', 13, '2025-03-01', '2026-03-01', '2026-03-09']);
+  assert.deepEqual(months.buckets.at(-1).zones, [1, 2, 1, 0, 1]);
+  assert.equal((await app.inject('/api/cardio-zones?view=30d&group=year')).statusCode, 400);
   assert.equal((await app.inject('/api/cardio-zones?view=7d')).statusCode, 400);
   await done();
 });

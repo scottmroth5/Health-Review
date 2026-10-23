@@ -173,10 +173,17 @@
       <div class="card zones-card">
         <div class="training-head">
           <h2>Cardio minutes by heart rate zone</h2>
-          <div class="filters" role="group" aria-label="Cardio zones range">
-            <button type="button" data-zview="30d">30 days</button>
-            <button type="button" data-zview="90d">90 days</button>
-            <button type="button" data-zview="1y">1 year</button>
+          <div class="zone-filters">
+            <div class="filters" role="group" aria-label="Cardio zones range">
+              <button type="button" data-zview="30d">30 days</button>
+              <button type="button" data-zview="90d">90 days</button>
+              <button type="button" data-zview="1y">1 year</button>
+            </div>
+            <div class="filters" role="group" aria-label="Group bars by">
+              <button type="button" data-zgroup="day">Days</button>
+              <button type="button" data-zgroup="week">Weeks</button>
+              <button type="button" data-zgroup="month">Months</button>
+            </div>
           </div>
         </div>
         <p class="muted small" id="zones-summary"></p>

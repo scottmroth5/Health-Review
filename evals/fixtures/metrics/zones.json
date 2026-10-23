@@ -9,6 +9,7 @@
     "Mar 4: an Outdoor Walk of 900 s (15 minutes) with no samples: no detail 15, total 15. Mar 1 and Mar 3 have nothing.",
     "Week of Mar 1 to Mar 7 (today Wednesday Mar 4, the week ends Saturday Mar 7): Zones 25, 10, 3, 1, 1, no detail 25, total 65.",
     "Without bounds (no Zone 2 range), Mar 2's 50 minutes are all no detail.",
+    "Months over 60 days ending Mar 4: Mar 4 less 59 days is Jan 4, so Jan (whole), Feb (whole, 2026 has 28 days) and Mar 1 to Mar 4. Jan has nothing; Feb has the Feb 10 Elliptical (Zone 2 30, no detail 10, total 40); Mar 1 to 4 is the week's 25, 10, 3, 1, 1, no detail 25, total 65.",
     "Weekly review, week ending Sat Mar 7 (Mar 1 to Mar 7): the same 25, 10, 3, 1, 1, no detail 25, total 65. Baseline Feb 1 to Feb 28: one Elliptical on Feb 10 of 2,400 s (40 minutes) with 30 samples at 120 (Zone 2), so Zone 2 30 and no detail 10, total 40; per week (28 days is 4 weeks) Zone 2 round(7.5) = 8, no detail round(2.5) = 3, total 10."
   ],
   "bounds": { "input": { "zone2Low": 110, "zone2High": 125, "birthYear": 1970, "year": 2026 },
@@ -41,6 +42,10 @@
     { "from": "2026-03-04", "to": "2026-03-04", "total": 15, "zones": [0, 0, 0, 0, 0], "noDetail": 15 } ] },
   "weeks": { "count": 1, "expected": [
     { "from": "2026-03-01", "to": "2026-03-07", "total": 65, "zones": [25, 10, 3, 1, 1], "noDetail": 25 } ] },
+  "months": { "over": 60, "expected": [
+    { "from": "2026-01-01", "to": "2026-01-31", "total": 0, "zones": [0, 0, 0, 0, 0], "noDetail": 0 },
+    { "from": "2026-02-01", "to": "2026-02-28", "total": 40, "zones": [0, 30, 0, 0, 0], "noDetail": 10 },
+    { "from": "2026-03-01", "to": "2026-03-04", "total": 65, "zones": [25, 10, 3, 1, 1], "noDetail": 25 } ] },
   "review": { "weekEnd": "2026-03-07", "expected": {
     "maxHr": 169,
     "week": { "minutes": [25, 10, 3, 1, 1], "noDetail": 25, "total": 65 },

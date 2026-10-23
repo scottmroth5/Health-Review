@@ -1247,18 +1247,31 @@ async function loadVo2(view = vo2ViewChoice()) {
 
 // ---------------- cardio minutes by heart rate zone (Health tab) ----------------
 const ZONES_VIEW_KEY = 'hr.zonesView';
+const ZONES_GROUP_KEY = 'hr.zonesGroup';
 function zonesViewChoice() {
   try { return localStorage.getItem(ZONES_VIEW_KEY) || '30d'; } catch { return '30d'; }
 }
+/** The saved Days / Weeks / Months choice, or '' for the range's default (days for 30 and 90 days, weeks for a year). */
+function zonesGroupChoice() {
+  try { return localStorage.getItem(ZONES_GROUP_KEY) || ''; } catch { return ''; }
+}
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** A zones bucket's name: the day, "Week ending Oct 24, 2026" or "Oct 2026". */
+const zoneBucketLabel = (b, group) => (group === 'week' ? `Week ending ${niceDate(b.to)}`
+  : group === 'month' ? `${MONTH_NAMES[Number(b.from.slice(5, 7)) - 1]} ${b.from.slice(0, 4)}` : niceDate(b.from));
 /** "under 110 bpm", "110 to 125 bpm", "155 bpm and up". */
 const zoneRange = (z) => (z.low === null ? `under ${z.high + 1} bpm` : z.high === null ? `${z.low} bpm and up` : `${z.low} to ${z.high} bpm`);
 const minutesText = (n) => `${n.toLocaleString()} min`;
 
-async function loadZones(view = zonesViewChoice()) {
-  try { localStorage.setItem(ZONES_VIEW_KEY, view); } catch { /* storage unavailable: still works, just not remembered */ }
+async function loadZones(view = zonesViewChoice(), group = zonesGroupChoice()) {
+  try {
+    localStorage.setItem(ZONES_VIEW_KEY, view);
+    if (group) localStorage.setItem(ZONES_GROUP_KEY, group);
+  } catch { /* storage unavailable: still works, just not remembered */ }
   $$('[data-zview]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.zview === view)));
-  const r = await api('GET', `/api/cardio-zones?view=${view}`);
-  const weekly = r.bucket === 'week';
+  const r = await api('GET', `/api/cardio-zones?view=${view}${group ? `&group=${group}` : ''}`);
+  $$('[data-zgroup]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.zgroup === r.bucket)));
+  const single = r.bucket === 'day';
   const zoneLabel = (i) => (r.bounds ? `Zone ${i + 1} (${zoneRange(r.bounds.zones[i])})` : `Zone ${i + 1}`);
   // Legend: one swatch per zone with its bpm range, then minutes with no heart rate detail.
   fill($('#zones-legend'),
@@ -1267,13 +1280,19 @@ async function loadZones(view = zonesViewChoice()) {
   const points = r.buckets.map((b) => ({
     date: b.from,
     value: b.total,
-    label: weekly ? `Week ending ${niceDate(b.to)}` : undefined,
+    label: single ? undefined : zoneBucketLabel(b, r.bucket),
     segments: [...b.zones.map((v, i) => ({ value: v, cls: `z${i + 1}` })), { value: b.noDetail, cls: 'znd' }],
     details: [...b.zones.map((v, i) => (v ? `${zoneLabel(i)}: ${minutesText(v)}` : null)), b.noDetail ? `No heart rate detail: ${minutesText(b.noDetail)}` : null].filter(Boolean),
   }));
   const first = r.buckets[0];
   const last = r.buckets.at(-1);
-  columnChart($('#zones-chart'), points, { from: first.from, to: weekly ? last.from : last.to, format: minutesText, label: 'Cardio minutes', bucketDays: weekly ? 7 : 1 });
+  // The axis runs to the end of the last bucket (its Saturday, or the month's last day), so the last bar is not cut off.
+  const monthEnd = (d) => {
+    const [y, m] = d.split('-').map(Number);
+    return addDays(m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`, -1);
+  };
+  columnChart($('#zones-chart'), points, { from: first.from, to: r.bucket === 'month' ? monthEnd(last.from) : last.to, format: minutesText, label: 'Cardio minutes',
+    bucketDays: { day: 1, week: 7, month: 30 }[r.bucket] });
 
   const total = r.buckets.reduce((s, b) => s + b.total, 0);
   const noDetail = r.buckets.reduce((s, b) => s + b.noDetail, 0);
@@ -1288,7 +1307,7 @@ async function loadZones(view = zonesViewChoice()) {
   // Table: one row per day or week with minutes per zone.
   const head = ['', ...[1, 2, 3, 4, 5].map((n) => `Zone ${n}`), 'No detail', 'Total'];
   const rows = [...r.buckets].reverse().filter((b) => b.total).map((b) => h('tr', {},
-    h('td', {}, weekly ? `Week ending ${niceDate(b.to)}` : niceDate(b.from)),
+    h('td', {}, zoneBucketLabel(b, r.bucket)),
     ...b.zones.map((v) => h('td', {}, String(v))), h('td', {}, String(b.noDetail)), h('td', {}, String(b.total))));
   fill($('#zones-table'), h('details', {}, h('summary', {}, 'Table'),
     h('div', { class: 'table-scroll' }, h('table', {}, h('thead', {}, h('tr', {}, head.map((t) => h('th', {}, t)))), h('tbody', {}, rows)))));
@@ -2066,6 +2085,7 @@ $('#chat-clear').addEventListener('click', async () => {
 });
 $$('[data-vview]').forEach((b) => b.addEventListener('click', () => loadVo2(b.dataset.vview)));
 $$('[data-zview]').forEach((b) => b.addEventListener('click', () => loadZones(b.dataset.zview)));
+$$('[data-zgroup]').forEach((b) => b.addEventListener('click', () => loadZones(zonesViewChoice(), b.dataset.zgroup)));
 $$('[data-log]').forEach((b) => b.addEventListener('click', () => showLog(b.dataset.log)));
 $$('[data-range]').forEach((b) => b.addEventListener('click', () => {
   state.range = Number(b.dataset.range);

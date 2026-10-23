@@ -263,11 +263,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.get('/api/cardio-zones', {
     schema: {
-      summary: 'Cardio minutes by heart rate zone: daily (30d, 90d) or weekly (1y) buckets, minutes per zone from per-minute heart rate, minutes with no heart rate detail, and the zone bounds',
-      querystring: { type: 'object', required: ['view'], properties: { view: { type: 'string', enum: Object.keys(q.CARDIO_ZONE_VIEWS) } } },
+      summary: 'Cardio minutes by heart rate zone over 30 days, 90 days or 1 year, by day, week (Sunday to Saturday) or calendar month (default: days for 30d and 90d, weeks for 1y): minutes per zone from per-minute heart rate, minutes with no heart rate detail, and the zone bounds',
+      querystring: { type: 'object', required: ['view'], properties: { view: { type: 'string', enum: Object.keys(q.CARDIO_ZONE_VIEWS) }, group: { type: 'string', enum: q.CARDIO_ZONE_GROUPS } } },
       response: { 200: anyObject },
     },
-  }, async (req) => q.cardioZoneView(db, req.query.view, q.localDate(clock())));
+  }, async (req) => q.cardioZoneView(db, req.query.view, q.localDate(clock()), req.query.group));
 
   // ---- history, reviews ----
   app.get('/api/history', {
