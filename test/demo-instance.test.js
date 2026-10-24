@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
-import { buildDemoDatabase, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } from '../demo/generate.js';
+import { buildDemoDatabase, refreshDemoDatabase, demoBuiltFor, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } from '../demo/generate.js';
+import { zonedInstant } from '../tools/time.js';
 
 const TODAY = '2026-10-07';
 const dir = mkdtempSync(join(tmpdir(), 'health-demo-'));
@@ -65,4 +66,43 @@ test('demo database: builds with no arguments (the demo container starts with an
   const path = join(dir, 'defaults.db');
   const counts = buildDemoDatabase({ path });
   assert.ok(counts.days > 300, 'about a year and a half of made-up days, ending today');
+});
+
+test('demo refresh: made again in place equals a fresh build, and moves forward with the day', () => {
+  const own = mkdtempSync(join(tmpdir(), 'health-demo-refresh-'));
+  try {
+    buildDemoDatabase({ path: join(own, 'fresh.db'), today: '2026-10-08' });
+    buildDemoDatabase({ path: join(own, 'old.db'), today: TODAY });
+    const store = openHealthStore(join(own, 'old.db'));
+    assert.equal(demoBuiltFor(store), TODAY);
+    refreshDemoDatabase(store, { today: '2026-10-08' });
+    assert.equal(demoBuiltFor(store), '2026-10-08');
+    const one = (sql) => store.db.prepare(sql).pluck().get();
+    assert.equal(one('SELECT MAX(date) FROM daily_metrics'), '2026-10-07', 'Apple Health days run through yesterday');
+    assert.equal(one("SELECT COUNT(*) FROM checkins WHERE date = '2026-10-08'"), 1, "today's check-in is logged");
+    assert.ok(one("SELECT COUNT(*) FROM medication_doses WHERE date = '2026-10-08' AND timing = 'morning' AND taken = 1") >= 1);
+    assert.equal(one("SELECT COUNT(*) FROM daily_metrics WHERE date = '2026-10-08'"), 0, 'no Apple Health day for today yet');
+    store.close();
+    assert.deepEqual(fingerprint(join(own, 'old.db')), fingerprint(join(own, 'fresh.db')));
+  } finally {
+    rmSync(own, { recursive: true, force: true });
+  }
+});
+
+test('demo clock: pinned to the build day, the demo shows that day as today and no "data stopped" check', async () => {
+  const own = mkdtempSync(join(tmpdir(), 'health-demo-clock-'));
+  const store = openHealthStore(join(own, 'd.db'));
+  try {
+    refreshDemoDatabase(store, { today: TODAY });
+    const app = await buildApp({ store, clock: () => zonedInstant(demoBuiltFor(store), 12, 0), instance: 'demo', authMode: 'demo',
+      features: { chat: false }, catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')) });
+    const status = (await app.inject('/api/status')).json();
+    assert.equal(status.today, TODAY);
+    assert.ok(!status.dataChecks.some((c) => /stale|stopped/.test(`${c.kind ?? ''} ${c.message ?? ''}`)), JSON.stringify(status.dataChecks));
+    assert.equal((await app.inject(`/api/days/${TODAY}`)).json().checkin.date, TODAY);
+    await app.close();
+  } finally {
+    store.close();
+    rmSync(own, { recursive: true, force: true });
+  }
 });

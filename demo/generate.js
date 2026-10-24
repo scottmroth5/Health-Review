@@ -251,6 +251,13 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
     }
   }
 
+  // ---- Today as a morning: the check-in and morning supplements logged, no Apple Health day yet (its own stream) ----
+  const r6 = random(seed + 5);
+  insertCheckin.run(today, r6.int(6, 9), r6.int(6, 9), r6.int(6, 9), r6.int(2, 5), r6.int(6, 9), null, null, 'Sample note: logged this morning.', stamp);
+  for (const { id } of db.prepare("SELECT m.id FROM medications m JOIN medication_periods p ON p.medication_id = m.id WHERE p.timings LIKE '%morning%'").all()) {
+    db.prepare("INSERT INTO medication_doses (date, medication_id, timing, taken, updated_at) VALUES (?, ?, 'morning', 1, ?)").run(today, id, stamp);
+  }
+
   // ---- A lab panel, two draws (their typical ranges come from config/lab-ranges.json, as in the real app) ----
   const labs = [['Total Cholesterol', 'Lipid Panel', 'mg/dL', 192, 181], ['LDL Cholesterol', 'Lipid Panel', 'mg/dL', 118, 109], ['HDL Cholesterol', 'Lipid Panel', 'mg/dL', 52, 55],
     ['Triglycerides', 'Lipid Panel', 'mg/dL', 110, 96], ['Glucose', 'Metabolic Panel', 'mg/dL', 92, 90], ['Hemoglobin A1c', 'Metabolic Panel', '%', 5.4, 5.3]];
@@ -269,7 +276,8 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
   ];
   sections.forEach(([name, text, sensitive], i) => db.prepare('INSERT INTO prompt_sections (position, name, text, sensitive, updated_at) VALUES (?, ?, ?, ?, ?)').run(i + 1, name, text, sensitive, stamp));
   // A made-up profile for the age-based targets (born 1975, male, 5 ft 10 in).
-  for (const [k, v] of [['zone2_low_bpm', '108'], ['zone2_high_bpm', '126'], ['birth_year', '1975'], ['sex', 'male'], ['height_in', '70']]) db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(k, v, stamp);
+  // demo_built_for: the day this data was made for (server/index.js refreshes it when the owner's date moves on).
+  for (const [k, v] of [['zone2_low_bpm', '108'], ['zone2_high_bpm', '126'], ['birth_year', '1975'], ['sex', 'male'], ['height_in', '70'], ['demo_built_for', today]]) db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(k, v, stamp);
   const lastSaturday = addDays(today, -((dow(today) + 1) % 7 || 7));
   for (const [i, weekEnd] of [addDays(lastSaturday, -7), lastSaturday].entries()) {
     db.prepare("INSERT INTO reviews (week_ending, summary_json, report_md, created_at, model, warnings, sensitive_sections) VALUES (?, '{}', ?, ?, 'sample', NULL, '[]')")
@@ -307,6 +315,31 @@ export function buildDemoDatabase({ path = DEMO_DB_PATH, today = ownerDate(), se
     return store.tx ? store.tx(() => generateDemo(store, { today, seed })) : generateDemo(store, { today, seed });
   } finally {
     store.close();
+  }
+}
+
+/**
+ * Makes the made-up data again in an open demo store, for a new today: every table emptied (schema_migrations kept;
+ * the migrations seed no rows), then generateDemo, all in one transaction, so a request never sees half-built data
+ * and the result equals a fresh build. The demo server runs this when the owner's date moves on.
+ */
+export function refreshDemoDatabase(store, { today = ownerDate(), seed = DEFAULT_SEED } = {}) {
+  const { db } = store;
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'").pluck().all();
+  return store.tx(() => {
+    db.pragma('defer_foreign_keys = ON');
+    for (const t of tables) db.prepare(`DELETE FROM "${t}"`).run();
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'sqlite_sequence'").get()) db.prepare('DELETE FROM sqlite_sequence').run();
+    return generateDemo(store, { today, seed });
+  });
+}
+
+/** The day the stored demo data was made for, or null (a database from before demo_built_for, or not a demo one). */
+export function demoBuiltFor(store) {
+  try {
+    return store.db.prepare("SELECT value FROM settings WHERE key = 'demo_built_for'").pluck().get() ?? null;
+  } catch {
+    return null;
   }
 }
 

@@ -3,6 +3,7 @@
 // behind Caddy (TRUST_PROXY). Google sign-in for the sync loads on the first sync.
 import { openHealthStore } from '../db/store.js';
 import { repoPath, dataPath } from '../tools/paths.js';
+import { localDate as ownerDate, zonedInstant } from '../tools/time.js';
 import { appleSource } from '../ingest/sync.js';
 import { syncJob } from '../jobs/sync.js';
 import { weeklyReview } from '../jobs/review.js';
@@ -36,11 +37,25 @@ let scheduler = null; // the main instance's in-app schedule (never in the demo)
 if (demo) {
   // The demo instance: made-up data in its own database (built from demo/generate.js when missing), the made-up
   // catalog and substitutions, its own log folder, and no Google sync, review or chat. Never opens data/health.db.
-  const { DEMO_DB_PATH, buildDemoDatabase, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } = await import('../demo/generate.js');
+  const { DEMO_DB_PATH, buildDemoDatabase, refreshDemoDatabase, demoBuiltFor, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } = await import('../demo/generate.js');
   const { readFileSync, existsSync } = await import('node:fs');
   if (!existsSync(DEMO_DB_PATH)) buildDemoDatabase();
   store = openHealthStore(DEMO_DB_PATH);
+  // The data always runs through yesterday: made again in place when the owner's date moves on (checked on start and
+  // every 10 minutes). The demo's clock stays at noon on the day its data was made for, so a late refresh never shows
+  // "data stopped".
+  let builtFor = demoBuiltFor(store);
+  const refresh = () => {
+    const today = ownerDate();
+    if (builtFor === today) return;
+    refreshDemoDatabase(store, { today });
+    builtFor = today;
+    console.log(`[demo] data refreshed for ${today}`);
+  };
+  refresh();
+  setInterval(() => { try { refresh(); } catch (err) { console.error(`[demo] refresh failed: ${err.name}: ${err.message}`); } }, 10 * 60 * 1000).unref();
   app = await buildApp({
+    clock: () => zonedInstant(builtFor, 12, 0),
     store, services: {}, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, instance: 'demo', features: { chat: false },
     catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')),
   });

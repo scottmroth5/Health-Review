@@ -36,7 +36,10 @@ Health specific logic stays in this repo; never add it to agent-core.
                     apps-script/ConsolidateHealthMetrics.gs (the fixed v1 consolidation; retired 2026-10-16, reference only)
 /demo               the separate demo instance's made-up data: generate.js (seeded generator, run through the app's own
                     normalization, block detection and phases), catalog.json (invented "Sample" programs, never MAPS),
-                    substitutions.json
+                    substitutions.json. Data runs through yesterday, with today's check-in and morning supplements (no
+                    Apple Health day yet); settings demo_built_for records the day, and server/index.js remakes it in
+                    place (refreshDemoDatabase) on start and within 10 minutes of the owner's midnight. The demo's clock
+                    is noon on demo_built_for, so a late refresh never shows "data stopped"
 /jobs               the scheduled jobs shared by the npm scripts and the in-app scheduler: sync, review, backup,
                     restore-check (the monthly restore test)
 /scripts            command-line entry points
@@ -73,8 +76,8 @@ npm run programs:catalog          validate data/maps/programs.json and print eac
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
 npm run server:restart            stop the server (task and its node process) and start the task again; run after code changes
 npm run server:stop               stop it (ending the task alone leaves node running; stop-server.ps1 stops the process too)
-npm run demo                      the demo instance on http://localhost:5189: data/demo/demo.db only (built when missing),
-                                  no .env, no sync, review or chat (server/demo.js sets HEALTH_INSTANCE=demo)
+npm run demo                      the demo instance on http://localhost:5189: data/demo/demo.db only (built when missing,
+                                  remade when its day is past), no .env, no sync, review or chat (server/demo.js sets HEALTH_INSTANCE=demo)
 npm run demo:build                rebuild data/demo/demo.db from demo/generate.js (also the demo's reset)
 docker build -t health-review .   the server image (Dockerfile; code only: .dockerignore keeps data/, .env, sign-in files,
                                   backups and MAPS files out; runs as uid 1000, DATA_DIR=/app/data, HEALTHCHECK on

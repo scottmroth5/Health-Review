@@ -503,7 +503,9 @@ npm run demo:build    # rebuild the demo database from scratch, which also reset
 - **Off in the demo:** sync, reviews and the Claude chat. A banner says it's sample data.
 - **Your instance keeps running:** on 5188, as before. The two share only code.
 - **Hosted:** the server runs the same demo at `DEMO_SITE_ADDRESS` with `AUTH_MODE=demo`. It refuses every change, and
-  its made-up database is rebuilt in memory on each restart.
+  its made-up database lives in memory.
+- **Always current:** the data runs through yesterday, and today's check-in and morning supplements are already logged.
+  Just after midnight (your time) the demo makes its data again for the new day, locally and hosted, with no restart.
 - **The data:** about 15 months, made up by `demo/generate.js` from a fixed seed, so every build is the same for a
   given day. It includes:
   - Apple Health days and workouts, with a planted gap and a partial day so the data checks have something to show
