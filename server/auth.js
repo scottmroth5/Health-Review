@@ -16,7 +16,8 @@ export const SESSION_DAYS = 30;
 const LOGIN_MINUTES = 10;
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const CALLBACK_PATH = '/auth/google/callback';
-const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//];
+// The app icon and manifest are open too: iOS fetches them for Add to Home Screen without the session cookie (code-only files).
+const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png)$/];
 const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 export const DEMO_REFUSAL = 'This is a read-only demo with made-up data, so changes are turned off.';
 
@@ -97,7 +98,7 @@ const safeNext = (next) => (typeof next === 'string' && /^\/(?!\/)/.test(next) &
 export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now() } = {}) {
   app.get('/api/me', {
     schema: { summary: 'The signed-in user (google mode), or the open or demo mode', response: { 200: { type: 'object', additionalProperties: true } } },
-  }, async (req) => ({ authMode: mode, email: req.user ?? null, ...(mode === 'demo' ? { demo: true } : {}) }));
+  }, async (req) => ({ authMode: mode, email: req.user ?? null, name: req.userName ?? null, ...(mode === 'demo' ? { demo: true } : {}) }));
 
   if (mode === 'none') {
     app.addHook('onRequest', async (req, reply) => {
@@ -136,6 +137,7 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
       return reply.code(403).send({ error: 'Requests that change data must come from this site.' });
     }
     req.user = session.email;
+    req.userName = typeof session.name === 'string' ? session.name : null;
   });
 
   app.get('/auth/login', { schema: { hide: true } }, async (req, reply) => {
@@ -146,7 +148,7 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     const login = sign({ state, nonce, codeVerifier, next: safeNext(req.query?.next), exp: now() + LOGIN_MINUTES * 60_000 }, key);
     const url = new URL(GOOGLE_AUTH);
     for (const [k, v] of Object.entries({
-      client_id: settings.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid email',
+      client_id: settings.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid email profile',
       state, nonce, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account',
     })) url.searchParams.set(k, v);
     reply.header('Set-Cookie', cookie(LOGIN_COOKIE, login, { maxAge: LOGIN_MINUTES * 60, secure }));
@@ -173,7 +175,9 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     if (!allowed(claims.email)) {
       return fail(403, 'Not allowed', `<p>${escapeHtml(claims.email)} is not allowed to use this app.</p><p><a href="/auth/login">Sign in with another account</a></p>`);
     }
-    const session = sign({ email: claims.email.toLowerCase(), exp: now() + SESSION_DAYS * 86_400_000, v: 1 }, key);
+    // The first name (profile scope) is shown in the header; never logged.
+    const name = String(claims.given_name || claims.name || '').trim().slice(0, 60) || null;
+    const session = sign({ email: claims.email.toLowerCase(), ...(name ? { name } : {}), exp: now() + SESSION_DAYS * 86_400_000, v: 1 }, key);
     reply.header('Set-Cookie', [cookie(SESSION_COOKIE, session, { maxAge: SESSION_DAYS * 86_400, secure }), cookie(LOGIN_COOKIE, '', { maxAge: 0, secure })]);
     return reply.redirect(login.next);
   });

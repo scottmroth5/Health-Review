@@ -1,6 +1,6 @@
 // Ported from Job-Agent's server/session.js (same format and checks; cookie names differ).
 // Signed cookies for the sign-in session: base64url(JSON payload) + "." + HMAC-SHA256 signature.
-// The payload is readable (it holds only the email and expiry) but cannot be changed without the secret.
+// The payload is readable (it holds only the email, first name and expiry) but cannot be changed without the secret.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const SESSION_COOKIE = 'hr_session';

@@ -27,7 +27,11 @@ Health specific logic stays in this repo; never add it to agent-core.
                     is DATA_DIR when set, tools/paths.js dataPath, which the container mounts at /app/data)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
-                    Demo mode (header checkbox, or ?demo=1 / ?demo=0; saved per browser, server/public/demo.js) hides
+                    Home (#home, the default): a tile per section (Today and Reviews tiles carry badges from /api/status
+                    and /api/reviews/status), Demo mode and the account; wide screens keep the tab bar, phones (720 px and
+                    under) show "‹ Home" and the section name instead. Installable on iPhone: manifest.webmanifest and
+                    icon-180/192/512.png (scripts/make-icons.js; test/icons.test.js checks they are current).
+                    Demo mode (Home page checkbox, or ?demo=1 / ?demo=0; saved per browser, server/public/demo.js) hides
                     drinking and CBD on screen only: the Drinks box, the alcohol chart, and drinking or CBD lines in reviews
 /evals              fixtures/metrics (metric regression), fixtures/v1 (v1 golden outputs, see its README), and the review
                     contract eval: review-cases.json (real weeks by date only, synthetic overlays), grade-review.js
@@ -354,8 +358,10 @@ AUTH_MODE=none (local default) binds to 127.0.0.1 only and rejects requests whos
 rebinding). AUTH_MODE=google: Google sign-in with GOOGLE_WEB_CLIENT_ID and GOOGLE_WEB_CLIENT_SECRET, callback
 /auth/google/callback built from PUBLIC_URL (redirect URI PUBLIC_URL + that path), AUTH_ALLOWED_EMAILS re-checked on every
 request, hr_session cookie signed with SESSION_SECRET (30 days, HttpOnly, SameSite=Lax, Secure on https), same-origin
-required on writes, TRUST_PROXY set behind Caddy; open without a session: /auth/*, GET /api/health (status and version,
-the deploy check) and /api/ingest/* (its own token). AUTH_MODE=demo: no sign-in, every non-GET request gets 403 (the
+required on writes, TRUST_PROXY set behind Caddy; sign-in asks for openid email profile, and the session carries the
+Google first name (given_name, else name; 60 characters, never logged) for the header's "(name)", which GET /api/me
+returns; open without a session: /auth/*, GET /api/health (status and version, the deploy check), /api/ingest/* (its own
+token), and /manifest.webmanifest and /icon-*.png (iOS fetches them without cookies). AUTH_MODE=demo: no sign-in, every non-GET request gets 403 (the
 test enumerates the route table through app.routeList, so new write routes are covered), /api/status readOnly true hides
 write controls (body.read-only) and api() refuses changes before sending. Security headers (CSP, nosniff, frame DENY,
 HSTS on https) always; rate limits (sign-in, refused requests, the demo's request cap) when not none. Check-in and drinking scales are 1 to 10 to match

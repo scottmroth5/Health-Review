@@ -52,6 +52,10 @@ what is running.
   later move to RDS and EC2 with a key you control in KMS.
 - **Backups:** the nightly backup is still encrypted with your own passphrase before it leaves the server.
 
+**On your iPhone.** Open the site in Safari, tap Share, then **Add to Home Screen**. It then opens full screen as its own
+app, starting on Home: a tile for each section, with "‹ Home" at the top of every section to go back. Sign in once
+inside the app; the session lasts 30 days. Demo mode and Sign out are at the bottom of Home.
+
 ## Running locally
 
 After the move, this PC is for development. Health data reaches the server, not the PC.

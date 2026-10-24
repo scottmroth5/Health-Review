@@ -53,19 +53,25 @@ function setupDemo() {
 }
 
 // ---------------- routing ----------------
-const VIEWS = ['today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity'];
+const VIEWS = ['home', 'today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity'];
+const VIEW_TITLES = { home: 'Home', today: 'Today', training: 'Training', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity' };
 let currentView = null;
 function route() {
   if (location.hash === '#history') return location.replace('#health'); // the old name of the Health tab
-  // A view can carry a detail after a slash (#reviews/2026-10-03 picks a past review).
+  // A view can carry a detail after a slash (#reviews/2026-10-03 picks a past review). No hash, or an unknown one, is Home.
   const name = location.hash.slice(1).split('/')[0];
-  const view = VIEWS.includes(name) ? name : 'today';
+  const view = VIEWS.includes(name) ? name : 'home';
   // Choosing another week on the Reviews tab re-renders from the reviews already loaded.
   if (view === 'reviews' && currentView === 'reviews' && reviewsView.list) return renderReviews();
+  const moved = currentView !== view;
   currentView = view;
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
+  // The phone header shows "‹ Home" and the section's name away from Home (app.css, body[data-view]).
+  document.body.dataset.view = view;
+  $('#view-title').textContent = VIEW_TITLES[view];
   $$('.top nav a').forEach((a) => (a.getAttribute('href') === `#${view}` ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-  ({ today: loadDay, training: loadTrainingTab, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
+  if (moved) window.scrollTo(0, 0);
+  ({ home: loadHome, today: loadDay, training: loadTrainingTab, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
 }
 
 // ---------------- 1 to 10 scales ----------------
@@ -273,12 +279,18 @@ function renderDataChecks(checks = []) {
   fill($('#data-checks'), checks.map((c) => h('li', {}, h('span', { 'aria-hidden': 'true' }, '⚠ '), c.message)));
 }
 
-/** Google sign-in: the signed-in address and a Sign out button in the header. */
+/**
+ * Google sign-in: the first name in parentheses after the title (the email's username until the next sign-in brings the
+ * name), and the address with Sign out at the bottom of Home.
+ */
 async function loadAccount() {
   const me = await api('GET', '/api/me').catch(() => null);
   if (me?.authMode !== 'google' || !me.email) return;
+  $('#account-name').textContent = `(${me.name || me.email.split('@')[0]})`;
+  $('#account-name').hidden = false;
   $('#account-email').textContent = me.email;
   $('#account').hidden = false;
+  homeSettingsVisibility();
   $('#sign-out').addEventListener('click', async () => {
     await fetch('/auth/logout', { method: 'POST' });
     location.href = '/auth/signed-out';
@@ -292,6 +304,7 @@ async function loadStatus() {
   $('#day').max = s.today;
   if (!$('#day').value) $('#day').value = s.today;
   renderDataChecks(s.dataChecks);
+  setHomeBadge('today', s.dataChecks?.length ? `${s.dataChecks.length} warning${s.dataChecks.length === 1 ? '' : 's'}` : '');
   loadReviewNotice();
   // The demo instance (npm run demo): a banner, no sync, and no privacy toggle (there is nothing real to hide).
   const demoInstance = s.instance === 'demo';
@@ -299,14 +312,37 @@ async function loadStatus() {
   // The public demo (AUTH_MODE=demo): write controls are hidden (body.read-only in app.css) and changes are refused.
   state.readOnly = Boolean(s.readOnly);
   document.body.classList.toggle('read-only', state.readOnly);
-  if (state.readOnly) $('#instance-banner').textContent = 'Demo: everything here is made-up sample data, and changes are turned off.';
+  if (state.readOnly) {
+    $('#instance-banner .long').textContent = 'Demo: everything here is made-up sample data, and changes are turned off.';
+    $('#instance-banner .short').textContent = 'Demo: made-up data, changes off.';
+  }
   $('#sync-now').hidden = s.sync === false;
   document.querySelector('.demo-toggle').hidden = demoInstance;
+  homeSettingsVisibility();
   if (demoInstance) document.title = 'Health Review (demo data)';
   const last = s.lastSync;
   $('#sync-status').textContent = last
     ? `Last sync ${new Date(last.finished_at ?? last.started_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}${last.status === 'ok' ? '' : ` (${last.status})`}`
     : 'Not synced yet';
+}
+
+// ---------------- home ----------------
+/** Home: the section tiles; their badges come from the status and the review notice. */
+async function loadHome() {
+  await loadStatus();
+}
+
+/** A small badge on a Home tile (empty text hides it). */
+function setHomeBadge(name, text) {
+  const node = $(`[data-home-badge="${name}"]`);
+  if (!node) return;
+  node.textContent = text;
+  node.hidden = !text;
+}
+
+/** The Home settings card holds Demo mode and the account; it is hidden when neither shows (the demo instance). */
+function homeSettingsVisibility() {
+  $('.home-settings').hidden = $('.demo-toggle').hidden && $('#account').hidden;
 }
 
 /** Moves the Today tab back or forward by days, never past today. */
@@ -1675,6 +1711,7 @@ async function loadReviewNotice() {
     return;
   }
   const show = s.canRun && (s.running || (s.overdue && !s.hasReview) || s.rewriteAvailable);
+  setHomeBadge('reviews', !s.canRun ? '' : s.running ? 'Writing' : s.rewriteAvailable ? 'Rewrite' : s.overdue && !s.hasReview ? 'Due' : '');
   for (const node of document.querySelectorAll('[data-review-notice]')) {
     node.hidden = !show;
     if (show) fill(node, reviewNoticeContent(s));

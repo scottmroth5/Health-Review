@@ -59,12 +59,12 @@ test('signed out: API routes return 401, pages redirect to sign-in; /api/health 
   await done();
 });
 
-test('login sends you to Google with state, nonce, PKCE and only openid email; the callback is /auth/google/callback', async () => {
+test('login sends you to Google with state, nonce, PKCE and openid email profile; the callback is /auth/google/callback', async () => {
   const { startLogin, done } = await setup();
   const { res, url } = await startLogin('/#training');
   assert.equal(res.statusCode, 302);
   assert.equal(url.origin + url.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
-  assert.equal(url.searchParams.get('scope'), 'openid email');
+  assert.equal(url.searchParams.get('scope'), 'openid email profile');
   assert.equal(url.searchParams.get('redirect_uri'), `${SITE}/auth/google/callback`);
   assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
   for (const p of ['state', 'nonce', 'code_challenge', 'client_id']) assert.ok(url.searchParams.get(p), p);
@@ -80,7 +80,7 @@ test('an allowed, verified account gets a session and reaches the API; writes ne
   assert.ok(session);
   assert.equal(seen[0].redirectUri, `${SITE}/auth/google/callback`);
   assert.ok(seen[0].codeVerifier.length >= 43, 'the PKCE verifier is sent with the code');
-  assert.deepEqual((await app.inject({ url: '/api/me', headers: { cookie: session } })).json(), { authMode: 'google', email: 'pat@example.com' });
+  assert.deepEqual((await app.inject({ url: '/api/me', headers: { cookie: session } })).json(), { authMode: 'google', email: 'pat@example.com', name: null });
   assert.equal((await app.inject({ url: '/api/status', headers: { cookie: session } })).statusCode, 200);
 
   const write = (origin) => app.inject({ method: 'PUT', url: '/api/checkins/2026-03-02', headers: { cookie: session, ...(origin ? { origin } : {}) }, payload: { readiness: 7 } });
@@ -177,7 +177,7 @@ test('demo mode refuses every route that would change data, generated from the r
   const status = await app.inject('/api/status');
   assert.equal(status.statusCode, 200);
   assert.equal(status.json().readOnly, true);
-  assert.deepEqual((await app.inject('/api/me')).json(), { authMode: 'demo', email: null, demo: true });
+  assert.deepEqual((await app.inject('/api/me')).json(), { authMode: 'demo', email: null, name: null, demo: true });
   await app.close();
   store.close();
 });
@@ -185,7 +185,7 @@ test('demo mode refuses every route that would change data, generated from the r
 test('open local mode: no login, only localhost; security headers on every response', async () => {
   const store = openHealthStore(':memory:');
   const app = await buildApp({ store });
-  assert.deepEqual((await app.inject('/api/me')).json(), { authMode: 'none', email: null });
+  assert.deepEqual((await app.inject('/api/me')).json(), { authMode: 'none', email: null, name: null });
   const res = await app.inject('/api/status');
   assert.equal(res.statusCode, 200);
   assert.equal(res.json().readOnly, false);
@@ -195,4 +195,19 @@ test('open local mode: no login, only localhost; security headers on every respo
   assert.equal((await app.inject({ url: '/api/status', headers: { host: 'evil.example' } })).statusCode, 403);
   await app.close();
   store.close();
+});
+
+test('the first name from Google rides in the signed session and /api/me; the icon and manifest open without a session', async () => {
+  const { app, signIn, done } = await setup({ claims: { given_name: 'Pat', name: 'Pat Example' } });
+  const { session } = await signIn();
+  assert.deepEqual((await app.inject({ url: '/api/me', headers: { cookie: session } })).json(), { authMode: 'google', email: 'pat@example.com', name: 'Pat' });
+  const fallback = await setup({ claims: { name: '  Pat Example  ' } });
+  const second = await fallback.signIn();
+  assert.equal((await fallback.app.inject({ url: '/api/me', headers: { cookie: second.session } })).json().name, 'Pat Example');
+  await fallback.done();
+  for (const url of ['/manifest.webmanifest', '/icon-180.png']) {
+    assert.notEqual((await app.inject(url)).statusCode, 302, `${url} is not sent to sign-in`);
+  }
+  assert.equal((await app.inject('/index.html')).statusCode, 302, 'pages still need a session');
+  await done();
 });
