@@ -28,6 +28,13 @@ The server's addresses, users and keys live only on the server and in GitHub's s
 4. The server starts the new image. If the app or the demo doesn't answer `/api/health` within two minutes, the server
    goes back to the last good image.
 
+**Database changes are backed up first.** Before starting an image, the server runs that image's migrations on a
+throwaway copy of the database. If any would run, it first makes the encrypted Drive backup with the image that is
+running now, and stops the deploy if that backup fails. The new app then keeps a checked copy of the database as it was
+in `data/backups/pre-migration-<time>.db` before migrating (the newest 5 are kept). If the new image then fails its
+health check, that copy goes back before the old image starts. The same copy is taken on this PC whenever the app or a
+script migrates the local database.
+
 To deploy an earlier tag or roll back by hand: Actions, Deploy, Run workflow. On the server, `./deploy.sh status` shows
 what is running.
 

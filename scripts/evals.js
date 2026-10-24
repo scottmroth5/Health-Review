@@ -74,7 +74,7 @@ function summarize() {
 async function regrade(variant) {
   const { gradeDraft, SPEC } = await import('../evals/grade-review.js');
   const { allowedNumbers, checkReport, stripDashes, findDashes } = await import('../agent/validate.js');
-  const { openHealthStore } = await import('../db/store.js');
+  const { openOwnerStore } = await import('../db/store.js');
   const { medicationNames } = await import('../metrics/load.js');
   const { NIGHT_BREATHING_NAMES } = await import('../agent/review.js');
   const store = openOwnerStore();

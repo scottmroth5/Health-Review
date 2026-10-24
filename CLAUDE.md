@@ -28,7 +28,10 @@ Health specific logic stays in this repo; never add it to agent-core.
                     Users (multi-user, phase 1 of 6, plan 2026-10-24): users.js (OWNER_ID, the owner as user 1 and admin;
                     startUserRun stamps runs.user_id), migrations-users.js (024 users; 025 rebuilt every user table with
                     user_id NOT NULL, no default, and per-user keys; USER_TABLES), scope.js (scopeDb/scopeStore: one user's
-                    view, binding @uid into every statement that names it), openOwnerStore (the scripts act as the owner)
+                    view, binding @uid into every statement that names it), openOwnerStore (the scripts act as the owner).
+                    openHealthStore copies an existing database file before opening it (VACUUM INTO, integrity checked) and
+                    keeps the copy as data/backups/pre-migration-<stamp>.db only when a migration ran (newest 5 kept);
+                    pendingMigrations runs the migrations on a throwaway temp copy (npm run db:pending: exit 0 none, 10 some)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Today and Reviews tiles carry badges from /api/status
@@ -95,7 +98,10 @@ deploy/                           the server (/opt/health-review): compose.yml (
                                   file or volume, caddy:2 on 80/443; all restart: unless-stopped for the 04:30 reboots),
                                   Caddyfile (SITE_ADDRESS, DEMO_SITE_ADDRESS, automatic HTTPS, demo noindex, no access
                                   log), deploy.sh (deploy <tag>, rollback, up, pull, status; reads SSH_ORIGINAL_COMMAND for
-                                  the forced deploy key, health checks app and demo, rolls back on failure; state in
+                                  the forced deploy key, health checks app and demo, rolls back on failure; before an image
+                                  that would migrate starts (its db:pending on a copy), an encrypted Drive backup with the
+                                  current image, and on a failed deploy the pre-migration copy goes back before the old
+                                  image starts; --no-backup, --skip-db-check; the server's copy is installed by hand; state in
                                   ./state, owned by deploy), cloud.env.example (the server .env's names, placeholders)
 .github/workflows/deploy.yml      after CI passes on a push to main: build ghcr.io/scottmroth5/health-review (sha-<7>, latest;
                                   a public package, code only), then, only when the repository variable DEPLOY_ENABLED is
@@ -454,6 +460,9 @@ Metrics are computed in code, never by the model.
 Anything involving medications, abnormal labs, or symptoms is flagged for physician discussion, not turned into a recommendation.
 Blood oxygen and breathing disturbances (values and targets) appear in the review only in physicianDiscussion.
 Never output em dashes, en dashes, or double hyphens in generated text.
+Back up before every database change (owner's rule, 2026-10-24): a migration never runs on a database file without a
+checked copy taken first (db/store.js), and a deploy whose image would migrate makes the encrypted Drive backup first and
+stops if it fails (deploy/deploy.sh).
 Never commit anything under /data, or any .csv or .xml file. Never log or print API keys.
 
 ## Conventions
