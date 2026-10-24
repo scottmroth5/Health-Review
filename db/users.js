@@ -29,6 +29,12 @@ export function userByEmail(db, email) {
   return db.prepare('SELECT * FROM users WHERE email = ?').get(String(email ?? '').toLowerCase()) ?? null;
 }
 
+/** Stores a user's sealed Claude key (tools/secret-box.js), or removes it with null. Never the plain key. */
+export function setClaudeKey(db, uid, sealed) {
+  (db.unscoped ?? db).prepare('UPDATE users SET claude_key_enc = ?, claude_key_set_at = ? WHERE id = ?')
+    .run(sealed, sealed ? new Date().toISOString() : null, uid);
+}
+
 /**
  * agent-core's tracer for one user's run: the run row gets the user of the scoped store (db/scope.js scopeStore) as its
  * user_id (the tracer itself knows nothing of users).

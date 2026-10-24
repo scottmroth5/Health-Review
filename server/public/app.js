@@ -53,8 +53,8 @@ function setupDemo() {
 }
 
 // ---------------- routing ----------------
-const VIEWS = ['home', 'today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity'];
-const VIEW_TITLES = { home: 'Home', today: 'Today', training: 'Training', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity' };
+const VIEWS = ['home', 'today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity', 'settings', 'users'];
+const VIEW_TITLES = { home: 'Home', today: 'Today', training: 'Training', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity', settings: 'Settings', users: 'Users' };
 let currentView = null;
 function route() {
   if (location.hash === '#history') return location.replace('#health'); // the old name of the Health tab
@@ -71,7 +71,7 @@ function route() {
   $('#view-title').textContent = VIEW_TITLES[view];
   $$('.top nav a').forEach((a) => (a.getAttribute('href') === `#${view}` ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (moved) window.scrollTo(0, 0);
-  ({ home: loadHome, today: loadDay, training: loadTrainingTab, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
+  ({ home: loadHome, settings: loadSettingsView, users: loadUsers, today: loadDay, training: loadTrainingTab, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
 }
 
 // ---------------- 1 to 10 scales ----------------
@@ -285,6 +285,16 @@ function renderDataChecks(checks = []) {
  */
 async function loadAccount() {
   const me = await api('GET', '/api/me').catch(() => null);
+  const account = await api('GET', '/api/account').catch(() => null);
+  const demo = me?.authMode === 'demo';
+  const admin = account?.role === 'admin' && !demo;
+  for (const el of document.querySelectorAll('[data-admin-only]')) el.hidden = !admin;
+  if (admin) {
+    const users = await api('GET', '/api/admin/users').catch(() => []);
+    const pending = users.filter((u) => u.status === 'pending').length;
+    setHomeBadge('users', pending ? `${pending} waiting` : '');
+  }
+  setHomeBadge('settings', account && !account.ai && !demo ? 'Add key' : '');
   if (me?.authMode !== 'google' || !me.email) return;
   $('#account-name').textContent = `(${me.name || me.email.split('@')[0]})`;
   $('#account-name').hidden = false;
@@ -339,6 +349,48 @@ function setHomeBadge(name, text) {
   if (!node) return;
   node.textContent = text;
   node.hidden = !text;
+}
+
+// ---------------- settings and users (multi-user, phase 2) ----------------
+const NO_KEY_NOTE = () => h('span', {}, 'No AI is used until you add your Claude API key in ', h('a', { href: '#settings' }, 'Settings'), '.');
+
+/** Settings: the signed-in user's Claude key (never shown; only whether it is set) and account. */
+async function loadSettingsView() {
+  const a = await api('GET', '/api/account');
+  state.account = a;
+  const form = $('#claude-key-form');
+  const status = $('#claude-key-status');
+  if (a.claudeKey?.source === 'server') {
+    status.textContent = "Your key comes from the server's settings (ANTHROPIC_API_KEY); it can't be changed here.";
+    form.hidden = true;
+  } else {
+    status.textContent = a.claudeKey ? `Key saved on ${new Date(a.claudeKey.setAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}. Enter a new one to replace it.`
+      : 'No key yet: no AI is used. Add your key to turn on the weekly review and the Next program chat.';
+    form.hidden = false;
+    $('#claude-key-remove').hidden = !a.claudeKey;
+  }
+  $('#settings-account').textContent = a.email ? `${a.name ? `${a.name}, ` : ''}${a.email} (${a.role === 'admin' ? 'administrator' : 'user'})` : 'Local mode: no sign-in.';
+}
+
+/** Users (administrators): pending requests first, with Approve and Reject; account facts only. */
+async function loadUsers() {
+  const users = await api('GET', '/api/admin/users');
+  const act = (u, action) => async () => {
+    try {
+      await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/${action}`);
+      $('#users-status').textContent = `${u.email}: ${action === 'approve' ? 'approved, and an email is on its way' : 'rejected'}.`;
+      loadUsers();
+      loadAccount();
+    } catch (err) {
+      $('#users-status').textContent = err.message;
+    }
+  };
+  fill($('#users-list'), users.length ? users.map((u) => h('div', { class: `user-row ${u.status}` },
+    h('div', {}, h('strong', {}, u.name || u.email), u.name ? h('span', { class: 'muted small' }, ` ${u.email}`) : null,
+      h('div', { class: 'muted small' }, `${u.role === 'admin' ? 'Administrator' : u.status[0].toUpperCase() + u.status.slice(1)} since ${new Date(u.approved_at ?? u.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}${u.role === 'admin' ? '' : u.has_key ? ' · Claude key set' : ' · no Claude key'}`)),
+    u.role === 'admin' ? null : h('div', { class: 'actions' },
+      u.status !== 'approved' ? h('button', { type: 'button', onclick: act(u, 'approve') }, 'Approve') : null,
+      u.status !== 'rejected' ? h('button', { type: 'button', class: 'ghost danger', onclick: act(u, 'reject') }, u.status === 'pending' ? 'Reject' : 'End access') : null))) : [h('p', { class: 'muted' }, 'No users yet.')]);
 }
 
 /** The Home settings card holds Demo mode and the account; it is hidden when neither shows (the demo instance). */
@@ -1553,12 +1605,13 @@ function chatEntry(n) {
 }
 
 async function loadChat() {
-  const { enabled, notes } = await api('GET', '/api/advisor/chat');
+  const { enabled, needsKey, notes } = await api('GET', '/api/advisor/chat');
   fill($('#chat-thread'), notes.map(chatEntry));
   $('#chat-clear').hidden = !notes.length;
   const form = $('#chat-form');
   for (const el of form.elements) el.disabled = !enabled;
-  if (!enabled) $('#chat-status').textContent = 'The chat is off in this instance.';
+  if (needsKey) fill($('#chat-status'), [NO_KEY_NOTE()]);
+  else if (!enabled) $('#chat-status').textContent = 'The chat is off in this instance.';
 }
 
 async function sendChat(e) {
@@ -1717,6 +1770,14 @@ async function loadReviewNotice() {
   try {
     s = await api('GET', '/api/reviews/status');
   } catch {
+    return;
+  }
+  if (s.needsKey) {
+    for (const node of document.querySelectorAll('[data-review-notice]')) {
+      node.hidden = currentView !== 'reviews';
+      fill(node, [h('p', {}, NO_KEY_NOTE())]);
+    }
+    setHomeBadge('reviews', '');
     return;
   }
   const show = s.canRun && (s.running || (s.overdue && !s.hasReview) || s.rewriteAvailable);
@@ -2157,6 +2218,35 @@ initProfileForm();
 initLabs();
 $$('[data-tview]').forEach((b) => b.addEventListener('click', () => loadTraining(b.dataset.tview)));
 $('#chat-form').addEventListener('submit', sendChat);
+// Settings: save or remove the Claude key (the field is cleared at once; the key is never shown again).
+$('#claude-key-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const key = form.elements.key.value.trim();
+  const status = $('.status', form);
+  setStatus(status, 'Checking the key with Anthropic…');
+  form.elements.key.value = '';
+  try {
+    await api('PUT', '/api/account/claude-key', { key });
+    setStatus(status, 'Saved. AI is on for your account.', 'ok');
+    loadSettingsView();
+    loadAccount();
+  } catch (err) {
+    setStatus(status, err.message, 'error');
+  }
+});
+$('#claude-key-remove').addEventListener('click', async () => {
+  if (!confirm('Remove your Claude key? No AI is used without one.')) return;
+  const status = $('#claude-key-form .status');
+  try {
+    await api('DELETE', '/api/account/claude-key');
+    setStatus(status, 'Removed.', 'ok');
+    loadSettingsView();
+    loadAccount();
+  } catch (err) {
+    setStatus(status, err.message, 'error');
+  }
+});
 $('#chat-clear').addEventListener('click', async () => {
   if (!confirm('Clear the whole Next program thread?')) return;
   await api('DELETE', '/api/advisor/chat');

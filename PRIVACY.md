@@ -1,37 +1,50 @@
 # Privacy Policy
 
-Health Review is a personal tool. It is run by the owner of this repository for their own weekly health review and is not offered as a service to anyone else.
+Health Review is a personal project run by its owner (the operator), shared with a few people by invitation. It is not a commercial service.
 
-## What it accesses
+## Signing in
 
-Signing in to the hosted app uses Google sign-in with only the `openid` and `email` permissions, to check that the person signing in is the operator. No one else's account is allowed in.
+- Signing in uses Google sign-in with only the `openid`, `email` and `profile` permissions: your address and first name, to know who you are. Nothing else in your Google account is read.
+- Anyone can request access. The operator approves each request by hand.
 
-For its data, Health Review uses the operator's own Google account with these permissions:
+## What is stored about you
 
-- **Google Sheets, read only** (`spreadsheets.readonly`): reads the operator's own workout log spreadsheet, and health files exported in Sheets format. It cannot change or delete any spreadsheet.
-- **Google Drive, read only** (`drive.readonly` and `drive.metadata.readonly`): lists and reads the Health Auto Export files in the folders the operator configures. It never changes or deletes them.
-- **Google Drive, files it created** (`drive.file`): uploads the encrypted nightly backup to a backups folder. It can see only the files it created.
+- Your name, email address, when you joined, and your account status.
+- The health and training data you choose to send: Apple Health data from Health Auto Export, check-ins, drinks, medications and supplements, lab results and workouts you enter or import.
+- Your weekly reviews and chat messages, if you use the AI features.
+- Your Claude API key, if you add one. It is stored encrypted, is never shown again after you enter it (not to you, and not on any screen the operator has), and is never written to logs.
 
-Health Auto Export on the operator's phone can also send health data straight to the hosted app over HTTPS, using a secret token.
+## Who can see it
+
+- **You** see only your own data. Every part of the app is limited to the signed-in user.
+- **The operator** runs the server and can access the data stored on it, including yours. The app's administration screens show account details (name, email, status, whether a key is set), never your key.
+- **Nobody else.** Your data is not sold, shared with third parties or used for advertising.
+
+## AI (Anthropic's Claude)
+
+- No AI is used for you until you add your own Claude API key in Settings, and then only for your own weekly review and Next program chat, billed to you by Anthropic.
+- What is sent: computed summaries of your data (averages, changes, statuses, never raw exports) and your own notes for the week, under Anthropic's API terms.
+- The server needs to use your key while you are away (the weekly review is scheduled), so the server can decrypt it; it does so only for your own requests.
 
 ## Where data is kept
 
-- Data is kept in a database on machines the operator runs: their own computer, and a server in their own Amazon Web Services account.
-- The server is reached only over HTTPS, and only after the operator signs in. A separate public demo shows made-up data and has no access to real data.
+- In a database on a server in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
 - The server's disk is encrypted by Amazon with keys Amazon manages. The operator accepts this for now; a later move will use encryption keys the operator controls.
-- Any other copy kept off those machines (for example a backup in cloud storage) is encrypted before it leaves, with a key only the operator holds, and sent over HTTPS.
+- Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS.
 
-## How data is used
+## The operator's own data
 
-- Data is used only to produce the operator's own weekly health review.
-- Health metrics are calculated by the app. Only computed summaries, and the operator's own notes for the week, are sent to the Anthropic Claude API to write the review. Raw exports are never sent.
-- Data is not sold, shared with third parties, or used for advertising.
-- Use of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including its Limited Use requirements.
+The operator's account also reads the operator's own Google Sheets and Drive files (Sheets and Drive read-only, and Drive access to files the app created for its encrypted backups). Use of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including its Limited Use requirements.
 
-## Revoking access
+## Your choices
 
-The operator can revoke Health Review's access at any time at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+- Remove your Claude key at any time in Settings.
+- Ask the operator to delete your account and all of your data (a delete button in the app is coming). Revoke the app's Google sign-in access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+
+## Not medical advice
+
+Nothing in Health Review is medical advice. See the [terms](/terms).
 
 ## Contact
 
-Questions about this policy can be raised as an issue on this repository.
+Questions about this policy can be raised as an issue on this project's GitHub repository.

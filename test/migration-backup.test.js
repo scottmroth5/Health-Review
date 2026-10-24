@@ -19,7 +19,7 @@ const copies = (dir) => (existsSync(join(dir, 'backups')) ? readdirSync(join(dir
 function behind(dir) {
   const path = join(dir, 'h.db');
   const old = openStore(path, { app: 'health-review', migrations: MIGRATIONS.slice(0, -1) });
-  old.db.prepare("INSERT INTO checkins (date, cadence, source, updated_at) VALUES ('2026-01-01', 'daily', 'ui', 'x')").run(); // before 025: no user_id yet
+  old.db.prepare("INSERT INTO checkins (user_id, date, cadence, source, updated_at) VALUES ('00000000-0000-4000-8000-000000000001', '2026-01-01', 'daily', 'ui', 'x')").run();
   old.close();
   return path;
 }

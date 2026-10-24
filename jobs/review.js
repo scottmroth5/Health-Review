@@ -20,7 +20,7 @@ const quiet = { info() {}, warn() {}, error() {} };
  * @param {boolean} [o.force]  write it although days are missing or partial
  * @returns {Promise<{ status: 'exists'|'skipped'|'written', weekEnd: string, missingDays?: string[], partialDays?: string[], syncError?: string, result?: object }>}
  */
-export async function weeklyReview({ store, claude, sync = null, weekEnd, scheduled = false, force = false, noSync = false, today = localDate(),
+export async function weeklyReview({ store, claude, sync = null, weekEnd, catalog, scheduled = false, force = false, noSync = false, today = localDate(),
   model = process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort = process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT }) {
   const week = weekEnd ?? lastWeekEnd(today);
   if (scheduled && store.db.prepare('SELECT 1 FROM reviews WHERE user_id = @uid AND week_ending = ?').get(week)) return { status: 'exists', weekEnd: week };
@@ -36,6 +36,6 @@ export async function weeklyReview({ store, claude, sync = null, weekEnd, schedu
     return { status: 'skipped', weekEnd: week, missingDays: gate.missingDays, partialDays: gate.partialDays, syncError };
   }
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set in .env');
-  const result = await runReview({ store, claude: claude(), weekEnd: week, today, model, effort, logger: quiet });
+  const result = await runReview({ store, claude: claude(), weekEnd: week, today, catalog, model, effort, logger: quiet });
   return { status: 'written', weekEnd: week, result, syncError };
 }

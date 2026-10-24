@@ -47,6 +47,7 @@
     "@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.2.2",
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.12.5",
-    "google-auth-library": "^11.1.0"
+    "google-auth-library": "^11.1.0",
+    "nodemailer": "^10.2.1"
   }
 }

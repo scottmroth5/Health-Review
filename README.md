@@ -59,6 +59,12 @@ what is running.
   later move to RDS and EC2 with a key you control in KMS.
 - **Backups:** the nightly backup is still encrypted with your own passphrase before it leaves the server.
 
+**Other people (multi-user).** Anyone can sign in with Google and **request access**; you get an email and approve or
+reject them on the **Users** tile (Home). An approved user starts with the default prompt sections and **no AI** until
+they add their own Claude API key in **Settings** (stored encrypted, never shown again, not even to you; they pay
+Anthropic for their own use). They see only their own data. The server needs `USER_KEY_SECRET`, `SMTP_USER` and
+`SMTP_APP_PASSWORD` (`deploy/cloud.env.example`), and the Google OAuth consent screen set to In production.
+
 **On your iPhone.** Open the site in Safari, tap Share, then **Add to Home Screen**. It then opens full screen as its own
 app, starting on Home: a tile for each section, with "‹ Home" at the top of every section to go back. Sign in once
 inside the app; the session lasts 30 days. Demo mode and Sign out are at the bottom of Home.

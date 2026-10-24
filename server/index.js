@@ -3,7 +3,9 @@
 // behind Caddy (TRUST_PROXY). Google sign-in for the sync loads on the first sync.
 import { openHealthStore } from '../db/store.js';
 import { scopeStore } from '../db/scope.js';
-import { OWNER_ID } from '../db/users.js';
+import { OWNER_ID, getUser, startUserRun } from '../db/users.js';
+import { open } from '../tools/secret-box.js';
+import { createMailer } from '../tools/mail.js';
 import { repoPath, dataPath } from '../tools/paths.js';
 import { localDate as ownerDate, zonedInstant } from '../tools/time.js';
 import { appleSource } from '../ingest/sync.js';
@@ -66,14 +68,25 @@ if (demo) {
   store = openHealthStore();
   // Each user's view of the database (db/scope.js); the command-line scripts and these jobs act as one user at a time.
   const forUser = (uid) => scopeStore(store, uid);
-  // The Claude client for the Next program chat and the manual review run, made on first use (needs ANTHROPIC_API_KEY in .env).
-  const claude = (() => { let c; return () => (c ??= createReviewClaude()); })();
+  // Claude per user (multi-user, phase 2): the owner's client from ANTHROPIC_API_KEY (made on first use); another user's
+  // from their own key, decrypted in memory for this call only (tools/secret-box.js), never cached or logged; none
+  // without a key (no AI for them, and the screens say so).
+  const ownerClaude = (() => { let c; return () => (c ??= createReviewClaude()); })();
+  const claudeFor = (uid = OWNER_ID) => {
+    if (uid === OWNER_ID) return ownerClaude();
+    const sealed = getUser(store.db, uid)?.claude_key_enc;
+    return sealed ? createReviewClaude({ apiKey: open(sealed, uid) }) : null;
+  };
+  const hasAi = (uid) => uid === OWNER_ID || Boolean(getUser(store.db, uid)?.claude_key_enc);
+  // The owner's MAPS catalog for the owner and the users the owner shares it with; none for others (phase 5 adds theirs).
+  const catalogFor = (uid) => (uid === OWNER_ID || getUser(store.db, uid)?.maps_shared ? undefined : null);
   const services = {
     sync: ({ uid = OWNER_ID } = {}) => syncJob({ store: forUser(uid) }),
-    claude,
+    claude: claudeFor,
+    hasAi,
     // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.
     review: ({ uid = OWNER_ID, weekEnd, today }) => runReview({
-      store: forUser(uid), claude: claude(), weekEnd, today, logger: quiet,
+      store: forUser(uid), claude: claudeFor(uid), catalog: catalogFor(uid), weekEnd, today, logger: quiet,
       model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
     }),
   };
@@ -92,9 +105,12 @@ if (demo) {
       console.log(`[sync] ok (${who(uid)}) ${JSON.stringify(counts)} warnings=${warnings.length}`);
     }),
     review: () => eachUser('review', async (uid) => {
-      // Only the owner has a Claude key until users add their own (multi-user, phase 2).
-      if (uid !== OWNER_ID) return;
-      const r = await weeklyReview({ store: forUser(uid), claude, sync: () => services.sync({ uid }), scheduled: true });
+      // No key, no AI: the week is skipped for that user and recorded with its reason.
+      if (!hasAi(uid)) {
+        startUserRun(forUser(uid), 'review', { gate: true, reason: 'no_key' }, quiet).finish('skipped', { reason: 'no_key' });
+        return;
+      }
+      const r = await weeklyReview({ store: forUser(uid), claude: () => claudeFor(uid), catalog: catalogFor(uid), sync: () => services.sync({ uid }), scheduled: true });
       console.log(`[review] ${r.status} (${who(uid)}) week ending ${r.weekEnd}${r.syncError ? ' (sync failed first)' : ''}`);
     }),
     backup: async () => { const r = await backupJob({ store: forUser(OWNER_ID) }); console.log(`[backup] ok ${r.name} ${r.bytes} bytes`); },
@@ -110,7 +126,7 @@ if (demo) {
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
   app = await buildApp({
-    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'),
+    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer: createMailer(),
     schedule: () => scheduler.status(),
   });
 }

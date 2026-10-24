@@ -29,7 +29,22 @@ import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
 import { localStamp } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
-import { OWNER_ID, syncOwnerEmail, userByEmail } from '../db/users.js';
+import { OWNER_ID, getUser, setClaudeKey, syncOwnerEmail, userByEmail } from '../db/users.js';
+import { createPendingUser, listUsers, setUserStatus } from './admin-queries.js';
+import { createMailer } from '../tools/mail.js';
+import { boxKey, seal } from '../tools/secret-box.js';
+import { addDefaultPromptSections } from '../agent/default-prompts.js';
+import { policyPage } from './pages.js';
+
+/** Checks a Claude API key with Anthropic's free model list (the key goes only to Anthropic; nothing is logged). */
+export async function anthropicKeyCheck(key) {
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/models?limit=1', { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' } });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
 
 /** Health Auto Export's posts: the largest daily workout file is about 165 KB, so 5 MB holds weeks of them. */
 export const INGEST_BODY_LIMIT = 5 * 1024 * 1024;
@@ -98,7 +113,7 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  *   prompt or report text), so docker compose logs shows what ran
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox }) {
   const app = Fastify({ logger, trustProxy });
   // Every route's method and path, so tests can check each write route (demo mode refuses them all).
   const routeList = [];
@@ -130,7 +145,20 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   if (authMode !== 'none') registerRateLimits(app, { all: authMode === 'demo' ? DEMO_REQUEST_LIMIT : null, now: auth.now });
   // Google sign-in maps an address to its users row; the first allowed address is the owner (user 1) until registration.
   if (authMode === 'google' && auth.settings?.allowed?.[0]) syncOwnerEmail(store.db, { OWNER_EMAIL: auth.settings.allowed[0] });
-  registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email) });
+  const adminEmail = () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email;
+  const appUrl = () => auth.settings?.publicUrl || 'http://localhost:5188';
+  // A registration: a pending user, and an email to the admin (names and addresses only).
+  const registerUser = async ({ email, name }) => {
+    if (userByEmail(store.db, email)) return;
+    createPendingUser(store.db, { id: randomUUID(), email, name });
+    log.info('[users] new registration');
+    await mailer.send({ to: adminEmail(), subject: 'New Health Review registration',
+      text: `${name ?? 'Someone'} <${email}> asked for access to Health Review.\n\nApprove or reject on the Users tile: ${appUrl()}/#users\n` });
+  };
+  registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser });
+  // The privacy policy and terms, readable before signing in.
+  app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md')));
+  app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md')));
   app.addHook('preHandler', (req, reply, done) => {
     const uid = uidOf(req);
     if (!uid) return done();
@@ -218,13 +246,19 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req) => q.trainingDashboard(db, req.query.view, q.localDate(clock())));
 
   // The MAPS catalog is read per request when not injected, so edits to data/maps/programs.json show without a restart.
-  const programCatalog = () => (catalog === undefined ? loadCatalog() : catalog);
+  // The program catalog a request may use: the owner's (MAPS) for the owner and for users the owner shares it with
+  // (users.maps_shared); others have none until they add their own (multi-user, phase 5).
+  const ownerCatalog = () => (catalog === undefined ? loadCatalog() : catalog);
+  const programCatalog = (req) => {
+    const uid = uidOf(req);
+    return uid === OWNER_ID || getUser(store.db, uid)?.maps_shared ? ownerCatalog() : null;
+  };
   app.get('/api/program', {
     schema: {
       summary: 'The confirmed in-progress program block: week, phase, deload or failure week, expected end (program is null when none)',
       response: { 200: { type: 'object', properties: { program: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: true }] } } } },
     },
-  }, async () => ({ program: currentProgram(db, q.localDate(clock()), programCatalog()) }));
+  }, async (req) => ({ program: currentProgram(db, q.localDate(clock()), programCatalog(req)) }));
 
   // The dictionary and substitutions are committed config, read per request (like the catalog) unless injected.
   const goalWeight = { type: 'integer', minimum: 0, maximum: MAX_WEIGHT, default: 1 };
@@ -236,7 +270,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req) => q.advisor(db, q.localDate(clock()), {
-    catalog: programCatalog(),
+    catalog: programCatalog(req),
     dictionary: dictionary ?? loadDictionary(),
     substitutions: substitutions ?? loadSubstitutions(),
     weights: Object.fromEntries(GOALS.map((g) => [g, req.query[g]])),
@@ -251,17 +285,20 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     const result = q.programAdherence(db, q.localDate(clock()), {
-      catalog: programCatalog(), dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), blockId: req.query.block,
+      catalog: programCatalog(req), dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), blockId: req.query.block,
     });
     if (result === null) return reply.code(404).send({ error: 'No such confirmed block' });
     return result;
   });
 
   // ---- Next program chat (computed training facts and the owner's notes go to Claude; see agent/advisor-chat.js) ----
-  const chatOn = () => features.chat !== false && typeof services.claude === 'function';
-  const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, notes: { type: 'array', items: anyObject } } } };
+  // AI per user: the owner's key, a user's own key, or none (then no AI, and the screens say so).
+  const aiOn = (req) => (services.hasAi ? services.hasAi(uidOf(req)) : true);
+  const chatOn = (req) => features.chat !== false && typeof services.claude === 'function' && aiOn(req);
+  const needsKey = (req) => !aiOn(req);
+  const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, needsKey: { type: 'boolean' }, notes: { type: 'array', items: anyObject } } } };
   app.get('/api/advisor/chat', { schema: { summary: 'The Next program chat thread, oldest first, and whether the chat is on', response: chatThread } },
-    async () => ({ enabled: chatOn(), notes: listChat(db) }));
+    async (req) => ({ enabled: chatOn(req), needsKey: needsKey(req), notes: listChat(db) }));
   let chatting = false;
   app.post('/api/advisor/chat', {
     schema: {
@@ -276,15 +313,16 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req, reply) => {
-    if (!chatOn()) return reply.code(503).send({ error: 'The chat is off in this instance' });
+    if (needsKey(req)) return reply.code(503).send({ error: 'No AI is used until you add your Claude API key in Settings', needsKey: true });
+    if (!chatOn(req)) return reply.code(503).send({ error: 'The chat is off in this instance' });
     if (!req.body.text.trim()) throw badRequest('text must not be blank');
     if (chatting) return reply.code(409).send({ error: 'A question is already being answered' });
-    const cat = programCatalog();
-    if (!cat) return reply.code(503).send({ error: 'The chat needs the MAPS catalog (data/maps/programs.json)' });
+    const cat = programCatalog(req);
+    if (!cat) return reply.code(503).send({ error: 'The chat needs a program catalog' });
     chatting = true;
     try {
       return await askAdvisor({
-        store: userStore(), claude: services.claude(), text: req.body.text.trim(), today: q.localDate(clock()), catalog: cat,
+        store: userStore(), claude: services.claude(uidOf(req)), text: req.body.text.trim(), today: q.localDate(clock()), catalog: cat,
         dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), weights: req.body.weights,
         logger: { info() {}, warn() {}, error() {} },
       });
@@ -388,16 +426,17 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.get('/api/reviews', { schema: { summary: 'Weekly reviews, newest first', response: { 200: { type: 'array', items: anyObject } } } },
     async () => q.listReviews(db));
 
-  const reviewState = () => ({
+  const reviewState = (req) => ({
     ...q.reviewStatus(db, q.localDate(clock()), clock()),
     running: reviewRun.running,
     error: reviewRun.error,
-    canRun: typeof services.review === 'function',
+    canRun: typeof services.review === 'function' && aiOn(req),
+    needsKey: typeof services.review === 'function' && !aiOn(req),
   });
 
   app.get('/api/reviews/status', {
     schema: { summary: "Last week's review: whether it exists, the last run, and Apple Health days missing or partial (dates only)", response: { 200: anyObject } },
-  }, async () => reviewState());
+  }, async (req) => reviewState(req));
 
   app.post('/api/reviews/run', {
     schema: {
@@ -407,6 +446,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     if (typeof services.review !== 'function') return reply.code(503).send({ error: 'Writing reviews is not available in this server' });
+    if (!aiOn(req)) return reply.code(503).send({ error: 'No AI is used until you add your Claude API key in Settings', needsKey: true });
     if (reviewRun.running) return reply.code(409).send({ error: 'A review is already being written' });
     reviewRun.running = true;
     reviewRun.error = null;
@@ -676,6 +716,57 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     db.prepare('DELETE FROM health_targets WHERE user_id = @uid AND metric = ?').run(metric);
     return loadTargets(db, q.localDate(clock()), targetsConfig()).find((t) => t.metric === metric);
   });
+  // ---- account: the signed-in user's own settings (multi-user, phase 2) ----
+  const accountView = (req) => {
+    const uid = uidOf(req);
+    const u = getUser(store.db, uid);
+    return {
+      email: u?.email ?? null, name: u?.name ?? req.userName ?? null, role: u?.role ?? 'user', owner: uid === OWNER_ID,
+      // Never the key: where it comes from and when it was saved.
+      claudeKey: uid === OWNER_ID ? { source: 'server' } : u?.claude_key_enc ? { source: 'yours', setAt: u.claude_key_set_at } : null,
+      ai: aiOn(req),
+    };
+  };
+  app.get('/api/account', { schema: { summary: "The signed-in user's account: name, email, role, and whether a Claude key is set (never the key)", response: { 200: anyObject } } },
+    async (req) => accountView(req));
+  app.put('/api/account/claude-key', {
+    schema: {
+      summary: 'Save your Claude API key: checked with Anthropic (free), stored encrypted, never shown again',
+      body: { type: 'object', additionalProperties: false, required: ['key'], properties: { key: { type: 'string', minLength: 20, maxLength: 300, pattern: '^sk-ant-[A-Za-z0-9_-]+$' } } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => {
+    const uid = uidOf(req);
+    if (uid === OWNER_ID) return reply.code(409).send({ error: "The owner's key comes from the server's settings" });
+    if (!(await keyCheck(req.body.key))) return reply.code(400).send({ error: 'Anthropic did not accept that key. Check it and try again.' });
+    setClaudeKey(store.db, uid, seal(req.body.key, uid, keyBox ?? boxKey()));
+    log.info('[users] a Claude key was saved');
+    return accountView(req);
+  });
+  app.delete('/api/account/claude-key', { schema: { summary: 'Remove your Claude API key (no AI is used without one)', response: { 200: anyObject } } }, async (req) => {
+    setClaudeKey(store.db, uidOf(req), null);
+    return accountView(req);
+  });
+
+  // ---- user administration (admin only; the full screen is phase 4) ----
+  const isAdmin = (req) => authMode !== 'demo' && (req.role === 'admin' || (authMode === 'none' && uidOf(req) === OWNER_ID));
+  const adminOnly = async (req, reply) => { if (!isAdmin(req)) return reply.code(403).send({ error: 'Administrators only' }); };
+  app.get('/api/admin/users', { preHandler: adminOnly, schema: { summary: 'Every user (account facts only, never keys or health data), pending first', response: { 200: { type: 'array', items: anyObject } } } },
+    async () => listUsers(store.db));
+  const userIdParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64 } } };
+  app.post('/api/admin/users/:id/approve', { preHandler: adminOnly, schema: { summary: 'Approve a user: they get in, start from the default prompt sections, and get an email', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
+    const u = setUserStatus(store.db, req.params.id, 'approved');
+    if (!u) return reply.code(404).send({ error: 'No such user' });
+    addDefaultPromptSections(scopeDb(store.db, u.id));
+    await mailer.send({ to: u.email, subject: "You're in: Health Review",
+      text: `Your Health Review account is approved.\n\nOpen ${appUrl()} and sign in with this Google account. To use the AI weekly review and chat, add your own Claude API key in Settings (see https://docs.claude.com/en/api/getting-started). Everything else works without one.\n` });
+    return { ...u, claude_key_enc: undefined };
+  });
+  app.post('/api/admin/users/:id/reject', { preHandler: adminOnly, schema: { summary: 'Reject a pending user (or end access)', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
+    const u = setUserStatus(store.db, req.params.id, 'rejected');
+    return u ? { ...u, claude_key_enc: undefined } : reply.code(404).send({ error: 'No such user' });
+  });
+
   app.put('/api/profile', {
     schema: {
       summary: 'Birth year, sex and height for age-based targets (null clears one)',

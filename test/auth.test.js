@@ -41,7 +41,7 @@ async function setup({ claims = {}, exchangeError = null, now } = {}) {
     return { res, session: cookiesFrom(res).split('; ').find((c) => c.startsWith('hr_session=')) };
   };
   const done = async () => { await app.close(); store.close(); };
-  return { app, seen, clock, startLogin, signIn, done };
+  return { app, store, seen, clock, startLogin, signIn, done };
 }
 
 test('signed out: API routes return 401, pages redirect to sign-in; /api/health and ingest stay open', async () => {
@@ -94,9 +94,8 @@ test('an allowed, verified account gets a session and reaches the API; writes ne
   await done();
 });
 
-test('refused: not on the allowlist, unverified email, wrong state or nonce, no login cookie, Google errors', async () => {
+test('refused: unverified email, wrong state or nonce, no login cookie, Google errors', async () => {
   for (const [claims, status, text] of [
-    [{ email: 'eve@example.com' }, 403, /eve@example.com is not allowed/],
     [{ email_verified: false }, 403, /not verified/],
     [{ nonce: 'other' }, 400, /did not match/],
   ]) {
@@ -118,7 +117,7 @@ test('refused: not on the allowlist, unverified email, wrong state or nonce, no 
   await failing.done();
 });
 
-test('a session expires after its days; removing an address locks it out at once; a forged or tampered cookie is refused', async () => {
+test('a session expires after its days; rejecting a user locks them out at once; a forged or tampered cookie is refused', async () => {
   const { app, signIn, clock, done } = await setup();
   const { session } = await signIn();
   const status = () => app.inject({ url: '/api/status', headers: { cookie: session } }).then((r) => r.statusCode);
@@ -127,9 +126,15 @@ test('a session expires after its days; removing an address locks it out at once
   assert.equal(await status(), 401, 'expired');
   clock.t -= (SESSION_DAYS * 86_400 + 60) * 1000;
 
-  settings.allowed.splice(settings.allowed.indexOf('pat@example.com'), 1);
-  assert.equal(await status(), 401, 'no longer allowed');
-  settings.allowed.unshift('pat@example.com'); // back first: the first allowed address is the owner
+  // A second, approved user is locked out the moment the admin rejects them (the users row is read on every request).
+  const sam = await setup({ claims: { email: 'sam@example.com' } });
+  sam.store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('sam', 'sam@example.com', 'user', 'approved', 'x')").run();
+  const samSession = (await sam.signIn()).session;
+  const samStatus = () => sam.app.inject({ url: '/api/status', headers: { cookie: samSession } }).then((r) => r.statusCode);
+  assert.equal(await samStatus(), 200);
+  sam.store.db.prepare("UPDATE users SET status = 'rejected' WHERE id = 'sam'").run();
+  assert.equal(await samStatus(), 403, 'rejected');
+  await sam.done();
 
   const forged = `hr_session=${Buffer.from(JSON.stringify({ email: 'pat@example.com', exp: Date.now() + 1e9 })).toString('base64url')}.AAAA`;
   assert.equal((await app.inject({ url: '/api/status', headers: { cookie: forged } })).statusCode, 401);

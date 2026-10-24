@@ -251,4 +251,20 @@ export const USER_MIGRATIONS = [
       db.prepare('UPDATE runs SET user_id = ?').run(OWNER_ID);
     },
   },
+  {
+    // Phase 2 (registration, keys) and the columns later phases use: a user's Claude key sealed with tools/secret-box.js
+    // (never plain), when they accepted the terms, the admin's switch to the owner's key with its monthly cap, their
+    // ingest token's hash, their chosen feeds, and whether the owner shares the MAPS catalog with them.
+    id: '026-user-settings',
+    up: `
+      ALTER TABLE users ADD COLUMN claude_key_enc TEXT;
+      ALTER TABLE users ADD COLUMN claude_key_set_at TEXT;
+      ALTER TABLE users ADD COLUMN terms_accepted_at TEXT;
+      ALTER TABLE users ADD COLUMN uses_owner_key INTEGER NOT NULL DEFAULT 0 CHECK (uses_owner_key IN (0, 1));
+      ALTER TABLE users ADD COLUMN owner_key_cap_usd REAL;
+      ALTER TABLE users ADD COLUMN ingest_token_hash TEXT;
+      ALTER TABLE users ADD COLUMN feeds TEXT;
+      ALTER TABLE users ADD COLUMN maps_shared INTEGER NOT NULL DEFAULT 0 CHECK (maps_shared IN (0, 1));
+    `,
+  },
 ];

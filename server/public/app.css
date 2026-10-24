@@ -94,6 +94,10 @@ code { font-size: 0.85em; }
 .sync.home-sync { justify-content: space-between; flex-wrap: wrap; font-size: 0.9rem; }
 .sync.home-sync button { min-height: 40px; padding: 6px 14px; font-size: 0.95rem; }
 .home-settings { display: flex; flex-direction: column; gap: 14px; }
+/* Users (administrators) */
+.user-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 0; border-bottom: 1px solid var(--grid); }
+.user-row.pending { border-left: 3px solid var(--accent); padding-left: 10px; }
+.user-row .actions { margin: 0; }
 .home-settings .demo-toggle { margin: 0; }
 .home-settings .account { justify-content: space-between; flex-wrap: wrap; }
 .block { display: block; }

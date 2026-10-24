@@ -18,6 +18,31 @@ export function jobRunsLookup(db) {
   };
 }
 
+/** Every user for the admin's Users screen: account facts only (never keys, tokens or health data). Pending first. */
+export function listUsers(db) {
+  const raw = db.unscoped ?? db;
+  return raw.prepare(`SELECT id, email, name, role, status, created_at, approved_at, last_seen_at,
+      claude_key_enc IS NOT NULL AS has_key, uses_owner_key, maps_shared
+    FROM users ORDER BY status = 'pending' DESC, role = 'admin' DESC, created_at DESC`).all()
+    .map((u) => ({ ...u, has_key: Boolean(u.has_key), uses_owner_key: Boolean(u.uses_owner_key), maps_shared: Boolean(u.maps_shared) }));
+}
+
+/** A new pending user from a registration (their Google name and address); returns the row. */
+export function createPendingUser(db, { email, name, id, now = new Date().toISOString() }) {
+  const raw = db.unscoped ?? db;
+  raw.prepare("INSERT INTO users (id, email, name, role, status, created_at, terms_accepted_at) VALUES (?, ?, ?, 'user', 'pending', ?, ?)")
+    .run(id, String(email).toLowerCase(), name ?? null, now, now);
+  return raw.prepare('SELECT * FROM users WHERE id = ?').get(id);
+}
+
+/** Sets a user's status (approve, reject, pause, resume); the owner's own status never changes. Returns the row or null. */
+export function setUserStatus(db, id, status, now = new Date().toISOString()) {
+  const raw = db.unscoped ?? db;
+  const changed = raw.prepare(`UPDATE users SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN COALESCE(approved_at, ?) ELSE approved_at END
+    WHERE id = ? AND role <> 'admin'`).run(status, status, now, id).changes;
+  return changed ? raw.prepare('SELECT * FROM users WHERE id = ?').get(id) : null;
+}
+
 /** Users who get scheduled jobs: approved, not paused. The owner is first. */
 export function activeUserIds(db) {
   const raw = db.unscoped ?? db;

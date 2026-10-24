@@ -368,9 +368,11 @@ the first draft (v3 was the same prompt as v2, a single lucky pass).
 Access (server/auth.js, server/session.js, server/security.js; ported from Job-Agent, test/auth.test.js):
 AUTH_MODE=none (local default) binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS
 rebinding). AUTH_MODE=google: Google sign-in with GOOGLE_WEB_CLIENT_ID and GOOGLE_WEB_CLIENT_SECRET, callback
-/auth/google/callback built from PUBLIC_URL (redirect URI PUBLIC_URL + that path), AUTH_ALLOWED_EMAILS re-checked on every
-request (its first address is the owner, user 1, until registration in phase 2), the address's users row looked up on
-every request (approved only, else 403 "waiting for approval"; req.uid and req.role), hr_session cookie signed with SESSION_SECRET (30 days, HttpOnly, SameSite=Lax, Secure on https), same-origin
+/auth/google/callback built from PUBLIC_URL (redirect URI PUBLIC_URL + that path). Registration (phase 2): any verified
+Google account gets a session; the users row is looked up on every request: none goes to /auth/register (Request access,
+terms checkbox; POST creates a pending user and emails the admin), pending to /auth/waiting, rejected to
+/auth/not-approved; approved and paused get in (req.uid, req.role). AUTH_ALLOWED_EMAILS's first address is the owner
+(user 1, admin; syncOwnerEmail). /privacy and /terms (PRIVACY.md, TERMS.md through server/pages.js) are open. hr_session cookie signed with SESSION_SECRET (30 days, HttpOnly, SameSite=Lax, Secure on https), same-origin
 required on writes, TRUST_PROXY set behind Caddy; sign-in asks for openid email profile, and the session carries the
 Google first name (given_name, else name; 60 characters, never logged) for the header's "(name)", which GET /api/me
 returns; open without a session: /auth/*, GET /api/health (status and version, the deploy check), /api/ingest/* (its own
@@ -403,6 +405,14 @@ other) plus the review eval's results.jsonl usage priced with agent-core's prici
 exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
+Users, phase 2 (2026-10-24): admin routes /api/admin/users (+ /:id/approve, /:id/reject; server/admin-queries.js; role
+admin only, never in the demo) approve with the default prompt sections (agent/default-prompts.js) and an email
+(tools/mail.js: Gmail SMTP with SMTP_USER and SMTP_APP_PASSWORD; names, addresses and links only; without them nothing is
+sent). A user's Claude key (PUT/DELETE /api/account/claude-key) is checked with Anthropic's free model list, sealed with
+AES-256-GCM under USER_KEY_SECRET bound to the user id (tools/secret-box.js), decrypted only in memory for that user's
+own call (server/index.js claudeFor), and never returned, logged or shown to the admin (only "set"). No key, no AI: chat
+and review answer needsKey, and the scheduled review records a skipped run (reason no_key). The owner's key is
+ANTHROPIC_API_KEY. The program catalog (MAPS) is the owner's and maps_shared users' only; others have none (phase 5).
 Users (owner's choice, 2026-10-24: one shared database, user_id on every user table, ahead of the RDS move): every query
 on a user table is scoped to one user, writing "user_id = @uid" (inserts include user_id with @uid) and run on a scoped
 database (db/scope.js); joins and subqueries scope each user table too. Only server/admin-queries.js reads across users

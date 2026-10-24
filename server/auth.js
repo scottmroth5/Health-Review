@@ -1,9 +1,10 @@
 // Access control, ported from Job-Agent's server/auth.js so the two apps behave the same.
 //   AUTH_MODE=none    (default) no login; the server refuses to listen anywhere but localhost and only answers requests
 //                     addressed to localhost (blocks DNS rebinding).
-//   AUTH_MODE=google  "Sign in with Google": only addresses in AUTH_ALLOWED_EMAILS get in. Every page and API route
-//                     needs the signed session cookie except /auth/*, /api/health (the deploy check) and /api/ingest/*
-//                     (Health Auto Export's posts, which carry their own INGEST_TOKEN).
+//   AUTH_MODE=google  "Sign in with Google" (multi-user, phase 2): anyone may sign in and request access; only approved
+//                     users (the users table, checked on every request) reach the app. AUTH_ALLOWED_EMAILS's first address
+//                     is the owner (user 1, admin). Every page and API route needs the signed session cookie except
+//                     /auth/*, /privacy, /terms, /api/health (the deploy check) and /api/ingest/* (their own token).
 //   AUTH_MODE=demo    The public, read-only demo over made-up data: no login, and every request that would change
 //                     data is refused. The demo instance (server/index.js) starts without Claude, Google or a sync.
 import { createHash, randomBytes } from 'node:crypto';
@@ -17,7 +18,7 @@ const LOGIN_MINUTES = 10;
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const CALLBACK_PATH = '/auth/google/callback';
 // The app icon and manifest are open too: iOS fetches them for Add to Home Screen without the session cookie (code-only files).
-const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png)$/];
+const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png)$/, /^\/(privacy|terms)$/];
 const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 export const DEMO_REFUSAL = 'This is a read-only demo with made-up data, so changes are turned off.';
 
@@ -95,7 +96,11 @@ const safeNext = (next) => (typeof next === 'string' && /^\/(?!\/)/.test(next) &
  * Registers the auth hook and routes. In google mode, req.user is the signed-in email on every allowed request.
  * @param {{ mode: string, settings?: object, exchange?: Function, now?: () => number }} opts  exchange: googleExchange(settings) (tests pass a fake)
  */
-export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now(), findUser = () => null } = {}) {
+/**
+ * @param {object} [users]  findUser(email) -> users row or null; registerUser({ email, name }) -> creates a pending user and
+ *   tells the admin (google mode)
+ */
+export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now(), findUser = () => null, registerUser = async () => {} } = {}) {
   app.get('/api/me', {
     schema: { summary: 'The signed-in user (google mode), or the open or demo mode', response: { 200: { type: 'object', additionalProperties: true } } },
   }, async (req) => ({ authMode: mode, email: req.user ?? null, name: req.userName ?? null, ...(mode === 'demo' ? { demo: true } : {}) }));
@@ -121,14 +126,12 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
   const secure = settings.publicUrl.startsWith('https://');
   const redirectUri = `${settings.publicUrl}${CALLBACK_PATH}`;
   const signIn = exchange ?? googleExchange(settings);
-  const allowed = (email) => settings.allowed.includes(String(email ?? '').toLowerCase());
 
   app.addHook('onRequest', async (req, reply) => {
     const path = req.url.split('?')[0];
     if (OPEN_PATHS.some((re) => re.test(path))) return;
     const session = verify(parseCookies(req.headers.cookie)[SESSION_COOKIE], key, now());
-    // The allowlist is checked on every request, so removing an address locks it out at once.
-    if (!session || !allowed(session.email)) {
+    if (!session) {
       if (path.startsWith('/api/')) return reply.code(401).send({ error: 'Sign in required.' });
       return reply.redirect(`/auth/login?next=${encodeURIComponent(req.url)}`);
     }
@@ -138,10 +141,12 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     }
     // The users row behind the address (multi-user): only an approved one gets in, checked on every request, so pausing
     // or rejecting someone locks them out at once. req.uid scopes every query of the request to them (db/scope.js).
+    // No row yet: request access first; pending or rejected: their page. Approved and paused users get in.
     const user = findUser(session.email);
-    if (!user || user.status !== 'approved') {
-      if (path.startsWith('/api/')) return reply.code(403).send({ error: 'This account is not approved yet.' });
-      return reply.code(403).type('text/html').send(page('Waiting for approval', '<p>Your account is waiting for approval, which takes up to 24 hours.</p>'));
+    const where = !user ? '/auth/register' : user.status === 'pending' ? '/auth/waiting' : user.status === 'rejected' ? '/auth/not-approved' : null;
+    if (where) {
+      if (path.startsWith('/api/')) return reply.code(403).send({ error: user ? 'This account is not approved yet.' : 'Request access first.' });
+      return reply.redirect(where);
     }
     req.user = session.email;
     req.uid = user.id;
@@ -181,9 +186,6 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     }
     if (claims?.nonce !== login.nonce) return fail(400, 'Sign-in failed', `<p>The sign-in response did not match this request.</p>${again}`);
     if (!claims.email || claims.email_verified !== true) return fail(403, 'Email not verified', `<p>That Google account's email address is not verified.</p>${again}`);
-    if (!allowed(claims.email)) {
-      return fail(403, 'Not allowed', `<p>${escapeHtml(claims.email)} is not allowed to use this app.</p><p><a href="/auth/login">Sign in with another account</a></p>`);
-    }
     // The first name (profile scope) is shown in the header; never logged.
     const name = String(claims.given_name || claims.name || '').trim().slice(0, 60) || null;
     const session = sign({ email: claims.email.toLowerCase(), ...(name ? { name } : {}), exp: now() + SESSION_DAYS * 86_400_000, v: 1 }, key);
@@ -191,10 +193,49 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     return reply.redirect(login.next);
   });
 
+  // ---- Requesting access (anyone signed in with Google whose address has no users row) ----
+  // Plain HTML forms post url-encoded bodies; only these routes take them.
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 4096 }, (req, body, done) => {
+    done(null, Object.fromEntries(new URLSearchParams(body)));
+  });
+  const sessionOf = (req) => verify(parseCookies(req.headers.cookie)[SESSION_COOKIE], key, now());
+  const statusPage = (user) => (!user ? null : user.status === 'pending' ? '/auth/waiting' : user.status === 'rejected' ? '/auth/not-approved' : '/');
+  const signOut = '<form method="post" action="/auth/logout?then=page"><button type="submit">Sign out</button></form>';
+  app.get('/auth/register', { schema: { hide: true } }, async (req, reply) => {
+    const session = sessionOf(req);
+    if (!session) return reply.redirect('/auth/login');
+    const there = statusPage(findUser(session.email));
+    if (there) return reply.redirect(there);
+    return reply.type('text/html').send(page('Request access', `
+      <p>Health Review turns your Apple Health data, workouts and check-ins into charts and a weekly review.</p>
+      <p>Signed in as <strong>${escapeHtml(session.email)}</strong>.</p>
+      <p><strong>No AI is used</strong> until you add your own Claude API key in Settings; everything else works without one.</p>
+      <p>Requests are approved by hand, usually within 24 hours, and you get an email when you're in.</p>
+      <form method="post" action="/auth/register">
+        <p><label><input type="checkbox" name="agree" required> I agree to the <a href="/terms" target="_blank">terms</a> and the <a href="/privacy" target="_blank">privacy policy</a>.</label></p>
+        <p><button type="submit">Request access</button></p>
+      </form>${signOut}`));
+  });
+  app.post('/auth/register', { schema: { hide: true } }, async (req, reply) => {
+    if (req.headers.origin !== origin) return reply.code(403).send({ error: 'Requests that change data must come from this site.' });
+    const session = sessionOf(req);
+    if (!session) return reply.redirect('/auth/login');
+    if (!findUser(session.email)) {
+      if (req.body?.agree !== 'on') return reply.redirect('/auth/register');
+      await registerUser({ email: session.email, name: typeof session.name === 'string' ? session.name : null });
+    }
+    return reply.redirect(statusPage(findUser(session.email)) ?? '/');
+  });
+  app.get('/auth/waiting', { schema: { hide: true } }, async (req, reply) =>
+    reply.type('text/html').send(page('Thanks, your request is in', `<p>Approval usually takes up to 24 hours. You'll get an email when you're in; then just open the app again.</p>${signOut}`)));
+  app.get('/auth/not-approved', { schema: { hide: true } }, async (req, reply) =>
+    reply.type('text/html').send(page('Access was not approved', `<p>This account can't use Health Review.</p>${signOut}`)));
+
   app.post('/auth/logout', { schema: { hide: true } }, async (req, reply) => {
     if (req.headers.origin && req.headers.origin !== origin) return reply.code(403).send({ error: 'Requests that change data must come from this site.' });
     reply.header('Set-Cookie', cookie(SESSION_COOKIE, '', { maxAge: 0, secure }));
-    return reply.code(204).send();
+    // From the plain pages above (a form post) go to the signed-out page; the app's own button expects 204.
+    return req.query?.then === 'page' ? reply.redirect('/auth/signed-out') : reply.code(204).send();
   });
 
   app.get('/auth/signed-out', { schema: { hide: true } }, async (req, reply) =>

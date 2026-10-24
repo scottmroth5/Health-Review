@@ -27,9 +27,10 @@ const userMessage = (summary, problems = []) =>
   ].filter(Boolean).join('\n');
 
 /** Builds everything the call needs without calling anything (used by --dry-run and tests). */
-export function prepareReview(db, { weekEnd, today }) {
+export function prepareReview(db, { weekEnd, today, catalog }) {
   const settings = loadMetricSettings(db);
-  const week = computeWeek(loadWeekData(db, weekEnd), { weekEnd, ...settings });
+  // catalog: the user's program catalog (null: none); left out, the owner's MAPS catalog file is read.
+  const week = computeWeek(loadWeekData(db, weekEnd, catalog === undefined ? {} : { catalog }), { weekEnd, ...settings });
   const summary = buildSummary(week, loadWeekNotes(db, weekEnd), { today });
   const sections = db.prepare('SELECT position, name, text, sensitive FROM prompt_sections WHERE user_id = @uid ORDER BY position, name').all();
   const { system, sensitiveSent } = buildSystem(sections, today);
@@ -57,9 +58,9 @@ export function prepareReview(db, { weekEnd, today }) {
  * @param {string} [options.effort]
  * @param {object} [options.logger]
  */
-export async function runReview({ store, claude, weekEnd, today, model = DEFAULT_REVIEW_MODEL, effort = DEFAULT_REVIEW_EFFORT, logger = console }) {
+export async function runReview({ store, claude, weekEnd, today, catalog, model = DEFAULT_REVIEW_MODEL, effort = DEFAULT_REVIEW_EFFORT, logger = console }) {
   const { db } = store;
-  const prep = prepareReview(db, { weekEnd, today });
+  const prep = prepareReview(db, { weekEnd, today, catalog });
   const run = startUserRun(store, 'review', { weekEnd, model, effort, sensitiveSections: prep.sensitiveSent }, logger);
 
   try {

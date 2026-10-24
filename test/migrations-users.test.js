@@ -15,7 +15,7 @@ test('024 and 025: rows kept and given to the owner, children intact, user_id re
   const dir = mkdtempSync(join(tmpdir(), 'health-users-mig-'));
   const path = join(dir, 'h.db');
   try {
-    const before = MIGRATIONS.filter((m) => !['024-users', '025-user-id-everywhere'].includes(m.id));
+    const before = MIGRATIONS.slice(0, MIGRATIONS.findIndex((m) => m.id === '024-users')); // the database before users
     const old = openStore(path, { app: 'health-review', migrations: before });
     const x = 'x';
     old.db.exec(`
