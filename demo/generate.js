@@ -16,6 +16,13 @@ import { normalizeAll } from '../ingest/normalize.js';
 import { detect, writeDetected, refreshPhases } from '../ingest/program-blocks.js';
 import { repoPath, dataPath } from '../tools/paths.js';
 import { localDate as ownerDate } from '../tools/time.js';
+import { writeTraining } from './training.js';
+import { writeDemoReview } from './reviews.js';
+import { computeWeek } from '../metrics/index.js';
+import { loadWeekData, loadMetricSettings, loadWeekNotes, loadAdvisorInput } from '../metrics/load.js';
+import { buildSummary } from '../agent/summary.js';
+import { renderReport } from '../agent/instructions.js';
+import { recommendPrograms } from '../metrics/advisor.js';
 import { scopeDb } from '../db/scope.js';
 import { OWNER_ID } from '../db/users.js';
 
@@ -48,96 +55,18 @@ const to5 = (x) => Math.round(x / 5) * 5;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 const dow = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
 
-// Program runs, in days before today: [program, start offset, weeks run, lift trend over the run, VO2 change over the run].
-const RUNS = [
-  ['Sample Hypertrophy', 455, 10, 1.04, -0.3],
-  ['Sample Strength', 379, 12, 1.09, -0.4],
-  ['Sample Conditioning', 289, 8, 0.98, 2.2],
-  ['Sample Hypertrophy', 227, 7, 1.03, 0.1],
-  ['Sample Strength', 158, 12, 1.06, -0.2],
-  ['Sample Balance', 66, 10, 1.01, 0.6],
-];
-// Starting loads (lb) for the primary lifts; pull-ups are bodyweight reps.
-const LOADS = { 'Barbell Squat': 205, 'Barbell Bench Press': 165, 'Barbell Deadlift': 255, 'Barbell Z Press': 85 };
-const ACCESSORY_LOADS = { 'Dumbbell Row': 50, 'Dumbbell Curls': 25, 'Dumbbell Skull Crushers': 20, 'Dumbbell Lateral Raises': 15,
-  'Kettlebell Swings': 44, 'Goblet Squats': 45, 'Dumbbell Walking Lunges': 30, 'Dumbbell Bulgarian Split Squat': 30,
-  'Single Arm Dumbbell Row': 55, 'Single Leg Standing Calf Raises': 25, 'Single Leg Dumbbell Romanian Deadlifts': 35, 'Circus Press': 40 };
-const PER_HAND = new Set(['Dumbbell Curls', 'Dumbbell Lateral Raises', 'Dumbbell Walking Lunges', 'Dumbbell Bulgarian Split Squat', 'Single Leg Dumbbell Romanian Deadlifts']);
-const BODYWEIGHT = new Set(['Pullups', 'Push-Up', 'Box Jumps', 'Bird Dog', 'Planks']);
-
-/** Reps for a prescription like "8-12", "5" or "30s": a value in the range ({ seconds } for timed sets). */
-function repsFor(text, r) {
-  const timed = /s$/.test(text);
-  const [lo, hi] = text.replace(/s$/, '').split('-').map(Number);
-  const v = r.int(lo, hi ?? lo);
-  return timed ? { seconds: v } : { reps: v };
-}
-
 /** Writes the made-up data into an empty store. */
 export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = loadDemoCatalog(), dictionary = loadDictionary() }) {
   // The demo's made-up data all belongs to user 1 (OWNER_ID), the only user in a demo database.
   const db = scopeDb(store.db, OWNER_ID);
   const r = random(seed);
   const stamp = `${today}T12:00:00.000Z`;
-  const first = addDays(today, -460);
+  // ---- Workout Log: about two years on the MAPS-named programs (demo/training.js) ----
+  const { runs, liftDays } = writeTraining(db, { today, r, catalog });
+  const first = addDays(runs[0].start, -28);
   const days = [];
   for (let d = first; d < today; d = addDays(d, 1)) days.push(d);
-
-  // ---- Workout Log, one row per exercise, sets below; lifting Mon, Wed, Fri during each run ----
-  const insertEx = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, comment) VALUES (@uid, ?, ?, ?, ?, ?, ?)');
-  const insertSet = db.prepare(`INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
-    VALUES (@uid, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL)`);
-  const liftDays = new Map(); // date -> program
-  const level = { ...LOADS, Pullups: 7 };
-  const vo2Path = []; // [date, change] steps at run ends, for the daily VO2 trend
-  let row = 1;
-  for (const [program, startOffset, weeksRun, liftTrend, vo2Change] of RUNS) {
-    const p = catalog.find(program);
-    const start = addDays(today, -startOffset);
-    const end = addDays(start, weeksRun * 7 - 1);
-    vo2Path.push([start, end, vo2Change]);
-    const startLevel = { ...level };
-    let session = 0;
-    for (let d = start; d <= end && d < today; d = addDays(d, 1)) {
-      if (![1, 3, 5].includes(dow(d)) || r.next() < 0.08) continue; // the odd missed day
-      const week = Math.floor(daysBetween(start, d) / 7) + 1;
-      const phase = p.phases.find((ph) => week >= ph.weeks[0] && week <= ph.weeks[1]);
-      const workout = phase.workouts[session % phase.workouts.length];
-      session += 1;
-      const progress = daysBetween(start, d) / (weeksRun * 7);
-      const factor = 1 + (liftTrend - 1) * progress;
-      liftDays.set(d, program);
-      workout.exercises.forEach((ex, i) => {
-        const name = ex.name;
-        const id = insertEx.run(Number(d.slice(0, 4)), row++, d, i === 0 ? `${program} ${phase.name} ${workout.name}` : null, name, null).lastInsertRowid;
-        const sets = Number(String(ex.sets).split('-').pop());
-        for (let s = 1; s <= sets; s++) {
-          const rep = repsFor(ex.reps, r);
-          if (name === 'Pullups') {
-            const reps = clamp(Math.round(startLevel.Pullups * factor + r.normal(0, 0.7)), 3, 15);
-            insertSet.run(id, s, 'BW', null, 0, 1, String(reps), reps, null);
-          } else if (BODYWEIGHT.has(name)) {
-            insertSet.run(id, s, 'BW', null, 0, 1, rep.seconds ? `${rep.seconds} seconds` : String(rep.reps), rep.reps ?? null, rep.seconds ?? null);
-          } else {
-            // Heavier for fewer reps: about 3% more load per rep below 10.
-            const base = LOADS[name] ? startLevel[name] * factor : ACCESSORY_LOADS[name] ?? 30;
-            const load = LOADS[name] ? to5(base * (1 + 0.03 * (10 - rep.reps))) : to5(base);
-            const perHand = PER_HAND.has(name);
-            insertSet.run(id, s, String(load), load, perHand ? 1 : 0, 0, String(rep.reps), rep.reps, null);
-          }
-        }
-      });
-    }
-    for (const k of Object.keys(LOADS)) level[k] = startLevel[k] * liftTrend;
-    level.Pullups = startLevel.Pullups * liftTrend;
-  }
-  // A recent stall on the bench and a slip on the deadlift, so Lift progress shows more than one status.
-  db.prepare(`UPDATE strength_sets SET weight_lbs = weight_lbs - 15, weight_text = CAST(weight_lbs - 15 AS INTEGER) WHERE user_id = @uid AND exercise_id IN (
-    SELECT id FROM strength_exercises WHERE user_id = @uid AND exercise = 'Barbell Deadlift' AND date >= ?)`).run(addDays(today, -40));
-  db.prepare(`UPDATE strength_sets SET weight_lbs = weight_lbs - 5, weight_text = CAST(weight_lbs - 5 AS INTEGER) WHERE user_id = @uid AND exercise_id IN (
-    SELECT id FROM strength_exercises WHERE user_id = @uid AND exercise = 'Barbell Bench Press' AND date >= ?)`).run(addDays(today, -40));
-  db.prepare('INSERT INTO workout_log_notes (user_id, tab_year, row_no, date, text) VALUES (@uid, ?, ?, ?, ?)')
-    .run(Number(addDays(today, -170).slice(0, 4)), row++, addDays(today, -170), 'Sample note: travel week, no gym');
+  const vo2Path = runs.map((run) => [run.start, run.end, run.vo2]); // [start, end, change] at each run, for the daily VO2 trend
 
   // ---- Apple Health days: trends plus noise; a planted gap (9 days ago) and partial day (6 days ago) ----
   const insertDay = db.prepare(`INSERT INTO daily_metrics (user_id, date, active_energy_kcal, exercise_min, move_min, stand_hours, hrv_ms, respiratory_rate, resting_hr,
@@ -185,14 +114,16 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
   const insertSession = db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, active_energy_kcal, avg_hr, max_hr, distance_mi, step_count, updated_at)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const at = (d, h, m) => `${d}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+  const r7 = random(seed + 6);
   for (const d of days) {
     if (d === addDays(today, -9)) continue;
-    const program = liftDays.get(d);
-    if (program) {
-      const conditioning = program === 'Sample Conditioning';
-      const minutes = conditioning ? r.int(26, 34) : r.int(52, 72);
+    const lift = liftDays.get(d);
+    if (lift) {
+      const conditioning = lift.program === 'HIIT';
+      const minutes = lift.minutes;
       const startMin = 17 * 60 + r.int(0, 60);
-      insertSession.run(conditioning ? 'High Intensity Interval Training' : 'Traditional Strength Training', at(d, Math.floor(startMin / 60), startMin % 60),
+      const type = conditioning ? 'High Intensity Interval Training' : lift.program === 'MAPS Performance' ? 'Functional Strength Training' : 'Traditional Strength Training';
+      insertSession.run(type, at(d, Math.floor(startMin / 60), startMin % 60),
         at(d, Math.floor((startMin + minutes) / 60), (startMin + minutes) % 60), minutes * 60 - r.int(0, 50), minutes * (conditioning ? 10 : 6),
         conditioning ? r.int(138, 152) : r.int(104, 118), conditioning ? r.int(170, 182) : r.int(140, 158), null, null, stamp);
     }
@@ -202,14 +133,25 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
       insertSession.run('Outdoor Walk', at(d, Math.floor(startMin / 60), startMin % 60), at(d, Math.floor((startMin + minutes) / 60), (startMin + minutes) % 60),
         minutes * 60 - r.int(0, 40), minutes * 5, r.int(95, 112), r.int(118, 135), round(minutes / 19, 2), minutes * 110, stamp);
     }
+    // Other cardio from its own stream (added later, so the walks above stay the same): weekend runs and rides, an
+    // elliptical now and then; together with the walks and HIIT they reach every heart rate zone.
+    const extraCardio = [[6, 0.35, 'Outdoor Run', 25, 45, 138, 162, 9], [0, 0.4, 'Indoor Cycling', 30, 50, 118, 145, 0], [3, 0.15, 'Elliptical', 20, 35, 112, 132, 0]];
+    for (const [weekday, chance, type, lo, hi, hrLo, hrHi, pace] of extraCardio) {
+      if (dow(d) !== weekday || r7.next() >= chance) continue;
+      const minutes = r7.int(lo, hi);
+      const startMin = 9 * 60 + r7.int(0, 120);
+      const avg = r7.int(hrLo, hrHi);
+      insertSession.run(type, at(d, Math.floor(startMin / 60), startMin % 60), at(d, Math.floor((startMin + minutes) / 60), (startMin + minutes) % 60),
+        minutes * 60 - r7.int(0, 40), minutes * (pace ? 11 : 8), avg, avg + r7.int(12, 22), pace ? round(minutes / pace, 2) : null, pace ? minutes * 160 : null, stamp);
+    }
   }
 
-  // Per-minute heart rate (the JSON workout export) for cardio workouts in the last 60 days, from its own stream so
+  // Per-minute heart rate (the JSON workout export) for cardio workouts in the last 120 days, from its own stream so
   // nothing above changes; older workouts have none (the tile shows them as no detail), and a few minutes drop out.
   const r5 = random(seed + 4);
   const insertHr = db.prepare('INSERT INTO workout_hr_samples (user_id, type, start, t, avg_bpm, min_bpm, max_bpm) VALUES (@uid, ?, ?, ?, ?, ?, ?)');
   const cardioRows = db.prepare(`SELECT type, start, duration_sec, avg_hr FROM workout_sessions
-    WHERE user_id = @uid AND type IN ('Outdoor Walk', 'High Intensity Interval Training') AND start >= ?`).all(addDays(today, -60));
+    WHERE user_id = @uid AND type IN ('Outdoor Walk', 'High Intensity Interval Training', 'Outdoor Run', 'Indoor Cycling', 'Elliptical') AND start >= ?`).all(addDays(today, -120));
   for (const s of cardioRows) {
     const minutes = Math.round(s.duration_sec / 60);
     const t0 = Date.parse(`${s.start}Z`);
@@ -239,8 +181,17 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
     setBody.run(fat, round(w.weight_lbs * (1 - fat / 100) * 0.55 + r4.normal(0, 0.5), 1), Math.round(9 - i * 0.02 + r4.normal(0, 0.4)), w.date);
   });
   const insertDrink = db.prepare("INSERT INTO drinking_days (user_id, date, beers, wine, bourbon, other, cbd, setting, mood_before, mood_after, notes, source, updated_at) VALUES (@uid, ?, ?, ?, 0, 0, ?, ?, ?, ?, NULL, 'ui', ?)");
-  for (const d of days.slice(-120)) {
-    if (dow(d) === 6 && r.next() < 0.7) insertDrink.run(d, r.int(0, 2), r.int(0, 2), r.int(0, 1), r.pick(['Dinner out', 'Home', 'Friends']), r.int(6, 8), r.int(6, 8), stamp);
+  // Most days logged for 200 days (its own stream): drinks mostly on Friday and Saturday, alcohol-free days logged as
+  // zeros (a logged day with none is a real alcohol-free day; an unlogged one is unknown), a CBD drink now and then.
+  const r8 = random(seed + 7);
+  for (const d of days.slice(-200)) {
+    if (r8.next() < 0.2) continue;
+    const weekend = [5, 6].includes(dow(d));
+    const drinking = weekend ? r8.next() < 0.65 : r8.next() < 0.12;
+    const beers = drinking ? r8.int(0, 2) : 0;
+    const wine = drinking ? r8.int(beers ? 0 : 1, 2) : 0;
+    insertDrink.run(d, beers, wine, r8.next() < 0.08 ? 1 : 0, drinking ? r8.pick(['Dinner out', 'Home', 'Friends', 'Game night']) : null,
+      drinking ? r8.int(6, 8) : null, drinking ? r8.int(6, 8) : null, stamp);
   }
 
   // ---- Supplements only, with a dose check-off for the last 30 days ----
@@ -281,20 +232,14 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
   // A made-up profile for the age-based targets (born 1975, male, 5 ft 10 in).
   // demo_built_for: the day this data was made for (server/index.js refreshes it when the owner's date moves on).
   for (const [k, v] of [['zone2_low_bpm', '108'], ['zone2_high_bpm', '126'], ['birth_year', '1975'], ['sex', 'male'], ['height_in', '70'], ['demo_built_for', today]]) db.prepare('INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)').run(k, v, stamp);
-  const lastSaturday = addDays(today, -((dow(today) + 1) % 7 || 7));
-  for (const [i, weekEnd] of [addDays(lastSaturday, -7), lastSaturday].entries()) {
-    db.prepare("INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at, model, warnings, sensitive_sections) VALUES (@uid, ?, '{}', ?, ?, 'sample', NULL, '[]')")
-      .run(weekEnd, `## Weekly Wins\n- **Sample review ${i + 1}.** Made-up text for the demo: three lifting sessions and four walks this week.\n\n## Recovery\nSleep and HRV held steady against the baseline.\n\n## Next Week\n- Keep the walks going; target 3 lifting sessions.\n\n## Discuss with your physician\n- **Sample item:** a placeholder to show where health topics go.`, `${weekEnd}T15:00:00.000Z`);
-  }
-  const insertNote = db.prepare('INSERT INTO advisor_notes (user_id, id, created_at, role, text, physician, weights, model, warnings) VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, NULL)');
-  insertNote.run('00000000-0000-4000-8000-000000000001', `${addDays(today, -2)}T18:00:00.000Z`, 'owner',
-    'Sample note: I want more strength next, but I can only train three days a week.', null, JSON.stringify({ strength: 2, joint: 1, time: 1, vo2: 1 }), null);
-  insertNote.run('00000000-0000-4000-8000-000000000002', `${addDays(today, -2)}T18:01:00.000Z`, 'claude',
-    'Sample reply (made up for the demo; the chat is off here): with strength counting double, Sample Strength leads. It runs three sessions a week, so it fits your schedule.',
-    JSON.stringify([]), null, 'sample');
+  // ---- Run records for the Activity tab: daily syncs and nightly backups for two weeks, the monthly restore test ----
   const insertRun = db.prepare("INSERT INTO runs (user_id, name, meta, status, started_at, finished_at, duration_ms, calls, cost_usd, summary) VALUES (@uid, ?, ?, 'ok', ?, ?, ?, ?, ?, ?)");
-  insertRun.run('sync', '{"backfill":false}', `${addDays(today, -1)}T12:00:00.000Z`, `${addDays(today, -1)}T12:00:05.000Z`, 5000, 0, 0, '{"counts":{"health_exports":{"filesRead":1,"filesLeft":0,"healthDays":1},"workout_exports":{"filesRead":1,"filesLeft":0,"workouts":1}},"warnings":0}');
-  insertRun.run('review', '{"model":"sample"}', `${lastSaturday}T15:00:00.000Z`, `${lastSaturday}T15:03:00.000Z`, 180000, 1, 0, '{"attempts":1,"warnings":0}');
+  for (let i = 14; i >= 1; i--) {
+    const d = addDays(today, -i);
+    insertRun.run('sync', '{"backfill":false}', `${d}T11:00:00.000Z`, `${d}T11:00:04.000Z`, 4000, 0, 0, '{"counts":{"workout_log":{"tabsRead":1,"tabsReplaced":1}},"warnings":0}');
+    insertRun.run('backup', '{"to":"google-drive"}', `${d}T03:00:00.000Z`, `${d}T03:00:09.000Z`, 9000, 0, 0, '{"name":"health-sample.hrbk","bytes":1840000}');
+  }
+  insertRun.run('restore-test', '{"from":"google-drive"}', `${addDays(today, -((Number(today.slice(8, 10)) || 1) - 1))}T09:00:00.000Z`, null, 6000, 0, 0, '{"ok":true,"tables":27,"problems":[]}');
 
   // ---- The app's own pipeline: normalize names, detect blocks (confirmed), phases from workout names ----
   normalizeAll(db, dictionary, { now: new Date(stamp) });
@@ -302,6 +247,39 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
   db.prepare("UPDATE program_blocks SET source = 'confirmed' WHERE user_id = @uid").run();
   db.prepare("UPDATE log_sessions SET source = 'confirmed' WHERE user_id = @uid AND source = 'detected'").run();
   refreshPhases(db, catalog);
+
+  // ---- Weekly reviews: the last 26 weeks, each written in code from that week's real summary (demo/reviews.js) ----
+  const substitutions = JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8'));
+  const settings = loadMetricSettings(db);
+  const lastSaturday = addDays(today, -((dow(today) + 1) % 7 || 7));
+  const insertReview = db.prepare(`INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at, model, warnings, sensitive_sections)
+    VALUES (@uid, ?, ?, ?, ?, 'sample', '[]', '[]')`);
+  for (let k = 25; k >= 0; k--) {
+    const weekEnd = addDays(lastSaturday, -7 * k);
+    const written = `${addDays(weekEnd, 1)}T13:02:00.000Z`;
+    const week = computeWeek(loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }), { weekEnd, ...settings });
+    const summary = buildSummary(week, loadWeekNotes(db, weekEnd), { today: addDays(weekEnd, 1) });
+    insertReview.run(weekEnd, JSON.stringify(summary), renderReport(writeDemoReview(summary)), written);
+    insertRun.run('review', JSON.stringify({ weekEnd, model: 'sample' }), `${addDays(weekEnd, 1)}T12:00:00.000Z`, written, 122000, 1, 0.34, '{"attempts":1,"warnings":0}');
+  }
+
+  // ---- The Next program chat: a short made-up thread about the Advisor's actual ranking (the chat is off in the demo) ----
+  const ranked = recommendPrograms({ ...loadAdvisorInput(db, today, catalog), programs: catalog.programs, lookup: dictionary.lookup, substitutions }).ranking.map((x) => x.program);
+  const [top1, top2, top3] = [ranked[0] ?? 'the top program', ranked[1] ?? 'the second', ranked[2] ?? 'the third'];
+  const insertNote = db.prepare('INSERT INTO advisor_notes (user_id, id, created_at, role, text, physician, weights, model, warnings) VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, NULL)');
+  const thread = [
+    ['owner', 'Sample note: my current block ends in a couple of weeks. What should I run next? I want to keep my strength and get my cardio up.', { strength: 2, joint: 1, time: 1, vo2: 2 }],
+    ['claude', `Sample reply: with strength and VO2 max counting double, ${top1} leads, then ${top2} and ${top3}. ${top1} keeps heavy work in every phase and adds conditioning days, which fits both goals.`],
+    ['owner', 'Sample note: my deadlift has been slipping lately. Does that change anything?', null],
+    ['claude', `Sample reply: the Advisor already sees the deadlift as regressing. ${top1} starts with lighter hinge work in its first phase, a good chance to rebuild before pushing load again.`],
+    ['owner', 'Sample note: I can only train four days a week, about an hour each.', { strength: 2, joint: 1, time: 2, vo2: 2 }],
+    ['claude', `Sample reply: counting time double, ${top1} still fits at three main sessions a week; ${top2} asks for a bit more time across the week.`],
+    ['owner', 'Sample note: what about my shoulders? Overhead pressing bothers them some weeks.', null],
+    ['claude', `Sample reply: the Advisor scores joint health from one-side work and mobility; ${top3} has the most of both. You can also pause an exercise on the Training tab so it counts against programs that lean on it.`],
+  ];
+  thread.forEach(([role, text, weights], i) => insertNote.run(`00000000-0000-4000-8000-0000000000${String(i + 1).padStart(2, '0')}`,
+    `${addDays(today, -3)}T18:${String(i * 2).padStart(2, '0')}:00.000Z`, role, text, role === 'claude' ? '[]' : null, weights ? JSON.stringify(weights) : null, role === 'claude' ? 'sample' : null));
+
   return {
     days: db.prepare('SELECT COUNT(*) FROM daily_metrics WHERE user_id = @uid').pluck().get(),
     sets: db.prepare('SELECT COUNT(*) FROM strength_sets WHERE user_id = @uid').pluck().get(),

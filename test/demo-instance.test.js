@@ -7,6 +7,10 @@ import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { buildDemoDatabase, refreshDemoDatabase, demoBuiltFor, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } from '../demo/generate.js';
 import { zonedInstant } from '../tools/time.js';
+import { writeDemoReview } from '../demo/reviews.js';
+import { renderReport } from '../agent/instructions.js';
+import { allowedNumbers, checkReport } from '../agent/validate.js';
+import { NIGHT_BREATHING_NAMES } from '../agent/review.js';
 
 const TODAY = '2026-10-07';
 const dir = mkdtempSync(join(tmpdir(), 'health-demo-'));
@@ -26,19 +30,24 @@ function fingerprint(path) {
   return out;
 }
 
-test('demo data: the same seed and day give the same data; every exercise maps; supplements only; one block in progress', () => {
+test('demo data: the same seed and day give the same data; every exercise maps; supplements only; two years of MAPS runs, one in progress', () => {
+  const started = Date.now();
   buildDemoDatabase({ path: join(dir, 'a.db'), today: TODAY });
+  console.log(`# demo build: ${Date.now() - started} ms`);
   buildDemoDatabase({ path: join(dir, 'b.db'), today: TODAY });
   const a = fingerprint(join(dir, 'a.db'));
   assert.deepEqual(fingerprint(join(dir, 'b.db')), a);
-  assert.ok(a.days > 400 && a.sets > 1000, 'about 15 months of data');
+  assert.ok(a.days > 700 && a.sets > 3000, 'two years of data');
   assert.equal(a.unmapped, 0);
   assert.equal(a.medications, 0, 'no prescription medicines in the demo');
-  assert.match(a.blocks, /Sample Balance:\d{4}-\d{2}-\d{2}:in_progress$/);
-  assert.ok(loadDemoCatalog().programs.every((p) => p.name.startsWith('Sample ')), 'made-up program names only');
+  assert.match(a.blocks, /MAPS Split:\d{4}-\d{2}-\d{2}:in_progress$/);
+  assert.ok(a.blocks.split(',').length >= 10, 'ten or more program runs');
+  // MAPS program names only (owner's choice, 2026-10-24); the catalog says its structure is made up.
+  assert.ok(loadDemoCatalog().programs.every((p) => /^(MAPS |HIIT$)/.test(p.name)));
+  assert.match(JSON.parse(readFileSync(new URL('../demo/catalog.json', import.meta.url), 'utf8')).note, /made up for the demo/);
 });
 
-test('demo instance: reports itself, refuses sync and chat, shows only its own runs, ranks the made-up programs', async () => {
+test('demo instance: reports itself, refuses sync and chat, shows only its own runs, ranks the catalog programs', async () => {
   const store = openOwnerStore(join(dir, 'a.db'));
   const app = await buildApp({ store, clock: () => new Date(2026, 9, 7, 12), instance: 'demo', features: { chat: false },
     catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')) });
@@ -54,9 +63,24 @@ test('demo instance: reports itself, refuses sync and chat, shows only its own r
   assert.deepEqual((await app.inject('/api/jobs')).json().ingest, [], 'its own database only');
   const advisor = (await app.inject('/api/advisor')).json();
   assert.equal(advisor.available, true);
-  assert.ok(advisor.ranking.length >= 2 && advisor.ranking.every((r) => r.program.startsWith('Sample ')));
-  assert.deepEqual(advisor.excluded, [{ program: 'Sample Balance', reason: 'run last' }]);
-  assert.equal((await app.inject('/api/program')).json().program.program, 'Sample Balance');
+  const names = new Set(loadDemoCatalog().programs.map((p) => p.name));
+  assert.ok(advisor.ranking.length >= 5 && advisor.ranking.every((r) => names.has(r.program)));
+  assert.deepEqual(advisor.excluded, [{ program: 'MAPS Split', reason: 'run last' }]);
+  assert.equal((await app.inject('/api/program')).json().program.program, 'MAPS Split');
+  const statuses = new Set((await app.inject('/api/lifts')).json().map((l) => l.status));
+  for (const s of ['progressing', 'stalled', 'regressing']) assert.ok(statuses.has(s), `Lift progress shows ${s}`);
+  // 26 weekly reviews, each written from its week's summary and passing the review's own checks.
+  const reviews = store.db.prepare('SELECT week_ending, summary_json, report_md FROM reviews WHERE user_id = @uid ORDER BY week_ending').all();
+  assert.equal(reviews.length, 26);
+  const labNames = [...store.db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(), ...NIGHT_BREATHING_NAMES];
+  for (const r of reviews) {
+    const summary = JSON.parse(r.summary_json);
+    const report = writeDemoReview(summary);
+    assert.equal(renderReport(report), r.report_md);
+    assert.deepEqual(checkReport(report, { allowed: allowedNumbers(summary), medicationNames: [], labNames }), [], r.week_ending);
+    assert.ok(report.sections.length >= 7, `${r.week_ending}: a full review`);
+  }
+  assert.ok(store.db.prepare('SELECT COUNT(*) FROM advisor_notes WHERE user_id = @uid').pluck().get() >= 8, 'a chat thread');
   await app.close();
   store.close();
   rmSync(dir, { recursive: true, force: true });
@@ -65,7 +89,7 @@ test('demo instance: reports itself, refuses sync and chat, shows only its own r
 test('demo database: builds with no arguments (the demo container starts with an empty data folder)', () => {
   const path = join(dir, 'defaults.db');
   const counts = buildDemoDatabase({ path });
-  assert.ok(counts.days > 300, 'about a year and a half of made-up days, ending today');
+  assert.ok(counts.days > 700, 'about two years of made-up days, ending today');
 });
 
 test('demo refresh: made again in place equals a fresh build, and moves forward with the day', () => {

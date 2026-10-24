@@ -517,15 +517,20 @@ npm run demo:build    # rebuild the demo database from scratch, which also reset
   its made-up database lives in memory.
 - **Always current:** the data runs through yesterday, and today's check-in and morning supplements are already logged.
   Just after midnight (your time) the demo makes its data again for the new day, locally and hosted, with no restart.
-- **The data:** about 15 months, made up by `demo/generate.js` from a fixed seed, so every build is the same for a
-  given day. It includes:
-  - Apple Health days and workouts, with a planted gap and a partial day so the data checks have something to show
-  - a Workout Log across five runs of four made-up programs, the last one near its end so the Advisor appears
-  - check-ins, a few drink days, supplements (no prescription medicines), a lab panel, sample reviews and a sample
-    chat thread
-- **Publishing:** the programs in `demo/catalog.json` ("Sample Strength" and so on) are invented, not MAPS. The
-  generator, catalog and `demo/substitutions.json` hold no real values, so they are safe to publish. The generated
-  database stays in `data/` (gitignored).
+- **The data:** about two years, made up by `demo/generate.js` and `demo/training.js` from a fixed seed, so every
+  build is the same for a given day (about 3 seconds). It includes:
+  - Apple Health days and workouts (strength, walks, runs, rides, HIIT) with minute-by-minute heart rate across every
+    zone, a planted gap and a partial day so the data checks have something to show
+  - a Workout Log of 12 program runs on MAPS-named programs, between-program and home stretches, one run stopped early
+    and MAPS Split in progress near its end (so the Advisor appears); deload weeks, trigger sessions, equipment swaps,
+    and lifts that are progressing, stalled and regressing
+  - 26 weekly reviews written in code from each week's real summary (`demo/reviews.js`), passing the review's own
+    checks, and an Advisor chat thread
+  - check-ins, drinks most days, supplements (no prescription medicines), a lab panel and run records
+- **Publishing:** the demo uses MAPS program names (your choice, 2026-10-24: the app shows only a program's name, phase
+  and week). Every phase, week range and workout in `demo/catalog.json` is made up; nothing comes from your catalog or
+  the PDFs. The generator and `demo/substitutions.json` hold no real values. The generated database stays in `data/`
+  (gitignored).
 
 ## Planned
 

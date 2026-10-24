@@ -46,7 +46,9 @@ Health specific logic stays in this repo; never add it to agent-core.
 /tools              shared helpers: paths, google/auth.js (copied from Job-Agent; candidate to move into agent-core);
                     apps-script/ConsolidateHealthMetrics.gs (the fixed v1 consolidation; retired 2026-10-16, reference only)
 /demo               the separate demo instance's made-up data: generate.js (seeded generator, run through the app's own
-                    normalization, block detection and phases), catalog.json (invented "Sample" programs, never MAPS),
+                    normalization, block detection and phases), catalog.json (MAPS program names with made-up phases and
+                    workouts, owner's choice 2026-10-24), training.js (two years of runs), reviews.js (26 reviews in code from
+                    each week's summary, passing agent/validate.js),
                     substitutions.json. Data runs through yesterday, with today's check-in and morning supplements (no
                     Apple Health day yet); settings demo_built_for records the day, and server/index.js remakes it in
                     place (refreshDemoDatabase) on start and within 10 minutes of the owner's midnight. The demo's clock
@@ -453,6 +455,8 @@ advisor_notes (migration 013); the advisor-chat run records metadata only. featu
 The exercise-name assist (npm run log:unmapped -- --suggest) sends exercise names only (unmapped names and the
 dictionary's own names), and only after the owner types yes; never weights, dates, set counts or other log data
 (owner's choice, 2026-10-02). Its proposals reach the dictionary only through --accept.
+The demo may use MAPS program names (owner's choice, 2026-10-24; the app shows only name, phase and week); its phases,
+weeks and workouts are made up, never copied from data/maps or the PDFs.
 The MAPS PDFs and anything transcribed from them (data/maps) are Mind Pump's copyrighted material: never commit them,
 put them in fixtures or the image, or send their text anywhere; only computed facts (program, phase, week) leave the
 owner's machine (as defined above, so the server may hold them in its data folder).
