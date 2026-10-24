@@ -21,6 +21,7 @@ import { buildApp } from './app.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { runReview } from '../agent/review.js';
 import { assertSafeBinding, authSettings } from './auth.js';
+import { createAiAccess } from './ai-access.js';
 
 const demo = process.env.HEALTH_INSTANCE === 'demo';
 const host = process.env.HOST ?? '127.0.0.1';
@@ -70,16 +71,20 @@ if (demo) {
   store = openHealthStore();
   // Each user's view of the database (db/scope.js); the command-line scripts and these jobs act as one user at a time.
   const forUser = (uid) => scopeStore(store, uid);
-  // Claude per user (multi-user, phase 2): the owner's client from ANTHROPIC_API_KEY (made on first use); another user's
-  // from their own key, decrypted in memory for this call only (tools/secret-box.js), never cached or logged; none
-  // without a key (no AI for them, and the screens say so).
+  // Claude per user (multi-user, phases 2 and 4; server/ai-access.js decides): the owner's client from ANTHROPIC_API_KEY
+  // (made on first use) for the owner and for users the admin put on the owner's key, under their monthly cap; another
+  // user's from their own key, decrypted in memory for this call only (tools/secret-box.js), never cached or logged;
+  // none otherwise (no AI for them, and the screens say why).
+  const mailer = createMailer();
+  const appUrl = () => auth.settings?.publicUrl || `http://localhost:${port}`;
+  const ai = createAiAccess({ db: store.db, mailer, adminEmail: () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email, appUrl });
   const ownerClaude = (() => { let c; return () => (c ??= createReviewClaude()); })();
   const claudeFor = (uid = OWNER_ID) => {
-    if (uid === OWNER_ID) return ownerClaude();
-    const sealed = getUser(store.db, uid)?.claude_key_enc;
-    return sealed ? createReviewClaude({ apiKey: open(sealed, uid) }) : null;
+    const { source } = ai.check(uid);
+    if (source === 'owner' || source === 'owner-for-user') return ownerClaude();
+    return source === 'own' ? createReviewClaude({ apiKey: open(getUser(store.db, uid).claude_key_enc, uid) }) : null;
   };
-  const hasAi = (uid) => uid === OWNER_ID || Boolean(getUser(store.db, uid)?.claude_key_enc);
+  const hasAi = (uid) => ai.check(uid).source !== null;
   // A user's own Google permission for Sheets (read only), from their sealed refresh token, with the web sign-in client.
   const sheetsAuthFor = (uid) => {
     const sealed = getUser(store.db, uid)?.google_refresh_enc;
@@ -101,6 +106,7 @@ if (demo) {
     sheetTabs: async (uid, sheetId) => createSheetsSource(sheetsAuthFor(uid), { WORKOUT_LOG_SHEET_ID: sheetId }).listTabs('workout_log'),
     claude: claudeFor,
     hasAi,
+    aiAccess: (uid) => ai.check(uid),
     // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.
     review: ({ uid = OWNER_ID, weekEnd, today }) => runReview({
       store: forUser(uid), claude: claudeFor(uid), catalog: catalogFor(uid), weekEnd, today, logger: quiet,
@@ -122,9 +128,10 @@ if (demo) {
       console.log(`[sync] ok (${who(uid)}) ${JSON.stringify(counts)} warnings=${warnings.length}`);
     }),
     review: () => eachUser('review', async (uid) => {
-      // No key, no AI: the week is skipped for that user and recorded with its reason.
-      if (!hasAi(uid)) {
-        startUserRun(forUser(uid), 'review', { gate: true, reason: 'no_key' }, quiet).finish('skipped', { reason: 'no_key' });
+      // No AI (no key, or the owner's key past its cap): the week is skipped for that user and recorded with its reason.
+      const { reason } = ai.check(uid);
+      if (reason) {
+        startUserRun(forUser(uid), 'review', { gate: true, reason }, quiet).finish('skipped', { reason });
         return;
       }
       const r = await weeklyReview({ store: forUser(uid), claude: () => claudeFor(uid), catalog: catalogFor(uid), sync: () => services.sync({ uid }), scheduled: true });
@@ -143,7 +150,7 @@ if (demo) {
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
   app = await buildApp({
-    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer: createMailer(),
+    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer,
     schedule: () => scheduler.status(),
   });
 }

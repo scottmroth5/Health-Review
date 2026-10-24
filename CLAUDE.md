@@ -405,6 +405,19 @@ other) plus the review eval's results.jsonl usage priced with agent-core's prici
 exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
+Users, phase 4 (2026-10-24), administration: server/ai-access.js decides each user's AI (aiAccess, pure): the owner's
+server key for the owner; a user's own key first; else the owner's key when the admin turned it on (users.uses_owner_key
+with owner_key_cap_usd, $1 to $100 a month) while their runs.cost_usd since the start of the owner's month is under the
+cap; else none, with aiReason no_key, cap or paused (any status but approved). createAiAccess.check (server/index.js
+claudeFor, hasAi and services.aiAccess) emails the user and the admin once a month at the cap (their settings row
+owner_key_cap_notified = YYYY-MM; changing the cap clears it). A run that starts under the cap may end a little over it.
+Admin routes (onRequest adminOnly, so non-admins get 403 before validation): GET /api/admin/users (listUsers: account
+facts, feeds chosen, has_token, google_connected, sheet_set, last post and sync, has_key, cap, spent_month, maps_shared,
+counts of health days, lifting days and reviews; never a key, token, hash or sheet ID), /:id/approve, /:id/reject (end
+access), /:id/pause and /:id/resume (approved to paused and back), /:id/owner-key ({ on, cap, confirmEmail }: on needs the
+user's email typed and a cap; the user is emailed on and off), /:id/maps ({ shared }). None act on an admin; owner-key and
+maps need an approved or paused user. Paused: signs in and sees their data; ingest token 401, POST /api/sync 403, no AI,
+no scheduled jobs (activeUserIds), and a note on Home. The scheduled review skips a user with no AI with its reason.
 Users, phase 3 (2026-10-24), per-user feeds: a user's Health Auto Export token (POST/DELETE /api/account/ingest-token;
 32 random bytes shown once, only its SHA-256 in users.ingest_token_hash) makes the ingest guard store their posts under
 their id (INGEST_TOKEN stays the owner's; a pending, rejected or paused user's token gets 401). Their Workout Log: a

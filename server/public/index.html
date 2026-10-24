@@ -43,6 +43,7 @@
   <main>
     <!-- Home: a tile per section; Demo mode and the account live here only -->
     <section id="view-home" class="view" hidden>
+      <div class="review-notice" id="paused-note" role="status" hidden><p>Your account is paused by the administrator: Health Auto Export posts, syncs, the weekly review and the chat are off. Your data is still here to see.</p></div>
       <nav class="home-tiles" aria-label="Sections">
         <a class="home-tile" href="#today">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M8.5 15l2.5 2.5 4.5-4.5"/></svg>
@@ -434,7 +435,7 @@
     <section id="view-users" class="view" hidden>
       <div class="card">
         <h2>Users</h2>
-        <p class="muted small">Requests wait here for your approval. Approving one sends them an email; they start with the default prompt sections and no AI until they add their own Claude key.</p>
+        <p class="muted small">Requests wait here for your approval. Approving one sends them an email; they start with the default prompt sections and no AI until they add their own Claude key, or you let them use yours up to a monthly cap. You see account facts and counts here, never their Claude key, tokens or sheet links.</p>
         <div id="users-list"></div>
         <p class="status" id="users-status" role="status"></p>
       </div>

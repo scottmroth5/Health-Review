@@ -74,7 +74,7 @@ test('chat API: thread, send, delete and clear; off without a client or when the
   const store = seeded();
   const reply = { reply: 'MAPS Powerlift scores strength 1.', physicianDiscussion: [] };
   const app = await buildApp({ store, clock: () => TODAY, catalog, dictionary, substitutions, services: { claude: () => fakeClaude([reply]) } });
-  assert.deepEqual((await app.inject('/api/advisor/chat')).json(), { enabled: true, needsKey: false, notes: [] });
+  assert.deepEqual((await app.inject('/api/advisor/chat')).json(), { enabled: true, needsKey: false, aiReason: null, notes: [] });
   const post = (payload) => app.inject({ method: 'POST', url: '/api/advisor/chat', payload });
   assert.equal((await post({ text: '' })).statusCode, 400);
   assert.equal((await post({ text: 'x'.repeat(4001) })).statusCode, 400);

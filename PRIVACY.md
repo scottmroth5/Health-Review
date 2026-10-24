@@ -17,7 +17,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 ## Who can see it
 
 - **You** see only your own data. Every part of the app is limited to the signed-in user.
-- **The operator** runs the server and can access the data stored on it, including yours. The app's administration screens show account details (name, email, status, whether a key is set), never your key.
+- **The operator** runs the server and can access the data stored on it, including yours. The app's administration screens show account details (name, email, status, whether a key is set), which feeds you set up (yes or no), when data last arrived, your AI spend this month and counts of your stored days and reviews; never your key, tokens or sheet links.
 - **Nobody else.** Your data is not sold, shared with third parties or used for advertising.
 
 ## Your data feeds
@@ -28,6 +28,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 ## AI (Anthropic's Claude)
 
 - No AI is used for you until you add your own Claude API key in Settings, and then only for your own weekly review and Next program chat, billed to you by Anthropic.
+- The operator may instead let you use the operator's own key up to a monthly limit, after telling you by email. Your use then shows on the operator's administration screen as a dollar amount, and when the limit is reached the AI stops until the next month. Your own key, if you add one, is always used instead.
 - What is sent: computed summaries of your data (averages, changes, statuses, never raw exports) and your own notes for the week, under Anthropic's API terms.
 - The server needs to use your key while you are away (the weekly review is scheduled), so the server can decrypt it; it does so only for your own requests.
 
@@ -44,6 +45,7 @@ The operator's account also reads the operator's own Google Sheets and Drive fil
 ## Your choices
 
 - Remove your Claude key at any time in Settings.
+- The operator can pause your account: you can still sign in and see your data, but new data and AI stop until it is resumed.
 - Ask the operator to delete your account and all of your data (a delete button in the app is coming). Revoke the app's Google sign-in access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
 ## Not medical advice

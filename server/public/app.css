@@ -108,6 +108,11 @@ a.button { display: inline-block; padding: 8px 14px; border-radius: 8px; backgro
 .user-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 0; border-bottom: 1px solid var(--grid); }
 .user-row.pending { border-left: 3px solid var(--accent); padding-left: 10px; }
 .user-row .actions { margin: 0; }
+.user-row.paused { border-left: 3px solid var(--border); padding-left: 10px; }
+.user-facts { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.user-controls { flex: 1 1 240px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.owner-key-form { display: flex; flex-direction: column; gap: 6px; max-width: 360px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; }
+.owner-key-form p { margin: 0; }
 .home-settings .demo-toggle { margin: 0; }
 .home-settings .account { justify-content: space-between; flex-wrap: wrap; }
 .block { display: block; }

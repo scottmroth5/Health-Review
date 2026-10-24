@@ -30,7 +30,8 @@ import { localStamp } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
 import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, syncOwnerEmail, userByEmail, userByIngestToken } from '../db/users.js';
-import { createPendingUser, listUsers, setUserStatus } from './admin-queries.js';
+import { createPendingUser, listUsers, setMapsShared, setOwnerKey, setUserStatus } from './admin-queries.js';
+import { OWNER_KEY_CAP, clearCapNotice, spentThisMonth } from './ai-access.js';
 import { createMailer } from '../tools/mail.js';
 import { boxKey, seal } from '../tools/secret-box.js';
 import { addDefaultPromptSections } from '../agent/default-prompts.js';
@@ -307,13 +308,26 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
 
   // ---- Next program chat (computed training facts and the owner's notes go to Claude; see agent/advisor-chat.js) ----
-  // AI per user: the owner's key, a user's own key, or none (then no AI, and the screens say so).
-  const aiOn = (req) => (services.hasAi ? services.hasAi(uidOf(req)) : true);
+  // AI per user (server/ai-access.js): the owner's key, a user's own key, the owner's key under a monthly cap, or none
+  // (then no AI, and the screens say why: aiReason no_key, cap or paused).
+  const aiAccessOf = (req) => {
+    if (services.aiAccess) return services.aiAccess(uidOf(req));
+    const on = !services.hasAi || services.hasAi(uidOf(req));
+    return { source: on ? 'owner' : null, reason: on ? null : 'no_key' };
+  };
+  const aiOn = (req) => aiAccessOf(req).source !== null;
+  const aiReason = (req) => aiAccessOf(req).reason ?? null;
+  const NO_AI = {
+    no_key: 'No AI is used until you add your Claude API key in Settings',
+    cap: "This month's AI allowance is used up; add your own Claude API key in Settings to keep going",
+    paused: 'Your account is paused by the administrator',
+  };
+  const noAi = (reply, reason) => reply.code(503).send({ error: NO_AI[reason] ?? NO_AI.no_key, needsKey: true, aiReason: reason ?? 'no_key' });
+  const isPaused = (req) => getUser(store.db, uidOf(req))?.status === 'paused';
   const chatOn = (req) => features.chat !== false && typeof services.claude === 'function' && aiOn(req);
-  const needsKey = (req) => !aiOn(req);
-  const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, needsKey: { type: 'boolean' }, notes: { type: 'array', items: anyObject } } } };
+  const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, needsKey: { type: 'boolean' }, aiReason: { type: ['string', 'null'] }, notes: { type: 'array', items: anyObject } } } };
   app.get('/api/advisor/chat', { schema: { summary: 'The Next program chat thread, oldest first, and whether the chat is on', response: chatThread } },
-    async (req) => ({ enabled: chatOn(req), needsKey: needsKey(req), notes: listChat(db) }));
+    async (req) => { const reason = aiReason(req); return { enabled: chatOn(req), needsKey: reason !== null, aiReason: reason, notes: listChat(db) }; });
   let chatting = false;
   app.post('/api/advisor/chat', {
     schema: {
@@ -328,7 +342,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req, reply) => {
-    if (needsKey(req)) return reply.code(503).send({ error: 'No AI is used until you add your Claude API key in Settings', needsKey: true });
+    const reason = aiReason(req);
+    if (reason) return noAi(reply, reason);
     if (!chatOn(req)) return reply.code(503).send({ error: 'The chat is off in this instance' });
     if (!req.body.text.trim()) throw badRequest('text must not be blank');
     if (chatting) return reply.code(409).send({ error: 'A question is already being answered' });
@@ -452,6 +467,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     error: reviewRun.error,
     canRun: typeof services.review === 'function' && aiOn(req),
     needsKey: typeof services.review === 'function' && !aiOn(req),
+    aiReason: typeof services.review === 'function' ? aiReason(req) : null,
   });
 
   app.get('/api/reviews/status', {
@@ -466,7 +482,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     if (typeof services.review !== 'function') return reply.code(503).send({ error: 'Writing reviews is not available in this server' });
-    if (!aiOn(req)) return reply.code(503).send({ error: 'No AI is used until you add your Claude API key in Settings', needsKey: true });
+    if (!aiOn(req)) return noAi(reply, aiReason(req));
     if (reviewRun.running) return reply.code(409).send({ error: 'A review is already being written' });
     reviewRun.running = true;
     reviewRun.error = null;
@@ -500,6 +516,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // ---- sync ----
   app.post('/api/sync', { schema: { summary: 'Copy new rows from the Google Sheets now', response: { 200: anyObject } } }, async (req, reply) => {
     if (!services.sync) return reply.code(503).send({ error: 'Sync is not available in this server' });
+    if (isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
     if (syncing) return reply.code(409).send({ error: 'A sync is already running' });
     syncing = true;
     try {
@@ -740,11 +757,16 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const accountView = (req) => {
     const uid = uidOf(req);
     const u = getUser(store.db, uid);
+    const access = aiAccessOf(req);
     return {
-      email: u?.email ?? null, name: u?.name ?? req.userName ?? null, role: u?.role ?? 'user', owner: uid === OWNER_ID,
+      email: u?.email ?? null, name: u?.name ?? req.userName ?? null, role: u?.role ?? 'user', owner: uid === OWNER_ID, status: u?.status ?? 'approved',
       // Never the key: where it comes from and when it was saved.
       claudeKey: uid === OWNER_ID ? { source: 'server' } : u?.claude_key_enc ? { source: 'yours', setAt: u.claude_key_set_at } : null,
-      ai: aiOn(req),
+      ai: access.source !== null,
+      aiReason: access.reason ?? null,
+      // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
+      ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
+        ? { cap: u.owner_key_cap_usd, spent: Math.round(spentThisMonth(store.db, uid, clock()) * 100) / 100 } : null,
       feeds: feedsView(req, u),
     };
   };
@@ -830,23 +852,87 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     return accountView(req);
   });
 
-  // ---- user administration (admin only; the full screen is phase 4) ----
+  // ---- user administration (admin only, multi-user phase 4): account facts, never keys, tokens, sheet IDs or health data ----
+  // Checked on request, after sign-in and before body validation, so a non-admin learns nothing about these routes.
   const isAdmin = (req) => authMode !== 'demo' && (req.role === 'admin' || (authMode === 'none' && uidOf(req) === OWNER_ID));
   const adminOnly = async (req, reply) => { if (!isAdmin(req)) return reply.code(403).send({ error: 'Administrators only' }); };
-  app.get('/api/admin/users', { preHandler: adminOnly, schema: { summary: 'Every user (account facts only, never keys or health data), pending first', response: { 200: { type: 'array', items: anyObject } } } },
-    async () => listUsers(store.db));
+  app.get('/api/admin/users', { onRequest: adminOnly, schema: { summary: 'Every user (account facts only, never keys or health data), pending first', response: { 200: { type: 'array', items: anyObject } } } },
+    async () => listUsers(store.db, { now: clock() }));
   const userIdParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64 } } };
-  app.post('/api/admin/users/:id/approve', { preHandler: adminOnly, schema: { summary: 'Approve a user: they get in, start from the default prompt sections, and get an email', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
+  app.post('/api/admin/users/:id/approve', { onRequest: adminOnly, schema: { summary: 'Approve a user: they get in, start from the default prompt sections, and get an email', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
     const u = setUserStatus(store.db, req.params.id, 'approved');
     if (!u) return reply.code(404).send({ error: 'No such user' });
     addDefaultPromptSections(scopeDb(store.db, u.id));
     await mailer.send({ to: u.email, subject: "You're in: Health Review",
       text: `Your Health Review account is approved.\n\nOpen ${appUrl()} and sign in with this Google account. To use the AI weekly review and chat, add your own Claude API key in Settings (see https://docs.claude.com/en/api/getting-started). Everything else works without one.\n` });
-    return { ...u, claude_key_enc: undefined };
+    return adminUser(u.id);
   });
-  app.post('/api/admin/users/:id/reject', { preHandler: adminOnly, schema: { summary: 'Reject a pending user (or end access)', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
+  app.post('/api/admin/users/:id/reject', { onRequest: adminOnly, schema: { summary: 'Reject a pending user (or end access)', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
     const u = setUserStatus(store.db, req.params.id, 'rejected');
-    return u ? { ...u, claude_key_enc: undefined } : reply.code(404).send({ error: 'No such user' });
+    return u ? adminUser(u.id) : reply.code(404).send({ error: 'No such user' });
+  });
+  // One user as the Users screen lists them (the same facts as GET /api/admin/users).
+  const adminUser = (id) => listUsers(store.db, { now: clock() }).find((u) => u.id === id) ?? null;
+  // A user these switches may change: exists, not an administrator, and in one of the given statuses. Sends the refusal
+  // and returns null otherwise.
+  const changeable = (reply, id, statuses = ['approved', 'paused']) => {
+    const u = getUser(store.db, id);
+    const refuse = (code, error) => { reply.code(code).send({ error }); return null; };
+    if (!u) return refuse(404, 'No such user');
+    if (u.role === 'admin') return refuse(409, "An administrator's account is not changed here");
+    if (!statuses.includes(u.status)) return refuse(409, `Not for a ${u.status} user`);
+    return u;
+  };
+  // Pause: they can still sign in and see their data, but posts, syncs and AI stop. Resume turns them back on.
+  for (const [action, from, to] of [['pause', 'approved', 'paused'], ['resume', 'paused', 'approved']]) {
+    const summary = action === 'pause' ? 'Pause a user: posts, syncs, reviews and chat stop; they can still sign in and see their data' : 'Resume a paused user';
+    app.post(`/api/admin/users/:id/${action}`, { onRequest: adminOnly, schema: { summary, params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
+      if (!changeable(reply, req.params.id, [from])) return reply;
+      setUserStatus(store.db, req.params.id, to);
+      log.info(`[users] a user was ${to === 'paused' ? 'paused' : 'resumed'}`);
+      return adminUser(req.params.id);
+    });
+  }
+  // The administrator's Claude key for a user without their own: turned on only with their email typed to confirm and a
+  // monthly cap in dollars; off in one step. The user gets an email either way.
+  app.post('/api/admin/users/:id/owner-key', {
+    onRequest: adminOnly,
+    schema: {
+      summary: "Pay for a user's AI with your Claude key up to a monthly cap (confirm with their email), or stop",
+      params: userIdParams,
+      body: { type: 'object', additionalProperties: false, required: ['on'], properties: {
+        on: { type: 'boolean' }, cap: { type: 'number', minimum: OWNER_KEY_CAP.min, maximum: OWNER_KEY_CAP.max }, confirmEmail: { type: 'string', maxLength: 320 } } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => {
+    const u = changeable(reply, req.params.id);
+    if (!u) return reply;
+    const { on, confirmEmail } = req.body;
+    const cap = req.body.cap === undefined ? null : Math.round(req.body.cap * 100) / 100;
+    if (on) {
+      if (cap === null) throw badRequest(`A monthly cap from $${OWNER_KEY_CAP.min} to $${OWNER_KEY_CAP.max} is required`);
+      if (String(confirmEmail ?? '').trim().toLowerCase() !== u.email) throw badRequest("Type the user's email exactly to confirm");
+    }
+    setOwnerKey(store.db, u.id, { on, cap: on ? cap : null });
+    clearCapNotice(store.db, u.id);
+    log.info(`[users] the owner's key was turned ${on ? 'on' : 'off'} for a user`);
+    await mailer.send({ to: u.email, subject: on ? 'Health Review: AI turned on for you' : 'Health Review: AI allowance ended',
+      text: on ? `The administrator turned on the AI weekly review and chat for you, up to $${cap.toFixed(2)} a month. Open ${appUrl()} to use them. If you add your own Claude API key in Settings, it is used instead.\n`
+        : `The administrator's AI allowance for you has ended. To keep using the AI weekly review and chat, add your own Claude API key in Settings at ${appUrl()}.\n` });
+    return adminUser(u.id);
+  });
+  // Share the owner's MAPS catalog (family): their Advisor, phases and called-for comparisons use it; only computed facts
+  // reach them, never the catalog's text.
+  app.post('/api/admin/users/:id/maps', {
+    onRequest: adminOnly,
+    schema: { summary: 'Share your MAPS program catalog with a user, or stop', params: userIdParams,
+      body: { type: 'object', additionalProperties: false, required: ['shared'], properties: { shared: { type: 'boolean' } } }, response: { 200: anyObject } },
+  }, async (req, reply) => {
+    const u = changeable(reply, req.params.id);
+    if (!u) return reply;
+    setMapsShared(store.db, u.id, req.body.shared);
+    log.info(`[users] the MAPS catalog was ${req.body.shared ? 'shared with' : 'unshared from'} a user`);
+    return adminUser(u.id);
   });
 
   app.put('/api/profile', {

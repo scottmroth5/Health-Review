@@ -294,7 +294,8 @@ async function loadAccount() {
     const pending = users.filter((u) => u.status === 'pending').length;
     setHomeBadge('users', pending ? `${pending} waiting` : '');
   }
-  setHomeBadge('settings', account && !account.ai && !demo ? 'Add key' : '');
+  setHomeBadge('settings', account && !account.ai && account.aiReason === 'no_key' && !demo ? 'Add key' : '');
+  $('#paused-note').hidden = account?.status !== 'paused';
   if (me?.authMode !== 'google' || !me.email) return;
   $('#account-name').textContent = `(${me.name || me.email.split('@')[0]})`;
   $('#account-name').hidden = false;
@@ -352,7 +353,10 @@ function setHomeBadge(name, text) {
 }
 
 // ---------------- settings and users (multi-user, phase 2) ----------------
-const NO_KEY_NOTE = () => h('span', {}, 'No AI is used until you add your Claude API key in ', h('a', { href: '#settings' }, 'Settings'), '.');
+/** Why there is no AI for this user (aiReason from the API): no key, the administrator's monthly allowance used up, or paused. */
+const NO_KEY_NOTE = (reason = 'no_key') => (reason === 'paused' ? h('span', {}, 'Your account is paused by the administrator, so no AI is used.')
+  : reason === 'cap' ? h('span', {}, "This month's AI allowance is used up. Add your own Claude API key in ", h('a', { href: '#settings' }, 'Settings'), ' to keep going.')
+  : h('span', {}, 'No AI is used until you add your Claude API key in ', h('a', { href: '#settings' }, 'Settings'), '.'));
 
 /** Settings: the signed-in user's Claude key (never shown; only whether it is set) and account. */
 async function loadSettingsView() {
@@ -368,6 +372,7 @@ async function loadSettingsView() {
     form.hidden = true;
   } else {
     status.textContent = a.claudeKey ? `Key saved on ${new Date(a.claudeKey.setAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}. Enter a new one to replace it.`
+      : a.ownerKey ? `The administrator covers your AI up to ${money(a.ownerKey.cap)} a month (${money(a.ownerKey.spent)} used this month)${a.aiReason === 'cap' ? ': used up until next month' : ''}. Add your own key to use it instead.`
       : 'No key yet: no AI is used. Add your key to turn on the weekly review and the Next program chat.';
     form.hidden = false;
     $('#claude-key-remove').hidden = !a.claudeKey;
@@ -434,25 +439,84 @@ function renderFeeds(a, shownToken = null) {
   if (!f.chosen.manual && !f.fromServer) return;
 }
 
-/** Users (administrators): pending requests first, with Approve and Reject; account facts only. */
+const money = (n) => `$${Number(n ?? 0).toFixed(2)}`;
+const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'never');
+const USER_DONE = { approve: 'approved, and an email is on its way', reject: 'access ended', pause: 'paused', resume: 'resumed' };
+
+/** One user's AI line on the Users screen: their own key, the administrator's key with this month's spend, or none. */
+function userAiLine(u) {
+  if (u.role === 'admin') return `AI: your server key, ${money(u.spent_month)} this month`;
+  if (u.has_key) return `AI: their own key${u.spent_month ? `, ${money(u.spent_month)} this month` : ''}`;
+  if (u.uses_owner_key) return `AI: your key, ${money(u.spent_month)} of ${money(u.owner_key_cap_usd)} this month${u.spent_month >= u.owner_key_cap_usd ? ' (cap reached)' : ''}`;
+  return 'AI: none (no key)';
+}
+
+/** One user's feeds line: what they chose and whether each is set up (yes or no only; never a token or sheet link). */
+function userFeedsLine(u) {
+  if (u.role === 'admin') return "Feeds: the server's settings";
+  const parts = [];
+  if (u.feeds.appleHealth) parts.push(`Apple Health ${u.has_token ? `token set, last post ${shortDate(u.last_post)}` : 'no token yet'}`);
+  if (u.feeds.workoutLog) parts.push(`Workout Log ${!u.google_connected ? 'not connected' : u.sheet_set ? `connected, last sync ${shortDate(u.last_sync)}` : 'connected, no sheet chosen'}`);
+  if (u.feeds.manual) parts.push('entered in the app');
+  return `Feeds: ${parts.join('; ') || 'none chosen'}`;
+}
+
+/** "Use my Claude key" for one user: their email typed to confirm and a monthly cap; off is one tap. */
+function ownerKeyControl(u, run, done) {
+  if (u.has_key) return h('p', { class: 'muted small' }, 'They use their own Claude key.');
+  if (u.uses_owner_key) {
+    return h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: run(async () => {
+      if (!confirm(`Stop paying for ${u.email}'s AI? Their review and chat stop until they add their own key.`)) return;
+      done(await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/owner-key`, { on: false }), 'no longer on your key');
+    }) }, 'Stop using my key'));
+  }
+  const form = h('form', { class: 'owner-key-form', hidden: true, onsubmit: run(async (e) => {
+    const el = e.target.elements;
+    done(await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/owner-key`, { on: true, cap: Number(el.cap.value), confirmEmail: el.confirm.value.trim() }), 'now on your key');
+  }) },
+  h('p', { class: 'small' }, `You pay for ${u.name || u.email}'s weekly review and chat on your Claude key, up to the cap each month. At the cap their AI stops and you both get an email. Their own key, if they add one, is used instead.`),
+  h('label', {}, 'Monthly cap (dollars)', h('input', { name: 'cap', type: 'number', min: '1', max: '100', step: '1', value: '10', required: true })),
+  h('label', {}, `Type ${u.email} to confirm`, h('input', { name: 'confirm', type: 'email', autocomplete: 'off', required: true })),
+  h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Use my key'), h('button', { type: 'button', class: 'ghost', onclick: () => { form.hidden = true; } }, 'Cancel')));
+  return h('div', {}, h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: () => { form.hidden = false; form.elements.cap.focus(); } }, 'Use my Claude key')), form);
+}
+
+/** Users (administrators): pending requests first; each user's status, feeds, AI and counts, with the account switches. */
 async function loadUsers() {
   const users = await api('GET', '/api/admin/users');
-  const act = (u, action) => async () => {
-    try {
-      await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/${action}`);
-      $('#users-status').textContent = `${u.email}: ${action === 'approve' ? 'approved, and an email is on its way' : 'rejected'}.`;
-      loadUsers();
-      loadAccount();
-    } catch (err) {
-      $('#users-status').textContent = err.message;
-    }
+  const say = (text) => { $('#users-status').textContent = text; };
+  const done = (u, what) => { say(`${u.email}: ${what}.`); loadUsers(); loadAccount(); };
+  const run = (fn) => async (...args) => {
+    if (args[0]?.type === 'submit') args[0].preventDefault();
+    try { await fn(...args); } catch (err) { say(err.message); }
   };
-  fill($('#users-list'), users.length ? users.map((u) => h('div', { class: `user-row ${u.status}` },
-    h('div', {}, h('strong', {}, u.name || u.email), u.name ? h('span', { class: 'muted small' }, ` ${u.email}`) : null,
-      h('div', { class: 'muted small' }, `${u.role === 'admin' ? 'Administrator' : u.status[0].toUpperCase() + u.status.slice(1)} since ${new Date(u.approved_at ?? u.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}${u.role === 'admin' ? '' : u.has_key ? ' · Claude key set' : ' · no Claude key'}`)),
-    u.role === 'admin' ? null : h('div', { class: 'actions' },
-      u.status !== 'approved' ? h('button', { type: 'button', onclick: act(u, 'approve') }, 'Approve') : null,
-      u.status !== 'rejected' ? h('button', { type: 'button', class: 'ghost danger', onclick: act(u, 'reject') }, u.status === 'pending' ? 'Reject' : 'End access') : null))) : [h('p', { class: 'muted' }, 'No users yet.')]);
+  const act = (u, action) => run(async () => {
+    if (action === 'reject' && u.status !== 'pending' && !confirm(`End access for ${u.email}? They can no longer sign in. Their data stays.`)) return;
+    done(await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/${action}`), USER_DONE[action]);
+  });
+  const card = (u) => {
+    const admin = u.role === 'admin';
+    const active = u.status === 'approved' || u.status === 'paused';
+    const statusName = admin ? 'Administrator' : u.status[0].toUpperCase() + u.status.slice(1);
+    return h('div', { class: `user-row ${u.status}` },
+      h('div', { class: 'user-facts' },
+        h('strong', {}, u.name || u.email), u.name ? h('span', { class: 'muted small' }, ` ${u.email}`) : null,
+        h('div', { class: 'muted small' }, `${statusName} · joined ${shortDate(u.created_at)} · last seen ${shortDate(u.last_seen_at)}`),
+        u.status === 'pending' ? null : h('div', { class: 'small' }, userFeedsLine(u)),
+        u.status === 'pending' ? null : h('div', { class: 'small' }, userAiLine(u)),
+        u.status === 'pending' ? null : h('div', { class: 'muted small' }, `Data: ${u.health_days} health days, ${u.lifting_days} lifting days, ${u.reviews} reviews${!admin && u.maps_shared ? ' · MAPS catalog shared' : ''}`)),
+      admin ? null : h('div', { class: 'user-controls' },
+        active ? ownerKeyControl(u, run, done) : null,
+        active ? h('label', { class: 'feed-choice small' }, h('input', { type: 'checkbox', checked: u.maps_shared, onchange: run(async (e) => {
+          done(await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/maps`, { shared: e.target.checked }), e.target.checked ? 'MAPS catalog shared' : 'MAPS catalog no longer shared');
+        }) }), ' Share my MAPS catalog') : null,
+        h('div', { class: 'actions' },
+          u.status === 'pending' || u.status === 'rejected' ? h('button', { type: 'button', onclick: act(u, 'approve') }, 'Approve') : null,
+          u.status === 'approved' ? h('button', { type: 'button', class: 'ghost', onclick: act(u, 'pause') }, 'Pause') : null,
+          u.status === 'paused' ? h('button', { type: 'button', onclick: act(u, 'resume') }, 'Resume') : null,
+          u.status !== 'rejected' ? h('button', { type: 'button', class: 'ghost danger', onclick: act(u, 'reject') }, u.status === 'pending' ? 'Reject' : 'End access') : null)));
+  };
+  fill($('#users-list'), users.length ? users.map(card) : [h('p', { class: 'muted' }, 'No users yet.')]);
 }
 
 /** The Home settings card holds Demo mode and the account; it is hidden when neither shows (the demo instance). */
@@ -1667,12 +1731,12 @@ function chatEntry(n) {
 }
 
 async function loadChat() {
-  const { enabled, needsKey, notes } = await api('GET', '/api/advisor/chat');
+  const { enabled, needsKey, aiReason, notes } = await api('GET', '/api/advisor/chat');
   fill($('#chat-thread'), notes.map(chatEntry));
   $('#chat-clear').hidden = !notes.length;
   const form = $('#chat-form');
   for (const el of form.elements) el.disabled = !enabled;
-  if (needsKey) fill($('#chat-status'), [NO_KEY_NOTE()]);
+  if (needsKey) fill($('#chat-status'), [NO_KEY_NOTE(aiReason)]);
   else if (!enabled) $('#chat-status').textContent = 'The chat is off in this instance.';
 }
 
@@ -1837,7 +1901,7 @@ async function loadReviewNotice() {
   if (s.needsKey) {
     for (const node of document.querySelectorAll('[data-review-notice]')) {
       node.hidden = currentView !== 'reviews';
-      fill(node, [h('p', {}, NO_KEY_NOTE())]);
+      fill(node, [h('p', {}, NO_KEY_NOTE(s.aiReason))]);
     }
     setHomeBadge('reviews', '');
     return;

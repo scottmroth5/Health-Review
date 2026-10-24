@@ -62,7 +62,11 @@ what is running.
 **Other people (multi-user).** Anyone can sign in with Google and **request access**; you get an email and approve or
 reject them on the **Users** tile (Home). An approved user starts with the default prompt sections and **no AI** until
 they add their own Claude API key in **Settings** (stored encrypted, never shown again, not even to you; they pay
-Anthropic for their own use). They see only their own data. Each user sets up their own feeds in **Settings, Data feeds**:
+Anthropic for their own use), or you let them use yours: **Use my Claude key** on their card, with their email typed to
+confirm and a monthly cap ($1 to $100). At the cap their AI stops until next month and you both get an email. Each card
+also shows their feeds (set up or not, never a token or sheet link), last post and sync, AI spend this month and counts of
+their data, with **Share my MAPS catalog** (for family), **Pause** (they can still sign in and look, but posts, syncs and
+AI stop) and **End access**. They see only their own data. Each user sets up their own feeds in **Settings, Data feeds**:
 a Health Auto Export token of their own (their posts land in their account), and their own Workout Log through Google
 Sheets (read-only permission they grant), with step-by-step guides at `/guides`. The server needs `USER_KEY_SECRET`, `SMTP_USER` and
 `SMTP_APP_PASSWORD` (`deploy/cloud.env.example`), and the Google OAuth consent screen set to In production.
