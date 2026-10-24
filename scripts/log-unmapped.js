@@ -7,7 +7,7 @@
 //   npm run log:unmapped -- --accept data/exercise-proposals.json   add the proposals you kept to the dictionary
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { canonicalSetCounts, unmappedNames } from '../ingest/normalize.js';
 import { typoCandidates } from '../metrics/name-typos.js';
 import { DICTIONARY_PATH, createDictionary, loadDictionary } from '../metrics/dictionary.js';
@@ -31,7 +31,7 @@ if (process.argv.includes('--accept')) {
   process.exit(0);
 }
 
-const store = openHealthStore();
+const store = openOwnerStore();
 let groups;
 let typos = 0;
 try {

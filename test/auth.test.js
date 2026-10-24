@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { assertSafeBinding, authSettings, CALLBACK_PATH, DEMO_REFUSAL, SESSION_DAYS } from '../server/auth.js';
 
@@ -18,7 +18,7 @@ const settings = authSettings({
 });
 
 async function setup({ claims = {}, exchangeError = null, now } = {}) {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const seen = [];
   let currentNonce = null;
   const exchange = async (req) => {
@@ -129,7 +129,7 @@ test('a session expires after its days; removing an address locks it out at once
 
   settings.allowed.splice(settings.allowed.indexOf('pat@example.com'), 1);
   assert.equal(await status(), 401, 'no longer allowed');
-  settings.allowed.push('pat@example.com');
+  settings.allowed.unshift('pat@example.com'); // back first: the first allowed address is the owner
 
   const forged = `hr_session=${Buffer.from(JSON.stringify({ email: 'pat@example.com', exp: Date.now() + 1e9 })).toString('base64url')}.AAAA`;
   assert.equal((await app.inject({ url: '/api/status', headers: { cookie: forged } })).statusCode, 401);
@@ -163,7 +163,7 @@ test('binding rules: none stays on localhost; google needs complete settings and
 });
 
 test('demo mode refuses every route that would change data, generated from the route table; reads work without sign-in', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, authMode: 'demo', instance: 'demo', features: { chat: false } });
   await app.ready();
   const fill = (url) => url.replace(/:date/g, '2026-03-02').replace(/:metric/g, 'steps').replace(/:[a-z]+/gi, '1');
@@ -183,7 +183,7 @@ test('demo mode refuses every route that would change data, generated from the r
 });
 
 test('open local mode: no login, only localhost; security headers on every response', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const app = await buildApp({ store });
   assert.deepEqual((await app.inject('/api/me')).json(), { authMode: 'none', email: null, name: null });
   const res = await app.inject('/api/status');

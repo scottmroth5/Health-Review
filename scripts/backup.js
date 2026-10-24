@@ -5,7 +5,7 @@
 //   npm run backup                          back up now and upload
 //   npm run backup -- --to E:\HealthBackups  write the encrypted file to a folder (e.g. a USB drive), no upload
 //   npm run backup -- --check-passphrase    check HEALTH_BACKUP_PASSPHRASE in .env, then stop
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { checkPassphrase } from '../tools/backup/crypto.js';
 import { backupJob } from '../jobs/backup.js';
 
@@ -18,7 +18,7 @@ async function main() {
     return;
   }
   const toDir = arg('--to');
-  const store = openHealthStore();
+  const store = openOwnerStore();
   try {
     const r = await backupJob({ store, toDir });
     const kb = Math.round(r.bytes / 1024).toLocaleString();

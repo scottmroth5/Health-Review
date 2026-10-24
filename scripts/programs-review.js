@@ -7,7 +7,7 @@
 //   npm run programs:review -- merge <id> <id>        the second block joins the first
 //   npm run programs:review -- split <id> <date>      sessions from <date> on become a new block
 //   npm run programs:review -- unassign <date> [<to date>]
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import {
   ReviewError, blockStatus, confirmBlocks, editBlock, listBlocks, mergeBlocks, refreshPhases, sessionCoverage, splitBlock, unassignDays,
 } from '../ingest/program-blocks.js';
@@ -24,7 +24,7 @@ for (let i = 0; i < rest.length; i++) {
 
 const today = localDate();
 const opts = { today };
-const store = openHealthStore();
+const store = openOwnerStore();
 const db = store.db;
 const catalog = loadCatalog();
 const shortDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });

@@ -9,7 +9,7 @@
 // Without --force, a week with any day missing from Apple Health (or a likely partial export) is skipped: nothing is
 // sent, a 'skipped' review run is recorded with the dates, and the Reviews tab offers a manual run. The same job runs in
 // the server on SCHEDULE_REVIEW (jobs/review.js). REVIEW_MODEL and REVIEW_EFFORT in .env override the defaults.
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { addDays, lastWeekEnd } from '../metrics/stats.js';
 import { isValidDate, localDate, reviewStatus } from '../server/queries.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
@@ -32,7 +32,7 @@ const gapsText = (missing, partial) => [
 
 async function main() {
   if (!isValidDate(weekEnd)) throw new Error(`Not a date: ${weekEnd}. Use --week YYYY-MM-DD.`);
-  const store = openHealthStore();
+  const store = openOwnerStore();
   try {
     if (flag('--dry-run')) {
       const gate = reviewStatus(store.db, weekArg >= 0 ? addDays(weekEnd, 1) : today);

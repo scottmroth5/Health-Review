@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { spend } from '../server/queries.js';
 
@@ -14,7 +14,7 @@ const TODAY = new Date(2026, 9, 13, 12, 0);
 const price = (model, usage) => (model === 'fake-model' ? usage.input_tokens / 1000 : null);
 
 function addRun(db, name, startedAt, cost) {
-  db.prepare("INSERT INTO runs (name, status, started_at, cost_usd) VALUES (?, 'ok', ?, ?)").run(name, startedAt, cost);
+  db.prepare("INSERT INTO runs (user_id, name, status, started_at, cost_usd) VALUES (@uid, ?, 'ok', ?, ?)").run(name, startedAt, cost);
 }
 
 function evalFolder() {
@@ -33,7 +33,7 @@ function evalFolder() {
 }
 
 test('spend: runs by kind, month and year, plus evals dated by their results file', () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const { db } = store;
   addRun(db, 'review', '2026-10-04T12:00:00.000Z', 0.3);
   addRun(db, 'review', '2026-10-11T12:00:00.000Z', 0.32);
@@ -59,7 +59,7 @@ test('spend: runs by kind, month and year, plus evals dated by their results fil
 });
 
 test('spend: no eval folder (the demo) counts runs only, and an empty database is all zeros', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, clock: () => TODAY, instance: 'demo' });
   const s = (await app.inject('/api/spend')).json();
   assert.equal(s.allTime, 0);
@@ -70,7 +70,7 @@ test('spend: no eval folder (the demo) counts runs only, and an empty database i
 });
 
 test('api: /api/spend reads the eval folder the server was given', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   addRun(store.db, 'review', '2026-10-04T12:00:00.000Z', 0.3);
   const dir = evalFolder();
   const app = await buildApp({ store, clock: () => TODAY, evalDir: dir, price });

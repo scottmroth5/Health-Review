@@ -46,6 +46,8 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import Anthropic from '@anthropic-ai/sdk';
 import { openHealthStore } from '../db/store.js';
+import { scopeDb } from '../db/scope.js';
+import { OWNER_ID } from '../db/users.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL } from '../agent/claude.js';
 import { prepareReview, runReview } from '../agent/review.js';
 import { countWords } from '../agent/validate.js';
@@ -72,25 +74,26 @@ function caseStore(input) {
     snapshot[18] = 1;
     snapshot[19] = 1;
   }
-  const db = new Database(snapshot);
+  // The owner's weeks: every query on the copy is scoped to user 1 (db/scope.js).
+  const db = scopeDb(new Database(snapshot), OWNER_ID);
   db.pragma('foreign_keys = ON');
   const o = input.overlay ?? {};
   if (o.checkinNote) {
-    db.prepare(`INSERT INTO checkins (date, cadence, notes, source, updated_at) VALUES (?, 'daily', ?, 'ui', 'eval')
-      ON CONFLICT (date) DO UPDATE SET notes = excluded.notes`).run(o.checkinNote.date, o.checkinNote.text);
+    db.prepare(`INSERT INTO checkins (user_id, date, cadence, notes, source, updated_at) VALUES (@uid, ?, 'daily', ?, 'ui', 'eval')
+      ON CONFLICT (user_id, date) DO UPDATE SET notes = excluded.notes`).run(o.checkinNote.date, o.checkinNote.text);
   }
   if (o.labDraw) {
     for (const r of o.labDraw.results) {
-      let id = db.prepare('SELECT id FROM lab_tests WHERE name = ?').get(r.test)?.id;
-      id ??= db.prepare("INSERT INTO lab_tests (name, created_at) VALUES (?, 'eval')").run(r.test).lastInsertRowid;
-      db.prepare(`INSERT INTO lab_results (test_id, drawn_on, value, value_text, source, updated_at) VALUES (?, ?, ?, ?, 'ui', 'eval')
+      let id = db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?').get(r.test)?.id;
+      id ??= db.prepare("INSERT INTO lab_tests (user_id, name, created_at) VALUES (@uid, ?, 'eval')").run(r.test).lastInsertRowid;
+      db.prepare(`INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', 'eval')
         ON CONFLICT (test_id, drawn_on) DO UPDATE SET value = excluded.value, value_text = excluded.value_text`)
         .run(id, o.labDraw.date, Number(r.value), r.value);
     }
   }
   if (o.medicationChange) {
-    const med = db.prepare(`SELECT m.id, p.timings FROM medications m JOIN medication_periods p ON p.medication_id = m.id
-      WHERE m.kind = 'medication' AND p.stopped_on IS NULL AND p.started_on < ? ORDER BY m.name LIMIT 1`).get(o.medicationChange.date);
+    const med = db.prepare(`SELECT m.id, p.timings FROM medications m JOIN medication_periods p ON p.medication_id = m.id AND p.user_id = m.user_id
+      WHERE m.user_id = @uid AND m.kind = 'medication' AND p.stopped_on IS NULL AND p.started_on < ? ORDER BY m.name LIMIT 1`).get(o.medicationChange.date);
     if (!med) throw Object.assign(new Error('no current prescription medication to change'), { failure_class: 'harness' });
     changeMedication(db, med.id, { dose: o.medicationChange.dose, timings: JSON.parse(med.timings), effective_on: o.medicationChange.date });
   }
@@ -124,7 +127,7 @@ async function runCase(input, ctx) {
       store, claude: createReviewClaude({ client: recording }), weekEnd: input.weekEnd, today,
       model: ctx.model ?? DEFAULT_REVIEW_MODEL, logger: quiet,
     });
-    const saved = store.db.prepare('SELECT report_md, warnings FROM reviews WHERE week_ending = ?').get(input.weekEnd);
+    const saved = store.db.prepare('SELECT report_md, warnings FROM reviews WHERE user_id = @uid AND week_ending = ?').get(input.weekEnd);
     const drafts = calls.map((c) => draftOf(c.response));
     const transcript = [{ role: 'system', content: calls[0].params.system[0].text }];
     calls.forEach((c, i) => {

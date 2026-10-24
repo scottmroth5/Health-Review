@@ -88,22 +88,9 @@ export function schedulesFromEnv(env = process.env) {
 }
 
 /**
- * When a job of this name last started (from the runs table), and whether one is marked running right now (started in
- * the last 30 minutes, so a crashed run never blocks the job for good).
- */
-export function runsLookup(db) {
-  const last = db.prepare('SELECT started_at FROM runs WHERE name = ? ORDER BY id DESC LIMIT 1').pluck();
-  const running = db.prepare("SELECT 1 FROM runs WHERE name = ? AND status = 'running' AND started_at >= ? LIMIT 1").pluck();
-  return {
-    lastRanAt: (name) => last.get(name) ?? null,
-    isRunning: (name, now = new Date()) => Boolean(running.get(name, new Date(now.getTime() - RUNNING_STALE_MINUTES * 60_000).toISOString())),
-  };
-}
-
-/**
  * @param {object} o
  * @param {Array<{ name: string, schedule: object, run: () => Promise<void> }>} o.jobs  run resolves when the job is done
- * @param {{ lastRanAt: (name) => string|null, isRunning: (name, now) => boolean }} o.runs  runsLookup(db)
+ * @param {{ lastRanAt: (name) => string|null, isRunning: (name, now) => boolean }} o.runs  jobRunsLookup(db) (server/admin-queries.js)
  * @param {() => Date} [o.now]
  * @param {string} [o.tz]
  * @param {{ info: Function, warn: Function }} [o.log]

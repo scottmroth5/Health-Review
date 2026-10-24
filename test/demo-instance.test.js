@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { buildDemoDatabase, refreshDemoDatabase, demoBuiltFor, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } from '../demo/generate.js';
 import { zonedInstant } from '../tools/time.js';
@@ -13,7 +13,7 @@ const dir = mkdtempSync(join(tmpdir(), 'health-demo-'));
 
 /** Values that change if the generated data changes (ids from block detection are random, so they are left out). */
 function fingerprint(path) {
-  const store = openHealthStore(path);
+  const store = openOwnerStore(path);
   const one = (sql) => store.db.prepare(sql).pluck().get();
   const out = {
     days: one('SELECT COUNT(*) FROM daily_metrics'), steps: one('SELECT SUM(steps) FROM daily_metrics'),
@@ -39,7 +39,7 @@ test('demo data: the same seed and day give the same data; every exercise maps; 
 });
 
 test('demo instance: reports itself, refuses sync and chat, shows only its own runs, ranks the made-up programs', async () => {
-  const store = openHealthStore(join(dir, 'a.db'));
+  const store = openOwnerStore(join(dir, 'a.db'));
   const app = await buildApp({ store, clock: () => new Date(2026, 9, 7, 12), instance: 'demo', features: { chat: false },
     catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')) });
   const status = (await app.inject('/api/status')).json();
@@ -73,7 +73,7 @@ test('demo refresh: made again in place equals a fresh build, and moves forward 
   try {
     buildDemoDatabase({ path: join(own, 'fresh.db'), today: '2026-10-08' });
     buildDemoDatabase({ path: join(own, 'old.db'), today: TODAY });
-    const store = openHealthStore(join(own, 'old.db'));
+    const store = openOwnerStore(join(own, 'old.db'));
     assert.equal(demoBuiltFor(store), TODAY);
     refreshDemoDatabase(store, { today: '2026-10-08' });
     assert.equal(demoBuiltFor(store), '2026-10-08');
@@ -91,7 +91,7 @@ test('demo refresh: made again in place equals a fresh build, and moves forward 
 
 test('demo clock: pinned to the build day, the demo shows that day as today and no "data stopped" check', async () => {
   const own = mkdtempSync(join(tmpdir(), 'health-demo-clock-'));
-  const store = openHealthStore(join(own, 'd.db'));
+  const store = openOwnerStore(join(own, 'd.db'));
   try {
     refreshDemoDatabase(store, { today: TODAY });
     const app = await buildApp({ store, clock: () => zonedInstant(demoBuiltFor(store), 12, 0), instance: 'demo', authMode: 'demo',

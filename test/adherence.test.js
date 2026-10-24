@@ -2,7 +2,7 @@
 // comparison is pinned by evals/fixtures/metrics/adherence.json).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { createCatalog } from '../metrics/catalog.js';
 import { createDictionary } from '../metrics/dictionary.js';
@@ -38,18 +38,18 @@ const TODAY = new Date(2026, 2, 9, 12, 0);
 
 function seed(db) {
   const now = new Date().toISOString();
-  const block = db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
-    VALUES (?, 'MAPS Symmetry', ?, ?, ?, 'confirmed', ?, ?)`);
+  const block = db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+    VALUES (@uid, ?, 'MAPS Symmetry', ?, ?, ?, 'confirmed', ?, ?)`);
   block.run('b-old', '2026-01-05', '2026-01-20', 'completed', now, now);
   block.run('b-now', '2026-03-02', null, 'in_progress', now, now);
-  const session = db.prepare(`INSERT INTO log_sessions (id, date, block_id, assignment, program, week, source, updated_at, phase)
-    VALUES (?, ?, ?, 'block', 'MAPS Symmetry', ?, 'forward', ?, 'Phase 1')`);
+  const session = db.prepare(`INSERT INTO log_sessions (user_id, id, date, block_id, assignment, program, week, source, updated_at, phase)
+    VALUES (@uid, ?, ?, ?, 'block', 'MAPS Symmetry', ?, 'forward', ?, 'Phase 1')`);
   session.run('s1', '2026-03-02', 'b-now', 1, now);
   session.run('s2', '2026-03-12', 'b-now', 2, now); // after today: left out
   session.run('s3', '2026-01-06', 'b-old', 1, now);
-  const ex = db.prepare(`INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise, canonical_id, implement, movement_pattern)
-    VALUES (2026, ?, ?, ?, ?, ?, ?, ?)`);
-  const set = db.prepare('INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, reps) VALUES (?, ?, 100, ?)');
+  const ex = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, canonical_id, implement, movement_pattern)
+    VALUES (@uid, 2026, ?, ?, ?, ?, ?, ?, ?)`);
+  const set = db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps) VALUES (@uid, ?, ?, 100, ?)');
   const add = (row, date, workout, name, id, implement, pattern, reps) => {
     const { lastInsertRowid } = ex.run(row, date, workout, name, id, implement, pattern);
     reps.forEach((r, i) => set.run(lastInsertRowid, i + 1, r));
@@ -61,7 +61,7 @@ function seed(db) {
 }
 
 test('api: called for vs logged for the block in progress by default, another block by id', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   seed(store.db);
   const app = await buildApp({ store, clock: () => TODAY, catalog, dictionary, substitutions: { swaps: [] } });
 
@@ -85,7 +85,7 @@ test('api: called for vs logged for the block in progress by default, another bl
 });
 
 test('api: called for vs logged without a catalog, and with no confirmed block', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const none = await buildApp({ store, clock: () => TODAY, catalog: null });
   assert.deepEqual((await none.inject('/api/program/adherence')).json(), { available: false });
   await none.close();

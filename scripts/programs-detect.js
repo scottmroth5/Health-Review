@@ -1,7 +1,7 @@
 // Proposes program blocks from the Workout Log history. Prints programs, dates and session counts only.
 //   npm run programs:detect              show the proposal
 //   npm run programs:detect -- --write   save it (replaces earlier detected blocks; confirmed ones are kept)
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { detect, writeDetected, sessionCoverage, refreshPhases } from '../ingest/program-blocks.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { weekOf } from '../metrics/blocks.js';
@@ -9,7 +9,7 @@ import { localDate } from '../server/queries.js';
 
 const write = process.argv.includes('--write');
 const today = localDate();
-const store = openHealthStore();
+const store = openOwnerStore();
 try {
   const d = detect(store.db, today);
   console.log(`${d.blocks.length} blocks detected (lifting days already in confirmed blocks are left out):\n`);

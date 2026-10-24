@@ -2,13 +2,13 @@
 // live database by row count, then deletes it. Prints counts only. Monthly in the server on SCHEDULE_RESTORE_TEST.
 //   npm run backup:test                          the newest backup in Google Drive
 //   npm run backup:test -- --file E:\HealthBackups\health-2026-10-05.hrbk
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { restoreTestJob } from '../jobs/restore-check.js';
 
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };
 
 async function main() {
-  const store = openHealthStore();
+  const store = openOwnerStore();
   try {
     const r = await restoreTestJob({ store, fromFile: arg('--file') });
     console.log(`${r.ok ? 'Passed' : 'FAILED'}: ${r.file} decrypted and passed its integrity check; ${r.tables} tables, `

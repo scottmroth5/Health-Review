@@ -11,9 +11,9 @@ import { HEALTH_METRIC_COLUMNS, mergeHealthDays } from './parsers.js';
 /** Upsert of one daily_metrics row; a column the record lacks keeps its stored value. */
 export function upsertDailyMetrics(db, stamp) {
   const cols = HEALTH_METRIC_COLUMNS;
-  const stmt = db.prepare(`INSERT INTO daily_metrics (date, ${cols.join(', ')}, updated_at)
-    VALUES (@date, ${cols.map((c) => `@${c}`).join(', ')}, @updated_at)
-    ON CONFLICT (date) DO UPDATE SET ${cols.map((c) => `${c} = COALESCE(excluded.${c}, daily_metrics.${c})`).join(', ')},
+  const stmt = db.prepare(`INSERT INTO daily_metrics (user_id, date, ${cols.join(', ')}, updated_at)
+    VALUES (@uid, @date, ${cols.map((c) => `@${c}`).join(', ')}, @updated_at)
+    ON CONFLICT (user_id, date) DO UPDATE SET ${cols.map((c) => `${c} = COALESCE(excluded.${c}, daily_metrics.${c})`).join(', ')},
       updated_at = excluded.updated_at`);
   return (r) => stmt.run({ ...Object.fromEntries(cols.map((c) => [c, r[c] ?? null])), date: r.date, updated_at: stamp });
 }
@@ -27,14 +27,14 @@ export function upsertDailyMetrics(db, stamp) {
  * @returns {{ days: string[], standDays: string[] }}
  */
 export function applyHealthDays(db, { records, exportedThrough = new Map(), standHours = [] }, stamp) {
-  const storedDay = db.prepare(`SELECT date, ${HEALTH_METRIC_COLUMNS.join(', ')} FROM daily_metrics WHERE date = ?`);
+  const storedDay = db.prepare(`SELECT date, ${HEALTH_METRIC_COLUMNS.join(', ')} FROM daily_metrics WHERE user_id = @uid AND date = ?`);
   const writeDay = upsertDailyMetrics(db, stamp);
   // The latest write time holding each day; an older one read later never lowers it (MAX, NULL treated as earliest).
-  const markExported = db.prepare("UPDATE daily_metrics SET exported_through = MAX(COALESCE(exported_through, ''), ?) WHERE date = ?");
-  const addHour = db.prepare('INSERT OR IGNORE INTO stand_hour_samples (date, hour) VALUES (?, ?)');
+  const markExported = db.prepare("UPDATE daily_metrics SET exported_through = MAX(COALESCE(exported_through, ''), ?) WHERE user_id = @uid AND date = ?");
+  const addHour = db.prepare('INSERT OR IGNORE INTO stand_hour_samples (user_id, date, hour) VALUES (@uid, ?, ?)');
   const countStand = db.prepare(`UPDATE daily_metrics SET stand_hours = MAX(COALESCE(stand_hours, 0),
-    (SELECT COUNT(*) FROM stand_hour_samples s WHERE s.date = daily_metrics.date))
-    WHERE date = ? AND EXISTS (SELECT 1 FROM stand_hour_samples s WHERE s.date = daily_metrics.date)`);
+    (SELECT COUNT(*) FROM stand_hour_samples s WHERE s.user_id = daily_metrics.user_id AND s.date = daily_metrics.date))
+    WHERE user_id = @uid AND date = ? AND EXISTS (SELECT 1 FROM stand_hour_samples s WHERE s.user_id = daily_metrics.user_id AND s.date = daily_metrics.date)`);
 
   // Each day merged with the stored day (stored first, so a tie goes to the newer data).
   const dates = [...new Set(records.map((r) => r.date))];
@@ -61,14 +61,14 @@ const shiftMinutes = (t, n) => new Date(Date.parse(`${t}Z`) + n * 60000).toISOSt
  */
 export function writeJsonWorkout(db, stamp) {
   const cols = WORKOUT_COLUMNS;
-  const near = db.prepare('SELECT * FROM workout_sessions WHERE type = ? AND start BETWEEN ? AND ? AND NOT (start = ? AND end = ?)');
-  const drop = db.prepare('DELETE FROM workout_sessions WHERE type = ? AND start = ? AND end = ?');
-  const dropSamples = db.prepare('DELETE FROM workout_hr_samples WHERE type = ? AND start = ?');
-  const upsert = db.prepare(`INSERT INTO workout_sessions (type, start, end, ${cols.join(', ')}, updated_at)
-    VALUES (@type, @start, @end, ${cols.map((c) => `@${c}`).join(', ')}, @updated_at)
-    ON CONFLICT (type, start, end) DO UPDATE SET ${cols.map((c) => `${c} = COALESCE(excluded.${c}, workout_sessions.${c})`).join(', ')},
+  const near = db.prepare('SELECT * FROM workout_sessions WHERE user_id = @uid AND type = ? AND start BETWEEN ? AND ? AND NOT (start = ? AND end = ?)');
+  const drop = db.prepare('DELETE FROM workout_sessions WHERE user_id = @uid AND type = ? AND start = ? AND end = ?');
+  const dropSamples = db.prepare('DELETE FROM workout_hr_samples WHERE user_id = @uid AND type = ? AND start = ?');
+  const upsert = db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, ${cols.join(', ')}, updated_at)
+    VALUES (@uid, @type, @start, @end, ${cols.map((c) => `@${c}`).join(', ')}, @updated_at)
+    ON CONFLICT (user_id, type, start, end) DO UPDATE SET ${cols.map((c) => `${c} = COALESCE(excluded.${c}, workout_sessions.${c})`).join(', ')},
       updated_at = excluded.updated_at`);
-  const sample = db.prepare('INSERT OR REPLACE INTO workout_hr_samples (type, start, t, avg_bpm, min_bpm, max_bpm) VALUES (?, ?, ?, ?, ?, ?)');
+  const sample = db.prepare('INSERT OR REPLACE INTO workout_hr_samples (user_id, type, start, t, avg_bpm, min_bpm, max_bpm) VALUES (@uid, ?, ?, ?, ?, ?, ?)');
   return (w, samples) => {
     const merged = { ...w };
     for (const old of near.all(w.type, shiftMinutes(w.start, -1), shiftMinutes(w.start, 1), w.start, w.end)) {

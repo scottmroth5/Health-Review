@@ -1,7 +1,7 @@
 // Normalizing the Workout Log against the exercise dictionary. Synthetic names and values only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { createDictionary } from '../metrics/dictionary.js';
 import { normalizeAll, unmappedNames } from '../ingest/normalize.js';
 import { runSync } from '../ingest/sync.js';
@@ -17,8 +17,8 @@ const DICT = createDictionary({
 });
 
 function seed(db) {
-  const ex = db.prepare('INSERT INTO strength_exercises (tab_year, row_no, date, exercise) VALUES (?, ?, ?, ?)');
-  const set = db.prepare('INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, reps) VALUES (?, ?, 100, 5)');
+  const ex = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, ?, ?, ?, ?)');
+  const set = db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps) VALUES (@uid, ?, ?, 100, 5)');
   const add = (row, date, name, sets) => {
     const id = ex.run(2026, row, date, name).lastInsertRowid;
     for (let i = 1; i <= sets; i++) set.run(id, i);
@@ -35,7 +35,7 @@ const columns = (db) => db.prepare(`SELECT exercise, canonical_id, implement, mo
   FROM strength_exercises ORDER BY row_no`).all();
 
 test('normalize: writes canonical exercise, implement, pattern and status next to the raw name', () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   seed(store.db);
   const c = normalizeAll(store.db, DICT, { now: new Date('2026-03-07T12:00:00Z') });
   assert.deepEqual(columns(store.db), [
@@ -52,7 +52,7 @@ test('normalize: writes canonical exercise, implement, pattern and status next t
 });
 
 test('normalize: rerunning changes nothing and adds no rows; a dictionary change is picked up', () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   seed(store.db);
   normalizeAll(store.db, DICT);
   const first = columns(store.db);
@@ -70,9 +70,9 @@ test('normalize: rerunning changes nothing and adds no rows; a dictionary change
 });
 
 test('normalize: unmapped names are listed by variant group with set counts and years, most sets first', () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   seed(store.db);
-  store.db.prepare("INSERT INTO strength_exercises (tab_year, row_no, date, exercise) VALUES (2025, 9, '2025-05-01', 'Cable Flyes')").run();
+  store.db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2025, 9, '2025-05-01', 'Cable Flyes')").run();
   normalizeAll(store.db, DICT);
   assert.deepEqual(unmappedNames(store.db).map((g) => [g.spellings.sort(), g.status, g.sets, g.first, g.last]), [
     [['Cable Fly', 'Cable Flyes'], 'inferred', 2, 2025, 2026],
@@ -82,7 +82,7 @@ test('normalize: unmapped names are listed by variant group with set counts and 
 });
 
 test('normalize: sync rewrites the normalized columns after a Workout Log tab is replaced', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const LOG = ['Date', 'Prime', 'Exercise', 'Weight 1', 'Set 1'];
   const data = {
     workout_log: { 2026: [LOG, [serial('2026-03-02'), '', 'Squats', 100, 5]] },

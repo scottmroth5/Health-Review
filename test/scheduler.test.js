@@ -2,8 +2,9 @@
 // read in the owner's zone (America/New_York), so these pass whatever the host's zone is (CI runs UTC and New York).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
-import { createScheduler, lastRun, nextRun, parseSchedule, runsLookup, schedulesFromEnv, CATCH_UP_HOURS } from '../server/scheduler.js';
+import { openOwnerStore } from '../db/store.js';
+import { createScheduler, lastRun, nextRun, parseSchedule, schedulesFromEnv, CATCH_UP_HOURS } from '../server/scheduler.js';
+import { jobRunsLookup as runsLookup } from '../server/admin-queries.js';
 import { weeklyReview } from '../jobs/review.js';
 
 const NY = 'America/New_York';
@@ -79,11 +80,11 @@ test('scheduler: runs a due job once, catches up a recently missed run, skips on
 });
 
 test('scheduler: a job never overlaps itself, here or with a run marked running in the runs table', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const lookup = runsLookup(store.db);
   const now = ny('2026-10-25T07:00:10');
   // A sync started 5 minutes ago (Sync now) is still running: the scheduled one is skipped.
-  store.db.prepare("INSERT INTO runs (name, meta, status, started_at) VALUES ('sync', '{}', 'running', ?)").run(new Date(now - 5 * 60_000).toISOString());
+  store.db.prepare("INSERT INTO runs (user_id, name, meta, status, started_at) VALUES (@uid, 'sync', '{}', 'running', ?)").run(new Date(now - 5 * 60_000).toISOString());
   assert.equal(lookup.isRunning('sync', now), true);
   assert.equal(lookup.isRunning('sync', new Date(now.getTime() + 40 * 60_000)), false, 'a run left marked running for 30+ minutes never blocks the job');
   const ran = [];
@@ -105,9 +106,9 @@ test('scheduler: a job never overlaps itself, here or with a run marked running 
 });
 
 test('weekly review job: a scheduled catch-up does nothing once the review exists; an incomplete week is skipped with dates only', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const claude = () => { throw new Error('no Claude call expected'); };
-  store.db.prepare("INSERT INTO reviews (week_ending, summary_json, report_md, created_at) VALUES ('2026-10-24', '{}', 'x', 'x')").run();
+  store.db.prepare("INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at) VALUES (@uid, '2026-10-24', '{}', 'x', 'x')").run();
   const exists = await weeklyReview({ store, claude, today: '2026-10-26', scheduled: true, sync: async () => { throw new Error('no sync expected'); } });
   assert.deepEqual(exists, { status: 'exists', weekEnd: '2026-10-24' });
 

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectBlocks, phaseOf, weekOf } from '../metrics/blocks.js';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { detect, writeDetected, sessionCoverage, uuidV5, sessionId } from '../ingest/program-blocks.js';
 import { addDays } from '../metrics/stats.js';
 
@@ -77,13 +77,13 @@ test('blocks: a run whose last session is within 14 days of today is in progress
 });
 
 function seedLog(db, rows) {
-  const ex = db.prepare('INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise) VALUES (?, ?, ?, ?, ?)');
-  const set = db.prepare("INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (?, 1, 100, 5, '5')");
+  const ex = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, ?, ?, ?, ?, ?)');
+  const set = db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, 100, 5, '5')");
   rows.forEach((r, i) => set.run(ex.run(Number(r.date.slice(0, 4)), i + 2, r.date, r.workout, 'Squat').lastInsertRowid));
 }
 
 test('blocks: saving a detection twice adds nothing; confirmed blocks and their sessions survive re-detection', () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const db = store.db;
   seedLog(db, [...run('2025-01-06', 6, 'Symmetry Foundation 1 - Phase 1'), ...run('2025-03-03', 6, 'Anabolic Foundation 1 - Phase 1'),
     { date: '2025-06-01', workout: 'Getting back at it' }]);

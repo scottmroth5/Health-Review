@@ -3,11 +3,11 @@
 // (tools/backup/restore-check.js), and records a 'restore-test' run with the backup's name and counts; a failure is an
 // error run, which the Today tab shows as a warning until a later test passes.
 import { readFileSync } from 'node:fs';
-import { createTracer } from '@scottmroth5/agent-core';
 import { createDriveClient } from '../tools/backup/drive.js';
 import { DRIVE_FOLDER } from '../tools/backup/run.js';
 import { newestBackup, restoreTest } from '../tools/backup/restore-check.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
+import { startUserRun } from '../db/users.js';
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} };
 
@@ -18,7 +18,7 @@ const quiet = { info() {}, warn() {}, error() {}, log() {} };
  * @param {string} [o.fromFile]  test this backup file instead of the newest one in Drive
  */
 export async function restoreTestJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, drive, fromFile }) {
-  const run = createTracer({ store, logger: quiet }).startRun('restore-test', { from: fromFile ? 'file' : 'google-drive' });
+  const run = startUserRun(store, 'restore-test', { from: fromFile ? 'file' : 'google-drive' }, quiet);
   try {
     let name;
     let file;

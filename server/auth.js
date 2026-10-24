@@ -95,7 +95,7 @@ const safeNext = (next) => (typeof next === 'string' && /^\/(?!\/)/.test(next) &
  * Registers the auth hook and routes. In google mode, req.user is the signed-in email on every allowed request.
  * @param {{ mode: string, settings?: object, exchange?: Function, now?: () => number }} opts  exchange: googleExchange(settings) (tests pass a fake)
  */
-export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now() } = {}) {
+export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now(), findUser = () => null } = {}) {
   app.get('/api/me', {
     schema: { summary: 'The signed-in user (google mode), or the open or demo mode', response: { 200: { type: 'object', additionalProperties: true } } },
   }, async (req) => ({ authMode: mode, email: req.user ?? null, name: req.userName ?? null, ...(mode === 'demo' ? { demo: true } : {}) }));
@@ -136,7 +136,16 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     if (!READ_METHODS.includes(req.method) && req.headers.origin !== origin) {
       return reply.code(403).send({ error: 'Requests that change data must come from this site.' });
     }
+    // The users row behind the address (multi-user): only an approved one gets in, checked on every request, so pausing
+    // or rejecting someone locks them out at once. req.uid scopes every query of the request to them (db/scope.js).
+    const user = findUser(session.email);
+    if (!user || user.status !== 'approved') {
+      if (path.startsWith('/api/')) return reply.code(403).send({ error: 'This account is not approved yet.' });
+      return reply.code(403).type('text/html').send(page('Waiting for approval', '<p>Your account is waiting for approval, which takes up to 24 hours.</p>'));
+    }
     req.user = session.email;
+    req.uid = user.id;
+    req.role = user.role;
     req.userName = typeof session.name === 'string' ? session.name : null;
   });
 

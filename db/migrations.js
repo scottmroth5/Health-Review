@@ -1,5 +1,6 @@
 // App migrations for openStore(..., { app: 'health-review' }). Append only; never edit an applied one.
 // Dates are local wall-clock text as the source sheets show them: 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM:SS'.
+import { USER_MIGRATIONS } from './migrations-users.js';
 export const MIGRATIONS = [
   {
     id: '001-health-data',
@@ -509,4 +510,6 @@ export const MIGRATIONS = [
       ALTER TABLE drive_exports_new RENAME TO drive_exports;
     `,
   },
+  // 024 users and 025 user_id on every user table (multi-user, phase 1).
+  ...USER_MIGRATIONS,
 ];

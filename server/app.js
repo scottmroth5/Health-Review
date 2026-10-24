@@ -27,6 +27,9 @@ import { parseHealthJson } from '../ingest/health-json.js';
 import { parseWorkoutJson } from '../ingest/parsers.js';
 import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
 import { localStamp } from '../tools/time.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { scopeDb } from '../db/scope.js';
+import { OWNER_ID, syncOwnerEmail, userByEmail } from '../db/users.js';
 
 /** Health Auto Export's posts: the largest daily workout file is about 165 KB, so 5 MB holds weeks of them. */
 export const INGEST_BODY_LIMIT = 5 * 1024 * 1024;
@@ -101,7 +104,19 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const routeList = [];
   app.addHook('onRoute', (r) => { for (const method of [r.method].flat()) routeList.push({ method, url: r.url }); });
   app.decorate('routeList', routeList);
-  const { db } = store;
+  // Every request runs as one user (multi-user, phase 1): `db` below is that user's view of the database (db/scope.js),
+  // set for the request in preHandler. Local (none) and the demo are the owner; google mode is the signed-in user, and a
+  // request without one (open routes) has no database at all, so nothing can read across users by mistake.
+  const requestDb = new AsyncLocalStorage();
+  const currentDb = () => {
+    const scoped = requestDb.getStore();
+    if (!scoped) throw new Error('No user for this request');
+    return scoped;
+  };
+  const db = new Proxy({}, { get: (_, prop) => Reflect.get(currentDb(), prop) });
+  // The store as the request's user sees it, for code that takes a store (the chat); tx is the shared one.
+  const userStore = () => ({ ...store, db: currentDb() });
+  const uidOf = (req) => req.uid ?? (authMode === 'google' ? null : OWNER_ID);
   let syncing = false;
   // The manual review run: one at a time, in the background; the last failure is kept as its error name only.
   const reviewRun = { running: false, weekEnd: null, error: null };
@@ -113,7 +128,14 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // request in the public demo); then the sign-in check (server/auth.js).
   registerSecurityHeaders(app, { https: String(auth.settings?.publicUrl ?? '').startsWith('https://') });
   if (authMode !== 'none') registerRateLimits(app, { all: authMode === 'demo' ? DEMO_REQUEST_LIMIT : null, now: auth.now });
-  registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now });
+  // Google sign-in maps an address to its users row; the first allowed address is the owner (user 1) until registration.
+  if (authMode === 'google' && auth.settings?.allowed?.[0]) syncOwnerEmail(store.db, { OWNER_EMAIL: auth.settings.allowed[0] });
+  registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email) });
+  app.addHook('preHandler', (req, reply, done) => {
+    const uid = uidOf(req);
+    if (!uid) return done();
+    requestDb.run(scopeDb(store.db, uid), done);
+  });
 
   // The deploy health check: open in every mode, status and version only.
   app.get('/api/health', {
@@ -262,7 +284,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     chatting = true;
     try {
       return await askAdvisor({
-        store, claude: services.claude(), text: req.body.text.trim(), today: q.localDate(clock()), catalog: cat,
+        store: userStore(), claude: services.claude(), text: req.body.text.trim(), today: q.localDate(clock()), catalog: cat,
         dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), weights: req.body.weights,
         logger: { info() {}, warn() {}, error() {} },
       });
@@ -312,8 +334,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const given = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ''))?.[1] ?? '';
     if (!timingSafeEqual(createHash('sha256').update(given).digest(), tokenHash)) return reply.code(401).send({ error: 'Missing or wrong ingest token.' });
     if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) return reply.code(415).send({ error: 'Send JSON (Content-Type: application/json).' });
+    // INGEST_TOKEN is the owner's (each user's own token comes with per-user feeds, phase 3).
+    req.uid = OWNER_ID;
   };
-  const logIngest = db.prepare('INSERT INTO ingest_log (id, received_at, route, result, counts, error) VALUES (?, ?, ?, ?, ?, ?)');
+  const logIngest = (...values) => db.prepare('INSERT INTO ingest_log (user_id, id, received_at, route, result, counts, error) VALUES (@uid, ?, ?, ?, ?, ?, ?)').run(...values);
   const ingestRoute = (route, summary, apply) => app.post(`/api/ingest/${route}`, {
     bodyLimit: INGEST_BODY_LIMIT,
     onRequest: ingestGuard,
@@ -322,11 +346,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const received = clock();
     try {
       const counts = apply(req.body, received);
-      logIngest.run(randomUUID(), received.toISOString(), route, 'ok', JSON.stringify(counts), null);
+      logIngest(randomUUID(), received.toISOString(), route, 'ok', JSON.stringify(counts), null);
       log.info(`[ingest] ${route} ok ${JSON.stringify(counts)}`);
       return { ok: true, ...counts };
     } catch (err) {
-      logIngest.run(randomUUID(), received.toISOString(), route, 'error', null, err.name);
+      logIngest(randomUUID(), received.toISOString(), route, 'error', null, err.name);
       log.warn(`[ingest] ${route} error ${err.name}`);
       return reply.code(400).send({ error: err.message });
     }
@@ -389,7 +413,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     try {
       if (services.sync && !syncing) {
         syncing = true;
-        try { await services.sync(); } catch { /* review the data already stored, as npm run review does */ } finally { syncing = false; }
+        try { await services.sync({ uid: uidOf(req) }); } catch { /* review the data already stored, as npm run review does */ } finally { syncing = false; }
       }
       const status = q.reviewStatus(db, q.localDate(clock()), clock());
       if (!status.ready && !req.body?.force) {
@@ -397,7 +421,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
         return reply.code(409).send({ error: 'Apple Health data is incomplete for the week', missingDays: status.missingDays, partialDays: status.partialDays });
       }
       reviewRun.weekEnd = status.weekEnd;
-      services.review({ weekEnd: status.weekEnd, today: q.localDate(clock()) })
+      services.review({ uid: uidOf(req), weekEnd: status.weekEnd, today: q.localDate(clock()) })
         .then(() => log.info(`[review] ok week ending ${status.weekEnd}`))
         .catch((err) => { reviewRun.error = err.name === 'Error' ? 'Review failed' : err.name; log.warn(`[review] failed week ending ${status.weekEnd}: ${err.name}`); })
         .finally(() => { reviewRun.running = false; });
@@ -411,7 +435,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // ---- spend ----
   app.get('/api/spend', {
     schema: { summary: 'Estimated Claude API spend by month and year (reviews, chat, evals) at list prices', response: { 200: anyObject } },
-  }, async () => q.spend(db, { evalDir, price, today: q.localDate(clock()) }));
+  }, async (req) => q.spend(db, { evalDir: uidOf(req) === OWNER_ID ? evalDir : null, price, today: q.localDate(clock()) }));
 
   // ---- sync ----
   app.post('/api/sync', { schema: { summary: 'Copy new rows from the Google Sheets now', response: { 200: anyObject } } }, async (req, reply) => {
@@ -419,7 +443,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (syncing) return reply.code(409).send({ error: 'A sync is already running' });
     syncing = true;
     try {
-      const { counts, warnings } = await services.sync();
+      const { counts, warnings } = await services.sync({ uid: uidOf(req) });
       log.info(`[sync] ok ${JSON.stringify(counts)} warnings=${warnings.length}`);
       return { counts, warnings: warnings.length };
     } finally {
@@ -643,13 +667,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req) => {
     const metric = knownMetric(req.params.metric);
-    db.prepare(`INSERT INTO health_targets (metric, target, updated_at) VALUES (?, ?, ?)
-      ON CONFLICT (metric) DO UPDATE SET target = excluded.target, updated_at = excluded.updated_at`).run(metric, req.body.target, new Date().toISOString());
+    db.prepare(`INSERT INTO health_targets (user_id, metric, target, updated_at) VALUES (@uid, ?, ?, ?)
+      ON CONFLICT (user_id, metric) DO UPDATE SET target = excluded.target, updated_at = excluded.updated_at`).run(metric, req.body.target, new Date().toISOString());
     return loadTargets(db, q.localDate(clock()), targetsConfig()).find((t) => t.metric === metric);
   });
   app.delete('/api/targets/:metric', { schema: { summary: 'Go back to the suggested target', params: metricParams, response: { 200: anyObject } } }, async (req) => {
     const metric = knownMetric(req.params.metric);
-    db.prepare('DELETE FROM health_targets WHERE metric = ?').run(metric);
+    db.prepare('DELETE FROM health_targets WHERE user_id = @uid AND metric = ?').run(metric);
     return loadTargets(db, q.localDate(clock()), targetsConfig()).find((t) => t.metric === metric);
   });
   app.put('/api/profile', {
@@ -668,9 +692,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req) => {
     const today = q.localDate(clock());
     if (req.body.birth_year && req.body.birth_year > Number(today.slice(0, 4))) throw badRequest('Birth year is in the future');
-    const upsert = db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-      ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
-    const remove = db.prepare('DELETE FROM settings WHERE key = ?');
+    const upsert = db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
+      ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
+    const remove = db.prepare('DELETE FROM settings WHERE user_id = @uid AND key = ?');
     for (const [k, v] of Object.entries(req.body)) (v === null ? remove.run(k) : upsert.run(k, String(v), new Date().toISOString()));
     return loadProfile(db, today);
   });

@@ -1,16 +1,16 @@
 // The consolidated Workout Sessions sheet ran 3 hours late; the one-off fix of stored rows. Synthetic values only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { fixSessionTimes, moveHours } from '../ingest/session-times.js';
 
 const EXPORT_STAMP = '2026-10-15T16:10:54.853Z';
 const SHEET_STAMP = '2026-10-15T11:00:03.386Z';
 
 function seed() {
-  const store = openHealthStore(':memory:');
-  const add = store.db.prepare(`INSERT INTO workout_sessions (type, start, end, duration_sec, updated_at) VALUES (?, ?, ?, 600, ?)`);
-  store.db.prepare(`INSERT INTO drive_exports (file_id, kind, name, modified_time, rows, synced_at) VALUES ('w1', 'workouts', 'Workout session metrics-a', 'x', 2, ?)`).run(EXPORT_STAMP);
+  const store = openOwnerStore(':memory:');
+  const add = store.db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, updated_at) VALUES (@uid, ?, ?, ?, 600, ?)`);
+  store.db.prepare(`INSERT INTO drive_exports (user_id, file_id, kind, name, modified_time, rows, synced_at) VALUES (@uid, 'w1', 'workouts', 'Workout session metrics-a', 'x', 2, ?)`).run(EXPORT_STAMP);
   add.run('Walk', '2026-10-13T11:00:00', '2026-10-13T11:30:00', EXPORT_STAMP); // from the export files: right
   add.run('Walk', '2026-10-13T14:00:00', '2026-10-13T14:30:00', SHEET_STAMP); // its late twin from the sheet
   add.run('Run', '2026-09-01T07:00:00', '2026-09-01T07:40:00', SHEET_STAMP); // sheet only: moves to 04:00
@@ -50,7 +50,7 @@ test('the fix: late twins are deleted, other sheet workouts move back 3 hours, e
 test('the fix: a move that would land on an export workout of the same type and start is refused', () => {
   const store = seed();
   // A sheet row 3 hours after an export row with the same start but a different end: not a twin, and a clash if moved.
-  store.db.prepare(`INSERT INTO workout_sessions (type, start, end, duration_sec, updated_at) VALUES ('Swim', '2026-10-14T12:00:00', '2026-10-14T12:50:00', 600, ?)`).run(SHEET_STAMP);
+  store.db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, updated_at) VALUES (@uid, 'Swim', '2026-10-14T12:00:00', '2026-10-14T12:50:00', 600, ?)`).run(SHEET_STAMP);
   assert.equal(fixSessionTimes(store).collisions, 1);
   const before = all(store);
   assert.throws(() => fixSessionTimes(store, { apply: true }), /would land on stored ones/);

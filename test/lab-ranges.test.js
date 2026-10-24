@@ -2,13 +2,13 @@
 // Synthetic values only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 
 const TODAY = new Date(2026, 2, 9, 12, 0);
 
 test('lab ranges: typical until you set your own; results marked below, within or above; reset and validation', async () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, clock: () => TODAY });
   const req = (method, url, payload) => app.inject({ method, url, payload });
   await req('POST', '/api/labs/results', { name: 'Hemoglobin', panel: 'CBC', drawn_on: '2026-03-02', value: '12.9' });

@@ -3,7 +3,7 @@
 // by the owner against Fitness, 2026-10-15). Rows written from the export files (updated_at equal to a workout file's
 // synced_at in drive_exports) are kept as they are. Every other row came from the sheet: a late twin of an export row is
 // deleted, and the rest move back 3 hours. Counts only; never workout details.
-import { createTracer } from '@scottmroth5/agent-core';
+import { startUserRun } from '../db/users.js';
 
 export const SHEET_LATE_HOURS = 3;
 const RUN_NAME = 'fix-session-times';
@@ -23,9 +23,9 @@ export function moveHours(text, hours) {
  */
 export function fixSessionTimes(store, { apply = false, logger = { info() {}, warn() {}, error() {} } } = {}) {
   const { db } = store;
-  const alreadyApplied = Boolean(db.prepare("SELECT 1 FROM runs WHERE name = ? AND status = 'ok'").get(RUN_NAME));
-  const stamps = new Set(db.prepare("SELECT DISTINCT synced_at FROM drive_exports WHERE kind = 'workouts'").pluck().all());
-  const rows = db.prepare('SELECT rowid AS id, type, start, end, updated_at FROM workout_sessions').all();
+  const alreadyApplied = Boolean(db.prepare("SELECT 1 FROM runs WHERE user_id = @uid AND name = ? AND status = 'ok'").get(RUN_NAME));
+  const stamps = new Set(db.prepare("SELECT DISTINCT synced_at FROM drive_exports WHERE user_id = @uid AND kind = 'workouts'").pluck().all());
+  const rows = db.prepare('SELECT rowid AS id, type, start, end, updated_at FROM workout_sessions WHERE user_id = @uid').all();
   const key = (type, start, end) => `${type}|${start}|${end}`;
   const fromExports = new Set(rows.filter((r) => stamps.has(r.updated_at)).map((r) => key(r.type, r.start, r.end)));
   const sheetRows = rows.filter((r) => !stamps.has(r.updated_at));
@@ -56,10 +56,10 @@ export function fixSessionTimes(store, { apply = false, logger = { info() {}, wa
   if (alreadyApplied) throw new Error('The workout time fix was already applied; nothing changed.');
   if (collisions) throw new Error(`${collisions} moved workouts would land on stored ones; nothing changed.`);
 
-  const run = createTracer({ store, logger }).startRun(RUN_NAME, { hours: -SHEET_LATE_HOURS });
+  const run = startUserRun(store, RUN_NAME, { hours: -SHEET_LATE_HOURS }, logger);
   try {
-    const del = db.prepare('DELETE FROM workout_sessions WHERE rowid = ?');
-    const upd = db.prepare('UPDATE workout_sessions SET start = ?, end = ? WHERE rowid = ?');
+    const del = db.prepare('DELETE FROM workout_sessions WHERE user_id = @uid AND rowid = ?');
+    const upd = db.prepare('UPDATE workout_sessions SET start = ?, end = ? WHERE user_id = @uid AND rowid = ?');
     store.tx(() => {
       for (const r of lateTwins) del.run(r.id);
       // Earliest first is not enough when moves chain into each other's old slots; move all to a temporary mark first.

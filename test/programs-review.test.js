@@ -1,7 +1,7 @@
 // Reviewing program blocks: confirm, edit, merge, split, unassign. Synthetic names and dates only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import {
   ReviewError, confirmBlocks, detect, editBlock, findBlock, listBlocks, mergeBlocks, sessionCoverage, splitBlock,
   unassignDays, writeDetected,
@@ -13,10 +13,10 @@ const opts = { today: TODAY };
 
 // Two programs a week apart, every other day; then an unnamed day long after.
 function setup() {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const db = store.db;
-  const ex = db.prepare('INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise) VALUES (2025, ?, ?, ?, ?)');
-  const set = db.prepare("INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (?, 1, 100, 5, '5')");
+  const ex = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2025, ?, ?, ?, ?)');
+  const set = db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, 100, 5, '5')");
   let row = 2;
   const day = (date, workout) => set.run(ex.run(row++, date, workout, 'Squat').lastInsertRowid);
   for (let i = 0; i < 8; i++) day(addDays('2025-01-06', i * 2), i % 3 === 0 ? 'Symmetry Foundation 1 - Phase 1' : null); // Jan 6 to Jan 20
@@ -91,7 +91,7 @@ test('forward: new lifting days join the in-progress confirmed block with progra
   const { runSync } = await import('../ingest/sync.js');
   const { assignForward } = await import('../ingest/program-blocks.js');
   const { fakeSource, serial, silentLogger } = await import('./helpers.js');
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const db = store.db;
   const LOG = ['Date', 'Prime', 'Exercise', 'Weight 1', 'Set 1', 'Workout'];
   const data = {

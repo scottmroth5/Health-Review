@@ -2,17 +2,17 @@
 // validation. Synthetic values only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { addDays } from '../metrics/stats.js';
 
 const TODAY = new Date(2026, 2, 9, 12, 0); // 2026-03-09
 
 async function setup() {
-  const store = openHealthStore(':memory:');
-  const add = store.db.prepare("INSERT INTO daily_metrics (date, steps, resting_hr, updated_at) VALUES (?, 6500, 64, 'x')");
+  const store = openOwnerStore(':memory:');
+  const add = store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, resting_hr, updated_at) VALUES (@uid, ?, 6500, 64, 'x')");
   for (let d = '2025-12-10'; d <= '2026-03-09'; d = addDays(d, 1)) add.run(d); // 90 days
-  store.db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES ('2025-11-01', 100, 'x')").run(); // before the 90 days
+  store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, '2025-11-01', 100, 'x')").run(); // before the 90 days
   const app = await buildApp({ store, clock: () => TODAY });
   return { app, db: store.db, done: async () => { await app.close(); store.close(); } };
 }

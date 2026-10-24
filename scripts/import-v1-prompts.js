@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { dataPath } from '../tools/paths.js';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { listSections, createSection, updateSection } from '../server/queries.js';
 
 const DIR = dataPath('v1-export', 'prompts');
@@ -15,7 +15,7 @@ const SENSITIVE = /MEDICAL|GENETIC/i;
 function main() {
   if (!existsSync(DIR)) throw new Error(`No v1 prompt export at ${DIR}`);
   const replace = process.argv.includes('--replace');
-  const store = openHealthStore();
+  const store = openOwnerStore();
   try {
     const existing = new Map(listSections(store.db).map((s) => [s.name, s]));
     for (const file of readdirSync(DIR).sort()) {

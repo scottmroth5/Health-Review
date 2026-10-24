@@ -6,12 +6,12 @@
 // in what was sent, and medication or symptom wording only in the physician list; one retry, then warnings.
 // Runs are traced with metadata only; note and reply text stay in this database.
 import { randomUUID } from 'node:crypto';
-import { createTracer } from '@scottmroth5/agent-core';
 import { recommendPrograms } from '../metrics/advisor.js';
 import { liftsForReview } from '../metrics/plateau.js';
 import { loadAdvisorInput, loadPrimarySets, loadSessionPhases, programForWeek, medicationNames } from '../metrics/load.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
 import { DEFAULT_REVIEW_MODEL } from './claude.js';
+import { startUserRun } from '../db/users.js';
 
 export const CHAT_EFFORT = 'medium';
 export const THREAD_TURNS = 10;
@@ -79,15 +79,15 @@ const parse = (row) => ({ ...row, physician: row.physician ? JSON.parse(row.phys
 
 /** The thread, oldest first. */
 export function listChat(db) {
-  return db.prepare('SELECT * FROM advisor_notes ORDER BY created_at, rowid').all().map(parse);
+  return db.prepare('SELECT * FROM advisor_notes WHERE user_id = @uid ORDER BY created_at, rowid').all().map(parse);
 }
 
 export function deleteChatNote(db, id) {
-  return db.prepare('DELETE FROM advisor_notes WHERE id = ?').run(id).changes;
+  return db.prepare('DELETE FROM advisor_notes WHERE user_id = @uid AND id = ?').run(id).changes;
 }
 
 export function clearChat(db) {
-  return db.prepare('DELETE FROM advisor_notes').run().changes;
+  return db.prepare('DELETE FROM advisor_notes WHERE user_id = @uid').run().changes;
 }
 
 const promptFor = (context, thread, note, problems) => [
@@ -109,19 +109,19 @@ export async function askAdvisor({ store, claude, text, today, catalog, dictiona
   const { db } = store;
   const earlier = listChat(db).slice(-THREAD_TURNS).map((n) => ({ from: n.role, text: n.text }));
   const context = chatContext(db, today, { catalog, dictionary, substitutions, weights });
-  const insert = db.prepare(`INSERT INTO advisor_notes (id, created_at, role, text, physician, weights, model, warnings)
-    VALUES (@id, @created_at, @role, @text, @physician, @weights, @model, @warnings)`);
+  const insert = db.prepare(`INSERT INTO advisor_notes (user_id, id, created_at, role, text, physician, weights, model, warnings)
+    VALUES (@uid, @id, @created_at, @role, @text, @physician, @weights, @model, @warnings)`);
   const note = { id: randomUUID(), created_at: now().toISOString(), role: 'owner', text, physician: null, weights: JSON.stringify(context.advisor.weights), model: null, warnings: null };
   insert.run(note);
 
   const checks = {
     allowed: allowedNumbers({ context, earlier, text }, CHAT_CONTRACT),
     medicationNames: medicationNames(db),
-    labNames: db.prepare('SELECT name FROM lab_tests').pluck().all(),
+    labNames: db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(),
     maxWords: MAX_WORDS,
   };
   const asReport = (d) => ({ sections: [{ title: 'Reply', body: d.reply }], physicianDiscussion: d.physicianDiscussion });
-  const run = createTracer({ store, logger }).startRun('advisor-chat', { model, effort, turns: earlier.length });
+  const run = startUserRun(store, 'advisor-chat', { model, effort, turns: earlier.length }, logger);
   try {
     const ask = (problems) => claude.send({
       model, maxTokens: MAX_TOKENS, system: CHAT_CONTRACT, prompt: promptFor(context, earlier, text, problems),

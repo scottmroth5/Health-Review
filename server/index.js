@@ -2,6 +2,8 @@
 // Locally AUTH_MODE=none binds to 127.0.0.1. On the server AUTH_MODE=google (or demo for the public demo) with HOST=0.0.0.0
 // behind Caddy (TRUST_PROXY). Google sign-in for the sync loads on the first sync.
 import { openHealthStore } from '../db/store.js';
+import { scopeStore } from '../db/scope.js';
+import { OWNER_ID } from '../db/users.js';
 import { repoPath, dataPath } from '../tools/paths.js';
 import { localDate as ownerDate, zonedInstant } from '../tools/time.js';
 import { appleSource } from '../ingest/sync.js';
@@ -9,7 +11,8 @@ import { syncJob } from '../jobs/sync.js';
 import { weeklyReview } from '../jobs/review.js';
 import { backupJob } from '../jobs/backup.js';
 import { restoreTestJob } from '../jobs/restore-check.js';
-import { createScheduler, runsLookup, schedulesFromEnv } from './scheduler.js';
+import { createScheduler, schedulesFromEnv } from './scheduler.js';
+import { jobRunsLookup, activeUserIds } from './admin-queries.js';
 import { buildApp } from './app.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { runReview } from '../agent/review.js';
@@ -61,33 +64,48 @@ if (demo) {
   });
 } else {
   store = openHealthStore();
+  // Each user's view of the database (db/scope.js); the command-line scripts and these jobs act as one user at a time.
+  const forUser = (uid) => scopeStore(store, uid);
   // The Claude client for the Next program chat and the manual review run, made on first use (needs ANTHROPIC_API_KEY in .env).
   const claude = (() => { let c; return () => (c ??= createReviewClaude()); })();
   const services = {
-    sync: () => syncJob({ store }),
+    sync: ({ uid = OWNER_ID } = {}) => syncJob({ store: forUser(uid) }),
     claude,
     // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.
-    review: ({ weekEnd, today }) => runReview({
-      store, claude: claude(), weekEnd, today, logger: quiet,
+    review: ({ uid = OWNER_ID, weekEnd, today }) => runReview({
+      store: forUser(uid), claude: claude(), weekEnd, today, logger: quiet,
       model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
     }),
   };
   // The in-app schedule (SCHEDULE_* in .env; none set, nothing runs). The same jobs as the npm scripts (jobs/).
+  // Sync and the review run for each approved user in turn (one user's failure never stops the rest; logs name the owner
+  // or "a user", never an email). Backup and the restore test cover the whole database, as the owner.
+  const who = (uid) => (uid === OWNER_ID ? 'owner' : 'a user');
+  const eachUser = async (job, fn) => {
+    for (const uid of activeUserIds(store.db)) {
+      try { await fn(uid); } catch (err) { console.error(`[${job}] failed for ${who(uid)}: ${err.name}`); }
+    }
+  };
   const runners = {
-    sync: async () => { const { counts, warnings } = await services.sync(); console.log(`[sync] ok ${JSON.stringify(counts)} warnings=${warnings.length}`); },
-    review: async () => {
-      const r = await weeklyReview({ store, claude, sync: services.sync, scheduled: true });
-      console.log(`[review] ${r.status} week ending ${r.weekEnd}${r.syncError ? ' (sync failed first)' : ''}`);
-    },
-    backup: async () => { const r = await backupJob({ store }); console.log(`[backup] ok ${r.name} ${r.bytes} bytes`); },
+    sync: () => eachUser('sync', async (uid) => {
+      const { counts, warnings } = await services.sync({ uid });
+      console.log(`[sync] ok (${who(uid)}) ${JSON.stringify(counts)} warnings=${warnings.length}`);
+    }),
+    review: () => eachUser('review', async (uid) => {
+      // Only the owner has a Claude key until users add their own (multi-user, phase 2).
+      if (uid !== OWNER_ID) return;
+      const r = await weeklyReview({ store: forUser(uid), claude, sync: () => services.sync({ uid }), scheduled: true });
+      console.log(`[review] ${r.status} (${who(uid)}) week ending ${r.weekEnd}${r.syncError ? ' (sync failed first)' : ''}`);
+    }),
+    backup: async () => { const r = await backupJob({ store: forUser(OWNER_ID) }); console.log(`[backup] ok ${r.name} ${r.bytes} bytes`); },
     'restore-test': async () => {
-      const r = await restoreTestJob({ store });
+      const r = await restoreTestJob({ store: forUser(OWNER_ID) });
       console.log(`[restore-test] ${r.ok ? 'ok' : 'failed'} ${r.file} tables=${r.tables} problems=${r.problems.length}`);
     },
   };
   scheduler = createScheduler({
     jobs: schedulesFromEnv().filter((j) => runners[j.name]).map((j) => ({ ...j, run: runners[j.name] })),
-    runs: runsLookup(store.db),
+    runs: jobRunsLookup(store.db),
   });
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };

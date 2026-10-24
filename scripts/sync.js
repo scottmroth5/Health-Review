@@ -3,7 +3,7 @@
 //   npm run sync                 incremental: new health and workout rows, current Workout Log tab
 //   npm run sync -- --backfill   one-time full import, including the drinking log and weekly check-ins
 import { getGoogleAuth } from '../tools/google/auth.js';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { createSheetsSource } from '../ingest/sheets.js';
 import { runSync } from '../ingest/sync.js';
 
@@ -11,7 +11,7 @@ const DETAILED = new Set(['year corrected', 'unknown column', 'several rows for 
 
 async function main() {
   const backfill = process.argv.includes('--backfill');
-  const store = openHealthStore();
+  const store = openOwnerStore();
   try {
     const { counts, warnings } = await runSync({ store, source: createSheetsSource(getGoogleAuth()), backfill });
     for (const [source, c] of Object.entries(counts)) console.log(`${source}: ${JSON.stringify(c)}`);

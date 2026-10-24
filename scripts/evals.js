@@ -77,10 +77,10 @@ async function regrade(variant) {
   const { openHealthStore } = await import('../db/store.js');
   const { medicationNames } = await import('../metrics/load.js');
   const { NIGHT_BREATHING_NAMES } = await import('../agent/review.js');
-  const store = openHealthStore();
+  const store = openOwnerStore();
   const names = {
     medicationNames: medicationNames(store.db),
-    labNames: [...store.db.prepare('SELECT name FROM lab_tests').pluck().all(), ...NIGHT_BREATHING_NAMES],
+    labNames: [...store.db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(), ...NIGHT_BREATHING_NAMES],
   };
   store.close();
   const rows = readJsonl(join(FLOW, variant, 'results.jsonl'));

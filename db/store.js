@@ -1,6 +1,8 @@
 import { openStore } from '@scottmroth5/agent-core';
 import { dataPath } from '../tools/paths.js';
 import { MIGRATIONS } from './migrations.js';
+import { scopeStore } from './scope.js';
+import { OWNER_ID, syncOwnerEmail } from './users.js';
 
 export const DEFAULT_DB_PATH = dataPath('health.db');
 
@@ -9,5 +11,15 @@ export const DEFAULT_DB_PATH = dataPath('health.db');
  * @param {string} [path]  HEALTH_DB_PATH, else data/health.db; ':memory:' for tests
  */
 export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_PATH) {
-  return openStore(path, { app: 'health-review', migrations: MIGRATIONS });
+  const store = openStore(path, { app: 'health-review', migrations: MIGRATIONS });
+  syncOwnerEmail(store.db);
+  return store;
+}
+
+/**
+ * The database as the owner (user 1) sees it: every query scoped to the owner (db/scope.js). The command-line scripts
+ * act as the owner; the server scopes each request and job to its own user instead.
+ */
+export function openOwnerStore(path) {
+  return scopeStore(openHealthStore(path), OWNER_ID);
 }

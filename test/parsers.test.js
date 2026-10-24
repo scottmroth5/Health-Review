@@ -12,7 +12,7 @@ import {
   sessionDuration,
   mergeHealthDays,
 } from '../ingest/parsers.js';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { MIGRATIONS } from '../db/migrations.js';
 import { serial } from './helpers.js';
 
@@ -90,9 +90,9 @@ test('session duration: the 3-hour shift is removed, a paused workout stays shor
 });
 
 test('migration 012 repairs stored session durations with the same rule', () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   try {
-    const add = store.db.prepare("INSERT INTO workout_sessions (type, start, end, duration_sec, updated_at) VALUES (?, ?, ?, ?, 'x')");
+    const add = store.db.prepare("INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, updated_at) VALUES (@uid, ?, ?, ?, ?, 'x')");
     add.run('Outdoor Walk', '2026-03-02T06:00:00', '2026-03-02T07:00:00', 2250 + 10800);
     add.run('Outdoor Run', '2026-03-03T06:00:00', '2026-03-03T06:30:00', 1790);
     add.run('Hiking', '2026-03-04T06:00:00', '2026-03-04T06:30:00', 9 * 3600);

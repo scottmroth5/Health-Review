@@ -36,8 +36,8 @@ export const localDate = (date = new Date()) => ownerDate(date);
 // ---- one day ----
 
 export function getDay(db, date) {
-  const checkin = db.prepare('SELECT * FROM checkins WHERE date = ?').get(date) ?? null;
-  const drinking = db.prepare('SELECT * FROM drinking_days WHERE date = ?').get(date) ?? null;
+  const checkin = db.prepare('SELECT * FROM checkins WHERE user_id = @uid AND date = ?').get(date) ?? null;
+  const drinking = db.prepare('SELECT * FROM drinking_days WHERE user_id = @uid AND date = ?').get(date) ?? null;
   return { date, checkin, drinking: drinking && { ...drinking, alcohol: alcoholOf(drinking) }, medications: dayMedications(db, date) };
 }
 
@@ -47,9 +47,9 @@ export function saveCheckin(db, date, body) {
   for (const f of [...SCALE_FIELDS, ...BODY_FIELDS]) row[f] = body[f] ?? null;
   row.body_measured_on = BODY_FIELDS.some((f) => row[f] !== null) ? date : null;
   const cols = [...SCALE_FIELDS, ...BODY_FIELDS, 'body_measured_on', 'notes'];
-  db.prepare(`INSERT INTO checkins (date, cadence, ${cols.join(', ')}, source, updated_at)
-    VALUES (@date, 'daily', ${cols.map((c) => `@${c}`).join(', ')}, 'ui', @updated_at)
-    ON CONFLICT (date) DO UPDATE SET cadence = 'daily', ${cols.map((c) => `${c} = excluded.${c}`).join(', ')},
+  db.prepare(`INSERT INTO checkins (user_id, date, cadence, ${cols.join(', ')}, source, updated_at)
+    VALUES (@uid, @date, 'daily', ${cols.map((c) => `@${c}`).join(', ')}, 'ui', @updated_at)
+    ON CONFLICT (user_id, date) DO UPDATE SET cadence = 'daily', ${cols.map((c) => `${c} = excluded.${c}`).join(', ')},
       source = 'ui', updated_at = excluded.updated_at`).run({ ...row, updated_at: now() });
   return getDay(db, date).checkin;
 }
@@ -61,36 +61,36 @@ export function saveDrinking(db, date, body) {
   row.mood_before = body.mood_before ?? null;
   row.mood_after = body.mood_after ?? null;
   const cols = [...DRINK_COUNT_FIELDS, 'setting', 'mood_before', 'mood_after', 'notes'];
-  db.prepare(`INSERT INTO drinking_days (date, ${cols.join(', ')}, source, updated_at)
-    VALUES (@date, ${cols.map((c) => `@${c}`).join(', ')}, 'ui', @updated_at)
-    ON CONFLICT (date) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(', ')},
+  db.prepare(`INSERT INTO drinking_days (user_id, date, ${cols.join(', ')}, source, updated_at)
+    VALUES (@uid, @date, ${cols.map((c) => `@${c}`).join(', ')}, 'ui', @updated_at)
+    ON CONFLICT (user_id, date) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(', ')},
       source = 'ui', updated_at = excluded.updated_at`).run({ ...row, updated_at: now() });
   return getDay(db, date).drinking;
 }
 
-export const deleteCheckin = (db, date) => db.prepare('DELETE FROM checkins WHERE date = ?').run(date).changes;
-export const deleteDrinking = (db, date) => db.prepare('DELETE FROM drinking_days WHERE date = ?').run(date).changes;
+export const deleteCheckin = (db, date) => db.prepare('DELETE FROM checkins WHERE user_id = @uid AND date = ?').run(date).changes;
+export const deleteDrinking = (db, date) => db.prepare('DELETE FROM drinking_days WHERE user_id = @uid AND date = ?').run(date).changes;
 
 // ---- history ----
 
 export function history(db, from, to) {
   // Partial Apple Health days in the range, by the data checks' rule (exported before the day ended, else low steps).
-  const steps = db.prepare('SELECT date, steps, exported_through FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(addDays(from, -28), to);
+  const steps = db.prepare('SELECT date, steps, exported_through FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(addDays(from, -28), to);
   return {
     partialDays: partialDays(steps, from, to),
     metrics: db.prepare(`SELECT date, hrv_ms, resting_hr, sleep_total_hr, steps, exercise_min, cardio_recovery_bpm, walking_hr_avg,
       walking_speed_mph, walking_asymmetry_pct, wrist_temp_f, spo2_pct, breathing_disturbances FROM daily_metrics
-      WHERE date BETWEEN ? AND ? ORDER BY date`).all(from, to),
+      WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`).all(from, to),
     checkins: db.prepare(`SELECT date, cadence, readiness, energy, mood, stress, nutrition, weight_lbs, body_fat_pct, muscle_mass_lbs, visceral_fat FROM checkins
-      WHERE date BETWEEN ? AND ? ORDER BY date`).all(from, to),
-    drinking: db.prepare(`SELECT date, ${DRINK_COUNT_FIELDS.join(', ')} FROM drinking_days WHERE date BETWEEN ? AND ? ORDER BY date`)
+      WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`).all(from, to),
+    drinking: db.prepare(`SELECT date, ${DRINK_COUNT_FIELDS.join(', ')} FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`)
       .all(from, to)
       .map((d) => ({ date: d.date, alcohol: alcoholOf(d), cbd: d.cbd })),
   };
 }
 
 export function listReviews(db) {
-  return db.prepare('SELECT week_ending, report_md, created_at, model, warnings FROM reviews ORDER BY week_ending DESC').all()
+  return db.prepare('SELECT week_ending, report_md, created_at, model, warnings FROM reviews WHERE user_id = @uid ORDER BY week_ending DESC').all()
     .map((r) => ({ ...r, warnings: r.warnings ? JSON.parse(r.warnings) : [] }));
 }
 
@@ -100,12 +100,12 @@ const RUN_COLUMNS = 'id, name, status, started_at, finished_at, duration_ms, cal
 
 /** Recent runs, newest first. */
 export function listRuns(db, limit = 100) {
-  return db.prepare(`SELECT ${RUN_COLUMNS} FROM runs ORDER BY id DESC LIMIT ?`).all(limit);
+  return db.prepare(`SELECT ${RUN_COLUMNS} FROM runs WHERE user_id = @uid ORDER BY id DESC LIMIT ?`).all(limit);
 }
 
 /** One run with its parsed meta and summary and its Claude calls, or null. */
 export function getRun(db, id) {
-  const run = db.prepare(`SELECT ${RUN_COLUMNS}, cache_read_tokens, cache_write_tokens, meta, summary FROM runs WHERE id = ?`).get(id);
+  const run = db.prepare(`SELECT ${RUN_COLUMNS}, cache_read_tokens, cache_write_tokens, meta, summary FROM runs WHERE user_id = @uid AND id = ?`).get(id);
   if (!run) return null;
   return {
     ...run,
@@ -124,16 +124,16 @@ export const JOB_NAMES = ['sync', 'review', 'backup', 'restore-test'];
  * status, times and counts, never report, prompt or health text.
  */
 export function jobsActivity(db, { runs = 5, posts = 20 } = {}) {
-  const last = db.prepare('SELECT id, status, started_at, finished_at, duration_ms, summary FROM runs WHERE name = ? ORDER BY id DESC LIMIT ?');
+  const last = db.prepare('SELECT id, status, started_at, finished_at, duration_ms, summary FROM runs WHERE user_id = @uid AND name = ? ORDER BY id DESC LIMIT ?');
   return {
     jobs: JOB_NAMES.map((name) => ({ name, runs: last.all(name, runs).map((r) => ({ ...r, summary: parseJson(r.summary) })) })),
-    ingest: db.prepare('SELECT received_at, route, result, counts, error FROM ingest_log ORDER BY received_at DESC LIMIT ?').all(posts)
+    ingest: db.prepare('SELECT received_at, route, result, counts, error FROM ingest_log WHERE user_id = @uid ORDER BY received_at DESC LIMIT ?').all(posts)
       .map((r) => ({ ...r, counts: parseJson(r.counts) })),
   };
 }
 
 export function lastSync(db) {
-  const run = db.prepare("SELECT status, started_at, finished_at, summary FROM runs WHERE name = 'sync' ORDER BY id DESC LIMIT 1").get();
+  const run = db.prepare("SELECT status, started_at, finished_at, summary FROM runs WHERE user_id = @uid AND name = 'sync' ORDER BY id DESC LIMIT 1").get();
   return run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
 }
 
@@ -141,7 +141,7 @@ export function lastSync(db) {
 export function dataCheckWarnings(db, today, { apple = 'drive', now = new Date() } = {}) {
   const warnings = dataChecks(loadDataCheckInput(db, today, { apple, now })).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }));
   // The backup restore test (jobs/restore-check.js): its last run failing stays a warning until a later one passes.
-  const test = db.prepare("SELECT status, started_at, summary FROM runs WHERE name = 'restore-test' AND status IN ('ok', 'error') ORDER BY id DESC LIMIT 1").get();
+  const test = db.prepare("SELECT status, started_at, summary FROM runs WHERE user_id = @uid AND name = 'restore-test' AND status IN ('ok', 'error') ORDER BY id DESC LIMIT 1").get();
   if (test?.status === 'error') {
     const s = parseJson(test.summary) ?? {};
     const why = s.problems?.[0] ?? s.error ?? 'see the Activity tab';
@@ -210,7 +210,7 @@ export function spend(db, { evalDir, price, today }) {
     m.total += usd;
   };
   // started_at is UTC; each run counts in the owner's month (a run at 9pm on the 31st in New York is that month).
-  const runs = db.prepare('SELECT name, started_at, cost_usd AS usd FROM runs WHERE cost_usd > 0').all();
+  const runs = db.prepare('SELECT name, started_at, cost_usd AS usd FROM runs WHERE user_id = @uid AND cost_usd > 0').all();
   for (const r of runs) add(localDate(new Date(r.started_at)).slice(0, 7), SPEND_KINDS[r.name] ?? 'other', r.usd);
   let unpriced = 0;
   for (const e of price ? evalSpendRows(evalDir, price) : []) {
@@ -255,16 +255,16 @@ export const REVIEW_DUE_HOUR = 9;
 export function reviewStatus(db, today, now = new Date()) {
   const weekEnd = lastWeekEnd(today);
   const weekFrom = addDays(weekEnd, -6);
-  const daily = db.prepare('SELECT date, steps, exported_through FROM daily_metrics WHERE date BETWEEN ? AND ? ORDER BY date').all(addDays(weekFrom, -28), weekEnd);
+  const daily = db.prepare('SELECT date, steps, exported_through FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(addDays(weekFrom, -28), weekEnd);
   const { missingDays, suspectedPartialDays } = weekDataQuality(daily, weekFrom, weekEnd);
-  const saved = db.prepare('SELECT summary_json FROM reviews WHERE week_ending = ?').get(weekEnd);
+  const saved = db.prepare('SELECT summary_json FROM reviews WHERE user_id = @uid AND week_ending = ?').get(weekEnd);
   const hasReview = !!saved;
   // The saved summary carries dataQuality only when the review was written with missing or partial days.
   let gaps = null;
   try { gaps = saved ? JSON.parse(saved.summary_json).dataQuality ?? null : null; } catch { gaps = null; }
   const writtenWithGaps = gaps ? { missingDays: gaps.missingDays ?? [], partialDays: gaps.suspectedPartialDays ?? [] } : null;
   const run = db.prepare(`SELECT status, started_at, finished_at, summary FROM runs
-    WHERE name = 'review' AND json_extract(meta, '$.weekEnd') = ? ORDER BY id DESC LIMIT 1`).get(weekEnd);
+    WHERE user_id = @uid AND name = 'review' AND json_extract(meta, '$.weekEnd') = ? ORDER BY id DESC LIMIT 1`).get(weekEnd);
   const lastRun = run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
   const due = today > addDays(weekEnd, 1) || zonedParts(now).hour >= REVIEW_DUE_HOUR;
   return {
@@ -286,16 +286,16 @@ export function reviewStatus(db, today, now = new Date()) {
 export const SETTING_KEYS = ['zone2_low_bpm', 'zone2_high_bpm'];
 
 export function getSettings(db) {
-  const rows = db.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS.map(() => '?').join(', ')})`).all(...SETTING_KEYS);
+  const rows = db.prepare(`SELECT key, value FROM settings WHERE user_id = @uid AND key IN (${SETTING_KEYS.map(() => '?').join(', ')})`).all(...SETTING_KEYS);
   const values = Object.fromEntries(rows.map((r) => [r.key, Number(r.value)]));
   return Object.fromEntries(SETTING_KEYS.map((k) => [k, values[k] ?? null]));
 }
 
 /** Sets the given keys; null removes a setting. */
 export function saveSettings(db, changes) {
-  const upsert = db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-    ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
-  const remove = db.prepare('DELETE FROM settings WHERE key = ?');
+  const upsert = db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
+    ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
+  const remove = db.prepare('DELETE FROM settings WHERE user_id = @uid AND key = ?');
   db.transaction(() => {
     for (const [k, v] of Object.entries(changes)) (v === null ? remove.run(k) : upsert.run(k, String(v), now()));
   })();
@@ -319,7 +319,7 @@ export function lifts(db, today) {
 
 /** The VO2 max card for one view. Reads every reading: the tiles (best on record, change vs a year ago) need them all. */
 export function vo2max(db, view, today) {
-  const rows = db.prepare('SELECT date, vo2max FROM daily_metrics WHERE vo2max IS NOT NULL AND date <= ? ORDER BY date').all(today);
+  const rows = db.prepare('SELECT date, vo2max FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date').all(today);
   return vo2maxReport(rows, view, today);
 }
 
@@ -338,9 +338,9 @@ export function cardioZoneView(db, view, today, group = CARDIO_ZONE_VIEWS[view].
   const to = buckets.at(-1).to;
   const { zone2 } = loadMetricSettings(db);
   const bounds = zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, birthYear: loadProfile(db, today).birthYear, year: Number(today.slice(0, 4)) });
-  const sessions = db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE start >= ? AND start < ? ORDER BY start')
+  const sessions = db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
     .all(from, `${addDays(to, 1)}`);
-  const samples = db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE start >= ? AND start < ?').all(from, `${addDays(to, 1)}`);
+  const samples = db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${addDays(to, 1)}`);
   return { view, bucket: group, bounds, buckets: cardioZones({ sessions, samples, bounds, buckets }) };
 }
 
@@ -371,12 +371,12 @@ function regimenOf({ dose, ingredients }) {
   if (names.size !== list.length) throw fail(400, 'Each ingredient can be listed once');
   return { dose: single, ingredients: list.length ? JSON.stringify(list) : null };
 }
-const openPeriod = (db, id) => db.prepare('SELECT * FROM medication_periods WHERE medication_id = ? AND stopped_on IS NULL').get(id);
+const openPeriod = (db, id) => db.prepare('SELECT * FROM medication_periods WHERE user_id = @uid AND medication_id = ? AND stopped_on IS NULL').get(id);
 
 function getMedication(db, id) {
-  const m = db.prepare('SELECT id, name, kind, purpose, prescribed, notes, created_at FROM medications WHERE id = ?').get(id);
+  const m = db.prepare('SELECT id, name, kind, purpose, prescribed, notes, created_at FROM medications WHERE user_id = @uid AND id = ?').get(id);
   if (!m) return null;
-  const periods = db.prepare('SELECT * FROM medication_periods WHERE medication_id = ? ORDER BY started_on, id').all(id).map(asPeriod);
+  const periods = db.prepare('SELECT * FROM medication_periods WHERE user_id = @uid AND medication_id = ? ORDER BY started_on, id').all(id).map(asPeriod);
   return { ...m, prescribed: Boolean(m.prescribed), current: periods.find((p) => p.stopped_on === null) ?? null, periods };
 }
 
@@ -388,7 +388,7 @@ function requireMedication(db, id) {
 
 /** Current ones first (by name), then stopped ones (most recently stopped first). */
 export function listMedications(db) {
-  const all = db.prepare('SELECT id FROM medications').all().map((r) => getMedication(db, r.id));
+  const all = db.prepare('SELECT id FROM medications WHERE user_id = @uid').all().map((r) => getMedication(db, r.id));
   const lastStop = (m) => m.periods.reduce((d, p) => (p.stopped_on > d ? p.stopped_on : d), '');
   return [
     ...all.filter((m) => m.current).sort((a, b) => a.name.localeCompare(b.name)),
@@ -398,15 +398,15 @@ export function listMedications(db) {
 
 /** Throws unless [start, stop) fits around the medication's existing periods. */
 function assertNoOverlap(db, id, start, stop) {
-  const periods = db.prepare('SELECT started_on, stopped_on FROM medication_periods WHERE medication_id = ?').all(id);
+  const periods = db.prepare('SELECT started_on, stopped_on FROM medication_periods WHERE user_id = @uid AND medication_id = ?').all(id);
   const clash = periods.find((p) => start < (p.stopped_on ?? '9999-12-31') && p.started_on < (stop ?? '9999-12-31'));
   if (clash) throw fail(409, `Those dates overlap an existing period that started ${clash.started_on}`);
 }
 
 function insertPeriod(db, id, { dose, ingredients, timings, started_on, stopped_on = null, stop_reason = null, start_estimated = false }) {
   const r = regimenOf({ dose, ingredients });
-  db.prepare(`INSERT INTO medication_periods (medication_id, dose, ingredients, timings, started_on, stopped_on, stop_reason, start_estimated, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  db.prepare(`INSERT INTO medication_periods (user_id, medication_id, dose, ingredients, timings, started_on, stopped_on, stop_reason, start_estimated, created_at)
+    VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, r.dose, r.ingredients, JSON.stringify(timings), started_on, stopped_on, stop_reason?.trim() || null, start_estimated ? 1 : 0, now());
 }
 
@@ -418,9 +418,9 @@ function insertPeriod(db, id, { dose, ingredients, timings, started_on, stopped_
  * its scheduled timing); null means the default.
  */
 export function dayMedications(db, date) {
-  const rows = db.prepare(`SELECT m.id, m.name, m.kind, p.dose, p.ingredients, p.timings FROM medication_periods p JOIN medications m ON m.id = p.medication_id
-    WHERE p.started_on <= ? AND (p.stopped_on IS NULL OR p.stopped_on > ?) ORDER BY m.kind, m.name`).all(date, date);
-  const saved = db.prepare('SELECT medication_id, timing, taken, dose, moved_to FROM medication_doses WHERE date = ?').all(date);
+  const rows = db.prepare(`SELECT m.id, m.name, m.kind, p.dose, p.ingredients, p.timings FROM medication_periods p JOIN medications m ON m.id = p.medication_id AND m.user_id = p.user_id
+    WHERE p.user_id = @uid AND p.started_on <= ? AND (p.stopped_on IS NULL OR p.stopped_on > ?) ORDER BY m.kind, m.name`).all(date, date);
+  const saved = db.prepare('SELECT medication_id, timing, taken, dose, moved_to FROM medication_doses WHERE user_id = @uid AND date = ?').all(date);
   const savedOf = (id, timing) => saved.find((s) => s.medication_id === id && s.timing === timing);
   return {
     saved: saved.length > 0,
@@ -446,8 +446,8 @@ export function saveDoses(db, date, doses) {
     if (!expected.has(`${d.medication_id}|${d.timing}`)) throw fail(400, 'One of the checked items is not in effect on that day');
   }
   db.transaction(() => {
-    db.prepare('DELETE FROM medication_doses WHERE date = ?').run(date);
-    const ins = db.prepare('INSERT INTO medication_doses (date, medication_id, timing, taken, updated_at, dose, moved_to) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    db.prepare('DELETE FROM medication_doses WHERE user_id = @uid AND date = ?').run(date);
+    const ins = db.prepare('INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at, dose, moved_to) VALUES (@uid, ?, ?, ?, ?, ?, ?, ?)');
     for (const d of doses) {
       const item = expected.get(`${d.medication_id}|${d.timing}`);
       const dose = d.dose?.trim() || null;
@@ -459,7 +459,7 @@ export function saveDoses(db, date, doses) {
   return dayMedications(db, date);
 }
 
-export const clearDoses = (db, date) => db.prepare('DELETE FROM medication_doses WHERE date = ?').run(date).changes;
+export const clearDoses = (db, date) => db.prepare('DELETE FROM medication_doses WHERE user_id = @uid AND date = ?').run(date).changes;
 
 /**
  * Adds a medication, or a new period for one that is not currently taken. A stopped_on date
@@ -468,18 +468,18 @@ export const clearDoses = (db, date) => db.prepare('DELETE FROM medication_doses
 export function addMedication(db, body) {
   if (body.stopped_on && body.stopped_on < body.started_on) throw fail(400, 'The stop date cannot be before the start date');
   return db.transaction(() => {
-    const existing = db.prepare('SELECT id FROM medications WHERE name = ?').get(body.name.trim());
+    const existing = db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').get(body.name.trim());
     let id = existing?.id;
     if (id) {
       if (openPeriod(db, id) && !body.stopped_on) throw fail(409, `${body.name.trim()} is already in your current list; use Change instead`);
       assertNoOverlap(db, id, body.started_on, body.stopped_on ?? null);
       const sets = ['kind', 'purpose', 'prescribed', 'notes'].filter((k) => body[k] !== undefined);
       if (sets.length) {
-        db.prepare(`UPDATE medications SET ${sets.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`)
+        db.prepare(`UPDATE medications SET ${sets.map((k) => `${k} = @${k}`).join(', ')} WHERE user_id = @uid AND id = @id`)
           .run({ id, kind: body.kind, purpose: body.purpose?.trim() || null, prescribed: body.prescribed ? 1 : 0, notes: body.notes?.trim() || null });
       }
     } else {
-      id = db.prepare('INSERT INTO medications (name, kind, purpose, prescribed, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      id = db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?)')
         .run(body.name.trim(), body.kind, body.purpose?.trim() || null, body.prescribed ? 1 : 0, body.notes?.trim() || null, now()).lastInsertRowid;
     }
     insertPeriod(db, id, body);
@@ -500,9 +500,9 @@ export function changeMedication(db, id, { dose, ingredients, timings, effective
     if (!correction && effective_on < open.started_on) throw fail(400, `The change cannot be before the current period started (${open.started_on})`);
     if (correction || effective_on === open.started_on) {
       const r = regimenOf({ dose, ingredients });
-      db.prepare('UPDATE medication_periods SET dose = ?, ingredients = ?, timings = ? WHERE id = ?').run(r.dose, r.ingredients, JSON.stringify(timings), open.id);
+      db.prepare('UPDATE medication_periods SET dose = ?, ingredients = ?, timings = ? WHERE user_id = @uid AND id = ?').run(r.dose, r.ingredients, JSON.stringify(timings), open.id);
     } else {
-      db.prepare('UPDATE medication_periods SET stopped_on = ? WHERE id = ?').run(effective_on, open.id);
+      db.prepare('UPDATE medication_periods SET stopped_on = ? WHERE user_id = @uid AND id = ?').run(effective_on, open.id);
       insertPeriod(db, id, { dose, ingredients, timings, started_on: effective_on });
     }
     return getMedication(db, id);
@@ -514,7 +514,7 @@ export function stopMedication(db, id, { stopped_on, reason }) {
   const open = openPeriod(db, id);
   if (!open) throw fail(409, 'Not currently taken');
   if (stopped_on < open.started_on) throw fail(400, `The stop date cannot be before it started (${open.started_on})`);
-  db.prepare('UPDATE medication_periods SET stopped_on = ?, stop_reason = ? WHERE id = ?').run(stopped_on, reason?.trim() || null, open.id);
+  db.prepare('UPDATE medication_periods SET stopped_on = ?, stop_reason = ? WHERE user_id = @uid AND id = ?').run(stopped_on, reason?.trim() || null, open.id);
   return getMedication(db, id);
 }
 
@@ -534,7 +534,7 @@ export function updateMedicationDetails(db, id, changes) {
   const keys = ['name', 'kind', 'purpose', 'prescribed', 'notes'].filter((k) => changes[k] !== undefined);
   const values = { id, ...changes, name: changes.name?.trim(), purpose: changes.purpose?.trim() || null, prescribed: changes.prescribed ? 1 : 0, notes: changes.notes?.trim() || null };
   try {
-    db.prepare(`UPDATE medications SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`).run(values);
+    db.prepare(`UPDATE medications SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE user_id = @uid AND id = @id`).run(values);
   } catch (err) {
     if (/UNIQUE/.test(err.message)) throw fail(409, 'Another entry already has that name');
     throw err;
@@ -542,7 +542,7 @@ export function updateMedicationDetails(db, id, changes) {
   return getMedication(db, id);
 }
 
-export const deleteMedication = (db, id) => db.prepare('DELETE FROM medications WHERE id = ?').run(id).changes > 0;
+export const deleteMedication = (db, id) => db.prepare('DELETE FROM medications WHERE user_id = @uid AND id = ?').run(id).changes > 0;
 
 /**
  * Combines items taken as one pill into one item with ingredients, for past history and from now on. Every start,
@@ -556,7 +556,7 @@ export function combineMedications(db, { ids, name, timing, preview = false }) {
   const items = [...new Set(ids)].map((id) => requireMedication(db, id));
   if (items.length < 2) throw fail(400, 'Choose at least two items to combine');
   const newName = name.trim();
-  const clash = db.prepare('SELECT id FROM medications WHERE name = ?').get(newName);
+  const clash = db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').get(newName);
   if (clash && !items.some((m) => m.id === clash.id)) throw fail(409, 'Another entry already has that name');
 
   const periods = items.flatMap((m) => m.periods.map((p) => ({ ...p, item: m })));
@@ -591,7 +591,7 @@ export function combineMedications(db, { ids, name, timing, preview = false }) {
     seg.stop_reason = reasons.join('; ') || null;
   });
 
-  const marks = db.prepare(`SELECT date, taken, dose, moved_to FROM medication_doses WHERE medication_id IN (${items.map(() => '?').join(', ')})`)
+  const marks = db.prepare(`SELECT date, taken, dose, moved_to FROM medication_doses WHERE user_id = @uid AND medication_id IN (${items.map(() => '?').join(', ')})`)
     .all(...items.map((m) => m.id));
   const days = new Map();
   for (const r of marks) {
@@ -619,11 +619,11 @@ export function combineMedications(db, { ids, name, timing, preview = false }) {
   if (preview) return { preview: true, ...plan };
 
   return db.transaction(() => {
-    for (const m of items) db.prepare('DELETE FROM medications WHERE id = ?').run(m.id);
-    const id = db.prepare('INSERT INTO medications (name, kind, purpose, prescribed, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    for (const m of items) db.prepare('DELETE FROM medications WHERE user_id = @uid AND id = ?').run(m.id);
+    const id = db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?)')
       .run(plan.name, plan.kind, plan.purpose, plan.prescribed ? 1 : 0, plan.notes, now()).lastInsertRowid;
     for (const seg of segments) insertPeriod(db, id, { ...seg, timings: [timing] });
-    const ins = db.prepare('INSERT INTO medication_doses (date, medication_id, timing, taken, updated_at) VALUES (?, ?, ?, ?, ?)');
+    const ins = db.prepare('INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at) VALUES (@uid, ?, ?, ?, ?, ?)');
     for (const [date, d] of days) ins.run(date, id, timing, d.any ? 1 : 0, now());
     return { preview: false, ...plan, medication: getMedication(db, id) };
   })();
@@ -631,10 +631,10 @@ export function combineMedications(db, { ids, name, timing, preview = false }) {
 
 /** Weekly check-offs (taken out of logged) for each current item, oldest week first, ending with this week so far. */
 export function medicationCheckoffs(db, today, weeks = 12) {
-  const current = db.prepare(`SELECT m.id, m.name FROM medications m JOIN medication_periods p ON p.medication_id = m.id
-    WHERE p.stopped_on IS NULL ORDER BY m.name`).all();
+  const current = db.prepare(`SELECT m.id, m.name FROM medications m JOIN medication_periods p ON p.medication_id = m.id AND p.user_id = m.user_id
+    WHERE m.user_id = @uid AND p.stopped_on IS NULL ORDER BY m.name`).all();
   const from = addDays(today, -7 * weeks);
-  const doses = db.prepare('SELECT date, medication_id, taken FROM medication_doses WHERE date BETWEEN ? AND ?').all(from, today);
+  const doses = db.prepare('SELECT date, medication_id, taken FROM medication_doses WHERE user_id = @uid AND date BETWEEN ? AND ?').all(from, today);
   const { weekEnds, items } = weeklyCheckoffs(doses, { weeks, today });
   const empty = () => weekEnds.map((weekEnd) => ({ weekEnd, taken: 0, logged: 0 }));
   return { weekEnds, items: current.map((m) => ({ id: m.id, name: m.name, weeks: items.get(m.id) ?? empty() })) };
@@ -646,8 +646,8 @@ export function medicationImpact(db, today) {
   const events = medicationEvents(medications, periods).filter((e) => e.date <= today);
   if (!events.length) return [];
   const from = addDays(events[0].date, -28);
-  const metrics = db.prepare('SELECT date, hrv_ms, resting_hr, sleep_total_hr FROM daily_metrics WHERE date BETWEEN ? AND ?').all(from, today);
-  const checkins = db.prepare('SELECT date, readiness, energy, mood, stress FROM checkins WHERE date BETWEEN ? AND ?').all(from, today);
+  const metrics = db.prepare('SELECT date, hrv_ms, resting_hr, sleep_total_hr FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ?').all(from, today);
+  const checkins = db.prepare('SELECT date, readiness, energy, mood, stress FROM checkins WHERE user_id = @uid AND date BETWEEN ? AND ?').all(from, today);
   return events
     .map((e) => ({ ...e, impact: eventImpact(e, metrics, checkins, today, events) }))
     .reverse();
@@ -663,12 +663,12 @@ export function medicationImpact(db, today) {
  * config/lab-ranges.json), the typical one for "Use typical range", and each result where it sits (below, within, above).
  */
 export function listLabs(db, rangesConfig = null) {
-  const tests = db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests ORDER BY position, name').all()
+  const tests = db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid ORDER BY position, name').all()
     .map(({ ref_low, ref_high, ref_set, ...t }) => {
       const range = effectiveRange({ name: t.name, ref_low, ref_high, ref_set }, rangesConfig);
       return { ...t, range, typicalRange: typicalRange(t.name, rangesConfig) };
     });
-  const results = db.prepare('SELECT id, test_id, drawn_on, value, value_text, source, corrected_from, corrected_from_date FROM lab_results ORDER BY drawn_on DESC').all();
+  const results = db.prepare('SELECT id, test_id, drawn_on, value, value_text, source, corrected_from, corrected_from_date FROM lab_results WHERE user_id = @uid ORDER BY drawn_on DESC').all();
   const panels = [];
   for (const t of tests) {
     const mine = results.filter((r) => r.test_id === t.id).map(({ test_id, ...r }) => ({ ...r, rangeStatus: rangeStatus(r.value, t.range) }));
@@ -692,25 +692,25 @@ export function addLabResult(db, { test_id, name, panel, unit, drawn_on, value }
     let id = test_id;
     if (!id) {
       if (!name?.trim()) throw fail(400, 'Choose a test or enter a new test name');
-      id = db.prepare('SELECT id FROM lab_tests WHERE name = ?').get(name.trim())?.id;
-      id ??= Number(db.prepare('INSERT INTO lab_tests (name, panel, unit, created_at) VALUES (?, ?, ?, ?)')
+      id = db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?').get(name.trim())?.id;
+      id ??= Number(db.prepare('INSERT INTO lab_tests (user_id, name, panel, unit, created_at) VALUES (@uid, ?, ?, ?, ?)')
         .run(name.trim(), panel?.trim() || null, unit?.trim() || null, now()).lastInsertRowid);
-    } else if (!db.prepare('SELECT 1 FROM lab_tests WHERE id = ?').get(id)) {
+    } else if (!db.prepare('SELECT 1 FROM lab_tests WHERE user_id = @uid AND id = ?').get(id)) {
       throw fail(404, 'Test not found');
     }
-    const existing = db.prepare('SELECT source FROM lab_results WHERE test_id = ? AND drawn_on = ?').get(id, drawn_on);
+    const existing = db.prepare('SELECT source FROM lab_results WHERE user_id = @uid AND test_id = ? AND drawn_on = ?').get(id, drawn_on);
     if (existing) {
       throw fail(409, existing.source === 'sheet' ? 'That test already has a result from the Google Sheet on that date; change it in the sheet' : 'That test already has a result on that date; edit it instead');
     }
     const v = labValue(value);
-    const rid = db.prepare("INSERT INTO lab_results (test_id, drawn_on, value, value_text, source, updated_at) VALUES (?, ?, ?, ?, 'ui', ?)")
+    const rid = db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?)")
       .run(id, drawn_on, v.value, v.value_text, now()).lastInsertRowid;
-    return db.prepare('SELECT * FROM lab_results WHERE id = ?').get(rid);
+    return db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(rid);
   })();
 }
 
 function requireResult(db, id) {
-  const r = db.prepare('SELECT * FROM lab_results WHERE id = ?').get(id);
+  const r = db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(id);
   if (!r) throw fail(404, 'Result not found');
   return r;
 }
@@ -727,13 +727,13 @@ export function updateLabResult(db, id, { drawn_on, value }) {
   const fromSheet = r.source === 'sheet';
   try {
     db.prepare(`UPDATE lab_results SET drawn_on = ?, value = ?, value_text = ?, source = 'ui', updated_at = ?,
-        corrected_from = ?, corrected_from_date = ? WHERE id = ?`)
+        corrected_from = ?, corrected_from_date = ? WHERE user_id = @uid AND id = ?`)
       .run(date, v.value, v.value_text, now(), fromSheet ? r.value_text : r.corrected_from, fromSheet ? r.drawn_on : r.corrected_from_date, id);
   } catch (err) {
     if (/UNIQUE/.test(err.message)) throw fail(409, 'That test already has a result on that date');
     throw err;
   }
-  return db.prepare('SELECT * FROM lab_results WHERE id = ?').get(id);
+  return db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(id);
 }
 
 /**
@@ -747,20 +747,20 @@ export function deleteLabResult(db, id) {
     const original = labValue(r.corrected_from);
     try {
       db.prepare(`UPDATE lab_results SET drawn_on = ?, value = ?, value_text = ?, source = 'sheet', corrected_from = NULL,
-          corrected_from_date = NULL, updated_at = ? WHERE id = ?`).run(r.corrected_from_date, original.value, original.value_text, now(), id);
+          corrected_from_date = NULL, updated_at = ? WHERE user_id = @uid AND id = ?`).run(r.corrected_from_date, original.value, original.value_text, now(), id);
     } catch (err) {
       if (/UNIQUE/.test(err.message)) throw fail(409, 'Another result already sits on the original date; move or delete it first');
       throw err;
     }
     return { restored: true };
   }
-  db.prepare('DELETE FROM lab_results WHERE id = ?').run(id);
+  db.prepare('DELETE FROM lab_results WHERE user_id = @uid AND id = ?').run(id);
   return { restored: false };
 }
 
 /** Unit, panel, or reference range (your own from the lab report, either bound null; reset_range goes back to typical). */
 export function updateLabTest(db, id, { unit, panel, ref_low, ref_high, reset_range }) {
-  if (!db.prepare('SELECT 1 FROM lab_tests WHERE id = ?').get(id)) throw fail(404, 'Test not found');
+  if (!db.prepare('SELECT 1 FROM lab_tests WHERE user_id = @uid AND id = ?').get(id)) throw fail(404, 'Test not found');
   const sets = [];
   const values = { id };
   if (unit !== undefined) { sets.push('unit = @unit'); values.unit = unit?.trim() || null; }
@@ -776,8 +776,8 @@ export function updateLabTest(db, id, { unit, panel, ref_low, ref_high, reset_ra
     values.ref_high = ref_high ?? null;
   }
   if (!sets.length) throw fail(400, 'Nothing to change');
-  db.prepare(`UPDATE lab_tests SET ${sets.join(', ')} WHERE id = @id`).run(values);
-  return db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE id = ?').get(id);
+  db.prepare(`UPDATE lab_tests SET ${sets.join(', ')} WHERE user_id = @uid AND id = @id`).run(values);
+  return db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid AND id = ?').get(id);
 }
 
 // ---- prompt sections ----
@@ -786,20 +786,20 @@ const SECTION_COLS = 'id, position, name, text, sensitive, updated_at';
 const asSection = (r) => r && { ...r, sensitive: Boolean(r.sensitive) };
 
 export function listSections(db) {
-  return db.prepare(`SELECT ${SECTION_COLS} FROM prompt_sections ORDER BY position, name`).all().map(asSection);
+  return db.prepare(`SELECT ${SECTION_COLS} FROM prompt_sections WHERE user_id = @uid ORDER BY position, name`).all().map(asSection);
 }
 
 export function getSection(db, id) {
-  return asSection(db.prepare(`SELECT ${SECTION_COLS} FROM prompt_sections WHERE id = ?`).get(id));
+  return asSection(db.prepare(`SELECT ${SECTION_COLS} FROM prompt_sections WHERE user_id = @uid AND id = ?`).get(id));
 }
 
 function keepVersion(db, section) {
-  db.prepare(`INSERT INTO prompt_section_versions (section_id, position, name, text, sensitive, replaced_at)
-    VALUES (?, ?, ?, ?, ?, ?)`).run(section.id, section.position, section.name, section.text, section.sensitive ? 1 : 0, now());
+  db.prepare(`INSERT INTO prompt_section_versions (user_id, section_id, position, name, text, sensitive, replaced_at)
+    VALUES (@uid, ?, ?, ?, ?, ?, ?)`).run(section.id, section.position, section.name, section.text, section.sensitive ? 1 : 0, now());
 }
 
 export function createSection(db, { position, name, text, sensitive = false }) {
-  const id = db.prepare(`INSERT INTO prompt_sections (position, name, text, sensitive, updated_at) VALUES (?, ?, ?, ?, ?)`)
+  const id = db.prepare(`INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, ?, ?, ?, ?, ?)`)
     .run(position, name.trim(), text, sensitive ? 1 : 0, now()).lastInsertRowid;
   return getSection(db, id);
 }
@@ -813,7 +813,7 @@ export function updateSection(db, id, changes) {
   if (unchanged) return current;
   db.transaction(() => {
     keepVersion(db, current);
-    db.prepare('UPDATE prompt_sections SET position = ?, name = ?, text = ?, sensitive = ?, updated_at = ? WHERE id = ?')
+    db.prepare('UPDATE prompt_sections SET position = ?, name = ?, text = ?, sensitive = ?, updated_at = ? WHERE user_id = @uid AND id = ?')
       .run(next.position, next.name, next.text, next.sensitive ? 1 : 0, now(), id);
   })();
   return getSection(db, id);
@@ -824,7 +824,7 @@ export function deleteSection(db, id) {
   if (!current) return false;
   db.transaction(() => {
     keepVersion(db, current);
-    db.prepare('DELETE FROM prompt_sections WHERE id = ?').run(id);
+    db.prepare('DELETE FROM prompt_sections WHERE user_id = @uid AND id = ?').run(id);
   })();
   return true;
 }

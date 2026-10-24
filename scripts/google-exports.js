@@ -4,7 +4,7 @@
 //   npm run google:exports
 import { getGoogleAuth } from '../tools/google/auth.js';
 import { createSheetsSource } from '../ingest/sheets.js';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { EXPORT_FILES_PER_SYNC } from '../ingest/sync.js';
 
 const FOLDERS = [
@@ -16,10 +16,10 @@ async function main() {
   const set = FOLDERS.filter((f) => process.env[f.env]);
   if (!set.length) throw new Error(`Neither ${FOLDERS.map((f) => f.env).join(' nor ')} is set in .env (each is the long id in the folder's Drive URL).`);
   const source = createSheetsSource(getGoogleAuth());
-  const store = openHealthStore();
+  const store = openOwnerStore();
   let known;
   try {
-    known = new Map(store.db.prepare('SELECT file_id, modified_time FROM drive_exports').all().map((r) => [r.file_id, r.modified_time]));
+    known = new Map(store.db.prepare('SELECT file_id, modified_time FROM drive_exports WHERE user_id = @uid').all().map((r) => [r.file_id, r.modified_time]));
   } finally {
     store.close();
   }

@@ -1,7 +1,7 @@
 // Items with ingredients (a compounded pill, a blend) and combining items taken as one pill. Synthetic names only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { dayMedications } from '../server/queries.js';
 import { medicationNames } from '../metrics/load.js';
@@ -9,7 +9,7 @@ import { medicationNames } from '../metrics/load.js';
 const TODAY = new Date(2026, 2, 9, 12, 0); // 2026-03-09
 
 async function setup() {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, clock: () => TODAY });
   return { app, db: store.db, done: async () => { await app.close(); store.close(); } };
 }

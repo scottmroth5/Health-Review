@@ -5,7 +5,7 @@
 //   npm run log:typos -- --distinct 2,7     record those as different exercises (never offered again)
 // The numbers come from the list printed with no arguments; run it again after a merge, since numbers shift.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { DICTIONARY_PATH, createDictionary } from '../metrics/dictionary.js';
 import { typoCandidates, applyTypoMerges, markDistinct } from '../metrics/name-typos.js';
 import { canonicalSetCounts, normalizeAll, unmappedNames } from '../ingest/normalize.js';
@@ -15,7 +15,7 @@ const numbers = (text) => (text ?? '').split(',').map((s) => Number(s.trim())).f
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 const json = JSON.parse(readFileSync(DICTIONARY_PATH, 'utf8'));
-const store = openHealthStore();
+const store = openOwnerStore();
 try {
   const found = typoCandidates({ dictionary: json, unmapped: unmappedNames(store.db), setCounts: canonicalSetCounts(store.db) });
   const all = [...found.entries, ...found.unmapped];

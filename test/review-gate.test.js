@@ -2,10 +2,11 @@
 // Synthetic values only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { reviewStatus } from '../server/queries.js';
 import { addDays } from '../metrics/stats.js';
+import { OWNER_ID } from '../db/users.js';
 
 // Monday 2026-03-09: the review week is Sunday Mar 1 to Saturday Mar 7.
 const MONDAY = new Date(2026, 2, 9, 12, 0);
@@ -13,12 +14,12 @@ const WEEK_END = '2026-03-07';
 
 /** Steps for every day from Jan 30 to Mar 7 (the week plus 28 days of median history), minus skipped dates. */
 function fillDays(db, { skip = [], steps = {} } = {}) {
-  const add = db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES (?, ?, 'x')");
+  const add = db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, ?, 'x')");
   for (let d = '2026-01-30'; d <= WEEK_END; d = addDays(d, 1)) if (!skip.includes(d)) add.run(d, steps[d] ?? 8000);
 }
 
 function store() {
-  return openHealthStore(':memory:');
+  return openOwnerStore(':memory:');
 }
 
 test('reviewStatus: a complete week is ready', () => {
@@ -54,13 +55,13 @@ test('reviewStatus: overdue only from 9am on the Sunday after, or once a run was
   fillDays(s.db);
   assert.equal(reviewStatus(s.db, '2026-03-08', new Date('2026-03-08T07:00:00-04:00')).overdue, false);
   assert.equal(reviewStatus(s.db, '2026-03-08', new Date('2026-03-08T09:00:00-04:00')).overdue, true);
-  s.db.prepare("INSERT INTO runs (name, meta, status, started_at, summary) VALUES ('review', ?, 'skipped', 'x', ?)")
+  s.db.prepare("INSERT INTO runs (user_id, name, meta, status, started_at, summary) VALUES (@uid, 'review', ?, 'skipped', 'x', ?)")
     .run(JSON.stringify({ weekEnd: WEEK_END }), JSON.stringify({ weekEnd: WEEK_END, missingDays: ['2026-03-07'], partialDays: [] }));
   const early = reviewStatus(s.db, '2026-03-08', new Date('2026-03-08T08:05:00-04:00'));
   assert.equal(early.overdue, true);
   assert.equal(early.lastRun.status, 'skipped');
   assert.deepEqual(early.lastRun.summary.missingDays, ['2026-03-07']);
-  s.db.prepare("INSERT INTO reviews (week_ending, summary_json, report_md, created_at) VALUES (?, '{}', 'x', 'x')").run(WEEK_END);
+  s.db.prepare("INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at) VALUES (@uid, ?, '{}', 'x', 'x')").run(WEEK_END);
   assert.equal(reviewStatus(s.db, '2026-03-09', MONDAY).overdue, false);
   s.close();
 });
@@ -68,14 +69,14 @@ test('reviewStatus: overdue only from 9am on the Sunday after, or once a run was
 test('reviewStatus: a review written with a missing day is offered for a rewrite once the day arrives', () => {
   const s = store();
   fillDays(s.db, { skip: ['2026-03-07'] });
-  const save = s.db.prepare("INSERT OR REPLACE INTO reviews (week_ending, summary_json, report_md, created_at) VALUES (?, ?, 'x', 'x')");
+  const save = s.db.prepare("INSERT OR REPLACE INTO reviews (user_id, week_ending, summary_json, report_md, created_at) VALUES (@uid, ?, ?, 'x', 'x')");
   save.run(WEEK_END, JSON.stringify({ dataQuality: { missingDays: ['2026-03-07'], suspectedPartialDays: [] } }));
   let r = reviewStatus(s.db, '2026-03-09', MONDAY);
   assert.deepEqual(r.writtenWithGaps, { missingDays: ['2026-03-07'], partialDays: [] });
   assert.equal(r.rewriteAvailable, false); // still missing
   assert.equal(r.overdue, false);
 
-  s.db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES ('2026-03-07', 8000, 'x')").run();
+  s.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, '2026-03-07', 8000, 'x')").run();
   r = reviewStatus(s.db, '2026-03-09', MONDAY);
   assert.equal(r.rewriteAvailable, true);
 
@@ -89,7 +90,7 @@ test('reviewStatus: a review written with a missing day is offered for a rewrite
 test('reviewStatus: a run for another week is not this week\'s run', () => {
   const s = store();
   fillDays(s.db);
-  s.db.prepare("INSERT INTO runs (name, meta, status, started_at) VALUES ('review', ?, 'ok', 'x')").run(JSON.stringify({ weekEnd: '2026-02-28' }));
+  s.db.prepare("INSERT INTO runs (user_id, name, meta, status, started_at) VALUES (@uid, 'review', ?, 'ok', 'x')").run(JSON.stringify({ weekEnd: '2026-02-28' }));
   assert.equal(reviewStatus(s.db, '2026-03-08', new Date(2026, 2, 8, 7, 0)).lastRun, null);
   s.close();
 });
@@ -133,7 +134,7 @@ test('api: a manual run syncs, refuses incomplete weeks unless forced, and runs 
 
   const started = await run(app, { force: true });
   assert.equal(started.statusCode, 202);
-  assert.deepEqual(calls.at(-1), { weekEnd: WEEK_END, today: '2026-03-09' });
+  assert.deepEqual(calls.at(-1), { uid: OWNER_ID, weekEnd: WEEK_END, today: '2026-03-09' });
   assert.equal((await app.inject('/api/reviews/status')).json().running, true);
   assert.equal((await run(app, { force: true })).statusCode, 409); // one at a time
 

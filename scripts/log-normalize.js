@@ -1,7 +1,7 @@
 // Applies config/exercise-dictionary.json to the whole Workout Log history and prints coverage.
 // Prints counts only: no names, weights or dates.
 //   npm run log:normalize
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { loadDictionary } from '../metrics/dictionary.js';
 import { normalizeAll } from '../ingest/normalize.js';
 
@@ -13,7 +13,7 @@ try {
   process.exit(1);
 }
 
-const store = openHealthStore();
+const store = openOwnerStore();
 try {
   const c = normalizeAll(store.db, dictionary);
   console.log(`Sets mapped to a canonical exercise and implement: ${c.mappedSets} of ${c.sets} (${c.mappedPct}%)`);

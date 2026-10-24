@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ownerTz, zonedParts, localDate, localStamp, DEFAULT_TZ } from '../tools/time.js';
 import { lastWeekEnd } from '../metrics/stats.js';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { parseWorkoutJson, localStamp as fileStamp } from '../ingest/parsers.js';
 import { partialDays } from '../metrics/dataquality.js';
@@ -38,7 +38,7 @@ test('a Saturday 11:30 pm New York event lands in that review week on a host run
   assert.equal(lastWeekEnd(localDate(new Date('2026-10-25T13:00:00Z'), NY)), '2026-10-24', 'Sunday morning reviews the week that just ended');
 
   // The server's "today" follows the owner's zone, not the host's.
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, clock: () => instant });
   assert.equal((await app.inject('/api/status')).json().today, '2026-10-24');
   await app.close();

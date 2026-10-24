@@ -1,7 +1,7 @@
 // Prints the computed summary for a week as JSON: the exact numbers the weekly review will use.
 //   npm run metrics                      the most recent full week (ending last Saturday)
 //   npm run metrics -- --week 2026-09-26 the week ending on that Saturday
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { computeWeek } from '../metrics/index.js';
 import { loadWeekData, loadMetricSettings } from '../metrics/load.js';
 import { lastWeekEnd } from '../metrics/stats.js';
@@ -14,7 +14,7 @@ if (!isValidDate(weekEnd)) {
   process.exit(1);
 }
 
-const store = openHealthStore();
+const store = openOwnerStore();
 try {
   const summary = computeWeek(loadWeekData(store.db, weekEnd), { weekEnd, ...loadMetricSettings(store.db) });
   console.log(JSON.stringify(summary, null, 2));

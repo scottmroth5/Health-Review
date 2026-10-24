@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ClaudeTruncatedError } from '@scottmroth5/agent-core';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { addDays } from '../metrics/stats.js';
 import { findDashes, stripDashes, allowedNumbers, ungroundedNumbers, misroutedTopics } from '../agent/validate.js';
 import { buildSystem, renderReport, CONTRACT } from '../agent/instructions.js';
@@ -83,11 +83,11 @@ test('summary: nightBreathing is passed to the review only when there is data', 
 
 test('summary: health targets reach the review (metrics with data only), and their numbers are grounded', async () => {
   const { loadWeekData } = await import('../metrics/load.js');
-  const store = openHealthStore(':memory:');
-  const add = store.db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES (?, 6500, 'x')");
+  const store = openOwnerStore(':memory:');
+  const add = store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, 6500, 'x')");
   for (let d = '2026-07-01'; d <= '2026-09-26'; d = addDays(d, 1)) add.run(d);
-  for (const [k, v] of [['birth_year', '1975'], ['sex', 'male']]) store.db.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, 'x')").run(k, v);
-  store.db.prepare("INSERT INTO health_targets (metric, target, updated_at) VALUES ('resting_hr', 58, 'x')").run(); // no resting HR data: left out
+  for (const [k, v] of [['birth_year', '1975'], ['sex', 'male']]) store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run(k, v);
+  store.db.prepare("INSERT INTO health_targets (user_id, metric, target, updated_at) VALUES (@uid, 'resting_hr', 58, 'x')").run(); // no resting HR data: left out
   const s = buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
   assert.deepEqual(s.targets, [{ metric: 'Steps', target: 7500, setBy: 'suggested', current90d: 6500, basis: 'norm', healthyLow: 8000 }]);
   assert.deepEqual(ungroundedNumbers(report([['Patterns Noticed', 'Steps averaged 6,500 against a target of 7,500 (healthy is 8,000 or more).']]), allowedNumbers(s, '')), []);
@@ -156,13 +156,13 @@ test('fallbacks: on for supported models via the beta endpoint, plain call other
 
 // ---- the run ----
 function seededStore() {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const { db } = store;
   const now = 'x';
-  db.prepare("INSERT INTO prompt_sections (position, name, text, sensitive, updated_at) VALUES (1, 'profile', 'Coach. Today is {{TODAY}}.', 0, ?), (2, 'genetics', 'Gene notes.', 1, ?)").run(now, now);
-  db.prepare("INSERT INTO daily_metrics (date, hrv_ms, updated_at) VALUES ('2026-09-22', 48, 'x'), ('2026-09-23', 50, 'x')").run();
-  db.prepare("INSERT INTO medications (name, kind, created_at) VALUES ('Sample Statin', 'medication', 'x')").run();
-  db.prepare("INSERT INTO checkins (date, cadence, readiness, notes, source, updated_at) VALUES ('2026-09-24', 'daily', 7, 'Long work week', 'ui', 'x')").run();
+  db.prepare("INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, 1, 'profile', 'Coach. Today is {{TODAY}}.', 0, ?), (@uid, 2, 'genetics', 'Gene notes.', 1, ?)").run(now, now);
+  db.prepare("INSERT INTO daily_metrics (user_id, date, hrv_ms, updated_at) VALUES (@uid, '2026-09-22', 48, 'x'), (@uid, '2026-09-23', 50, 'x')").run();
+  db.prepare("INSERT INTO medications (user_id, name, kind, created_at) VALUES (@uid, 'Sample Statin', 'medication', 'x')").run();
+  db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, notes, source, updated_at) VALUES (@uid, '2026-09-24', 'daily', 7, 'Long work week', 'ui', 'x')").run();
   return store;
 }
 
@@ -255,11 +255,11 @@ test('summary: the current program block, its logged phase and finish reach the 
   const { loadWeekData } = await import('../metrics/load.js');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 11, phases: [
     { name: 'Phase 1', weeks: [1, 5] }, { name: 'Phase 2', weeks: [6, 11], special_weeks: { deload: [7] } }] }] }, { programs: ['MAPS Symmetry'] });
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const now = new Date().toISOString();
-  store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
-    VALUES ('b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  const ex = store.db.prepare('INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise) VALUES (2026, ?, ?, ?, ?)');
+  store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+    VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
+  const ex = store.db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, ?, ?, ?, ?)');
   ex.run(2, '2026-08-03', 'Symmetry Foundation - Phase 1', 'Squat');
   ex.run(3, '2026-09-14', 'Symmetry Foundation - Phase 2', 'Squat'); // Phase 1 took 6 weeks of a planned 5
   const s = buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
@@ -285,15 +285,15 @@ test('summary: called for vs logged reaches the review as counts and logged name
     { id: 'z-press', name: 'Z Press', implement: 'barbell', pattern: 'vertical press', primary: true },
     { id: 'row', name: 'Row', implement: 'dumbbell', pattern: 'horizontal pull', primary: false },
   ] });
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const now = new Date().toISOString();
-  store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
-    VALUES ('b1', 'MAPS Symmetry', '2026-09-14', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  store.db.prepare(`INSERT INTO log_sessions (id, date, block_id, assignment, program, week, source, updated_at, phase)
-    VALUES ('s1', '2026-09-22', 'b1', 'block', 'MAPS Symmetry', 2, 'forward', ?, 'Phase 1')`).run(now);
-  const { lastInsertRowid } = store.db.prepare(`INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise, canonical_id, implement, movement_pattern)
-    VALUES (2026, 1, '2026-09-22', 'Symmetry Foundation 1 - Phase 1', 'Z Press', 'z-press', 'barbell', 'vertical press')`).run();
-  for (let i = 1; i <= 3; i++) store.db.prepare('INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, reps) VALUES (?, ?, 95, 5)').run(lastInsertRowid, i);
+  store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+    VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-09-14', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
+  store.db.prepare(`INSERT INTO log_sessions (user_id, id, date, block_id, assignment, program, week, source, updated_at, phase)
+    VALUES (@uid, 's1', '2026-09-22', 'b1', 'block', 'MAPS Symmetry', 2, 'forward', ?, 'Phase 1')`).run(now);
+  const { lastInsertRowid } = store.db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, canonical_id, implement, movement_pattern)
+    VALUES (@uid, 2026, 1, '2026-09-22', 'Symmetry Foundation 1 - Phase 1', 'Z Press', 'z-press', 'barbell', 'vertical press')`).run();
+  for (let i = 1; i <= 3; i++) store.db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps) VALUES (@uid, ?, ?, 95, 5)').run(lastInsertRowid, i);
 
   const week = (cat) => buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog: cat, dictionary, substitutions: { swaps: [] } }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
   const s = week(catalog);
@@ -320,11 +320,11 @@ test('summary: the Program Advisor ranking reaches the review only within 21 day
   const dictionary = createDictionary({ version: 1, exercises: [
     { id: 'squat', name: 'Squat', implement: 'barbell', pattern: 'squat', primary: true },
     { id: 'sprints', name: 'Sprints', implement: 'other', pattern: 'other', primary: false }] });
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const now = new Date().toISOString();
-  store.db.prepare(`INSERT INTO program_blocks (id, program, start_date, end_date, status, source, created_at, updated_at)
-    VALUES ('b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  store.db.prepare("INSERT INTO strength_exercises (tab_year, row_no, date, workout, exercise) VALUES (2026, 2, '2026-08-03', 'Symmetry - Phase 1', 'Squat')").run();
+  store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+    VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
+  store.db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, 2, '2026-08-03', 'Symmetry - Phase 1', 'Squat')").run();
   const week = (weekEnd) => buildSummary(computeWeek(loadWeekData(store.db, weekEnd, { catalog, dictionary, substitutions: { avoid: [] } }), { weekEnd }), [], { today: weekEnd });
 
   // Earliest finish 2026-10-18 (11 weeks from Aug 3): 22 days after Sep 26, 15 after Oct 3.
@@ -366,11 +366,11 @@ test('summary: dataQuality lists the missing and partial days of the week (dates
 
 test('summary: lift plateau statuses reach the review grounded; lifts not trained recently are left out', async () => {
   const { loadWeekData } = await import('../metrics/load.js');
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const db = store.db;
-  const ex = db.prepare(`INSERT INTO strength_exercises (tab_year, row_no, date, exercise, canonical_id, implement, is_primary, map_status)
-    VALUES (?, ?, ?, ?, ?, 'barbell', 1, 'mapped')`);
-  const set = db.prepare("INSERT INTO strength_sets (exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (?, 1, ?, 5, '5')");
+  const ex = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise, canonical_id, implement, is_primary, map_status)
+    VALUES (@uid, ?, ?, ?, ?, ?, 'barbell', 1, 'mapped')`);
+  const set = db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, ?, 5, '5')");
   let row = 2;
   const add = (date, id, name, weight) => set.run(ex.run(Number(date.slice(0, 4)), row++, date, name, id).lastInsertRowid, weight);
   for (const d of ['2026-07-25', '2026-08-08']) add(d, 'barbell-deadlift', 'Barbell Deadlift', 300);
@@ -387,13 +387,13 @@ test('summary: lift plateau statuses reach the review grounded; lifts not traine
 test('summary: heartRateZones from per-minute heart rate, only with a Zone 2 range and a birth year', () => {
   const store = seededStore();
   const { db } = store;
-  db.prepare("INSERT INTO workout_sessions (type, start, end, duration_sec, avg_hr, updated_at) VALUES ('Elliptical', '2026-09-22T10:00:00', '2026-09-22T10:05:00', 300, 118, 'x')").run();
-  const ins = db.prepare("INSERT INTO workout_hr_samples (type, start, t, avg_bpm) VALUES ('Elliptical', '2026-09-22T10:00:00', ?, ?)");
+  db.prepare("INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, avg_hr, updated_at) VALUES (@uid, 'Elliptical', '2026-09-22T10:00:00', '2026-09-22T10:05:00', 300, 118, 'x')").run();
+  const ins = db.prepare("INSERT INTO workout_hr_samples (user_id, type, start, t, avg_bpm) VALUES (@uid, 'Elliptical', '2026-09-22T10:00:00', ?, ?)");
   [105, 115, 120, 130].forEach((bpm, i) => ins.run(`2026-09-22T10:0${i}`, bpm));
   const zones = () => prepareReview(db, { weekEnd: '2026-09-26', today: '2026-09-27' }).summary.heartRateZones;
   assert.equal(zones(), undefined, 'no Zone 2 range yet');
   for (const [k, v] of [['zone2_low_bpm', '110'], ['zone2_high_bpm', '125'], ['birth_year', '1970']]) {
-    db.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, 'x')").run(k, v);
+    db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run(k, v);
   }
   const z = zones();
   assert.deepEqual(z.week, { minutes: [1, 2, 1, 0, 0], noDetail: 1, total: 5 });

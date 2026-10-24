@@ -1,13 +1,13 @@
 // The weekly review: summary in, one Claude call, checks in code, saved report out.
 // Runs are traced with metadata only (model, tokens, cost, timing, which sensitive sections were
 // sent by name); prompt and report text never go to logs.
-import { createTracer } from '@scottmroth5/agent-core';
 import { computeWeek } from '../metrics/index.js';
 import { loadWeekData, loadMetricSettings, loadWeekNotes, medicationNames } from '../metrics/load.js';
 import { buildSummary } from './summary.js';
 import { buildSystem, REPORT_SCHEMA, renderReport } from './instructions.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
 import { DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from './claude.js';
+import { startUserRun } from '../db/users.js';
 
 /** Names the review's lab-value check also routes to physicianDiscussion (the summary's nightBreathing block). */
 export const NIGHT_BREATHING_NAMES = ['Blood Oxygen', 'SpO2', 'Oxygen Saturation', 'Breathing Disturbances'];
@@ -31,7 +31,7 @@ export function prepareReview(db, { weekEnd, today }) {
   const settings = loadMetricSettings(db);
   const week = computeWeek(loadWeekData(db, weekEnd), { weekEnd, ...settings });
   const summary = buildSummary(week, loadWeekNotes(db, weekEnd), { today });
-  const sections = db.prepare('SELECT position, name, text, sensitive FROM prompt_sections ORDER BY position, name').all();
+  const sections = db.prepare('SELECT position, name, text, sensitive FROM prompt_sections WHERE user_id = @uid ORDER BY position, name').all();
   const { system, sensitiveSent } = buildSystem(sections, today);
   return {
     summary,
@@ -42,7 +42,7 @@ export function prepareReview(db, { weekEnd, today }) {
       allowed: allowedNumbers(summary, system),
       medicationNames: medicationNames(db),
       // Blood oxygen and breathing disturbances are checked like lab values: a number next to them only in physicianDiscussion.
-      labNames: [...db.prepare('SELECT name FROM lab_tests').pluck().all(), ...NIGHT_BREATHING_NAMES],
+      labNames: [...db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(), ...NIGHT_BREATHING_NAMES],
     },
   };
 }
@@ -60,7 +60,7 @@ export function prepareReview(db, { weekEnd, today }) {
 export async function runReview({ store, claude, weekEnd, today, model = DEFAULT_REVIEW_MODEL, effort = DEFAULT_REVIEW_EFFORT, logger = console }) {
   const { db } = store;
   const prep = prepareReview(db, { weekEnd, today });
-  const run = createTracer({ store, logger }).startRun('review', { weekEnd, model, effort, sensitiveSections: prep.sensitiveSent });
+  const run = startUserRun(store, 'review', { weekEnd, model, effort, sensitiveSections: prep.sensitiveSent }, logger);
 
   try {
     const ask = (problems) => claude.send({
@@ -91,9 +91,9 @@ export async function runReview({ store, claude, weekEnd, today, model = DEFAULT
     }
 
     const reportMd = renderReport(report);
-    db.prepare(`INSERT INTO reviews (week_ending, summary_json, report_md, run_id, created_at, model, warnings, sensitive_sections)
-      VALUES (@week, @summary, @report, @run, @created, @model, @warnings, @sensitive)
-      ON CONFLICT (week_ending) DO UPDATE SET summary_json = excluded.summary_json, report_md = excluded.report_md,
+    db.prepare(`INSERT INTO reviews (user_id, week_ending, summary_json, report_md, run_id, created_at, model, warnings, sensitive_sections)
+      VALUES (@uid, @week, @summary, @report, @run, @created, @model, @warnings, @sensitive)
+      ON CONFLICT (user_id, week_ending) DO UPDATE SET summary_json = excluded.summary_json, report_md = excluded.report_md,
         run_id = excluded.run_id, created_at = excluded.created_at, model = excluded.model, warnings = excluded.warnings,
         sensitive_sections = excluded.sensitive_sections`).run({
       week: weekEnd,

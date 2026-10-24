@@ -24,7 +24,11 @@ Health specific logic stays in this repo; never add it to agent-core.
 /config             exercise-dictionary.json: canonical exercises and name variants (names only; see README.md);
                     substitutions.json: home equipment, what fills a cable or machine slot, and the avoid list
 /db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides; the data folder
-                    is DATA_DIR when set, tools/paths.js dataPath, which the container mounts at /app/data)
+                    is DATA_DIR when set, tools/paths.js dataPath, which the container mounts at /app/data).
+                    Users (multi-user, phase 1 of 6, plan 2026-10-24): users.js (OWNER_ID, the owner as user 1 and admin;
+                    startUserRun stamps runs.user_id), migrations-users.js (024 users; 025 rebuilt every user table with
+                    user_id NOT NULL, no default, and per-user keys; USER_TABLES), scope.js (scopeDb/scopeStore: one user's
+                    view, binding @uid into every statement that names it), openOwnerStore (the scripts act as the owner)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Today and Reviews tiles carry badges from /api/status
@@ -357,7 +361,8 @@ Access (server/auth.js, server/session.js, server/security.js; ported from Job-A
 AUTH_MODE=none (local default) binds to 127.0.0.1 only and rejects requests whose Host header is not localhost (DNS
 rebinding). AUTH_MODE=google: Google sign-in with GOOGLE_WEB_CLIENT_ID and GOOGLE_WEB_CLIENT_SECRET, callback
 /auth/google/callback built from PUBLIC_URL (redirect URI PUBLIC_URL + that path), AUTH_ALLOWED_EMAILS re-checked on every
-request, hr_session cookie signed with SESSION_SECRET (30 days, HttpOnly, SameSite=Lax, Secure on https), same-origin
+request (its first address is the owner, user 1, until registration in phase 2), the address's users row looked up on
+every request (approved only, else 403 "waiting for approval"; req.uid and req.role), hr_session cookie signed with SESSION_SECRET (30 days, HttpOnly, SameSite=Lax, Secure on https), same-origin
 required on writes, TRUST_PROXY set behind Caddy; sign-in asks for openid email profile, and the session carries the
 Google first name (given_name, else name; 60 characters, never logged) for the header's "(name)", which GET /api/me
 returns; open without a session: /auth/*, GET /api/health (status and version, the deploy check), /api/ingest/* (its own
@@ -390,6 +395,14 @@ other) plus the review eval's results.jsonl usage priced with agent-core's prici
 exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
+Users (owner's choice, 2026-10-24: one shared database, user_id on every user table, ahead of the RDS move): every query
+on a user table is scoped to one user, writing "user_id = @uid" (inserts include user_id with @uid) and run on a scoped
+database (db/scope.js); joins and subqueries scope each user table too. Only server/admin-queries.js reads across users
+(system checks, the admin's screens). Requests run as their signed-in user (server/app.js preHandler, AsyncLocalStorage;
+none and demo modes are the owner), scheduled sync and review loop over approved users, and backup and the restore test
+cover the whole database as the owner. Guards: test/user-scope.test.js (static: user_id at least once per user table in
+each statement) and test/user-isolation.test.js (every route from app.routeList as a second user shows and changes none of
+the first user's data); a new query or route must keep both passing.
 The owner's machine is the owner's own computer plus the servers the owner runs in their own AWS account (owner's choice,
 2026-10-23): today one Lightsail instance at SITE_ADDRESS (deploy/), reached only over TLS (Caddy, Let's Encrypt) and
 only after Google sign-in as an allowed email, with Health Auto Export posting over HTTPS with INGEST_TOKEN. Its address,

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp, INGEST_BODY_LIMIT, INGEST_RATE_LIMIT } from '../server/app.js';
 import { runSync } from '../ingest/sync.js';
 import { parseHealthJson } from '../ingest/health-json.js';
@@ -18,7 +18,7 @@ const rowOf = (db, date) => db.prepare('SELECT * FROM daily_metrics WHERE date =
 const strip = ({ updated_at, exported_through, ...r }) => r;
 
 async function server({ token = TOKEN, authMode = 'none', auth = {} } = {}) {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, authMode, auth, ingest: { token, apple: 'rest' }, clock: () => NOW, log: silentLogger });
   const post = (route, payload, headers = {}) => app.inject({
     method: 'POST', url: `/api/ingest/${route}`, payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
@@ -54,7 +54,7 @@ test('health JSON: wrong units and readings not grouped by day are skipped with 
 test('stand hours: hour-grouped entries counted per day (0 does not count); parts of a day add up; a re-sent hour counts once', () => {
   const { standHours } = parseHealthJson(fixture('stand'));
   assert.deepEqual(standHours, [{ date: '2026-03-01', hour: 8 }, { date: '2026-03-01', hour: 9 }, { date: '2026-03-01', hour: 14 }, { date: '2026-03-02', hour: 7 }]);
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const { db } = store;
   const apply = (p) => store.tx(() => applyHealthDays(db, p, 'x'));
   apply({ records: parseHealthJson(fixture('health')).records }); // the days exist
@@ -74,7 +74,7 @@ test('stand hours: hour-grouped entries counted per day (0 does not count); part
 });
 
 test('a day without steps never erases stored steps; a fuller day replaces a partial one', () => {
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const { db } = store;
   const apply = (records) => store.tx(() => applyHealthDays(db, { records }, 'x'));
   apply([{ date: '2026-03-01', steps: 9000, hrv_ms: 40 }]);
@@ -87,7 +87,7 @@ test('a day without steps never erases stored steps; a fuller day replaces a par
 
 test('the REST posts store exactly what the Drive files store; posting the same body twice changes nothing', async () => {
   // Drive: the health JSON and the stand hours file in the health folder, the workouts in theirs.
-  const drive = openHealthStore(':memory:');
+  const drive = openOwnerStore(':memory:');
   const src = fakeSource({ workout_log: { 2026: [['Date', 'Exercise']] } });
   src.exports = [
     { folder: 'H', id: 'h1', name: 'Apple Health Metrics-2026-03-02.json', modifiedTime: '2026-03-03T14:00:00Z', json: fixture('health') },
@@ -162,7 +162,7 @@ test('ingest under sign-in: no Google session needed (its own token); the demo r
   assert.equal((await demo.post('workouts', fixture('workouts'))).statusCode, 403);
   await demo.done();
 
-  const store = openHealthStore(':memory:');
+  const store = openOwnerStore(':memory:');
   const src = fakeSource({ workout_log: { 2026: [['Date', 'Exercise']] } });
   src.exports = [{ folder: 'H', id: 'h1', name: 'Apple Health Metrics-2026-03-02.json', modifiedTime: '2026-03-03T14:00:00Z', json: fixture('health') }];
   const { counts, warnings } = await runSync({ store, source: src, now: NOW, logger: silentLogger, catalog: null, apple: 'rest', exportFolders: { health: 'H', workouts: 'W' } });

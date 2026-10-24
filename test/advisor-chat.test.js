@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { createCatalog } from '../metrics/catalog.js';
 import { createDictionary } from '../metrics/dictionary.js';
@@ -22,9 +22,9 @@ const dictionary = createDictionary({ version: 1, exercises: [
 const substitutions = { equipment: { have: ['barbell', 'band'], lack: ['machine'] }, avoid: [{ exercise: 'circus-press' }] };
 
 function seeded() {
-  const store = openHealthStore(':memory:');
-  store.db.prepare("INSERT INTO medications (name, kind, created_at) VALUES ('Sample Statin', 'medication', 'x')").run();
-  store.db.prepare("INSERT INTO lab_tests (name, panel, unit, position, created_at) VALUES ('Sample Glucose', 'Panel', 'mg/dL', 1, 'x')").run();
+  const store = openOwnerStore(':memory:');
+  store.db.prepare("INSERT INTO medications (user_id, name, kind, created_at) VALUES (@uid, 'Sample Statin', 'medication', 'x')").run();
+  store.db.prepare("INSERT INTO lab_tests (user_id, name, panel, unit, position, created_at) VALUES (@uid, 'Sample Glucose', 'Panel', 'mg/dL', 1, 'x')").run();
   return store;
 }
 const response = (r) => ({ id: 'msg_test', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(r) }], usage: { input_tokens: 800, output_tokens: 300 } });

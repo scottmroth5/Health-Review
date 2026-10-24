@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { runSync } from '../ingest/sync.js';
 import { buildApp } from '../server/app.js';
 import { fakeSource, jsonWorkout, serial, silentLogger } from './helpers.js';
@@ -50,7 +50,7 @@ function source(data = sheets()) {
   return s;
 }
 
-const open = () => openHealthStore(':memory:');
+const open = () => openOwnerStore(':memory:');
 const sync = (store, src, opts = {}) => runSync({ store, source: src, now: NOW, logger: silentLogger, catalog: null, exportFolders: both, ...opts });
 const count = (store, table) => store.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 
@@ -149,8 +149,8 @@ test('Workout Log: in January the previous year tab is synced too', async () => 
 
 test('backfill never overwrites drinking days or check-ins entered in the UI', async () => {
   const store = open();
-  store.db.prepare("INSERT INTO drinking_days (date, beers, source, updated_at) VALUES ('2026-03-06', 5, 'ui', 'x')").run();
-  store.db.prepare("INSERT INTO checkins (date, cadence, readiness, source, updated_at) VALUES ('2026-03-07', 'daily', 9, 'ui', 'x')").run();
+  store.db.prepare("INSERT INTO drinking_days (user_id, date, beers, source, updated_at) VALUES (@uid, '2026-03-06', 5, 'ui', 'x')").run();
+  store.db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, '2026-03-07', 'daily', 9, 'ui', 'x')").run();
   const { counts } = await sync(store, source(), { backfill: true });
   assert.equal(store.db.prepare("SELECT beers FROM drinking_days WHERE date = '2026-03-06'").get().beers, 5);
   assert.equal(store.db.prepare("SELECT readiness FROM checkins WHERE date = '2026-03-07'").get().readiness, 9);
@@ -210,7 +210,7 @@ test('labs: edits and removed draw columns are reflected; app results are kept a
   const source = fakeSource(data);
   await sync(store, source);
   const psa = store.db.prepare("SELECT id FROM lab_tests WHERE name = 'PSA'").get().id;
-  store.db.prepare("INSERT INTO lab_results (test_id, drawn_on, value, value_text, source, updated_at) VALUES (?, '2026-06-01', 0.9, '0.9', 'ui', 'x')").run(psa);
+  store.db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, '2026-06-01', 0.9, '0.9', 'ui', 'x')").run(psa);
   store.db.prepare("UPDATE lab_results SET value = 5, value_text = '5', source = 'ui' WHERE test_id = ? AND drawn_on = '2026-03-23'").run(psa);
 
   data.lab_results.Labs = LAB().map((row) => row.slice(0, 2)); // drop the 2025 column
@@ -340,8 +340,8 @@ test('export files: a sync that finds nothing newer than 26 hours warns that the
 test('JSON workouts: per-minute heart rate is stored; a stored workout starting within a minute is the same one', async () => {
   const store = open();
   // A workout stored earlier (the old Sheets export) with fields the JSON lacks, its start a minute later.
-  store.db.prepare(`INSERT INTO workout_sessions (type, start, end, flights_climbed, avg_hr, updated_at)
-    VALUES ('Outdoor Walk', '2026-03-02T18:01:00', '2026-03-02T18:30:00', 4, 99, 'x')`).run();
+  store.db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, flights_climbed, avg_hr, updated_at)
+    VALUES (@uid, 'Outdoor Walk', '2026-03-02T18:01:00', '2026-03-02T18:30:00', 4, 99, 'x')`).run();
   const src = fakeSource(sheets());
   src.exports = [workoutFile('w1', '2026-03-02', walk)];
   await sync(store, src, { exportFolders: { health: null, workouts: WF } });

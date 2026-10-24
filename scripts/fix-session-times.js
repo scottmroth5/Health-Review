@@ -3,11 +3,11 @@
 // Prints counts only.
 //   npm run fix:session-times             dry run: what would change
 //   npm run fix:session-times -- --apply  do it (once; back up data/health.db first)
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { fixSessionTimes } from '../ingest/session-times.js';
 
 const apply = process.argv.includes('--apply');
-const store = openHealthStore();
+const store = openOwnerStore();
 try {
   const r = fixSessionTimes(store, { apply });
   console.log(`Workouts: ${r.total}. From the export files (kept as they are): ${r.fromExports}.`);

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openHealthStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.js';
 import { backupName } from '../tools/backup/run.js';
 import { encrypt, pack } from '../tools/backup/crypto.js';
 import { restoreTest } from '../tools/backup/restore-check.js';
@@ -29,8 +29,8 @@ function fakeDrive() {
 }
 
 function liveStore() {
-  const store = openHealthStore(join(mkdtempSync(join(tmpdir(), 'hr-live-')), 'live.db'));
-  const ins = store.db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES (?, ?, 'x')");
+  const store = openOwnerStore(join(mkdtempSync(join(tmpdir(), 'hr-live-')), 'live.db'));
+  const ins = store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, ?, 'x')");
   for (let d = 1; d <= 12; d++) ins.run(`2026-03-${String(d).padStart(2, '0')}`, 8000 + d);
   return store;
 }
@@ -56,7 +56,7 @@ test('restore test: a good backup passes; rows added since are differences, not 
   assert.deepEqual(pass.differences, []);
   assert.ok(pass.tables >= 20);
 
-  store.db.prepare("INSERT INTO daily_metrics (date, steps, updated_at) VALUES ('2026-03-13', 9000, 'x')").run(); // today's data, after the backup
+  store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, '2026-03-13', 9000, 'x')").run(); // today's data, after the backup
   const later = restoreTest({ file: drive.files.get(r0.driveFileId).data, passphrase: PASS, live: store.db });
   assert.equal(later.ok, true);
   assert.deepEqual(later.differences, [{ table: 'daily_metrics', backup: 12, live: 13 }]);
@@ -78,7 +78,7 @@ test('restore test fails: a wrong passphrase or a damaged file throws; a missing
 
   // A table the live database has but the backup lacks, and a table empty in the backup that holds 10+ rows live.
   store.db.exec('CREATE TABLE added_later (id INTEGER PRIMARY KEY)');
-  const ins = store.db.prepare("INSERT INTO checkins (date, cadence, readiness, source, updated_at) VALUES (?, 'daily', 7, 'ui', 'x')");
+  const ins = store.db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, ?, 'daily', 7, 'ui', 'x')");
   for (let d = 1; d <= 10; d++) ins.run(`2026-02-${String(d).padStart(2, '0')}`);
   const r = restoreTest({ file, passphrase: PASS, live: store.db });
   assert.equal(r.ok, false);

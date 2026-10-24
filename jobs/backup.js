@@ -1,13 +1,13 @@
 // The encrypted backup as a job: npm run backup (scripts/backup.js) and the in-app scheduler (SCHEDULE_BACKUP) run this.
 // data/health.db and the MAPS catalog, encrypted with HEALTH_BACKUP_PASSPHRASE, to Google Drive (or a folder), recorded
 // as a 'backup' run with the file name, size and counts only (tools/backup).
-import { createTracer } from '@scottmroth5/agent-core';
 import { checkPassphrase } from '../tools/backup/crypto.js';
 import { createDriveClient } from '../tools/backup/drive.js';
 import { runBackup } from '../tools/backup/run.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
 import { dataPath } from '../tools/paths.js';
 import { localDate } from '../server/queries.js';
+import { startUserRun } from '../db/users.js';
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} };
 
@@ -20,7 +20,7 @@ const quiet = { info() {}, warn() {}, error() {}, log() {} };
  */
 export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, toDir, drive, date = localDate() }) {
   checkPassphrase(passphrase);
-  const run = createTracer({ store, logger: quiet }).startRun('backup', { to: toDir ? 'folder' : 'google-drive' });
+  const run = startUserRun(store, 'backup', { to: toDir ? 'folder' : 'google-drive' }, quiet);
   try {
     const r = await runBackup({
       db: store.db,
