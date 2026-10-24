@@ -20,6 +20,11 @@ Health Review is a personal project run by its owner (the operator), shared with
 - **The operator** runs the server and can access the data stored on it, including yours. The app's administration screens show account details (name, email, status, whether a key is set), never your key.
 - **Nobody else.** Your data is not sold, shared with third parties or used for advertising.
 
+## Your data feeds
+
+- **Health Auto Export:** your iPhone sends your Apple Health data to Health Review over HTTPS with a token only you have (shown once; only a fingerprint of it is stored).
+- **Google Sheets (only if you connect it):** read-only access to your spreadsheets (`spreadsheets.readonly`), used only to read the one Workout Log sheet you choose. Health Review never changes or deletes anything. The permission is stored encrypted, and you can disconnect it in Settings or at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+
 ## AI (Anthropic's Claude)
 
 - No AI is used for you until you add your own Claude API key in Settings, and then only for your own weekly review and Next program chat, billed to you by Anthropic.

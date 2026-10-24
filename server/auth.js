@@ -17,8 +17,12 @@ export const SESSION_DAYS = 30;
 const LOGIN_MINUTES = 10;
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const CALLBACK_PATH = '/auth/google/callback';
+// A user's own Google Sheets permission (read only) for their Workout Log (multi-user, phase 3), asked separately from sign-in.
+export const SHEETS_CALLBACK_PATH = '/auth/google/sheets/callback';
+export const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+const SHEETS_COOKIE = 'hr_sheets';
 // The app icon and manifest are open too: iOS fetches them for Add to Home Screen without the session cookie (code-only files).
-const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png)$/, /^\/(privacy|terms)$/];
+const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png)$/, /^\/(privacy|terms)$/, /^\/guides(\/[a-z-]+)?$/];
 const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 export const DEMO_REFUSAL = 'This is a read-only demo with made-up data, so changes are turned off.';
 
@@ -71,6 +75,15 @@ export function assertSafeBinding({ host, mode = 'none', settings = {} }) {
   if (!loopback && url.protocol !== 'https:') throw new Error(`PUBLIC_URL must use https when the server listens on ${host}.`);
 }
 
+/** The Sheets exchange: code -> tokens (the refresh token is what is kept, sealed). */
+export function googleTokenExchange(settings) {
+  return async ({ code, codeVerifier, redirectUri }) => {
+    const client = new OAuth2Client({ clientId: settings.clientId, clientSecret: settings.clientSecret, redirectUri });
+    const { tokens } = await client.getToken({ code, codeVerifier, redirect_uri: redirectUri });
+    return tokens;
+  };
+}
+
 /** The real Google exchange: code -> verified ID token payload (signature, audience, issuer, expiry). */
 export function googleExchange(settings) {
   return async ({ code, codeVerifier, redirectUri }) => {
@@ -100,7 +113,8 @@ const safeNext = (next) => (typeof next === 'string' && /^\/(?!\/)/.test(next) &
  * @param {object} [users]  findUser(email) -> users row or null; registerUser({ email, name }) -> creates a pending user and
  *   tells the admin (google mode)
  */
-export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now(), findUser = () => null, registerUser = async () => {} } = {}) {
+export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now(), findUser = () => null, registerUser = async () => {},
+  sheetsExchange, connectSheets = async () => {} } = {}) {
   app.get('/api/me', {
     schema: { summary: 'The signed-in user (google mode), or the open or demo mode', response: { 200: { type: 'object', additionalProperties: true } } },
   }, async (req) => ({ authMode: mode, email: req.user ?? null, name: req.userName ?? null, ...(mode === 'demo' ? { demo: true } : {}) }));
@@ -193,6 +207,42 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     return reply.redirect(login.next);
   });
 
+  // ---- Connecting a user's own Google Sheets (read only), for their Workout Log (multi-user, phase 3) ----
+  // Only an approved user, after signing in; the refresh token goes to connectSheets (sealed there), never to a log.
+  const sheetsRedirect = `${settings.publicUrl}${SHEETS_CALLBACK_PATH}`;
+  const tokensFor = sheetsExchange ?? googleTokenExchange(settings);
+  app.get('/auth/google/sheets', { schema: { hide: true } }, async (req, reply) => {
+    const session = verify(parseCookies(req.headers.cookie)[SESSION_COOKIE], key, now());
+    if (findUser(session?.email ?? '')?.status !== 'approved') return reply.redirect('/auth/login');
+    const state = b64url(randomBytes(24));
+    const codeVerifier = b64url(randomBytes(32));
+    const pending = sign({ state, codeVerifier, email: session.email, exp: now() + LOGIN_MINUTES * 60_000 }, key);
+    const url = new URL(GOOGLE_AUTH);
+    for (const [k, v] of Object.entries({
+      client_id: settings.clientId, redirect_uri: sheetsRedirect, response_type: 'code', scope: SHEETS_SCOPE, access_type: 'offline',
+      prompt: 'consent', login_hint: session.email, state, code_challenge: createHash('sha256').update(codeVerifier).digest('base64url'), code_challenge_method: 'S256',
+    })) url.searchParams.set(k, v);
+    reply.header('Set-Cookie', cookie(SHEETS_COOKIE, pending, { maxAge: LOGIN_MINUTES * 60, secure }));
+    return reply.redirect(url.toString());
+  });
+  app.get(SHEETS_CALLBACK_PATH, { schema: { hide: true } }, async (req, reply) => {
+    const clear = cookie(SHEETS_COOKIE, '', { maxAge: 0, secure });
+    const back = (result) => reply.header('Set-Cookie', clear).redirect(`/#settings/sheets-${result}`);
+    const pending = verify(parseCookies(req.headers.cookie)[SHEETS_COOKIE], key, now());
+    const session = verify(parseCookies(req.headers.cookie)[SESSION_COOKIE], key, now());
+    if (req.query?.error) return back('cancelled');
+    if (!pending || !session || pending.email !== session.email || req.query?.state !== pending.state || !req.query?.code) return back('expired');
+    try {
+      const tokens = await tokensFor({ code: req.query.code, codeVerifier: pending.codeVerifier, redirectUri: sheetsRedirect });
+      if (!tokens?.refresh_token || !String(tokens.scope ?? SHEETS_SCOPE).includes(SHEETS_SCOPE)) return back('incomplete');
+      await connectSheets({ email: session.email, refreshToken: tokens.refresh_token });
+      return back('connected');
+    } catch (err) {
+      console.warn(`[auth] Google Sheets connection failed: ${err.name}`);
+      return back('failed');
+    }
+  });
+
   // ---- Requesting access (anyone signed in with Google whose address has no users row) ----
   // Plain HTML forms post url-encoded bodies; only these routes take them.
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 4096 }, (req, body, done) => {
@@ -212,6 +262,10 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
       <p><strong>No AI is used</strong> until you add your own Claude API key in Settings; everything else works without one.</p>
       <p>Requests are approved by hand, usually within 24 hours, and you get an email when you're in.</p>
       <form method="post" action="/auth/register">
+        <p><strong>What will you use?</strong> (you can change this later in Settings; <a href="/guides" target="_blank">setup guides</a>)</p>
+        <p><label><input type="checkbox" name="appleHealth" checked> Apple Health, sent from Health Auto Export on your iPhone</label><br>
+        <label><input type="checkbox" name="workoutLog"> A Workout Log in Google Sheets</label><br>
+        <label><input type="checkbox" name="manual" checked> Check-ins, drinks, meds and labs entered in the app</label></p>
         <p><label><input type="checkbox" name="agree" required> I agree to the <a href="/terms" target="_blank">terms</a> and the <a href="/privacy" target="_blank">privacy policy</a>.</label></p>
         <p><button type="submit">Request access</button></p>
       </form>${signOut}`));
@@ -222,7 +276,8 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     if (!session) return reply.redirect('/auth/login');
     if (!findUser(session.email)) {
       if (req.body?.agree !== 'on') return reply.redirect('/auth/register');
-      await registerUser({ email: session.email, name: typeof session.name === 'string' ? session.name : null });
+      const feeds = Object.fromEntries(['appleHealth', 'workoutLog', 'manual'].map((f) => [f, req.body?.[f] === 'on']));
+      await registerUser({ email: session.email, name: typeof session.name === 'string' ? session.name : null, feeds });
     }
     return reply.redirect(statusPage(findUser(session.email)) ?? '/');
   });

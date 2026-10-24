@@ -5,6 +5,8 @@ import { openHealthStore } from '../db/store.js';
 import { scopeStore } from '../db/scope.js';
 import { OWNER_ID, getUser, startUserRun } from '../db/users.js';
 import { open } from '../tools/secret-box.js';
+import { OAuth2Client } from 'google-auth-library';
+import { createSheetsSource } from '../ingest/sheets.js';
 import { createMailer } from '../tools/mail.js';
 import { repoPath, dataPath } from '../tools/paths.js';
 import { localDate as ownerDate, zonedInstant } from '../tools/time.js';
@@ -78,10 +80,25 @@ if (demo) {
     return sealed ? createReviewClaude({ apiKey: open(sealed, uid) }) : null;
   };
   const hasAi = (uid) => uid === OWNER_ID || Boolean(getUser(store.db, uid)?.claude_key_enc);
+  // A user's own Google permission for Sheets (read only), from their sealed refresh token, with the web sign-in client.
+  const sheetsAuthFor = (uid) => {
+    const sealed = getUser(store.db, uid)?.google_refresh_enc;
+    if (!sealed) throw new Error('Google Sheets is not connected');
+    const client = new OAuth2Client({ clientId: auth.settings.clientId, clientSecret: auth.settings.clientSecret });
+    client.setCredentials({ refresh_token: open(sealed, uid) });
+    return client;
+  };
+  const userFeedFor = (uid) => {
+    const sheetId = forUser(uid).db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").pluck().get() ?? null;
+    if (!sheetId || !getUser(store.db, uid)?.google_refresh_enc) return null;
+    return { auth: sheetsAuthFor(uid), sheetId, catalog: catalogFor(uid) === undefined ? undefined : null };
+  };
   // The owner's MAPS catalog for the owner and the users the owner shares it with; none for others (phase 5 adds theirs).
   const catalogFor = (uid) => (uid === OWNER_ID || getUser(store.db, uid)?.maps_shared ? undefined : null);
   const services = {
-    sync: ({ uid = OWNER_ID } = {}) => syncJob({ store: forUser(uid) }),
+    sync: ({ uid = OWNER_ID } = {}) => syncJob({ store: forUser(uid), userFeed: uid === OWNER_ID ? undefined : userFeedFor(uid) }),
+    // A user's sheet: its tab names, read with their own Google permission (checks a sheet before it is saved).
+    sheetTabs: async (uid, sheetId) => createSheetsSource(sheetsAuthFor(uid), { WORKOUT_LOG_SHEET_ID: sheetId }).listTabs('workout_log'),
     claude: claudeFor,
     hasAi,
     // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.

@@ -94,6 +94,16 @@ code { font-size: 0.85em; }
 .sync.home-sync { justify-content: space-between; flex-wrap: wrap; font-size: 0.9rem; }
 .sync.home-sync button { min-height: 40px; padding: 6px 14px; font-size: 0.95rem; }
 .home-settings { display: flex; flex-direction: column; gap: 14px; }
+/* Settings, Data feeds */
+.feed-choices { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.feed-choice { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-primary); }
+.feed-choice input { width: 18px; height: 18px; margin: 0; flex: none; }
+.feed { border-top: 1px solid var(--grid); }
+.feed:empty { display: none; }
+.feed h3 { font-size: 0.95rem; margin: 12px 0 4px; }
+.token-once { background: var(--surface-0); border: 1px solid var(--accent); border-radius: 8px; padding: 10px; margin: 8px 0; }
+.token-once .token { display: block; word-break: break-all; user-select: all; font-size: 0.85rem; padding: 6px 0; }
+a.button { display: inline-block; padding: 8px 14px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); text-decoration: none; }
 /* Users (administrators) */
 .user-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 0; border-bottom: 1px solid var(--grid); }
 .user-row.pending { border-left: 3px solid var(--accent); padding-left: 10px; }

@@ -29,7 +29,7 @@ import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
 import { localStamp } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
-import { OWNER_ID, getUser, setClaudeKey, syncOwnerEmail, userByEmail } from '../db/users.js';
+import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, syncOwnerEmail, userByEmail, userByIngestToken } from '../db/users.js';
 import { createPendingUser, listUsers, setUserStatus } from './admin-queries.js';
 import { createMailer } from '../tools/mail.js';
 import { boxKey, seal } from '../tools/secret-box.js';
@@ -148,17 +148,32 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const adminEmail = () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email;
   const appUrl = () => auth.settings?.publicUrl || 'http://localhost:5188';
   // A registration: a pending user, and an email to the admin (names and addresses only).
-  const registerUser = async ({ email, name }) => {
+  const registerUser = async ({ email, name, feeds }) => {
     if (userByEmail(store.db, email)) return;
     createPendingUser(store.db, { id: randomUUID(), email, name });
+    if (feeds) setUserFeeds(store.db, userByEmail(store.db, email).id, JSON.stringify(feeds));
     log.info('[users] new registration');
     await mailer.send({ to: adminEmail(), subject: 'New Health Review registration',
       text: `${name ?? 'Someone'} <${email}> asked for access to Health Review.\n\nApprove or reject on the Users tile: ${appUrl()}/#users\n` });
   };
-  registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser });
+  // A user's own Google Sheets permission (read only): the refresh token is sealed to them; never logged or shown.
+  const connectSheets = async ({ email, refreshToken }) => {
+    const u = userByEmail(store.db, email);
+    if (!u) return;
+    setGoogleToken(store.db, u.id, seal(refreshToken, u.id, keyBox ?? boxKey()));
+    log.info('[users] Google Sheets connected');
+  };
+  registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
+    sheetsExchange: auth.sheetsExchange, connectSheets });
   // The privacy policy and terms, readable before signing in.
   app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md')));
   app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md')));
+  // Setup guides for each data feed (docs/guides), readable before signing in.
+  const GUIDES = ['health-auto-export', 'workout-log', 'manual-entry', 'claude-key'];
+  app.get('/guides/:name', { schema: { hide: true } }, async (req, reply) => (GUIDES.includes(req.params.name)
+    ? reply.type('text/html').send(policyPage(`docs/guides/${req.params.name}.md`, { SITE: appUrl() }))
+    : reply.code(404).type('text/html').send(policyPage('docs/guides/index.md'))));
+  app.get('/guides', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('docs/guides/index.md')));
   app.addHook('preHandler', (req, reply, done) => {
     const uid = uidOf(req);
     if (!uid) return done();
@@ -365,15 +380,20 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // through the same parsers and writers as the Drive files (ingest/apply.js); ingest_log keeps metadata only.
   const ingestLimiter = createRateLimiter(INGEST_RATE_LIMIT);
   const tokenHash = ingest.token ? createHash('sha256').update(ingest.token).digest() : null;
+  // Whose post it is (multi-user, phase 3): INGEST_TOKEN is the owner's; any other token is an approved user's own
+  // (Settings, stored as its SHA-256 only). A pending, rejected or paused user's token is refused like a wrong one.
   const ingestGuard = async (req, reply) => {
-    if (!tokenHash) return reply.code(503).send({ error: 'Ingest is not set up on this server (INGEST_TOKEN).' });
     const r = ingestLimiter.hit(req.ip);
     if (!r.allowed) return reply.code(429).header('retry-after', String(r.retryAfterSeconds)).send({ error: 'Too many posts from this address. Try again later.' });
     const given = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ''))?.[1] ?? '';
-    if (!timingSafeEqual(createHash('sha256').update(given).digest(), tokenHash)) return reply.code(401).send({ error: 'Missing or wrong ingest token.' });
+    const owner = tokenHash && timingSafeEqual(createHash('sha256').update(given).digest(), tokenHash);
+    const user = owner ? null : userByIngestToken(store.db, given);
+    if (!owner && !user) {
+      if (!tokenHash) return reply.code(503).send({ error: 'Ingest is not set up on this server (INGEST_TOKEN).' });
+      return reply.code(401).send({ error: 'Missing or wrong ingest token.' });
+    }
     if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) return reply.code(415).send({ error: 'Send JSON (Content-Type: application/json).' });
-    // INGEST_TOKEN is the owner's (each user's own token comes with per-user feeds, phase 3).
-    req.uid = OWNER_ID;
+    req.uid = owner ? OWNER_ID : user.id;
   };
   const logIngest = (...values) => db.prepare('INSERT INTO ingest_log (user_id, id, received_at, route, result, counts, error) VALUES (@uid, ?, ?, ?, ?, ?, ?)').run(...values);
   const ingestRoute = (route, summary, apply) => app.post(`/api/ingest/${route}`, {
@@ -725,8 +745,70 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       // Never the key: where it comes from and when it was saved.
       claudeKey: uid === OWNER_ID ? { source: 'server' } : u?.claude_key_enc ? { source: 'yours', setAt: u.claude_key_set_at } : null,
       ai: aiOn(req),
+      feeds: feedsView(req, u),
     };
   };
+  // ---- data feeds (multi-user, phase 3): Health Auto Export by REST, the Workout Log in Google Sheets, entering in the app ----
+  const FEEDS = ['appleHealth', 'workoutLog', 'manual'];
+  const feedsView = (req, u) => {
+    const uid = uidOf(req);
+    const owner = uid === OWNER_ID;
+    let chosen = {};
+    try { chosen = JSON.parse(u?.feeds ?? '{}') ?? {}; } catch { chosen = {}; }
+    const lastPost = db.prepare("SELECT MAX(received_at) FROM ingest_log WHERE user_id = @uid AND result = 'ok'").pluck().get() ?? null;
+    const lastSync = db.prepare("SELECT MAX(finished_at) FROM runs WHERE user_id = @uid AND name = 'sync' AND status = 'ok'").pluck().get() ?? null;
+    const sheetSet = Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").get());
+    return {
+      chosen: Object.fromEntries(FEEDS.map((f) => [f, chosen[f] ?? (owner || f === 'manual')])),
+      // The owner's feeds come from the server's settings (INGEST_TOKEN, WORKOUT_LOG_SHEET_ID and the Google files).
+      fromServer: owner,
+      appleHealth: { token: owner ? Boolean(ingest.token) : Boolean(u?.ingest_token_hash), lastPost,
+        urls: { health: `${appUrl()}/api/ingest/health`, workouts: `${appUrl()}/api/ingest/workouts` } },
+      workoutLog: { connected: owner || Boolean(u?.google_refresh_enc), sheetSet: owner || sheetSet, lastSync, canConnect: authMode === 'google' },
+    };
+  };
+  app.put('/api/account/feeds', {
+    schema: { summary: 'Which data feeds you use (Apple Health, Workout Log, entering in the app)', body: { type: 'object', additionalProperties: false, properties: Object.fromEntries(FEEDS.map((f) => [f, { type: 'boolean' }])) }, response: { 200: anyObject } },
+  }, async (req) => {
+    setUserFeeds(store.db, uidOf(req), JSON.stringify(req.body));
+    return accountView(req);
+  });
+  app.post('/api/account/ingest-token', { schema: { summary: 'A new Health Auto Export token for your account, shown once (replaces any earlier one)', response: { 200: anyObject } } }, async (req, reply) => {
+    if (uidOf(req) === OWNER_ID) return reply.code(409).send({ error: "The owner's posts use INGEST_TOKEN from the server's settings" });
+    const token = newIngestToken(store.db, uidOf(req));
+    log.info('[users] an ingest token was created');
+    // The status first, then the token itself (the status's own token field is only true or false).
+    return { ...feedsView(req, getUser(store.db, uidOf(req))).appleHealth, token };
+  });
+  app.delete('/api/account/ingest-token', { schema: { summary: 'Turn off your Health Auto Export token', response: { 200: anyObject } } }, async (req) => {
+    clearIngestToken(store.db, uidOf(req));
+    return accountView(req);
+  });
+  app.put('/api/account/workout-sheet', {
+    schema: { summary: 'Your Workout Log sheet: its link or ID, checked for year tabs with your Google permission', body: { type: 'object', additionalProperties: false, required: ['sheet'], properties: { sheet: { type: 'string', minLength: 10, maxLength: 500 } } }, response: { 200: anyObject } },
+  }, async (req, reply) => {
+    const uid = uidOf(req);
+    if (uid === OWNER_ID) return reply.code(409).send({ error: "The owner's Workout Log comes from the server's settings" });
+    const id = /\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/.exec(req.body.sheet)?.[1] ?? (/^[A-Za-z0-9_-]{20,}$/.test(req.body.sheet.trim()) ? req.body.sheet.trim() : null);
+    if (!id) return reply.code(400).send({ error: 'Paste the link to your Google Sheet (or its ID)' });
+    if (!getUser(store.db, uid)?.google_refresh_enc) return reply.code(409).send({ error: 'Connect Google Sheets first' });
+    let tabs;
+    try {
+      tabs = await services.sheetTabs(uid, id);
+    } catch (err) {
+      return reply.code(400).send({ error: "That sheet couldn't be opened with your Google permission. Check the link and that this Google account can see it." });
+    }
+    const years = tabs.filter((t) => /^\d{4}$/.test(t));
+    if (!years.length) return reply.code(400).send({ error: 'That sheet has no year tabs (a tab named like 2026); see the Workout Log guide' });
+    db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'workout_log_sheet_id', ?, ?)
+      ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(id, new Date().toISOString());
+    return { ...accountView(req), yearTabs: years };
+  });
+  app.delete('/api/account/google', { schema: { summary: 'Disconnect Google Sheets: forgets your permission and your sheet', response: { 200: anyObject } } }, async (req) => {
+    setGoogleToken(store.db, uidOf(req), null);
+    db.prepare("DELETE FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").run();
+    return accountView(req);
+  });
   app.get('/api/account', { schema: { summary: "The signed-in user's account: name, email, role, and whether a Claude key is set (never the key)", response: { 200: anyObject } } },
     async (req) => accountView(req));
   app.put('/api/account/claude-key', {

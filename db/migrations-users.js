@@ -267,4 +267,15 @@ export const USER_MIGRATIONS = [
       ALTER TABLE users ADD COLUMN maps_shared INTEGER NOT NULL DEFAULT 0 CHECK (maps_shared IN (0, 1));
     `,
   },
+  {
+    // Phase 3 (per-user feeds): a user's Google refresh token for reading their own Workout Log sheet
+    // (spreadsheets.readonly only), sealed like their Claude key, and when they connected it. The sheet's ID is in their
+    // own settings rows (workout_log_sheet_id).
+    id: '027-user-google',
+    up: `
+      ALTER TABLE users ADD COLUMN google_refresh_enc TEXT;
+      ALTER TABLE users ADD COLUMN google_connected_at TEXT;
+      CREATE INDEX users_ingest_token ON users(ingest_token_hash);
+    `,
+  },
 ];

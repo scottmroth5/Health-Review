@@ -8,10 +8,22 @@ import { OWNER_ID } from '../db/users.js';
 
 const quiet = { info() {}, warn() {}, error() {} };
 
-/** @returns {Promise<{ counts: object, warnings: object[] }>} */
-export function syncJob({ store, backfill = false, logger = quiet, source }) {
-  // The Google feeds in .env (the Drive folders and the Workout Log sheet) are the owner's; other users' own feeds come
-  // with per-user feeds (multi-user, phase 3), and until then their sync has nothing to read.
-  if (store.db.uid !== OWNER_ID) return Promise.resolve({ counts: {}, warnings: [] });
+/**
+ * @param {object} o
+ * @param {{ auth?: object, sheetId?: string|null, catalog?: object|null }} [o.userFeed]  another user's Workout Log: their own
+ *   Google sign-in (Sheets read only) and their sheet (multi-user, phase 3); Apple data arrives by their REST posts
+ * @returns {Promise<{ counts: object, warnings: object[] }>}
+ */
+export function syncJob({ store, backfill = false, logger = quiet, source, userFeed }) {
+  if (store.db.uid !== OWNER_ID) {
+    // Another user: only their own Workout Log, read with their own permission; nothing of the owner's .env.
+    if (!userFeed?.sheetId || !(userFeed.auth || source)) return Promise.resolve({ counts: {}, warnings: [] });
+    return runSync({
+      store, source: source ?? createSheetsSource(userFeed.auth, { WORKOUT_LOG_SHEET_ID: userFeed.sheetId }),
+      apple: 'rest', exportFolders: {}, logger,
+      // null: no catalog (phase 5 adds theirs); left out, the owner's MAPS catalog (users the owner shares it with).
+      ...(userFeed.catalog === undefined ? {} : { catalog: userFeed.catalog }),
+    });
+  }
   return runSync({ store, source: source ?? createSheetsSource(getGoogleAuth()), backfill, logger });
 }

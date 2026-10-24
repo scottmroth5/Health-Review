@@ -405,6 +405,17 @@ other) plus the review eval's results.jsonl usage priced with agent-core's prici
 exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
+Users, phase 3 (2026-10-24), per-user feeds: a user's Health Auto Export token (POST/DELETE /api/account/ingest-token;
+32 random bytes shown once, only its SHA-256 in users.ingest_token_hash) makes the ingest guard store their posts under
+their id (INGEST_TOKEN stays the owner's; a pending, rejected or paused user's token gets 401). Their Workout Log: a
+separate Google consent for spreadsheets.readonly only (/auth/google/sheets and SHEETS_CALLBACK_PATH, PKCE, state cookie
+hr_sheets; the refresh token sealed in users.google_refresh_enc, migration 027), then PUT /api/account/workout-sheet
+(a link or ID, checked by listing its tabs with their permission; needs a year tab; stored in their own settings row
+workout_log_sheet_id, never on the admin screen); DELETE /api/account/google forgets both. jobs/sync.js syncJob with
+userFeed reads only that sheet (apple rest, no Drive folders, no lab sheet, no v1 imports; catalog null unless MAPS is
+shared). users.feeds (PUT /api/account/feeds, chosen at Request access too) drives the Settings Data feeds card. Setup
+guides are public pages /guides and /guides/<name> (docs/guides/*.md through server/pages.js; {{SITE}} filled in at
+render time, so the repo never names the live address).
 Users, phase 2 (2026-10-24): admin routes /api/admin/users (+ /:id/approve, /:id/reject; server/admin-queries.js; role
 admin only, never in the demo) approve with the default prompt sections (agent/default-prompts.js) and an email
 (tools/mail.js: Gmail SMTP with SMTP_USER and SMTP_APP_PASSWORD; names, addresses and links only; without them nothing is

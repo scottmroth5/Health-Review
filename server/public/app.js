@@ -358,6 +358,9 @@ const NO_KEY_NOTE = () => h('span', {}, 'No AI is used until you add your Claude
 async function loadSettingsView() {
   const a = await api('GET', '/api/account');
   state.account = a;
+  // Back from Google's Sheets permission: #settings/sheets-<result>.
+  const result = /sheets-(\w+)/.exec(location.hash)?.[1];
+  $('#feeds-status').textContent = result ? SHEETS_RESULTS[result] ?? '' : '';
   const form = $('#claude-key-form');
   const status = $('#claude-key-status');
   if (a.claudeKey?.source === 'server') {
@@ -369,7 +372,66 @@ async function loadSettingsView() {
     form.hidden = false;
     $('#claude-key-remove').hidden = !a.claudeKey;
   }
+  renderFeeds(a);
   $('#settings-account').textContent = a.email ? `${a.name ? `${a.name}, ` : ''}${a.email} (${a.role === 'admin' ? 'administrator' : 'user'})` : 'Local mode: no sign-in.';
+}
+
+const FEED_LABELS = { appleHealth: 'Apple Health (Health Auto Export)', workoutLog: 'Workout Log (Google Sheets)', manual: 'Entered in the app (check-ins, drinks, meds, labs)' };
+const SHEETS_RESULTS = { connected: 'Google Sheets connected. Now paste your Workout Log link.', cancelled: 'Google Sheets was not connected.',
+  expired: 'That took too long; try Connect Google Sheets again.', incomplete: 'Google did not grant read access to Sheets; try again and allow it.', failed: 'Google Sheets could not be connected; try again.' };
+const feedTime = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'never');
+
+/** Settings, Data feeds: which feeds, the Health Auto Export token (shown once) and the Google Sheets Workout Log. */
+function renderFeeds(a, shownToken = null) {
+  const f = a.feeds;
+  $('#feeds-note').textContent = f.fromServer ? "Your feeds come from the server's settings (INGEST_TOKEN, the Workout Log sheet and the Google files)." : 'Choose what you use; each one has a setup guide.';
+  fill($('#feeds-choices'), f.fromServer ? [] : Object.entries(FEED_LABELS).map(([k, label]) => h('label', { class: 'feed-choice' },
+    h('input', { type: 'checkbox', checked: f.chosen[k], onchange: async (e) => {
+      try { renderFeeds(await api('PUT', '/api/account/feeds', { ...f.chosen, [k]: e.target.checked })); } catch (err) { $('#feeds-status').textContent = err.message; }
+    } }), ` ${label}`)));
+  const apple = f.appleHealth;
+  fill($('#feed-apple'), !f.chosen.appleHealth ? [] : [
+    h('h3', {}, 'Apple Health'),
+    h('p', { class: 'small' }, `${apple.token ? 'Token set.' : 'No token yet.'} Last post: ${feedTime(apple.lastPost)}. `, h('a', { href: '/guides/health-auto-export', target: '_blank' }, 'Guide')),
+    shownToken ? h('div', { class: 'token-once' },
+      h('p', { class: 'small' }, h('strong', {}, 'Copy this now; it is shown only once.')),
+      h('code', { class: 'token' }, shownToken),
+      h('p', { class: 'small muted' }, `Health metrics and Stand Hours: ${apple.urls.health}`), h('p', { class: 'small muted' }, `Workouts: ${apple.urls.workouts}`),
+      h('p', { class: 'small muted' }, 'Header: Authorization, value "Bearer " followed by the token.')) : null,
+    f.fromServer ? null : h('div', { class: 'actions' },
+      h('button', { type: 'button', onclick: async () => {
+        if (apple.token && !confirm('Replace your token? The old one stops working, so update your Health Auto Export automations.')) return;
+        try { const r = await api('POST', '/api/account/ingest-token'); renderFeeds(await api('GET', '/api/account'), r.token); } catch (err) { $('#feeds-status').textContent = err.message; }
+      } }, apple.token ? 'Replace token' : 'Create token'),
+      apple.token ? h('button', { type: 'button', class: 'ghost danger', onclick: async () => {
+        if (!confirm('Turn off your token? Posts from Health Auto Export stop until you create a new one.')) return;
+        renderFeeds(await api('DELETE', '/api/account/ingest-token'));
+      } }, 'Turn off') : null),
+  ]);
+  const wl = f.workoutLog;
+  fill($('#feed-sheets'), !f.chosen.workoutLog ? [] : [
+    h('h3', {}, 'Workout Log'),
+    h('p', { class: 'small' }, f.fromServer ? `From the server's settings. Last sync: ${feedTime(wl.lastSync)}. `
+      : `${wl.connected ? 'Google Sheets connected' : 'Not connected'}${wl.connected ? (wl.sheetSet ? '; sheet chosen' : '; no sheet chosen yet') : ''}. Last sync: ${feedTime(wl.lastSync)}. `,
+      h('a', { href: '/guides/workout-log', target: '_blank' }, 'Guide')),
+    f.fromServer ? null : !wl.canConnect ? h('p', { class: 'muted small' }, 'Connecting Google Sheets works on the hosted app (with Google sign-in).')
+      : !wl.connected ? h('div', { class: 'actions' }, h('a', { class: 'button', href: '/auth/google/sheets' }, 'Connect Google Sheets'))
+      : h('form', { class: 'sheet-form', onsubmit: async (e) => {
+        e.preventDefault();
+        try {
+          const r = await api('PUT', '/api/account/workout-sheet', { sheet: e.target.elements.sheet.value.trim() });
+          $('#feeds-status').textContent = `Sheet saved (year tabs: ${r.yearTabs.join(', ')}). It syncs every morning, or tap Sync now on Home.`;
+          renderFeeds(r);
+        } catch (err) { $('#feeds-status').textContent = err.message; }
+      } },
+        h('label', {}, wl.sheetSet ? 'Change sheet' : 'Your Workout Log sheet link', h('input', { name: 'sheet', type: 'url', placeholder: 'https://docs.google.com/spreadsheets/d/...', required: true })),
+        h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Save sheet'),
+          h('button', { type: 'button', class: 'ghost danger', onclick: async () => {
+            if (!confirm('Disconnect Google Sheets? Health Review forgets the permission and your sheet.')) return;
+            renderFeeds(await api('DELETE', '/api/account/google'));
+          } }, 'Disconnect'))),
+  ]);
+  if (!f.chosen.manual && !f.fromServer) return;
 }
 
 /** Users (administrators): pending requests first, with Approve and Reject; account facts only. */
