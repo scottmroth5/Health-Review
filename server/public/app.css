@@ -11,8 +11,9 @@
   --accent-ink: #ffffff;
   --series-1: #2a78d6;
   --series-1-wash: rgba(42, 120, 214, 0.1);
-  /* Heart rate zones 1 to 5: one blue ramp (ordinal, validated); gray for minutes with no heart rate detail */
-  --zone-1: #86b6ef; --zone-2: #5598e7; --zone-3: #2a78d6; --zone-4: #1c5cab; --zone-5: #104281; --zone-none: #d3d2cb;
+  /* Heart rate zones 1 to 5: distinct hues (owner's choice, 2026-10-24; sky blue, green, purple, yellow, red; passes the
+     CVD and normal-vision checks in both modes); gray for minutes with no heart rate detail */
+  --zone-1: #3d9be0; --zone-2: #2e9e4f; --zone-3: #8e5bd0; --zone-4: #e3b21c; --zone-5: #d1342b; --zone-none: #d3d2cb;
   --danger: #c0392b;
   --good: #1f7a3a;
   --radius: 10px;
@@ -32,7 +33,7 @@
     --accent-ink: #0b0b0b;
     --series-1: #3987e5;
     --series-1-wash: rgba(57, 135, 229, 0.12);
-    --zone-1: #184f95; --zone-2: #256abf; --zone-3: #3987e5; --zone-4: #6da7ec; --zone-5: #9ec5f4; --zone-none: #3d3d3a;
+    --zone-1: #5aaef0; --zone-2: #3fb862; --zone-3: #a77ef0; --zone-4: #f0c43a; --zone-5: #ec5a4f; --zone-none: #3d3d3a;
     --danger: #e66767;
     --good: #4cbf6b;
   }
@@ -50,7 +51,7 @@
   --accent-ink: #0b0b0b;
   --series-1: #3987e5;
   --series-1-wash: rgba(57, 135, 229, 0.12);
-    --zone-1: #184f95; --zone-2: #256abf; --zone-3: #3987e5; --zone-4: #6da7ec; --zone-5: #9ec5f4; --zone-none: #3d3d3a;
+    --zone-1: #5aaef0; --zone-2: #3fb862; --zone-3: #a77ef0; --zone-4: #f0c43a; --zone-5: #ec5a4f; --zone-none: #3d3d3a;
   --danger: #e66767;
   --good: #4cbf6b;
 }
