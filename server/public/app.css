@@ -91,6 +91,8 @@ code { font-size: 0.85em; }
 .tile-desc { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.3; }
 .tile-badge { position: absolute; top: 10px; right: 10px; font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
   background: var(--accent); color: var(--accent-ink); }
+.sync.home-sync { justify-content: space-between; flex-wrap: wrap; font-size: 0.9rem; }
+.sync.home-sync button { min-height: 40px; padding: 6px 14px; font-size: 0.95rem; }
 .home-settings { display: flex; flex-direction: column; gap: 14px; }
 .home-settings .demo-toggle { margin: 0; }
 .home-settings .account { justify-content: space-between; flex-wrap: wrap; }

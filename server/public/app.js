@@ -321,6 +321,7 @@ async function loadStatus() {
   homeSettingsVisibility();
   if (demoInstance) document.title = 'Health Review (demo data)';
   const last = s.lastSync;
+  if ($('#sync-now').disabled) return; // a sync is running: keep its "Syncing..." line
   $('#sync-status').textContent = last
     ? `Last sync ${new Date(last.finished_at ?? last.started_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}${last.status === 'ok' ? '' : ` (${last.status})`}`
     : 'Not synced yet';
@@ -437,10 +438,18 @@ async function syncNow() {
   $('#sync-status').textContent = 'Syncing...';
   try {
     const r = await api('POST', '/api/sync');
+    // Only what this sync looked at: the Drive folders locally; the Workout Log alone on the server (Apple data is posted).
     const files = (n, what) => `${n} ${what} ${n === 1 ? 'file' : 'files'}`;
-    const read = `${files(r.counts.health_exports?.filesRead ?? 0, 'health')} and ${files(r.counts.workout_exports?.filesRead ?? 0, 'workout')} read`;
-    $('#sync-status').textContent = `Synced: ${read}${r.warnings ? `, ${r.warnings} warnings in the sync log` : ''}`;
-    renderDataChecks((await api('GET', '/api/status')).dataChecks);
+    const c = r.counts;
+    const parts = [
+      c.health_exports ? files(c.health_exports.filesRead, 'health') : '',
+      c.workout_exports ? files(c.workout_exports.filesRead, 'workout') : '',
+      c.workout_log ? `Workout Log ${c.workout_log.tabsReplaced ? 'updated' : 'unchanged'}` : '',
+    ].filter(Boolean);
+    $('#sync-status').textContent = `Synced: ${parts.join(', ') || 'done'}${r.warnings ? `, ${r.warnings} warning${r.warnings === 1 ? '' : 's'}` : ''}`;
+    const s = await api('GET', '/api/status');
+    renderDataChecks(s.dataChecks);
+    setHomeBadge('today', s.dataChecks?.length ? `${s.dataChecks.length} warning${s.dataChecks.length === 1 ? '' : 's'}` : '');
   } catch (err) {
     $('#sync-status').textContent = `Sync failed: ${err.message}`;
   } finally {

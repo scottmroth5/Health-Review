@@ -77,6 +77,7 @@
           <span class="tile-name">Activity</span><span class="tile-desc">Jobs, runs, spend</span>
         </a>
       </nav>
+      <div class="card home-sync sync"><span id="sync-status" class="muted" role="status"></span> <button type="button" id="sync-now" class="ghost">Sync now</button></div>
       <div class="card home-settings">
         <label class="demo-toggle"><input type="checkbox" id="demo-mode"> <span><strong>Demo mode</strong><span class="small muted block">Hides drinking and CBD on screen, for showing the app to others. Saved in this browser; nothing stored changes.</span></span></label>
         <div class="account" id="account" hidden><span class="small muted">Signed in as <span id="account-email"></span></span> <button type="button" class="ghost" id="sign-out">Sign out</button></div>
@@ -92,7 +93,6 @@
           <button type="button" class="ghost icon" id="day-next" aria-label="Next day">&rsaquo;</button>
           <button type="button" class="ghost" id="day-today">Today</button>
         </div>
-        <span class="sync"><span id="sync-status" class="muted"></span> <button type="button" id="sync-now" class="ghost">Sync now</button></span>
       </div>
       <ul id="data-checks" class="data-checks" role="status" hidden></ul>
       <div class="review-notice" data-review-notice role="status" hidden></div>

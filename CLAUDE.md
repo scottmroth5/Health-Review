@@ -28,7 +28,7 @@ Health specific logic stays in this repo; never add it to agent-core.
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Today and Reviews tiles carry badges from /api/status
-                    and /api/reviews/status), Demo mode and the account; wide screens keep the tab bar, phones (720 px and
+                    and /api/reviews/status), Sync now with the last sync, Demo mode and the account; wide screens keep the tab bar, phones (720 px and
                     under) show "‹ Home" and the section name instead. Installable on iPhone: manifest.webmanifest and
                     icon-180/192/512.png (scripts/make-icons.js; test/icons.test.js checks they are current).
                     Demo mode (Home page checkbox, or ?demo=1 / ?demo=0; saved per browser, server/public/demo.js) hides
