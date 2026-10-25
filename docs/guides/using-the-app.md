@@ -14,7 +14,13 @@ Health Review shows your own health and training data back to you, with a weekly
 - **Prompt:** the instructions the weekly review follows; edit them to change its tone and focus. Every change keeps the old version.
 - **Activity:** what ran (syncs, reviews, backups), when, and what the AI cost.
 - **Settings:** your Claude API key, your data feeds (Health Auto Export, the Workout Log sheet), your time zone (it decides your "today" and your review week), and your account: export your data, pause or delete your account.
-- **Help:** these guides, and Ask for a question about using the app.
+- **Help:** these guides, Ask for a question about using the app, and Send feedback (feedback, an idea, or a bug report).
+
+## Make it yours
+
+- **Your goals** (Settings): pick a primary goal and an optional second one. Home, Training and Health put that information first, and your weekly review opens with it.
+- **Arrange tiles** (under the Home tiles): use the arrows to move tiles, then Done. Reset goes back to the default.
+- **Your prompt** (Prompt tab): Help me write a section drafts a section from a few answers. See [Writing your review prompt](/guides/prompts).
 
 ## Sync now
 

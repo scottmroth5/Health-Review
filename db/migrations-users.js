@@ -211,7 +211,7 @@ const TABLES = [
 
 /** Every table that carries user_id (test/user-scope.test.js checks each query on them names user_id): the ones 025
  * rebuilt, and the user tables later migrations made with user_id from the start. */
-export const USER_TABLES = [...TABLES.map(([name]) => name), 'user_programs'];
+export const USER_TABLES = [...TABLES.map(([name]) => name), 'user_programs', 'feedback'];
 
 export const USER_MIGRATIONS = [
   {
@@ -296,6 +296,24 @@ export const USER_MIGRATIONS = [
         updated_at TEXT NOT NULL,
         UNIQUE (user_id, name)
       );
+    `,
+  },
+  {
+    // Feedback, enhancement requests and bug reports sent from Help: kept for the administrator (the Users screen) and
+    // emailed to them. context holds the screen, app version and browser, never health data.
+    id: '029-feedback',
+    up: `
+      CREATE TABLE feedback (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        kind TEXT NOT NULL CHECK (kind IN ('feedback', 'enhancement', 'bug')),
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        context TEXT,
+        status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'done')),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX feedback_user ON feedback(user_id, created_at);
     `,
   },
 ];

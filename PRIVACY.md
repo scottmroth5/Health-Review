@@ -12,6 +12,8 @@ Health Review is a personal project run by its owner (the operator), shared with
 - Your name, email address, when you joined, and your account status.
 - The health and training data you choose to send: Apple Health data from Health Auto Export, check-ins, drinks, medications and supplements, lab results and workouts you enter or import.
 - Your weekly reviews and chat messages, if you use the AI features.
+- Feedback, enhancement requests and bug reports you send from Help: kept for the operator and emailed to them, with the screen you were on, the app version and your browser type.
+- Your goals and Home tile order.
 - The training programs you add (built, imported, or read from a PDF you uploaded; the PDF itself is not kept), and your time zone.
 - Your Claude API key, if you add one. It is stored encrypted, is never shown again after you enter it (not to you, and not on any screen the operator has), and is never written to logs.
 
@@ -32,6 +34,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 - The operator may instead let you use the operator's own key up to a monthly limit, after telling you by email. Your use then shows on the operator's administration screen as a dollar amount, and when the limit is reached the AI stops until the next month. Your own key, if you add one, is always used instead.
 - What is sent: computed summaries of your data (averages, changes, statuses, never raw exports) and your own notes for the week, under Anthropic's API terms.
 - Excel uploads: an Excel Workout Log you upload is read once on the server to take your workouts out of it, and the file is not kept. It is never sent to Claude or anywhere else.
+- The prompt builder: when you choose Draft with Claude, only your answers to its questions (and your goals) are sent, never your data.
 - Help's Ask: only your question and the app's own guides are sent, never your data, and the answer is not kept.
 - Program PDFs: only when you choose **Read a PDF with Claude** on the Programs screen and confirm you have the right to use the program. The file is sent once so Claude can read the program's structure, and Health Review does not keep it; only the program you check and save stays in your account.
 - The server needs to use your key while you are away (the weekly review is scheduled), so the server can decrypt it; it does so only for your own requests.

@@ -8,7 +8,8 @@
 import { randomUUID } from 'node:crypto';
 import { recommendPrograms } from '../metrics/advisor.js';
 import { liftsForReview } from '../metrics/plateau.js';
-import { loadAdvisorInput, loadPrimarySets, loadSessionPhases, programForWeek, medicationNames } from '../metrics/load.js';
+import { loadAdvisorInput, loadGoals, loadPrimarySets, loadSessionPhases, programForWeek, medicationNames } from '../metrics/load.js';
+import { GOALS } from '../server/public/goals.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
 import { DEFAULT_REVIEW_MODEL } from './claude.js';
 import { startUserRun } from '../db/users.js';
@@ -24,6 +25,7 @@ export const CHAT_CONTRACT = `You are a strength and conditioning coach helping 
 How to read the input:
 - "context" holds facts computed in code: the Advisor ranking of the owner's programs at the goal weights they chose (each program's total, scores from 0 to 1 for strength, joint health and balance, time and VO2 max, the reasons, and flags for exercises the owner has paused), the programs left out and why, lift progress statuses, the current program and week, and the owner's home equipment.
 - "thread" holds the earlier notes and replies; "note" is the owner's new note.
+- "goals" (when set) holds the owner's primary training goal and an optional secondary one: weigh your answer toward them.
 
 How to answer:
 - The ranking was computed in code. Use the owner's note to weigh it: you may argue for a different program than the top one, and explain the trade-offs with the scores and reasons given. Never score or rank programs yourself, and only discuss programs in the context.
@@ -71,6 +73,10 @@ export function chatContext(db, today, { catalog, dictionary, substitutions = {}
     currentProgram: program ? { program: program.program, phase: program.phase, week: program.week, programWeeks: program.programWeeks } : null,
     equipment: { have: substitutions.equipment?.have ?? [], lack: substitutions.equipment?.lack ?? [] },
     pausedExercises: (substitutions.avoid ?? []).map((a) => nameOf(a.exercise)),
+    ...(() => {
+      const g = loadGoals(db);
+      return g.primary ? { goals: { primary: GOALS[g.primary], secondary: g.secondary ? GOALS[g.secondary] : null } } : {};
+    })(),
   };
 }
 

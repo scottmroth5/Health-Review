@@ -7,7 +7,7 @@ import { startUserRun } from '../db/users.js';
 import { stripDashes } from './validate.js';
 
 export const HELP_MODEL = 'claude-sonnet-5-5';
-export const HELP_GUIDES = ['using-the-app', 'health-auto-export', 'workout-log', 'manual-entry', 'programs', 'claude-key'];
+export const HELP_GUIDES = ['using-the-app', 'health-auto-export', 'workout-log', 'manual-entry', 'programs', 'prompts', 'claude-key'];
 export const MAX_QUESTION_CHARS = 1000;
 const MAX_TOKENS = 1500;
 

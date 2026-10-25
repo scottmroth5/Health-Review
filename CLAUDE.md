@@ -447,6 +447,20 @@ access), /:id/pause and /:id/resume (approved to paused and back), /:id/owner-ke
 user's email typed and a cap; the user is emailed on and off), /:id/maps ({ shared }). None act on an admin; owner-key and
 maps need an approved or paused user. Paused: signs in and sees their data; ingest token 401, POST /api/sync 403, no AI,
 no scheduled jobs (activeUserIds), and a note on Home. The scheduled review skips a user with no AI with its reason.
+Goals, tiles, feedback, prompt builder (2026-10-25): server/public/goals.js (pure; the browser and the server import it)
+holds the goals (strength, cardio, weight, endurance, health; settings goal_primary and goal_secondary, PUT
+/api/account/goals) and what each puts first: Home tiles (after Daily Check-in), Training and Health card ids, Health chart
+keys, and the Next program card's default weights (when the browser has none saved). Order only, nothing hidden. The
+review summary's goals (labels, metrics/load.js loadGoals) and a CONTRACT line make the review open with them; the chat
+context carries them too. Home's Arrange tiles saves settings tile_order (PUT /api/account/tile-order, known tiles only);
+the tab bar follows it. Feedback (migration 029 feedback, a user table): POST /api/feedback (feedback, enhancement, bug;
+subject 120, body 5,000, screen and app version and browser as context; 5 an hour; not the demo or paused accounts) is
+stored and emailed to the admin with the sender as reply-to; GET /api/feedback (their own), GET /api/admin/feedback and
+POST /api/admin/feedback/:id/status (the Users screen's Feedback card; the Users tile badge counts new ones). The Prompt
+tab's Help me write a section (agent/prompt-draft.js SECTION_KINDS): GET /api/prompt/builder, POST /api/prompt/draft
+(a template without AI, or claude-sonnet-5-5 with the user's AI from their answers and goals only, never their data or
+medications; 20 an hour; prompt-draft run with lengths), opened as a new section to edit and save. Guide:
+docs/guides/prompts.md (guidance and examples per section).
 Excel Workout Log (2026-10-25): GET /api/workout-log/template.xlsx (ingest/excel-upload.js workoutTemplate: the year tab with
 WORKOUT_LOG_HEADER, bold and frozen, Date as m/d/yyyy, and How to use) and POST /api/workout-log/upload: the raw body with
 the .xlsx content type only (its own parser, 5 MB; anything else 415), an X-File-Name ending .xlsx, never the demo, the

@@ -7,6 +7,7 @@ import { addDays } from './stats.js';
 import { DICTIONARY_PATH, loadDictionary } from './dictionary.js';
 import { loadCatalog, mergeCatalogs } from './catalog.js';
 import { userMatchers } from './programs.js';
+import { cleanGoals } from '../server/public/goals.js';
 import { programAt, programProgress } from './blocks.js';
 import { liftProgress } from './plateau.js';
 import { advisorDue } from './advisor.js';
@@ -332,4 +333,10 @@ export function loadTargets(db, today, config) {
       target: mine ?? s.suggested, setBy: mine === undefined ? 'suggested' : 'owner',
     };
   });
+}
+
+/** The user's training goals (settings goal_primary and goal_secondary), checked; { primary: null } when unset. */
+export function loadGoals(db) {
+  const get = db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck();
+  return cleanGoals({ primary: get.get('goal_primary') ?? null, secondary: get.get('goal_secondary') ?? null });
 }

@@ -1,5 +1,6 @@
 import { lineChart, columnChart } from './charts.js';
 import { DEMO_KEY, demoFromLocation, redactReview, isDrinkingChart } from './demo.js';
+import { GOALS, orderFor, tileOrder, goalWeights } from './goals.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -290,10 +291,15 @@ async function loadAccount() {
   const admin = account?.role === 'admin' && !demo;
   for (const el of document.querySelectorAll('[data-admin-only]')) el.hidden = !admin;
   if (admin) {
-    const users = await api('GET', '/api/admin/users').catch(() => []);
+    const [users, fb] = await Promise.all([api('GET', '/api/admin/users').catch(() => []), api('GET', '/api/admin/feedback').catch(() => ({ newCount: 0 }))]);
     const pending = users.filter((u) => u.status === 'pending').length;
-    setHomeBadge('users', pending ? `${pending} waiting` : '');
+    setHomeBadge('users', [pending ? `${pending} waiting` : '', fb.newCount ? `${fb.newCount} feedback` : ''].filter(Boolean).join(', '));
   }
+  // Goals order the pages; the tile order is the user's own (or the goals' default).
+  state.goals = account?.goals ?? {};
+  state.tileOrder = account?.tileOrder ?? null;
+  applyTileOrder();
+  $('#goal-nudge').hidden = !account || demo || Boolean(state.goals.primary);
   setHomeBadge('settings', account && !account.ai && account.aiReason === 'no_key' && !demo ? 'Add key' : '');
   $('#paused-note').hidden = account?.status !== 'paused';
   if (me?.authMode !== 'google' || !me.email) return;
@@ -356,6 +362,189 @@ function setHomeBadge(name, text) {
   node.hidden = !text;
 }
 
+// ---------------- goals, tile order, feedback and the prompt builder ----------------
+const CARD_IDS = {
+  training: ['log-workout-card', 'program-card', 'adherence-card', 'lifts-card', 'training-card', 'advisor-card'],
+  health: ['vo2-card', 'zones-card'],
+};
+/** Puts a tab's cards in the goals' order (Training: all its cards; Health: the cards above the profile). */
+function orderCards(kind) {
+  if (!state.goals?.primary) return;
+  const order = orderFor(state.goals, CARD_IDS[kind], kind);
+  const before = kind === 'health' ? $('#profile-card') : null;
+  for (const id of order) {
+    const el = document.getElementById(id);
+    if (el) el.parentNode.insertBefore(el, before);
+  }
+}
+
+/** The Home tiles and the tab bar in the user's order. */
+function applyTileOrder(order = tileOrder(state.tileOrder, state.goals ?? {})) {
+  const tiles = $('.home-tiles');
+  for (const t of order) { const a = tiles.querySelector(`a[href="#${t}"]`); if (a) tiles.append(a); }
+  const nav = $('.top nav');
+  for (const t of ['home', ...order]) { const a = nav.querySelector(`a[href="#${t}"]`); if (a) nav.append(a); }
+}
+
+/** Arrange mode: arrows on each tile move it; Done saves the order to the account, Reset goes back to the default. */
+const arrange = { on: false, order: [] };
+function renderArrange() {
+  document.body.classList.toggle('arranging', arrange.on);
+  $('#arrange-tiles').hidden = arrange.on;
+  $('#arrange-controls').hidden = !arrange.on;
+  for (const a of $$('.home-tiles .home-tile')) {
+    a.querySelector('.tile-move')?.remove();
+    if (!arrange.on || a.hidden) continue;
+    const name = a.getAttribute('href').slice(1);
+    const move = (d) => (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const visible = arrange.order.filter((t) => !$(`.home-tiles a[href="#${t}"]`)?.hidden);
+      const i = visible.indexOf(name);
+      const j = i + d;
+      if (j < 0 || j >= visible.length) return;
+      const swapWith = visible[j];
+      const ai = arrange.order.indexOf(name);
+      const bi = arrange.order.indexOf(swapWith);
+      [arrange.order[ai], arrange.order[bi]] = [arrange.order[bi], arrange.order[ai]];
+      applyTileOrder(arrange.order);
+      renderArrange();
+    };
+    a.append(h('span', { class: 'tile-move' },
+      h('button', { type: 'button', class: 'ghost icon', 'aria-label': `Move ${a.querySelector('.tile-name')?.textContent} earlier`, onclick: move(-1) }, '◀'),
+      h('button', { type: 'button', class: 'ghost icon', 'aria-label': `Move ${a.querySelector('.tile-name')?.textContent} later`, onclick: move(1) }, '▶')));
+  }
+}
+$('#arrange-tiles').addEventListener('click', () => {
+  arrange.on = true;
+  arrange.order = tileOrder(state.tileOrder, state.goals ?? {});
+  renderArrange();
+});
+$('#arrange-done').addEventListener('click', async () => {
+  arrange.on = false;
+  renderArrange();
+  if (state.readOnly) return; // the demo: on screen only
+  try { state.tileOrder = (await api('PUT', '/api/account/tile-order', { tiles: arrange.order })).tileOrder; } catch { /* kept on screen */ }
+});
+$('#arrange-reset').addEventListener('click', async () => {
+  arrange.order = tileOrder(null, state.goals ?? {});
+  applyTileOrder(arrange.order);
+  renderArrange();
+  if (!state.readOnly) { try { state.tileOrder = (await api('PUT', '/api/account/tile-order', { tiles: null })).tileOrder; } catch { /* kept on screen */ } }
+});
+// A tile tapped while arranging does not navigate.
+$('.home-tiles').addEventListener('click', (e) => { if (arrange.on && e.target.closest('.home-tile')) e.preventDefault(); });
+
+/** Settings, Your goals: a primary and an optional second goal. */
+function renderGoals(a) {
+  const g = a.goals ?? {};
+  const options = (sel, value, none) => fill(sel, [h('option', { value: '' }, none), ...Object.entries(GOALS).map(([k, label]) => h('option', { value: k, selected: k === value }, label))]);
+  options($('#goal-primary'), g.primary, 'Not set');
+  options($('#goal-secondary'), g.secondary, 'None');
+  $('#goal-secondary').disabled = !g.primary;
+  const save = async () => {
+    const primary = $('#goal-primary').value || null;
+    const secondary = primary ? $('#goal-secondary').value || null : null;
+    try {
+      const r = await api('PUT', '/api/account/goals', { primary, secondary });
+      state.goals = r.goals;
+      renderGoals(r);
+      applyTileOrder();
+      $('#goal-nudge').hidden = Boolean(r.goals.primary);
+      $('#goals-status').textContent = r.goals.primary ? `Saved: ${GOALS[r.goals.primary]}${r.goals.secondary ? `, then ${GOALS[r.goals.secondary]}` : ''}.` : 'Goals cleared.';
+    } catch (err) { $('#goals-status').textContent = err.message; }
+  };
+  $('#goal-primary').onchange = save;
+  $('#goal-secondary').onchange = save;
+}
+
+const FEEDBACK_LABELS = { feedback: 'Feedback', enhancement: 'Enhancement request', bug: 'Bug report' };
+async function loadMyFeedback() {
+  const mine = await api('GET', '/api/feedback');
+  fill($('#feedback-mine'), mine.length ? mine.map((f) => h('div', { class: 'recent-workout' }, `${new Date(f.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })} · ${FEEDBACK_LABELS[f.kind]} · ${f.subject} · ${f.status === 'done' ? 'done' : 'received'}`))
+    : [h('p', { class: 'muted' }, 'Nothing sent yet.')]);
+}
+$('#feedback-form').elements.kind.addEventListener('change', (e) => { $('#feedback-doing').hidden = e.target.value !== 'bug'; });
+$('#feedback-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const el = e.target.elements;
+  try {
+    await api('POST', '/api/feedback', { kind: el.kind.value, subject: el.subject.value.trim(), body: el.body.value.trim(),
+      ...(el.kind.value === 'bug' && el.doing.value.trim() ? { doing: el.doing.value.trim() } : {}), screen: (feedbackFrom || 'help').slice(0, 40) });
+    e.target.reset();
+    $('#feedback-doing').hidden = true;
+    $('#feedback-status').textContent = 'Sent. Thanks!';
+    loadMyFeedback().catch(() => {});
+  } catch (err) { $('#feedback-status').textContent = err.message; }
+});
+// The screen someone came to Help from, sent with a bug report (a view name only).
+let feedbackFrom = null;
+window.addEventListener('hashchange', (e) => {
+  const from = new URL(e.oldURL).hash.slice(1).split('/')[0];
+  if (location.hash.startsWith('#help') && /^[a-z-]+$/.test(from) && from !== 'help') feedbackFrom = from;
+});
+
+/** Users screen: everyone's feedback, newest first, to mark done. */
+async function loadAdminFeedback() {
+  const { items, newCount } = await api('GET', '/api/admin/feedback');
+  $('#admin-feedback-count').textContent = newCount ? `${newCount} new` : '';
+  fill($('#admin-feedback'), items.length ? items.map((f) => h('details', { class: `feedback-item ${f.status}` },
+    h('summary', {}, h('strong', {}, `${FEEDBACK_LABELS[f.kind]}: ${f.subject}`), h('span', { class: 'muted small' }, ` ${f.name || f.email} · ${new Date(f.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}${f.status === 'done' ? ' · done' : ''}`)),
+    h('p', { class: 'small pre-wrap' }, f.body),
+    h('p', { class: 'muted small' }, `From ${f.email}${f.context?.screen ? ` · screen ${f.context.screen}` : ''}${f.context?.version ? ` · app ${f.context.version}` : ''}`),
+    h('div', { class: 'actions' }, h('a', { class: 'button ghost', href: `mailto:${encodeURIComponent(f.email)}?subject=${encodeURIComponent(`Re: ${f.subject}`)}` }, 'Reply by email'),
+      h('button', { type: 'button', class: 'ghost', onclick: async () => {
+        await api('POST', `/api/admin/feedback/${encodeURIComponent(f.id)}/status`, { status: f.status === 'done' ? 'new' : 'done' });
+        loadAdminFeedback();
+        loadAccount();
+      } }, f.status === 'done' ? 'Mark as new' : 'Mark done'))))
+    : [h('p', { class: 'muted' }, 'No feedback yet.')]);
+}
+
+/** Prompt tab: Help me write a section (guided questions, then a template or Claude's draft, opened as a new section). */
+const builder = { spec: null, answers: {} };
+async function loadBuilder() {
+  builder.spec ??= await api('GET', '/api/prompt/builder');
+  const s = builder.spec;
+  const kindSel = $('#builder-kind');
+  if (!kindSel.options.length) {
+    fill(kindSel, s.kinds.map((k) => h('option', { value: k.kind }, k.name || 'A new section of your own')));
+    kindSel.onchange = renderBuilderQuestions;
+  }
+  $('#builder-claude').hidden = !s.claude;
+  $('#builder-status').textContent = s.claude ? '' : (s.aiReason ? NO_KEY_NOTE(s.aiReason).textContent : '');
+  renderBuilderQuestions();
+}
+function renderBuilderQuestions() {
+  const kind = builder.spec.kinds.find((k) => k.kind === $('#builder-kind').value);
+  builder.answers = {};
+  const goalsLine = state.goals?.primary ? `${GOALS[state.goals.primary]}${state.goals.secondary ? `, then ${GOALS[state.goals.secondary]}` : ''}` : '';
+  fill($('#builder-questions'), [
+    h('p', { class: 'muted small' }, kind.guidance),
+    ...kind.questions.map((q) => h('label', {}, q.label, h('input', { maxlength: '600', placeholder: q.placeholder,
+      value: q.key === 'goals' && goalsLine ? goalsLine : '', oninput: (e) => { builder.answers[q.key] = e.target.value; } }))),
+  ]);
+  if (goalsLine && kind.questions.some((q) => q.key === 'goals')) builder.answers.goals = goalsLine;
+}
+async function buildDraft(useClaude) {
+  const kind = $('#builder-kind').value;
+  $('#builder-status').textContent = useClaude ? 'Claude is drafting...' : '';
+  try {
+    const draft = await api('POST', '/api/prompt/draft', { kind, answers: builder.answers, useClaude });
+    if (!draft.text) { $('#builder-status').textContent = 'Answer at least one question first.'; return; }
+    const sections = await api('GET', '/api/prompt/sections');
+    const next = sections.reduce((m, x) => Math.max(m, x.position), 0) + 1;
+    const card = sectionCard({ position: next, name: draft.name, text: draft.text, sensitive: false });
+    $('#sections').prepend(card);
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('#builder-status').textContent = sections.some((x) => x.name === draft.name)
+      ? `Draft ready below. You already have a section named ${draft.name}: edit this one, then delete the old one, or copy what you like into it.`
+      : 'Draft ready below as a new section. Read it, change anything, then Save.';
+  } catch (err) { $('#builder-status').textContent = err.message; }
+}
+$('#builder-claude').addEventListener('click', () => buildDraft(true));
+$('#builder-template').addEventListener('click', () => buildDraft(false));
+
 // ---------------- your account and help (multi-user, phase 6) ----------------
 /** Settings, Account: export your data, pause or resume yourself, delete your account (typed email to confirm). */
 function renderAccountControls(a) {
@@ -399,6 +588,7 @@ function renderAccountControls(a) {
 }
 
 async function loadHelp() {
+  loadMyFeedback().catch(() => {});
   const r = await api('GET', '/api/help').catch(() => ({ ask: false }));
   $('#help-form').hidden = !r.ask;
   if (!r.ask) fill($('#help-status'), [r.aiReason ? NO_KEY_NOTE(r.aiReason) : 'Ask is off in this instance.']);
@@ -617,6 +807,7 @@ async function loadSettingsView() {
     $('#claude-key-remove').hidden = !a.claudeKey;
   }
   renderFeeds(a);
+  renderGoals(a);
   $('#settings-account').textContent = a.email ? `${a.name ? `${a.name}, ` : ''}${a.email} (${a.role === 'admin' ? 'administrator' : 'user'})` : 'Local mode: no sign-in.';
   renderAccountControls(a);
 }
@@ -769,6 +960,7 @@ function excelBox(wl) {
 
 /** Users (administrators): pending requests first; each user's status, feeds, AI and counts, with the account switches. */
 async function loadUsers() {
+  loadAdminFeedback().catch((err) => { $('#admin-feedback').textContent = err.message; });
   const users = await api('GET', '/api/admin/users');
   const say = (text) => { $('#users-status').textContent = text; };
   const done = (u, what) => { say(`${u.email}: ${what}.`); loadUsers(); loadAccount(); };
@@ -982,6 +1174,7 @@ function tableView(points, format) {
 }
 
 function loadHealthTab() {
+  orderCards('health');
   getTargets(true); // fresh each time the tab opens (a sync may have moved the 90-day averages)
   loadProfileForm().catch(() => {});
   loadVo2();
@@ -1095,7 +1288,8 @@ async function loadHistory() {
   // A chart with no data in the range is left out, and named in one line below the charts.
   const hidden = [];
   const partial = new Set(data.partialDays ?? []);
-  for (const c of CHARTS.filter((x) => !(state.demo && isDrinkingChart(x)))) {
+  const chartOrder = orderFor(state.goals ?? {}, CHARTS.map((c) => c.key), 'charts');
+  for (const c of chartOrder.map((k) => CHARTS.find((x) => x.key === k)).filter((x) => !(state.demo && isDrinkingChart(x)))) {
     // Apple Health days that look like a partial export are marked (red, with a hover line) and left out of the avg.
     const points = data[c.from].filter((r) => r[c.key] !== null && r[c.key] !== undefined).map((r) => (c.from === 'metrics' && partial.has(r.date)
       ? { date: r.date, value: r[c.key], partial: true, details: [PARTIAL_LINE] }
@@ -1850,6 +2044,7 @@ async function loadZones(view = zonesViewChoice(), group = zonesGroupChoice()) {
 
 async function loadTrainingTab() {
   if (!state.today) await loadStatus();
+  orderCards('training');
   // A card whose data fails says so rather than showing "Loading..." forever (for example an old server
   // still running after an update: restart it).
   const failed = (sel) => (err) => {
@@ -2030,8 +2225,8 @@ function advisorWeights() {
   try {
     const saved = JSON.parse(localStorage.getItem(ADVISOR_KEY) ?? 'null');
     if (saved && Object.keys(EQUAL).every((g) => [0, 1, 2, 3].includes(saved[g]))) return saved;
-  } catch { /* storage unavailable or bad value: equal weights */ }
-  return { ...EQUAL };
+  } catch { /* storage unavailable or bad value: the goals' weights */ }
+  return state.goals?.primary ? goalWeights(state.goals) : { ...EQUAL };
 }
 
 function renderAdvisorWeights(weights) {
@@ -2565,6 +2760,7 @@ async function saveSettings(evt) {
 
 async function loadSections() {
   loadSettings();
+  loadBuilder().catch(() => {});
   const sections = await api('GET', '/api/prompt/sections');
   const container = $('#sections');
   container.replaceChildren();

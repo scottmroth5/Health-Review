@@ -101,6 +101,11 @@
         </a>
       </nav>
       <div class="card home-request" id="home-request" hidden><strong>Want your own?</strong> Health Review is shared by invitation. <a id="home-request-link">Request access</a> with your Google account.</div>
+      <div class="tile-arrange" id="tile-arrange">
+        <button type="button" class="ghost small-button" id="arrange-tiles">Arrange tiles</button>
+        <span id="arrange-controls" hidden><button type="button" class="small-button" id="arrange-done">Done</button> <button type="button" class="ghost small-button" id="arrange-reset">Reset to default</button> <span class="muted small">Use the arrows to move tiles.</span></span>
+      </div>
+      <p class="card goal-nudge" id="goal-nudge" hidden>Pick your training goals in <a href="#settings">Settings</a> and Health Review puts what matters most to you first.</p>
       <div class="card home-sync sync"><span id="sync-status" class="muted" role="status"></span> <button type="button" id="sync-now" class="ghost">Sync now</button></div>
       <div class="card home-settings">
         <label class="demo-toggle"><input type="checkbox" id="demo-mode"> <span><strong>Demo mode</strong><span class="small muted block">Hides drinking and CBD on screen, for showing the app to others. Saved in this browser; nothing stored changes.</span></span></label>
@@ -180,17 +185,17 @@
         <h2>Current program</h2>
         <div id="program-body" class="muted small">Loading…</div>
       </div>
-      <div class="card adherence-card">
+      <div class="card adherence-card" id="adherence-card">
         <h2>Called for vs logged</h2>
         <p class="muted small">Each lifting day against the program's workout for that phase: exercises done as called for, swapped (your swaps, or a band, dumbbell or bodyweight version filling a cable or machine slot), changed to something with the same movement pattern, skipped, or added. Focus, trigger and mobility sessions have no fixed list.</p>
         <div id="adherence-body" class="muted small">Loading…</div>
       </div>
-      <div class="card lifts-card">
+      <div class="card lifts-card" id="lifts-card">
         <h2>Lift progress</h2>
         <p class="muted small">Primary lifts: best of the last 6 weeks against the 12 weeks before, within the rep range you trained most. Deload weeks and the first session back after 3+ weeks off are left out. Open a lift for its 26-week trend.</p>
         <div id="lifts-body" class="muted small">Loading…</div>
       </div>
-      <div class="card training">
+      <div class="card training" id="training-card">
         <div class="training-head">
           <h2>Training volume</h2>
           <div class="filters" role="group" aria-label="Training range">
@@ -213,7 +218,7 @@
         <div id="training-exercises"></div>
         <p class="muted small" id="training-unweighted"></p>
       </div>
-      <div class="card advisor-card">
+      <div class="card advisor-card" id="advisor-card">
         <h2>Next program</h2>
         <p class="muted small">Ranked in code from what each program calls for and your past runs of it. Set how much each goal counts to see how the recommendation changes; this only changes this view (the weekly review uses equal weights).</p>
         <div id="advisor-weights" class="advisor-weights"></div>
@@ -238,7 +243,7 @@
 
     <!-- Health trends -->
     <section id="view-health" class="view" hidden>
-      <div class="card vo2">
+      <div class="card vo2" id="vo2-card">
         <div class="training-head">
           <h2>VO2 max</h2>
           <div class="filters" role="group" aria-label="VO2 max range">
@@ -257,7 +262,7 @@
         <div id="vo2-table"></div>
       </div>
 
-      <div class="card zones-card">
+      <div class="card zones-card" id="zones-card">
         <div class="training-head">
           <h2>Cardio minutes by heart rate zone</h2>
           <div class="zone-filters">
@@ -399,6 +404,17 @@
           <button type="button" id="preview-prompt" class="ghost">Preview</button>
         </div>
       </div>
+      <div class="card" id="prompt-builder">
+        <h2>Help me write a section</h2>
+        <p class="muted small">Answer a few questions and get a section to review and save. <a href="/guides/prompts" target="_blank">Guidance and examples</a></p>
+        <label>Section <select id="builder-kind"></select></label>
+        <div id="builder-questions"></div>
+        <div class="actions">
+          <button type="button" id="builder-claude">Draft with Claude</button>
+          <button type="button" class="ghost" id="builder-template">Build without AI</button>
+        </div>
+        <p class="status small" id="builder-status" role="status"></p>
+      </div>
       <form id="settings" class="card">
         <h2>Settings</h2>
         <p class="muted small">Your Zone 2 heart rate range. A cardio session counts as Zone 2 when its average heart rate falls inside it.</p>
@@ -422,6 +438,15 @@
     <!-- Activity: runs recorded by syncs, reviews and backups, each job's last runs, and Health Auto Export posts -->
     <!-- Settings: the signed-in user's Claude key and account -->
     <section id="view-settings" class="view" hidden>
+      <div class="card" id="goals-card">
+        <h2>Your goals</h2>
+        <p class="muted small">Your primary goal's information comes first on Home, Training and Health, then your second goal's, and the weekly review opens with them. Nothing is hidden.</p>
+        <div class="grid2">
+          <label>Primary goal <select id="goal-primary"></select></label>
+          <label>Second goal (optional) <select id="goal-secondary"></select></label>
+        </div>
+        <p class="status" id="goals-status" role="status"></p>
+      </div>
       <div class="card" id="claude-key-card">
         <h2>Claude API key</h2>
         <p class="muted small" id="claude-key-status"></p>
@@ -500,6 +525,7 @@
           <li><a href="/guides/workout-log" target="_blank">Workout Log in Google Sheets</a></li>
           <li><a href="/guides/manual-entry" target="_blank">Entering data in the app</a></li>
           <li><a href="/guides/programs" target="_blank">Your training programs</a></li>
+          <li><a href="/guides/prompts" target="_blank">Writing your review prompt</a></li>
           <li><a href="/guides/claude-key" target="_blank">Your Claude API key</a></li>
         </ul>
         <p class="muted small"><a href="/privacy" target="_blank">Privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
@@ -514,6 +540,19 @@
         <p class="status" id="help-status" role="status"></p>
         <div id="help-answer" class="help-answer" hidden></div>
       </div>
+      <div class="card" id="feedback-card">
+        <h2>Send feedback</h2>
+        <p class="muted small">Tell the administrator what works, what you'd like, or what broke. They get it by email and can reply to you.</p>
+        <form id="feedback-form">
+          <label>Type <select name="kind"><option value="feedback">Feedback</option><option value="enhancement">Enhancement request</option><option value="bug">Bug report</option></select></label>
+          <label>Subject <input name="subject" maxlength="120" required></label>
+          <label>Details <textarea name="body" rows="4" maxlength="5000" required></textarea></label>
+          <label id="feedback-doing" hidden>What you were doing when it happened (optional) <textarea name="doing" rows="2" maxlength="1000"></textarea></label>
+          <div class="actions"><button type="submit">Send</button></div>
+        </form>
+        <p class="status" id="feedback-status" role="status"></p>
+        <details class="program-more"><summary>What you've sent</summary><div id="feedback-mine" class="small"></div></details>
+      </div>
     </section>
 
     <!-- Users (administrators): approve requests and see who is in -->
@@ -523,6 +562,10 @@
         <p class="muted small">Requests wait here for your approval. Approving one sends them an email; they start with the default prompt sections and no AI until they add their own Claude key, or you let them use yours up to a monthly cap. You see account facts and counts here, never their Claude key, tokens or sheet links.</p>
         <div id="users-list"></div>
         <p class="status" id="users-status" role="status"></p>
+      </div>
+      <div class="card" id="admin-feedback-card">
+        <h2>Feedback <span class="muted small" id="admin-feedback-count"></span></h2>
+        <div id="admin-feedback"></div>
       </div>
     </section>
 

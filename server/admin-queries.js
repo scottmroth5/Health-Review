@@ -125,3 +125,21 @@ export function deleteUserData(db, uid) {
   })();
   return counts;
 }
+
+/** Feedback from every user for the administrator, newest first, with who sent it. */
+export function listFeedback(db) {
+  const raw = db.unscoped ?? db;
+  return raw.prepare(`SELECT f.id, f.kind, f.subject, f.body, f.context, f.status, f.created_at, u.email, u.name
+    FROM feedback f JOIN users u ON u.id = f.user_id ORDER BY f.created_at DESC LIMIT 500`).all()
+    .map((r) => ({ ...r, context: r.context ? JSON.parse(r.context) : null }));
+}
+
+/** Marks a feedback item new or done; returns whether it existed. */
+export function setFeedbackStatus(db, id, status) {
+  return (db.unscoped ?? db).prepare('UPDATE feedback SET status = ? WHERE id = ?').run(status, id).changes > 0;
+}
+
+/** How many feedback items are new (the Users tile badge). */
+export function newFeedbackCount(db) {
+  return (db.unscoped ?? db).prepare("SELECT COUNT(*) FROM feedback WHERE status = 'new'").pluck().get();
+}

@@ -14,7 +14,7 @@ import { VO2_VIEWS } from '../metrics/vo2max.js';
 import { repoPath } from '../tools/paths.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { loadDictionary } from '../metrics/dictionary.js';
-import { loadSubstitutions, loadTargets, loadProfile, loadUserPrograms, userCatalog } from '../metrics/load.js';
+import { loadGoals, loadSubstitutions, loadTargets, loadProfile, loadUserPrograms, userCatalog } from '../metrics/load.js';
 import { loadTargetConfig } from '../metrics/targets.js';
 import { loadLabRanges } from '../metrics/labs.js';
 import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
@@ -36,7 +36,9 @@ import { isTimeZone, localStamp, ownerTz, withTimeZone } from '../tools/time.js'
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
 import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, startUserRun, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
-import { createPendingUser, deleteUserData, exportUserData, listUsers, setMapsShared, setOwnerKey, setUserStatus } from './admin-queries.js';
+import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus } from './admin-queries.js';
+import { GOALS as GOAL_LABELS, GOAL_KEYS, TILES, cleanGoals } from './public/goals.js';
+import { MAX_ANSWER_CHARS, SECTION_KINDS, builderSpec, claudeDraft, templateDraft } from '../agent/prompt-draft.js';
 import { askHelp, MAX_QUESTION_CHARS } from '../agent/help.js';
 import { SESSION_COOKIE, cookie } from './session.js';
 import { OWNER_KEY_CAP, clearCapNotice, spentThisMonth } from './ai-access.js';
@@ -198,7 +200,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md')));
   app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md')));
   // Setup guides for each data feed (docs/guides), readable before signing in.
-  const GUIDES = ['using-the-app', 'health-auto-export', 'workout-log', 'manual-entry', 'programs', 'claude-key'];
+  const GUIDES = ['using-the-app', 'health-auto-export', 'workout-log', 'manual-entry', 'programs', 'prompts', 'claude-key'];
   app.get('/guides/:name', { schema: { hide: true } }, async (req, reply) => (GUIDES.includes(req.params.name)
     ? reply.type('text/html').send(policyPage(`docs/guides/${req.params.name}.md`, { SITE: appUrl() }))
     : reply.code(404).type('text/html').send(policyPage('docs/guides/index.md'))));
@@ -964,6 +966,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       aiReason: access.reason ?? null,
       // The zone this account runs in: its own (Settings), else the server default; the owner's is always the default.
       timeZone: { zone: ownerTz(), own: Boolean(timeZoneOf(store.db, uid)), fromServer: uid === OWNER_ID },
+      // Training goals (Settings) and the Home tile order the user arranged (null: the goals' default).
+      goals: loadGoals(db),
+      tileOrder: (() => { try { return JSON.parse(db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'tile_order'").pluck().get() ?? 'null'); } catch { return null; } })(),
       pausedBySelf: u?.status === 'paused' && Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
       // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
       ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
@@ -1052,6 +1057,107 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     log.info('[users] a Claude key was saved');
     return accountView(req);
   });
+  // Your training goals: a primary and an optional secondary; they order the pages and frame the review (public/goals.js).
+  const putSetting = (key, value) => (value === null
+    ? db.prepare('DELETE FROM settings WHERE user_id = @uid AND key = ?').run(key)
+    : db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
+      ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(key, value, clock().toISOString()));
+  const goalValue = { type: ['string', 'null'], enum: [...GOAL_KEYS, null] };
+  app.put('/api/account/goals', {
+    schema: { summary: 'Your training goals: primary and an optional secondary (strength, cardio, weight, endurance, health), or null', body: { type: 'object', additionalProperties: false, required: ['primary'], properties: { primary: goalValue, secondary: goalValue } }, response: { 200: anyObject } },
+  }, async (req) => {
+    const g = cleanGoals(req.body);
+    putSetting('goal_primary', g.primary);
+    putSetting('goal_secondary', g.secondary);
+    return accountView(req);
+  });
+  // Your Home tile order (Arrange on Home); null goes back to the default.
+  app.put('/api/account/tile-order', {
+    schema: { summary: 'Your Home tile order (view names), or null for the default', body: { type: 'object', additionalProperties: false, required: ['tiles'], properties: { tiles: { type: ['array', 'null'], maxItems: 30, items: { type: 'string', enum: TILES } } } }, response: { 200: anyObject } },
+  }, async (req) => {
+    putSetting('tile_order', req.body.tiles ? JSON.stringify([...new Set(req.body.tiles)]) : null);
+    return accountView(req);
+  });
+
+  // ---- feedback, enhancement requests and bug reports (Help): kept for the administrator and emailed to them ----
+  const FEEDBACK_KINDS = { feedback: 'Feedback', enhancement: 'Enhancement request', bug: 'Bug report' };
+  // The administrator check is defined with the user administration below; this calls it when a request arrives.
+  const adminOnlyHook = (req, reply) => adminOnly(req, reply);
+  const feedbackTimes = new Map();
+  const FEEDBACK_PER_HOUR = 5;
+  app.get('/api/feedback', { schema: { summary: 'What you have sent, newest first, with its status', response: { 200: { type: 'array', items: anyObject } } } },
+    async () => db.prepare('SELECT id, kind, subject, status, created_at FROM feedback WHERE user_id = @uid ORDER BY created_at DESC LIMIT 50').all());
+  app.post('/api/feedback', {
+    schema: {
+      summary: 'Send feedback, an enhancement request or a bug report to the administrator',
+      body: { type: 'object', additionalProperties: false, required: ['kind', 'subject', 'body'], properties: {
+        kind: { type: 'string', enum: Object.keys(FEEDBACK_KINDS) }, subject: { type: 'string', minLength: 1, maxLength: 120 }, body: { type: 'string', minLength: 1, maxLength: 5000 },
+        doing: { type: 'string', maxLength: 1000 }, screen: { type: 'string', maxLength: 40, pattern: '^[a-z-]*$' } } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => {
+    if (authMode === 'demo') return reply.code(403).send({ error: 'Feedback is turned off in the demo' });
+    if (isPaused(req)) return reply.code(403).send({ error: 'Your account is paused; email the administrator instead' });
+    const uid = uidOf(req);
+    const subject = req.body.subject.trim();
+    const body = req.body.body.trim();
+    if (!subject || !body) throw badRequest('Add a subject and the details');
+    const hourAgo = clock().getTime() - 3600_000;
+    const recent = (feedbackTimes.get(uid) ?? []).filter((t) => t > hourAgo);
+    if (recent.length >= FEEDBACK_PER_HOUR) return reply.code(429).send({ error: `At most ${FEEDBACK_PER_HOUR} an hour; try again later` });
+    feedbackTimes.set(uid, [...recent, clock().getTime()]);
+    const context = { screen: req.body.screen || null, version: process.env.APP_VERSION || VERSION, browser: String(req.headers['user-agent'] ?? '').slice(0, 300) || null };
+    const doing = req.body.doing?.trim() || null;
+    const id = randomUUID();
+    db.prepare(`INSERT INTO feedback (user_id, id, kind, subject, body, context, status, created_at) VALUES (@uid, ?, ?, ?, ?, ?, 'new', ?)`)
+      .run(id, req.body.kind, subject, doing ? `${body}\n\nWhat I was doing: ${doing}` : body, JSON.stringify(context), clock().toISOString());
+    const u = getUser(store.db, uid);
+    log.info(`[feedback] ${req.body.kind} received`);
+    await mailer.send({ to: adminEmail(), replyTo: u?.email, subject: `Health Review [${req.body.kind}] ${subject}`,
+      text: `${FEEDBACK_KINDS[req.body.kind]} from ${u?.name || u?.email || 'a user'} <${u?.email ?? 'unknown'}>\n\n${subject}\n\n${body}${doing ? `\n\nWhat they were doing: ${doing}` : ''}\n\nScreen: ${context.screen ?? 'not given'} | App: ${context.version} | Browser: ${context.browser ?? 'unknown'}\n\nReply to this email to answer them. All feedback: ${appUrl()}/#users\n` });
+    return { sent: true, id };
+  });
+  app.get('/api/admin/feedback', { onRequest: adminOnlyHook, schema: { summary: 'All feedback, newest first (administrators)', response: { 200: anyObject } } },
+    async () => ({ items: listFeedback(store.db), newCount: newFeedbackCount(store.db) }));
+  app.post('/api/admin/feedback/:id/status', {
+    onRequest: adminOnlyHook,
+    schema: { summary: 'Mark feedback new or done (administrators)', params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
+      body: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { type: 'string', enum: ['new', 'done'] } } }, response: { 200: anyObject } },
+  }, async (req, reply) => (setFeedbackStatus(store.db, req.params.id, req.body.status) ? { ok: true } : reply.code(404).send({ error: 'Not found' })));
+
+  // ---- the Prompt tab's builder (agent/prompt-draft.js): guided questions, then a template or Claude's draft ----
+  const draftTimes = new Map();
+  app.get('/api/prompt/builder', { schema: { summary: 'The prompt builder: kinds of section with their questions, and whether Claude can draft', response: { 200: anyObject } } },
+    async (req) => ({ kinds: builderSpec(), claude: typeof services.claude === 'function' && aiOn(req), aiReason: typeof services.claude === 'function' ? aiReason(req) : null }));
+  app.post('/api/prompt/draft', {
+    schema: {
+      summary: 'Draft a prompt section from your answers: a template (no AI) or Claude with your AI (your answers only, never your data); nothing is saved',
+      body: { type: 'object', additionalProperties: false, required: ['kind', 'answers'], properties: {
+        kind: { type: 'string', enum: Object.keys(SECTION_KINDS) }, useClaude: { type: 'boolean' },
+        answers: { type: 'object', maxProperties: 10, additionalProperties: { type: 'string', maxLength: MAX_ANSWER_CHARS } } } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => {
+    if (authMode === 'demo') return reply.code(403).send({ error: 'Changes are turned off in the demo' });
+    if (!req.body.useClaude) return templateDraft(req.body.kind, req.body.answers);
+    if (typeof services.claude !== 'function') return reply.code(503).send({ error: 'Claude is not available in this server' });
+    const reason = aiReason(req);
+    if (reason) return noAi(reply, reason);
+    const uid = uidOf(req);
+    const hourAgo = clock().getTime() - 3600_000;
+    const recent = (draftTimes.get(uid) ?? []).filter((t) => t > hourAgo);
+    if (recent.length >= 20) return reply.code(429).send({ error: 'At most 20 drafts an hour; try again later' });
+    draftTimes.set(uid, [...recent, clock().getTime()]);
+    const g = loadGoals(db);
+    try {
+      return await claudeDraft({ store: userStore(), claude: services.claude(uid), kind: req.body.kind, answers: req.body.answers,
+        goals: [g.primary, g.secondary].filter(Boolean).map((k) => GOAL_LABELS[k]), logger: { info() {}, warn() {}, error() {} } });
+    } catch (err) {
+      log.warn(`[prompt] draft failed: ${err.name}`);
+      return reply.code(502).send({ error: 'Claude could not draft it just now; try again, or Build without AI' });
+    }
+  });
+
   // Your time zone: decides your "today", the review week and file times (tools/time.js). The owner's is OWNER_TZ.
   app.put('/api/account/time-zone', {
     schema: { summary: 'Set your time zone (an IANA name such as America/Chicago), or null for the server default', body: { type: 'object', additionalProperties: false, required: ['timeZone'], properties: { timeZone: { type: ['string', 'null'], maxLength: 64 } } }, response: { 200: anyObject } },

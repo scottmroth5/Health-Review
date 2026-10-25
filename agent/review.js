@@ -2,7 +2,8 @@
 // Runs are traced with metadata only (model, tokens, cost, timing, which sensitive sections were
 // sent by name); prompt and report text never go to logs.
 import { computeWeek } from '../metrics/index.js';
-import { loadWeekData, loadMetricSettings, loadWeekNotes, medicationNames } from '../metrics/load.js';
+import { loadWeekData, loadMetricSettings, loadWeekNotes, loadGoals, medicationNames } from '../metrics/load.js';
+import { GOALS } from '../server/public/goals.js';
 import { buildSummary } from './summary.js';
 import { buildSystem, REPORT_SCHEMA, renderReport } from './instructions.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
@@ -32,6 +33,9 @@ export function prepareReview(db, { weekEnd, today, catalog }) {
   // catalog: the user's program catalog (null: none); left out, the owner's MAPS catalog file is read.
   const week = computeWeek(loadWeekData(db, weekEnd, catalog === undefined ? {} : { catalog }), { weekEnd, ...settings });
   const summary = buildSummary(week, loadWeekNotes(db, weekEnd), { today });
+  // The owner's training goals (Settings), as labels only: the review opens with them.
+  const goals = loadGoals(db);
+  if (goals.primary) summary.goals = { primary: GOALS[goals.primary], secondary: goals.secondary ? GOALS[goals.secondary] : null };
   const sections = db.prepare('SELECT position, name, text, sensitive FROM prompt_sections WHERE user_id = @uid ORDER BY position, name').all();
   const { system, sensitiveSent } = buildSystem(sections, today);
   return {

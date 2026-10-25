@@ -16,13 +16,13 @@ export function createMailer({ env = process.env, transport, log = console } = {
     : null);
   return {
     configured: Boolean(t),
-    async send({ to, subject, text }) {
+    async send({ to, subject, text, replyTo }) {
       if (!t) {
         log.info?.(`[mail] not configured; "${subject}" not sent`);
         return false;
       }
       try {
-        await t.sendMail({ from: user ? `Health Review <${user}>` : undefined, to, subject, text });
+        await t.sendMail({ from: user ? `Health Review <${user}>` : undefined, to, subject, text, ...(replyTo ? { replyTo } : {}) });
         log.info?.(`[mail] sent "${subject}"`);
         return true;
       } catch (err) {

@@ -8,6 +8,7 @@ Health Review shows your own data back to you. Choose the feeds you want in **Se
 - [Workout Log in Google Sheets](/guides/workout-log): your lifting log, read from your own sheet.
 - [Entering data in the app](/guides/manual-entry): daily check-ins, drinks, medications and supplements, and lab results.
 - [Your training programs](/guides/programs): build, import or read from a PDF the programs you follow, for phases and the Next program ranking.
+- [Writing your review prompt](/guides/prompts): what to put in each prompt section, what to leave out, and examples.
 - [Your Claude API key](/guides/claude-key): turns on the AI weekly review and the Next program chat.
 
 [Back to Health Review](/)

@@ -510,6 +510,13 @@ asks first. From the command line, `npm run review -- --force` writes it anyway,
 sync, no cost); otherwise they try again, so a week skipped on Sunday morning for a late Apple Health export is usually
 written that afternoon. If it is still skipped at Tuesday's catch-up you get an email.
 
+**Goals and your own layout.** In Settings each user picks a primary goal (strength, cardio fitness, lose weight / body
+composition, endurance or general health) and an optional second one: Home, Training and Health put that information
+first, and the weekly review opens with it. **Arrange tiles** on Home sets their own tile order (saved to their account).
+**Help** has Send feedback (feedback, an enhancement request or a bug report), emailed to you with the sender as
+reply-to and listed on your Users screen. The Prompt tab's **Help me write a section** drafts a prompt section from a few
+answers (with Claude, or a template without AI); the guide /guides/prompts has examples.
+
 **Excel Workout Log.** Users without Google can download an Excel workbook laid out like the Workout Log (Settings,
 Data feeds, Workout Log), log in it, and upload it; each upload replaces the years in the file. Only .xlsx up to 5 MB, no
 macros or old .xls; the file is read in memory and not kept. Not in the demo.
