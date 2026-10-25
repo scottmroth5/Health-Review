@@ -34,7 +34,8 @@ const port = Number(process.env.PORT ?? (demo ? 5189 : 5188));
 const settings = authSettings();
 const authMode = settings.mode;
 assertSafeBinding({ host, mode: authMode, settings });
-// Behind Caddy: true, a hop count, or an address; unset means no proxy is trusted.
+// Behind Caddy: the addresses to trust as proxies (compose.yml: loopback,linklocal,uniquelocal, so req.ip is the visitor);
+// true, a hop count or an address also work, but a hop count reports the proxy itself. Unset: no proxy is trusted.
 const trustProxy = (() => {
   const v = process.env.TRUST_PROXY;
   if (!v) return false;

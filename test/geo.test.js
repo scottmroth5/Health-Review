@@ -2,6 +2,7 @@
 // check and private addresses always pass; no GEO_ALLOW or no database means nothing is blocked. A fake country lookup;
 // no download, no network.
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
@@ -21,12 +22,23 @@ test('settings and private addresses', () => {
   assert.equal(geoBlocker({ allow: ['US'], lookup: null })({ ip: '81.2.69.142', url: '/' }), false, 'no database: fails open');
 });
 
+// The server's own TRUST_PROXY (deploy/compose.yml), so these tests use exactly what production does; requests arrive
+// from Caddy on the Docker network with the visitor's address forwarded.
+const TRUST_PROXY = /TRUST_PROXY: (\S+)/.exec(readFileSync(new URL('../deploy/compose.yml', import.meta.url), 'utf8'))[1];
+
 async function appFrom(ip, { allow = ['US'], authMode = 'none' } = {}) {
   const store = openHealthStore(':memory:');
-  // trustProxy: req.ip is the forwarded client address, as behind Caddy.
-  const app = await buildApp({ store, authMode, trustProxy: true, geo: { allow, lookup }, ingest: { token: 'made-up-ingest-token-0123456789', apple: 'rest' } });
-  return (url, opts = {}) => app.inject({ url, ...opts, headers: { 'x-forwarded-for': ip, ...(opts.headers ?? {}) } });
+  const app = await buildApp({ store, authMode, trustProxy: TRUST_PROXY, geo: { allow, lookup }, ingest: { token: 'made-up-ingest-token-0123456789', apple: 'rest' } });
+  return (url, opts = {}) => app.inject({ url, remoteAddress: '172.18.0.4', ...opts, headers: { 'x-forwarded-for': ip, ...(opts.headers ?? {}) } });
 }
+
+test('production TRUST_PROXY: the app sees the visitor, never Caddy, so the block and rate limits work per visitor', async () => {
+  assert.ok(!/^\d+$/.test(TRUST_PROXY), 'not a hop count: Fastify would then report the proxy itself');
+  const app = await buildApp({ store: openHealthStore(':memory:'), trustProxy: TRUST_PROXY });
+  app.get('/__ip', async (req) => ({ ip: req.ip }));
+  const seen = (await app.inject({ url: '/__ip', remoteAddress: '172.18.0.4', headers: { 'x-forwarded-for': '81.2.69.142' } })).json().ip;
+  assert.equal(seen, '81.2.69.142');
+});
 
 test('outside the US: the 403 page on pages and the API; ingest posts and the health check still pass', async () => {
   const uk = await appFrom('81.2.69.142');

@@ -38,10 +38,14 @@ RUN echo "country database for build $GEO_STAMP" && mkdir -p /geo \
 
 # Runtime: the same Debian and Node as above, so the native module built there loads here unchanged.
 FROM node:22-bookworm-slim
-# tzdata so TZ resolves; the app itself uses OWNER_TZ for every date and does not depend on TZ.
+# tzdata so TZ resolves; the app itself uses OWNER_TZ for every date and does not depend on TZ. The npm, yarn and corepack
+# tools that come with the Node image are removed: the server only ever runs node, and they carry their own
+# dependencies (and their vulnerabilities, which the image scan in deploy.yml would otherwise flag).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends tzdata ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 ENV NODE_ENV=production \
     DATA_DIR=/app/data \
     HOST=0.0.0.0 \

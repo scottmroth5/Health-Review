@@ -20,7 +20,9 @@ services:
       DATA_DIR: /app/data
       HOST: 0.0.0.0
       PORT: "5188"
-      TRUST_PROXY: "1"
+      # Trust only private network addresses (Caddy on the Docker network), so req.ip is the visitor (rate limits,
+      # US-only access). Not a hop count: Fastify then reports the proxy itself.
+      TRUST_PROXY: loopback,linklocal,uniquelocal
       # US-only access (server/geo.js); Health Auto Export posts and the health check always pass.
       GEO_ALLOW: US
     volumes:
@@ -49,7 +51,9 @@ services:
       DATA_DIR: /app/data
       HOST: 0.0.0.0
       PORT: "5188"
-      TRUST_PROXY: "1"
+      # Trust only private network addresses (Caddy on the Docker network), so req.ip is the visitor (rate limits,
+      # US-only access). Not a hop count: Fastify then reports the proxy itself.
+      TRUST_PROXY: loopback,linklocal,uniquelocal
     # The demo instance: builds its made-up database in the empty /app/data, then serves it. A restart resets it.
     command: ["node", "server/demo.js"]
     # Nothing on disk survives or is shared: the code is read-only and the made-up data lives in memory.

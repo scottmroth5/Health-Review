@@ -459,7 +459,11 @@ control characters (tools/mail.js). Every route has a per-address ceiling (@fast
 /api/health exempt) under the tighter sign-in, refused-request, ingest and demo limits. The first CodeQL run (18 high)
 led to: that ceiling, cookie and spreadsheet attribute names kept off object prototypes (parseCookies, tools/xlsx.js
 attrs as a Map), the Excel reader's XML read by linear scans instead of backtracking regexes (no ReDoS), and
-check-then-read file code replaced by single-step opens; two reviewed exceptions are listed in codeql-accepted.txt. A self-run pen test (2026-10-25, 35 checks: stored XSS on every screen, CSRF, open
+check-then-read file code replaced by single-step opens; two reviewed exceptions are listed in codeql-accepted.txt.
+TRUST_PROXY is loopback,linklocal,uniquelocal (deploy/compose.yml), never a hop count: with TRUST_PROXY=1 Fastify reported
+Caddy's address as every visitor's, so per-address limits were shared and the US block could not fire (found 2026-10-25;
+test/geo.test.js uses the compose value). The image drops npm, yarn and corepack (only node runs), which also clears the
+image scan's findings in npm's own bundled packages. A self-run pen test (2026-10-25, 35 checks: stored XSS on every screen, CSRF, open
 redirects, traversal, tampering, prototype pollution, oversized bodies, headers) found one issue, fixed: line breaks in a
 feedback subject.
 Goals, tiles, feedback, prompt builder (2026-10-25): server/public/goals.js (pure; the browser and the server import it)
