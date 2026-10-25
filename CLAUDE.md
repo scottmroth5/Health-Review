@@ -130,9 +130,12 @@ Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, G
 GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
 ## Data
-Time zone: OWNER_TZ (default America/New_York; tools/time.js, Intl, no library) decides every "today", the review week,
-the review's due hour, file write times (localStamp), the January Workout Log tab rule and spend months, never the host's
-zone, so a server on UTC gives the same results. Never use getHours/getDate/toLocale* or SQLite 'localtime' for these
+Time zone: the user's zone (tools/time.js, Intl, no library) decides every "today", the review week, file write times
+(localStamp), the January Workout Log tab rule and spend months, never the host's zone, so a server on UTC gives the same
+results. A user's zone is their settings row time_zone (PUT /api/account/time-zone, Settings), else OWNER_TZ (default
+America/New_York); the owner is always OWNER_TZ. Requests run in their user's zone (app.js preHandler withTimeZone), as do
+ingest posts and each user's scheduled sync and review; ownerTz() returns the current zone, so localDate() and the like
+need no argument. The schedule itself (and the review's due hour) is on OWNER_TZ. Never use getHours/getDate/toLocale* or SQLite 'localtime' for these
 (migration 021 used 'localtime' once, on the owner's New York machine, so its stored values are right). Tests pass under
 both TZ=UTC and TZ=America/New_York (test/time.test.js holds the Saturday 11:30 pm case).
 Sheets are read unformatted with dates as serial numbers and stored as local wall-clock text; no time zone conversion.
@@ -338,7 +341,8 @@ sent. GET /api/reviews/status (overdue: no review and a run was tried or it is p
 on Daily Check-in and Reviews; POST /api/reviews/run syncs, applies the same gate (force to override), and writes the review
 in the background through services.review (main instance only; never in the demo). A failed manual run keeps its error name only.
 Scheduling (server/scheduler.js, ported from Job-Agent; test/scheduler.test.js): while the server runs, SCHEDULE_SYNC
-("daily 07:00"), SCHEDULE_REVIEW ("Sun,Mon,Tue 08:00"), SCHEDULE_BACKUP ("daily 23:00") and SCHEDULE_RESTORE_TEST
+("daily 07:00"), SCHEDULE_REVIEW ("Sun,Mon,Tue 08:00 | Sun 13:00": several parts separated by "|", the earliest next
+run wins), SCHEDULE_BACKUP ("daily 23:00") and SCHEDULE_RESTORE_TEST
 ("monthly 1 05:00") run the same jobs as the npm scripts (jobs/sync.js syncJob, jobs/review.js weeklyReview with
 scheduled true, jobs/backup.js backupJob). Times are in OWNER_TZ (tools/time.js zonedInstant), never the host's zone. A
 missing or blank line turns that job off, so the PC (lines commented out) runs nothing and keeps its Windows tasks until
@@ -443,6 +447,16 @@ access), /:id/pause and /:id/resume (approved to paused and back), /:id/owner-ke
 user's email typed and a cap; the user is emailed on and off), /:id/maps ({ shared }). None act on an admin; owner-key and
 maps need an approved or paused user. Paused: signs in and sees their data; ingest token 401, POST /api/sync 403, no AI,
 no scheduled jobs (activeUserIds), and a note on Home. The scheduled review skips a user with no AI with its reason.
+Enhancements (2026-10-25): sync, the manual review run and the chat question are one at a time per user (app.js syncing,
+reviewRuns, chatting), never shared. server/alerts.js emails the admin: a scheduled job failing (per user for sync and
+review, at most once a day per kind, settings row alert:<key> on the owner, cleared on recovery), the owner's week still
+skipped at Tuesday's catch-up, and after the owner's scheduled sync health_stale, export_stale or workout_export_stale
+(once until it clears); names, dates and error names only. A sheet the app created (settings workout_log_created) gets
+each new year's tab on its first sync of the year (ensureYearTab; a failure is a sync warning). Workouts logged in the
+app (ingest/app-workouts.js, the Training tab's Log workout card): strength_exercises and strength_sets at tab_year 0
+(APP_TAB_YEAR; the Sheets sync deletes only the year tabs it reads), one per day, parsed with parseWeight and parseSet,
+then the dictionary, detection, assignForward and refreshPhases; GET /api/workouts, /api/workouts/suggest (their history
+and dictionary names, their own programs' workouts only), PUT and DELETE /api/workouts/:date (up to today).
 Create my Workout Log (2026-10-25): /auth/google/sheets?create=1 asks for spreadsheets.readonly plus drive.file (DRIVE_FILE_SCOPE,
 non-sensitive: only files the app created); the callback refuses a grant without both, stores the token, then app.js
 createSheet (never the owner) calls services.createWorkoutSheet (ingest/create-sheet.js: "Health Review Workout Log",

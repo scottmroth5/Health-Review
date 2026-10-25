@@ -8,6 +8,12 @@ Some things are entered right in Health Review. Everything here is yours only.
 - **Medications and supplements:** tick what you took each day. Use **Adjust** for a one-day change of dose or time.
 - **Drinks:** beer, wine, spirits and other drinks, and CBD (never counted as alcohol). Logging a day with zero drinks counts as an alcohol-free day; a day you don't log is unknown.
 
+## Workouts
+
+- On **Training**, **Log workout** records a lifting session without any Google Sheet: the day, the workout's name (with the program and phase, like `Garage 5x5 Phase 1 A`), and each exercise with its sets. Weight is pounds (`185`), per hand (`40ea`), `BW` or a band color; reps are a number or a time for holds (`30s`).
+- If you have programs of your own, **Start from one of your programs** fills in that workout's exercises.
+- One logged workout per day: pick a day to change or delete it. They count everywhere a Workout Log day does.
+
 ## Meds
 
 - Add each medication or supplement with its dose and when you take it. A dose change is a new dated period, so the history shows how things changed. Medication topics in the review only ever go to its "Discuss with your physician" list.

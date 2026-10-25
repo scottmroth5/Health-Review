@@ -52,7 +52,7 @@ what is running.
 | `PUBLIC_URL`, `AUTH_ALLOWED_EMAILS`, `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_WEB_CLIENT_SECRET`, `SESSION_SECRET` | Google sign-in. The redirect URI is `PUBLIC_URL` + `/auth/google/callback`. |
 | `APPLE_SOURCE` | `rest` on the server: Health Auto Export posts to the app. Blank or `drive` reads the Drive folders. |
 | `INGEST_TOKEN` | The bearer token Health Auto Export sends to `/api/ingest/health` and `/api/ingest/workouts`. |
-| `SCHEDULE_SYNC`, `SCHEDULE_REVIEW`, `SCHEDULE_BACKUP`, `SCHEDULE_RESTORE_TEST` | The in-app schedule, for example `daily 07:00`, `Sun,Mon,Tue 08:00`, `daily 23:00` and `monthly 1 05:00`. A missing line turns that job off. |
+| `SCHEDULE_SYNC`, `SCHEDULE_REVIEW`, `SCHEDULE_BACKUP`, `SCHEDULE_RESTORE_TEST` | The in-app schedule, for example `daily 07:00`, `Sun,Mon,Tue 08:00 \| Sun 13:00`, `daily 23:00` and `monthly 1 05:00` (several times separated by `\|`). A missing line turns that job off. |
 
 **Storage and encryption.**
 - **Disks:** Lightsail encrypts the server's disk and snapshots with keys AWS manages. You accept this for now, until a
@@ -505,9 +505,14 @@ run with the dates (Activity tab). From 9am on Sunday, while last week has no re
 why and offer **Run review now**, which syncs first. While days are still missing the button reads **Run anyway** and
 asks first. From the command line, `npm run review -- --force` writes it anyway, and `-- --dry-run` shows the check.
 
-**Catch-up runs.** The scheduled review also runs Monday and Tuesday at 8am (`SCHEDULE_REVIEW=Sun,Mon,Tue 08:00` on
-the server). Once the week's review exists those runs do nothing (no sync, no cost); otherwise they try again, so a week
-skipped on Sunday for a late Apple Health export is usually written by Monday.
+**Catch-up runs.** The scheduled review also runs Sunday at 1pm and Monday and Tuesday at 8am
+(`SCHEDULE_REVIEW=Sun,Mon,Tue 08:00 | Sun 13:00` on the server). Once the week's review exists those runs do nothing (no
+sync, no cost); otherwise they try again, so a week skipped on Sunday morning for a late Apple Health export is usually
+written that afternoon. If it is still skipped at Tuesday's catch-up you get an email.
+
+**Emails when something needs attention.** The server emails you (ADMIN_EMAIL, else your address) when a scheduled
+sync, review, backup or restore test fails (once a day at most, and again after it recovers), and when your Health Auto
+Export goes quiet (once, until it is back). Dates and error names only.
 
 **Rewrite with the full week.** If a review was written while days were missing or partial (with Run anyway, or
 `--force`) and those days arrive later, Daily Check-in and Reviews offer **Rewrite with the full week** (about $0.35).

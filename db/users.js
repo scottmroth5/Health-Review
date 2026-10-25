@@ -80,3 +80,9 @@ export function startUserRun(store, name, meta = {}, logger) {
   if (run.id != null) store.db.prepare('UPDATE runs SET user_id = ? WHERE id = ?').run(uid, run.id);
   return run;
 }
+
+/** A user's own time zone (their settings row time_zone, set in Settings), or null for OWNER_TZ. Never for the owner. */
+export function timeZoneOf(db, uid) {
+  if (!uid || uid === OWNER_ID) return null;
+  return (db.unscoped ?? db).prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'time_zone'").pluck().get(uid) ?? null;
+}

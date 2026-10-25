@@ -1,11 +1,31 @@
-// The owner's time zone. Every "today", local wall-clock time and schedule goes through OWNER_TZ (default
-// America/New_York), never the host's zone, so the app is right on a server set to UTC. Pure, no library: the
+// The time zone. Every "today", local wall-clock time and schedule goes through the current user's zone (their own,
+// set in Settings, within withTimeZone), else OWNER_TZ (default America/New_York), never the host's zone, so the app is
+// right on a server set to UTC. Pure, no library: the
 // platform's Intl time zone data. Dates are stored as local wall-clock text (YYYY-MM-DD, YYYY-MM-DDTHH:MM).
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 export const DEFAULT_TZ = 'America/New_York';
 
-/** The owner's IANA time zone (OWNER_TZ), checked once per value; an unknown zone throws rather than falling back. */
+// The zone of the user a request or job is running for (multi-user); none outside withTimeZone.
+const zone = new AsyncLocalStorage();
+
+/** Runs fn with tz as every default zone below (a user's own time zone); a falsy tz runs it unchanged. */
+export function withTimeZone(tz, fn) {
+  return tz ? zone.run(tz, fn) : fn();
+}
+
+/** Whether a name is an IANA time zone this platform knows. */
+export function isTimeZone(tz) {
+  if (typeof tz !== 'string' || !tz) return false;
+  try { formatter(tz); return true; } catch { return false; }
+}
+
+/**
+ * The current IANA time zone: the user's within withTimeZone, else OWNER_TZ. Checked once per value; an unknown OWNER_TZ
+ * throws rather than falling back.
+ */
 export function ownerTz(env = process.env) {
-  const tz = env.OWNER_TZ || DEFAULT_TZ;
+  const tz = zone.getStore() || env.OWNER_TZ || DEFAULT_TZ;
   formatter(tz);
   return tz;
 }

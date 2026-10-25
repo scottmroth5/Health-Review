@@ -169,6 +169,13 @@
 
     <!-- Training volume -->
     <section id="view-training" class="view" hidden>
+      <div class="card" id="log-workout-card">
+        <h2>Log workout</h2>
+        <p class="muted small">Log a lifting session here, no Google Sheet needed. It counts everywhere a Workout Log day does (volume, lifts, programs, the weekly review). One logged workout per day; pick a day to change it.</p>
+        <div id="log-workout"></div>
+        <p class="status" id="log-workout-status" role="status"></p>
+        <details class="program-more"><summary>Recent workouts</summary><div id="recent-workouts" class="small"></div></details>
+      </div>
       <div class="card program-card" id="program-card">
         <h2>Current program</h2>
         <div id="program-body" class="muted small">Loading…</div>

@@ -12,7 +12,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 - Your name, email address, when you joined, and your account status.
 - The health and training data you choose to send: Apple Health data from Health Auto Export, check-ins, drinks, medications and supplements, lab results and workouts you enter or import.
 - Your weekly reviews and chat messages, if you use the AI features.
-- The training programs you add (built, imported, or read from a PDF you uploaded; the PDF itself is not kept).
+- The training programs you add (built, imported, or read from a PDF you uploaded; the PDF itself is not kept), and your time zone.
 - Your Claude API key, if you add one. It is stored encrypted, is never shown again after you enter it (not to you, and not on any screen the operator has), and is never written to logs.
 
 ## Who can see it

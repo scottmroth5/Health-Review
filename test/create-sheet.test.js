@@ -111,3 +111,37 @@ test('Create my Workout Log: refused when drive.file is not granted, and never f
   assert.equal(b.created.length, 0);
   assert.equal(b.sheetOf(OWNER_ID), null);
 });
+
+test('each new year: a created sheet gets its year tab with the column row; a present tab is left alone', async () => {
+  const { ensureYearTab } = await import('../ingest/create-sheet.js');
+  const calls = [];
+  const sheet = (titles) => ({ spreadsheets: {
+    get: async () => ({ data: { sheets: titles.map((title, i) => ({ properties: { sheetId: i === 0 ? 0 : 2027, title } })) } }),
+    batchUpdate: async (a) => { calls.push(a); return { data: {} }; },
+  } });
+  assert.equal(await ensureYearTab({ api: sheet(['2026', 'How to use']), sheetId: 's', year: '2026' }), false);
+  assert.equal(calls.length, 0);
+  assert.equal(await ensureYearTab({ api: sheet(['2026', 'How to use']), sheetId: 's', year: '2027' }), true);
+  const [add, cells] = calls[0].requestBody.requests;
+  assert.equal(add.addSheet.properties.title, '2027');
+  assert.equal(add.addSheet.properties.index, 0, 'the new year first');
+  assert.equal(add.addSheet.properties.sheetId, 2028, 'a tab id not already used');
+  assert.deepEqual(cells.updateCells.rows[0].values.map((v) => v.userEnteredValue.stringValue), WORKOUT_LOG_HEADER);
+});
+
+test('sync: the year tab is checked first for a created sheet only; a failure is a warning, the sync goes on', async () => {
+  const { syncJob } = await import('../jobs/sync.js');
+  const { scopeStore } = await import('../db/scope.js');
+  const store = openHealthStore(':memory:');
+  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  const { fakeSource } = await import('./helpers.js');
+  const source = fakeSource({ workout_log: { 2026: [WORKOUT_LOG_HEADER] } });
+  let checked = 0;
+  const ok = await syncJob({ store: scopeStore(store, 'lee'), source, userFeed: { sheetId: 's', ensureYearTab: async () => { checked += 1; return true; } } });
+  assert.equal(checked, 1);
+  assert.ok(!ok.warnings.some((w) => w.kind === "this year's tab not added"));
+  const failed = await syncJob({ store: scopeStore(store, 'lee'), source, userFeed: { sheetId: 's', ensureYearTab: async () => { throw Object.assign(new Error('x'), { name: 'GaxiosError' }); } } });
+  assert.equal(failed.warnings[0].kind, "this year's tab not added");
+  await syncJob({ store: scopeStore(store, 'lee'), source, userFeed: { sheetId: 's', ensureYearTab: null } });
+  assert.equal(checked, 1, 'a connected sheet is never changed');
+});

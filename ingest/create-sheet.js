@@ -61,3 +61,24 @@ export async function createWorkoutSheet({ auth, year, api = sheetsApi({ version
   await api.spreadsheets.batchUpdate({ spreadsheetId: data.spreadsheetId, requestBody: workoutSheetFormat() });
   return { id: data.spreadsheetId, url: data.spreadsheetUrl ?? `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit` };
 }
+
+/**
+ * A sheet Health Review created gets each new year's tab (with the same bold, frozen column row) on its first sync of
+ * that year, so the log keeps syncing in January. Returns true when it added the tab. Only for a sheet the app created:
+ * drive.file cannot change any other.
+ * @param {{ auth?: object, sheetId: string, year: string|number, api?: object }} o
+ */
+export async function ensureYearTab({ auth, sheetId, year, api = sheetsApi({ version: 'v4', auth }) }) {
+  const { data } = await api.spreadsheets.get({ spreadsheetId: sheetId, fields: 'sheets.properties(sheetId,title)' });
+  const tabs = (data.sheets ?? []).map((s) => s.properties);
+  if (tabs.some((t) => t.title === String(year))) return false;
+  let tabId = Number(year);
+  while (tabs.some((t) => t.sheetId === tabId)) tabId += 1;
+  await api.spreadsheets.batchUpdate({ spreadsheetId: sheetId, requestBody: { requests: [
+    { addSheet: { properties: { sheetId: tabId, title: String(year), index: 0, gridProperties: { frozenRowCount: 1, columnCount: WORKOUT_LOG_HEADER.length } } } },
+    { updateCells: { start: { sheetId: tabId, rowIndex: 0, columnIndex: 0 }, fields: 'userEnteredValue,userEnteredFormat.textFormat',
+      rows: [{ values: WORKOUT_LOG_HEADER.map((h) => ({ ...text(h), userEnteredFormat: { textFormat: { bold: true } } })) }] } },
+    { repeatCell: { range: { sheetId: tabId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'm/d/yyyy' } } }, fields: 'userEnteredFormat.numberFormat' } },
+  ] } });
+  return true;
+}

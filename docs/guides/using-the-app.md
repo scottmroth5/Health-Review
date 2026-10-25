@@ -5,7 +5,7 @@ Health Review shows your own health and training data back to you, with a weekly
 ## The tiles
 
 - **Daily Check-in:** the day's check-in (readiness, energy, mood, stress, nutrition on 1 to 10, optional weight and body measurements, a note), your medications and supplements to tick off, and drinks. Use the arrows to go back to an earlier day.
-- **Training:** your current program and its phase, training volume by week or month, lift progress (progressing, stalled or regressing within one rep range), the Next program ranking with its goal weights, and "called for vs logged".
+- **Training:** **Log workout** (record a session in the app, no sheet needed), your current program and its phase, training volume by week or month, lift progress (progressing, stalled or regressing within one rep range), the Next program ranking with its goal weights, and "called for vs logged".
 - **Programs:** your own training programs (built in the app, imported as JSON, or read from a PDF by Claude), with the program blocks found in your Workout Log to confirm.
 - **Health:** VO2 max, the heart rate zones card, and charts of every Apple Health metric with suggested targets. Your profile (birth year, sex, height, Zone 2 range) is here too.
 - **Meds:** each medication and supplement with its dose and timing; a dose change is a new dated period, so the history shows what changed when.
@@ -13,7 +13,7 @@ Health Review shows your own health and training data back to you, with a weekly
 - **Reviews:** the weekly review, written each Sunday morning from the week's computed summary when you use AI. Anything about medications, labs or symptoms is listed only under "Discuss with your physician".
 - **Prompt:** the instructions the weekly review follows; edit them to change its tone and focus. Every change keeps the old version.
 - **Activity:** what ran (syncs, reviews, backups), when, and what the AI cost.
-- **Settings:** your Claude API key, your data feeds (Health Auto Export, the Workout Log sheet), and your account: export your data, pause or delete your account.
+- **Settings:** your Claude API key, your data feeds (Health Auto Export, the Workout Log sheet), your time zone (it decides your "today" and your review week), and your account: export your data, pause or delete your account.
 - **Help:** these guides, and Ask for a question about using the app.
 
 ## Sync now

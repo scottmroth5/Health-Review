@@ -370,7 +370,20 @@ function renderAccountControls(a) {
   h('p', { class: 'small' }, h('strong', {}, 'This deletes everything stored for you: '), 'health data, check-ins, medications, labs, workouts, programs, reviews, your key and feeds. It cannot be undone. Encrypted backups keep a copy until they age out (about two months). Export your data first if you want a copy.'),
   h('label', {}, `Type ${a.email} to confirm`, h('input', { name: 'confirm', type: 'email', autocomplete: 'off', required: true })),
   h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'danger' }, 'Delete my account'), h('button', { type: 'button', class: 'ghost', onclick: () => { deleteForm.hidden = true; } }, 'Cancel')));
+  // Time zone: decides "today" and the review week. The owner's is the server's (OWNER_TZ).
+  const tz = a.timeZone ?? { zone: '', fromServer: true };
+  const device = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const setZone = run(async (zone) => { renderAccountControls(await api('PUT', '/api/account/time-zone', { timeZone: zone })); say(`Time zone set to ${zone ?? 'the server default'}.`); loadStatus(); });
+  const zones = (() => { try { return Intl.supportedValuesOf('timeZone'); } catch { return [tz.zone]; } })();
+  const zoneRow = tz.fromServer
+    ? h('p', { class: 'small' }, `Time zone: ${tz.zone} (the server's OWNER_TZ).`)
+    : h('div', {},
+      h('label', {}, 'Time zone (decides your "today" and your review week)',
+        h('select', { onchange: (e) => setZone(e.target.value) }, (zones.includes(tz.zone) ? zones : [tz.zone, ...zones]).map((z) => h('option', { value: z, selected: z === tz.zone }, z.replace(/_/g, ' '))))),
+      device && device !== tz.zone ? h('p', { class: 'small' }, `This device is set to ${device.replace(/_/g, ' ')}. `,
+        h('button', { type: 'button', class: 'ghost small-button', onclick: () => setZone(device) }, `Use ${device.replace(/_/g, ' ')}`)) : null);
   fill($('#account-controls'), [
+    zoneRow,
     h('div', { class: 'actions' },
       h('a', { class: 'button ghost', href: '/api/account/export', download: '' }, 'Export my data'),
       owner ? null : a.status === 'paused'
@@ -608,7 +621,7 @@ async function loadSettingsView() {
   renderAccountControls(a);
 }
 
-const FEED_LABELS = { appleHealth: 'Apple Health (Health Auto Export)', workoutLog: 'Workout Log (Google Sheets)', manual: 'Entered in the app (check-ins, drinks, meds, labs)' };
+const FEED_LABELS = { appleHealth: 'Apple Health (Health Auto Export)', workoutLog: 'Workout Log (Google Sheets)', manual: 'Entered in the app (check-ins, drinks, meds, labs, workouts)' };
 const SHEETS_RESULTS = { connected: 'Google Sheets connected. Now paste your Workout Log link, or create one.', cancelled: 'Google Sheets was not connected.',
   created: 'Your Workout Log was created in your Google Drive and saved here. Open it to start logging; it syncs every morning or when you tap Sync now.',
   'create-failed': 'Google Sheets is connected, but the Workout Log could not be created. Try Create my Workout Log again.',
@@ -1807,12 +1820,103 @@ async function loadTrainingTab() {
     el.className = 'muted small';
     el.textContent = `Could not load this (${err.message}). If the app was just updated, restart the server.`;
   };
+  loadLogWorkout().catch(failed('#log-workout'));
   loadProgram().catch(failed('#program-body'));
   loadAdvisor().catch(failed('#advisor-body'));
   loadAdherence().catch(failed('#adherence-body'));
   loadChat().catch(failed('#chat-thread'));
   loadLifts().catch(failed('#lifts-body'));
   return loadTraining();
+}
+
+// ---------------- log a workout in the app ----------------
+const workoutView = { draft: null, suggest: null, days: [] };
+const blankExercise = () => ({ name: '', comment: '', sets: [{ weight: '', reps: '' }] });
+const sayWorkout = (t) => { $('#log-workout-status').textContent = t; };
+
+async function loadLogWorkout(date) {
+  const [suggest, days] = await Promise.all([
+    workoutView.suggest ?? api('GET', '/api/workouts/suggest'),
+    api('GET', '/api/workouts'),
+  ]);
+  workoutView.suggest = suggest;
+  workoutView.days = days;
+  openWorkoutDay(date ?? state.today);
+  renderRecentWorkouts();
+}
+
+/** The form for a day: that day's app workout to edit, or a new one. A day logged in the sheet is shown, read only. */
+function openWorkoutDay(date) {
+  const app = workoutView.days.find((d) => d.date === date && d.source === 'app');
+  workoutView.draft = app
+    ? { date, workout: app.workout ?? '', exercises: app.exercises.map((e) => ({ name: e.name, comment: e.comment ?? '', sets: e.sets.length ? e.sets.map((s) => ({ weight: s.weight ?? '', reps: s.reps ?? '' })) : [{ weight: '', reps: '' }] })), saved: true }
+    : { date, workout: '', exercises: [blankExercise()], saved: false };
+  renderWorkoutForm();
+}
+
+function renderRecentWorkouts() {
+  fill($('#recent-workouts'), workoutView.days.length ? workoutView.days.map((d) => h('div', { class: 'recent-workout' },
+    h('strong', {}, dayLabel(d.date)), ` ${d.workout ?? ''} · ${d.exercises.length} exercise${d.exercises.length === 1 ? '' : 's'} · ${d.source === 'app' ? 'logged here' : 'from your sheet'} `,
+    d.source === 'app' ? h('button', { type: 'button', class: 'ghost small-button', onclick: () => { openWorkoutDay(d.date); $('#log-workout-card').scrollIntoView({ behavior: 'smooth' }); } }, 'Edit') : null))
+    : [h('p', { class: 'muted' }, 'No workouts in the last 30 days.')]);
+}
+
+function renderWorkoutForm() {
+  const d = workoutView.draft;
+  const s = workoutView.suggest ?? { names: [], templates: [] };
+  const redraw = () => renderWorkoutForm();
+  const sheetDay = workoutView.days.find((x) => x.date === d.date && x.source === 'sheet');
+  const exerciseBox = (ex, i) => h('fieldset', { class: 'phase-box' }, h('legend', {}, `Exercise ${i + 1}`),
+    h('div', { class: 'row-head' },
+      h('input', { value: ex.name, placeholder: 'Exercise (e.g. Barbell Squat)', 'aria-label': 'Exercise', list: 'exercise-names', oninput: (e) => { ex.name = e.target.value; } }),
+      h('button', { type: 'button', class: 'ghost danger icon', 'aria-label': 'Remove exercise', onclick: () => { d.exercises.splice(i, 1); if (!d.exercises.length) d.exercises.push(blankExercise()); redraw(); } }, '×')),
+    ex.prescribed ? h('div', { class: 'muted small' }, `Called for: ${ex.prescribed}`) : null,
+    ex.sets.map((set, k) => h('div', { class: 'set-row' },
+      h('span', { class: 'muted small' }, `Set ${k + 1}`),
+      h('input', { value: set.weight, placeholder: 'lb, BW, 40ea', 'aria-label': `Set ${k + 1} weight`, oninput: (e) => { set.weight = e.target.value; } }),
+      h('input', { value: set.reps, placeholder: 'reps or 30s', 'aria-label': `Set ${k + 1} reps`, inputmode: 'text', oninput: (e) => { set.reps = e.target.value; } }),
+      h('button', { type: 'button', class: 'ghost danger icon', 'aria-label': 'Remove set', onclick: () => { ex.sets.splice(k, 1); if (!ex.sets.length) ex.sets.push({ weight: '', reps: '' }); redraw(); } }, '×'))),
+    ex.sets.length < 8 ? h('button', { type: 'button', class: 'ghost small-button', onclick: () => { const last = ex.sets.at(-1); ex.sets.push({ weight: last?.weight ?? '', reps: last?.reps ?? '' }); redraw(); } }, 'Add set') : null,
+    h('input', { value: ex.comment, placeholder: 'Comment (optional)', 'aria-label': 'Comment', oninput: (e) => { ex.comment = e.target.value; } }));
+  fill($('#log-workout'), [
+    h('datalist', { id: 'exercise-names' }, s.names.slice(0, 500).map((n) => h('option', { value: n }))),
+    h('div', { class: 'grid2' },
+      h('label', {}, 'Day', h('input', { type: 'date', value: d.date, max: state.today, onchange: (e) => { if (e.target.value) openWorkoutDay(e.target.value); } })),
+      h('label', {}, 'Workout name', h('input', { value: d.workout, placeholder: 'e.g. Garage 5x5 Phase 1 A', maxlength: '200', oninput: (e) => { d.workout = e.target.value; } }))),
+    s.templates.length && !d.saved ? h('label', {}, 'Start from one of your programs', h('select', { onchange: (e) => {
+      const t = s.templates[Number(e.target.value)];
+      if (!t) return;
+      d.workout = t.workout;
+      d.exercises = t.exercises.map((x) => ({ name: x.name, comment: '', prescribed: [x.sets && `${x.sets} sets`, x.reps && `${x.reps} reps`].filter(Boolean).join(' of '),
+        sets: Array.from({ length: Math.max(1, Math.round(Number(String(x.sets ?? '1').split('-').pop())) || 1) }, () => ({ weight: '', reps: '' })) }));
+      redraw();
+    } }, h('option', { value: '' }, 'Choose a workout...'), s.templates.map((t, i) => h('option', { value: String(i) }, t.label)))) : null,
+    sheetDay ? h('p', { class: 'muted small' }, `Your Workout Log sheet also has ${sheetDay.exercises.length} exercise${sheetDay.exercises.length === 1 ? '' : 's'} this day; anything logged here is added to it.`) : null,
+    ...d.exercises.map(exerciseBox),
+    h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: () => { d.exercises.push(blankExercise()); redraw(); } }, 'Add exercise')),
+    h('div', { class: 'actions' },
+      h('button', { type: 'button', onclick: saveWorkoutDraft }, d.saved ? 'Save changes' : 'Save workout'),
+      d.saved ? h('button', { type: 'button', class: 'ghost danger', onclick: async () => {
+        if (!confirm(`Delete the workout logged on ${dayLabel(d.date)}?`)) return;
+        try { await api('DELETE', `/api/workouts/${d.date}`); sayWorkout('Deleted.'); await loadLogWorkout(d.date); } catch (err) { sayWorkout(err.message); }
+      } }, 'Delete') : null),
+  ]);
+}
+
+async function saveWorkoutDraft() {
+  const d = workoutView.draft;
+  const exercises = d.exercises.filter((e) => e.name.trim()).map((e) => ({ name: e.name.trim(), comment: e.comment.trim() || null,
+    sets: e.sets.filter((s) => s.weight.trim() || s.reps.trim()).map((s) => ({ weight: s.weight.trim() || null, reps: s.reps.trim() || null })) }));
+  try {
+    await api('PUT', `/api/workouts/${d.date}`, { workout: d.workout.trim() || null, exercises });
+    sayWorkout(`Saved for ${dayLabel(d.date)}.`);
+    workoutView.suggest = null;
+    await loadLogWorkout(d.date);
+    loadTraining();
+    loadProgram().catch(() => {});
+  } catch (err) {
+    sayWorkout(err.message);
+  }
 }
 
 // ---------------- called for vs logged ----------------

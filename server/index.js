@@ -3,14 +3,15 @@
 // behind Caddy (TRUST_PROXY). Google sign-in for the sync loads on the first sync.
 import { openHealthStore } from '../db/store.js';
 import { scopeStore } from '../db/scope.js';
-import { OWNER_ID, getUser, startUserRun } from '../db/users.js';
+import { OWNER_ID, getUser, startUserRun, timeZoneOf } from '../db/users.js';
 import { open } from '../tools/secret-box.js';
 import { OAuth2Client } from 'google-auth-library';
 import { createSheetsSource } from '../ingest/sheets.js';
-import { createWorkoutSheet } from '../ingest/create-sheet.js';
+import { createWorkoutSheet, ensureYearTab } from '../ingest/create-sheet.js';
 import { createMailer } from '../tools/mail.js';
 import { repoPath, dataPath } from '../tools/paths.js';
-import { localDate as ownerDate, zonedInstant } from '../tools/time.js';
+import { localDate as ownerDate, withTimeZone, zonedInstant, zonedParts } from '../tools/time.js';
+import { createAlerts } from './alerts.js';
 import { appleSource } from '../ingest/sync.js';
 import { syncJob } from '../jobs/sync.js';
 import { weeklyReview } from '../jobs/review.js';
@@ -81,6 +82,7 @@ if (demo) {
   // none otherwise (no AI for them, and the screens say why).
   const mailer = createMailer();
   const appUrl = () => auth.settings?.publicUrl || `http://localhost:${port}`;
+  const alerts = createAlerts({ db: store.db, mailer, adminEmail: () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email, appUrl });
   const ai = createAiAccess({ db: store.db, mailer, adminEmail: () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email, appUrl });
   const ownerClaude = (() => { let c; return () => (c ??= createReviewClaude()); })();
   const claudeFor = (uid = OWNER_ID) => {
@@ -100,7 +102,11 @@ if (demo) {
   const userFeedFor = (uid) => {
     const sheetId = forUser(uid).db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").pluck().get() ?? null;
     if (!sheetId || !getUser(store.db, uid)?.google_refresh_enc) return null;
-    return { auth: sheetsAuthFor(uid), sheetId, catalog: catalogFor(uid) };
+    const created = forUser(uid).db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_created'").pluck().get();
+    const auth = sheetsAuthFor(uid);
+    return { auth, sheetId, catalog: catalogFor(uid),
+      // Only the sheet Health Review created for them (drive.file); the year is theirs (their time zone).
+      ensureYearTab: created === sheetId ? () => ensureYearTab({ auth, sheetId, year: ownerDate().slice(0, 4) }) : null };
   };
   // A user's program catalog: their own programs (phase 5), plus the owner's MAPS catalog when the owner shares it with
   // them. The owner's is left undefined, so each job reads the MAPS file and the owner's own programs when it runs.
@@ -123,16 +129,37 @@ if (demo) {
   // The in-app schedule (SCHEDULE_* in .env; none set, nothing runs). The same jobs as the npm scripts (jobs/).
   // Sync and the review run for each approved user in turn (one user's failure never stops the rest; logs name the owner
   // or "a user", never an email). Backup and the restore test cover the whole database, as the owner.
+  // Each user's jobs run in their own time zone (tools/time.js withTimeZone), so their "today" and review week are theirs;
+  // the schedule itself is on the owner's clock. A failure emails the administrator (server/alerts.js), once a day.
   const who = (uid) => (uid === OWNER_ID ? 'owner' : 'a user');
+  const emailOf = (uid) => getUser(store.db, uid)?.email ?? 'a user';
   const eachUser = async (job, fn) => {
     for (const uid of activeUserIds(store.db)) {
-      try { await fn(uid); } catch (err) { console.error(`[${job}] failed for ${who(uid)}: ${err.name}`); }
+      try {
+        await withTimeZone(timeZoneOf(store.db, uid), () => fn(uid));
+        alerts.recovered(`${job}:${uid}`);
+      } catch (err) {
+        console.error(`[${job}] failed for ${who(uid)}: ${err.name}`);
+        await alerts.alert(`${job}:${uid}`, uid === OWNER_ID ? `the scheduled ${job} failed` : `a user's scheduled ${job} failed`,
+          `The scheduled ${job} failed${uid === OWNER_ID ? '' : ` for ${emailOf(uid)}`} (${err.name}).`);
+      }
+    }
+  };
+  const ownerJob = async (job, fn) => {
+    try {
+      await fn();
+      alerts.recovered(job);
+    } catch (err) {
+      await alerts.alert(job, `the ${job} failed`, `The scheduled ${job} failed (${err.name}).`);
+      throw err;
     }
   };
   const runners = {
     sync: () => eachUser('sync', async (uid) => {
       const { counts, warnings } = await services.sync({ uid });
       console.log(`[sync] ok (${who(uid)}) ${JSON.stringify(counts)} warnings=${warnings.length}`);
+      // The owner's Apple Health feed going quiet is worth an email (once, until it is back).
+      if (uid === OWNER_ID) await alerts.dataChecks(warnings);
     }),
     review: () => eachUser('review', async (uid) => {
       // No AI (no key, or the owner's key past its cap): the week is skipped for that user and recorded with its reason.
@@ -143,12 +170,18 @@ if (demo) {
       }
       const r = await weeklyReview({ store: forUser(uid), claude: () => claudeFor(uid), catalog: catalogFor(uid), sync: () => services.sync({ uid }), scheduled: true });
       console.log(`[review] ${r.status} (${who(uid)}) week ending ${r.weekEnd}${r.syncError ? ' (sync failed first)' : ''}`);
+      // Tuesday is the last catch-up: still skipped then, the owner's week gets no review unless it is run by hand.
+      if (uid === OWNER_ID && r.status === 'skipped' && zonedParts(new Date()).weekday === 2) {
+        await alerts.alert(`review-week:${r.weekEnd}`, 'no weekly review this week',
+          `The review for the week ending ${r.weekEnd} was skipped at the last catch-up: Apple Health days are missing or partial (${[...(r.missingDays ?? []), ...(r.partialDays ?? [])].join(', ') || 'none listed'}). Use Run review now on the Reviews tab, with force if the days will not arrive.`);
+      }
     }),
-    backup: async () => { const r = await backupJob({ store: forUser(OWNER_ID) }); console.log(`[backup] ok ${r.name} ${r.bytes} bytes`); },
-    'restore-test': async () => {
+    backup: () => ownerJob('backup', async () => { const r = await backupJob({ store: forUser(OWNER_ID) }); console.log(`[backup] ok ${r.name} ${r.bytes} bytes`); }),
+    'restore-test': () => ownerJob('restore-test', async () => {
       const r = await restoreTestJob({ store: forUser(OWNER_ID) });
       console.log(`[restore-test] ${r.ok ? 'ok' : 'failed'} ${r.file} tables=${r.tables} problems=${r.problems.length}`);
-    },
+      if (!r.ok) throw Object.assign(new Error('restore test failed'), { name: 'RestoreTestFailed' });
+    }),
   };
   scheduler = createScheduler({
     jobs: schedulesFromEnv().filter((j) => runners[j.name]).map((j) => ({ ...j, run: runners[j.name] })),

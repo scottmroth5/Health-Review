@@ -46,6 +46,19 @@ test('next and last run times on the owner clock, whatever the host zone, across
   assert.equal(lastRun(restore, ny('2026-10-23T12:00:00'), NY).toISOString(), '2026-10-01T09:00:00.000Z');
 });
 
+test('several times in one spec ("|"): the earliest next run and the latest last run of its parts', () => {
+  const review = parseSchedule('Sun,Mon,Tue 08:00 | Sun 13:00');
+  assert.equal(review.spec, 'Sun,Mon,Tue 08:00 | Sun 13:00');
+  assert.equal(review.parts.length, 2);
+  // Sunday Oct 25: after 8:00 the next run is 13:00 the same day; after 13:00 it is Monday 8:00.
+  assert.equal(nextRun(review, ny('2026-10-25T08:00:00'), NY).toISOString(), '2026-10-25T17:00:00.000Z');
+  assert.equal(nextRun(review, ny('2026-10-25T13:00:00'), NY).toISOString(), '2026-10-26T12:00:00.000Z');
+  assert.equal(lastRun(review, ny('2026-10-25T14:00:00'), NY).toISOString(), '2026-10-25T17:00:00.000Z');
+  assert.equal(lastRun(review, ny('2026-10-25T12:00:00'), NY).toISOString(), '2026-10-25T12:00:00.000Z');
+  for (const bad of ['Sun 08:00 |', '| Sun 08:00', 'Sun 08:00 | Funday 13:00']) assert.throws(() => parseSchedule(bad), /schedule|day/, bad);
+  assert.equal(schedulesFromEnv({ SCHEDULE_REVIEW: 'Sun,Mon,Tue 08:00 | Sun 13:00' })[0].schedule.parts.length, 2);
+});
+
 test('scheduler: runs a due job once, catches up a recently missed run, skips one already done', async () => {
   let clock = ny('2026-10-25T07:59:00');
   const ran = [];

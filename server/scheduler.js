@@ -4,11 +4,12 @@
 // UTC still syncs at 7:00 New York time. Each job is set by an environment variable and is off when it is unset (a local
 // copy with the lines commented out never runs jobs):
 //   SCHEDULE_SYNC="daily 07:00"
-//   SCHEDULE_REVIEW="Sun,Mon,Tue 08:00"       Monday and Tuesday are catch-ups: the job does nothing once the week's
-//                                             review exists (jobs/review.js)
+//   SCHEDULE_REVIEW="Sun,Mon,Tue 08:00 | Sun 13:00"   Sunday afternoon, Monday and Tuesday are catch-ups: the job does
+//                                             nothing once the week's review exists (jobs/review.js)
 //   SCHEDULE_BACKUP="daily 23:00"
 //   SCHEDULE_RESTORE_TEST="monthly 1 05:00"   on that day of the month (1 to 28)
-// A spec is a day list (daily, weekdays, weekends, names like Mon,Thu, or "monthly N") and a 24-hour time (HH:MM).
+// A spec is a day list (daily, weekdays, weekends, names like Mon,Thu, or "monthly N") and a 24-hour time (HH:MM);
+// several, separated by "|", run the job at each of them.
 // A run missed while the server was off runs when it comes back, if the missed time was within the last 12 hours and the
 // job has not run since. A job never overlaps itself: not while it is running here, and not while a run of the same name
 // started in the last 30 minutes is still marked running (a terminal command, Sync now).
@@ -25,8 +26,20 @@ const CHECK_EVERY_MS = 30 * 1000;
 /** The schedule variables: [job name, variable]. */
 export const SCHEDULE_ENV = [['sync', 'SCHEDULE_SYNC'], ['review', 'SCHEDULE_REVIEW'], ['backup', 'SCHEDULE_BACKUP'], ['restore-test', 'SCHEDULE_RESTORE_TEST']];
 
-/** Parses "Sun,Mon,Tue 08:00", "daily 23:00", "weekdays 7:30" or "monthly 1 05:00". Throws a message that says what is wrong. */
+/**
+ * Parses "Sun,Mon,Tue 08:00", "daily 23:00", "weekdays 7:30" or "monthly 1 05:00", or several of them separated by "|"
+ * ("Sun,Mon,Tue 08:00 | Sun 13:00"; then { spec, parts }). Throws a message that says what is wrong.
+ */
 export function parseSchedule(spec) {
+  const pieces = String(spec ?? '').split('|').map((p) => p.trim());
+  if (pieces.length > 1) {
+    if (pieces.some((p) => !p)) throw new Error(`"${spec}": a "|" needs a schedule on each side.`);
+    return { spec: pieces.join(' | '), parts: pieces.map(parseOne) };
+  }
+  return parseOne(pieces[0]);
+}
+
+function parseOne(spec) {
   const text = String(spec ?? '').trim();
   const monthly = /^monthly\s+(\d{1,2})\s+(\d{1,2}):(\d{2})$/i.exec(text);
   const m = monthly ? null : /^([a-z,\s]+?)\s+(\d{1,2}):(\d{2})$/i.exec(text);
@@ -58,6 +71,7 @@ const SEARCH_DAYS = 32; // a monthly schedule's next day is at most a month away
 
 /** The next scheduled instant strictly after `from`, the time read on the owner's wall clock. */
 export function nextRun(s, from = new Date(), tz = ownerTz()) {
+  if (s.parts) return s.parts.map((p) => nextRun(p, from, tz)).filter(Boolean).sort((a, b) => a - b)[0] ?? null;
   const today = localDate(from, tz);
   for (let i = 0; i <= SEARCH_DAYS; i += 1) {
     const date = addDays(today, i);
@@ -70,6 +84,7 @@ export function nextRun(s, from = new Date(), tz = ownerTz()) {
 
 /** The latest scheduled instant at or before `when`. */
 export function lastRun(s, when = new Date(), tz = ownerTz()) {
+  if (s.parts) return s.parts.map((p) => lastRun(p, when, tz)).filter(Boolean).sort((a, b) => b - a)[0] ?? null;
   const today = localDate(when, tz);
   for (let i = 0; i <= SEARCH_DAYS; i += 1) {
     const date = addDays(today, -i);

@@ -9,6 +9,7 @@ import { registerSecurityHeaders, registerRateLimits, errorReply, DEMO_REQUEST_L
 import * as q from './queries.js';
 import { TIMINGS } from '../metrics/medications.js';
 import { VIEWS } from '../metrics/volume.js';
+import { addDays } from '../metrics/stats.js';
 import { VO2_VIEWS } from '../metrics/vo2max.js';
 import { repoPath } from '../tools/paths.js';
 import { loadCatalog } from '../metrics/catalog.js';
@@ -20,6 +21,7 @@ import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
 import { confirmBlocks, currentProgram, listBlocks, refreshPhases, ReviewError } from '../ingest/program-blocks.js';
 import { ProgramError, SOURCES, deleteProgram, exportPrograms, importPrograms, saveProgram } from '../ingest/user-programs.js';
 import { MAX_PDF_BYTES, extractProgram, isPdf } from '../agent/extract-program.js';
+import { WorkoutError, deleteWorkout, listWorkouts, saveWorkout, workoutSuggestions } from '../ingest/app-workouts.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../agent/advisor-chat.js';
 // agent-core prices calls but does not export its price table yet; import it by path until a release exports it.
 import { costFromUsage } from '../node_modules/@scottmroth5/agent-core/src/pricing.js';
@@ -28,10 +30,10 @@ import { createRateLimiter } from './security.js';
 import { parseHealthJson } from '../ingest/health-json.js';
 import { parseWorkoutJson } from '../ingest/parsers.js';
 import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
-import { localStamp } from '../tools/time.js';
+import { isTimeZone, localStamp, ownerTz, withTimeZone } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
-import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, syncOwnerEmail, userByEmail, userByIngestToken } from '../db/users.js';
+import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
 import { createPendingUser, deleteUserData, exportUserData, listUsers, setMapsShared, setOwnerKey, setUserStatus } from './admin-queries.js';
 import { askHelp, MAX_QUESTION_CHARS } from '../agent/help.js';
 import { SESSION_COOKIE, cookie } from './session.js';
@@ -137,9 +139,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // The store as the request's user sees it, for code that takes a store (the chat); tx is the shared one.
   const userStore = () => ({ ...store, db: currentDb() });
   const uidOf = (req) => req.uid ?? (authMode === 'google' ? null : OWNER_ID);
-  let syncing = false;
-  // The manual review run: one at a time, in the background; the last failure is kept as its error name only.
-  const reviewRun = { running: false, weekEnd: null, error: null };
+  // Per user: one sync, one manual review and one chat question at a time for each user (never shared between users).
+  const syncing = new Set();
+  // The manual review run per user: in the background; the last failure is kept as its error name only.
+  const reviewRuns = new Map();
+  const reviewRunOf = (req) => {
+    const uid = uidOf(req);
+    if (!reviewRuns.has(uid)) reviewRuns.set(uid, { running: false, weekEnd: null, error: null });
+    return reviewRuns.get(uid);
+  };
 
   await app.register(swagger, {
     openapi: { info: { title: 'Health Review API', version: '1.0.0', description: 'Local health tracking and weekly review' } },
@@ -175,8 +183,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!u || u.id === OWNER_ID || u.status !== 'approved') throw new Error('not for this account');
     if (typeof services.createWorkoutSheet !== 'function') throw new Error('not available');
     const { id } = await services.createWorkoutSheet(u.id);
-    scopeDb(store.db, u.id).prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'workout_log_sheet_id', ?, ?)
-      ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(id, clock().toISOString());
+    const upsert = scopeDb(store.db, u.id).prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
+      ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
+    upsert.run('workout_log_sheet_id', id, clock().toISOString());
+    // Remembered so each January's sync can add the new year's tab to this sheet (and only this one).
+    upsert.run('workout_log_created', id, clock().toISOString());
     log.info('[users] a Workout Log sheet was created');
   };
   registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
@@ -193,7 +204,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.addHook('preHandler', (req, reply, done) => {
     const uid = uidOf(req);
     if (!uid) return done();
-    requestDb.run(scopeDb(store.db, uid), done);
+    // The request runs as its user: their scoped database and their own time zone (tools/time.js withTimeZone).
+    withTimeZone(timeZoneOf(store.db, uid), () => requestDb.run(scopeDb(store.db, uid), done));
   });
 
   // The deploy health check: open in every mode, status and version only.
@@ -346,7 +358,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, needsKey: { type: 'boolean' }, aiReason: { type: ['string', 'null'] }, notes: { type: 'array', items: anyObject } } } };
   app.get('/api/advisor/chat', { schema: { summary: 'The Next program chat thread, oldest first, and whether the chat is on', response: chatThread } },
     async (req) => { const reason = aiReason(req); return { enabled: chatOn(req), needsKey: reason !== null, aiReason: reason, notes: listChat(db) }; });
-  let chatting = false;
+  const chatting = new Set();
   app.post('/api/advisor/chat', {
     schema: {
       summary: 'Ask Claude about the next program: saves the note, sends computed training facts plus the note and recent thread, saves the checked reply',
@@ -364,10 +376,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (reason) return noAi(reply, reason);
     if (!chatOn(req)) return reply.code(503).send({ error: 'The chat is off in this instance' });
     if (!req.body.text.trim()) throw badRequest('text must not be blank');
-    if (chatting) return reply.code(409).send({ error: 'A question is already being answered' });
+    if (chatting.has(uidOf(req))) return reply.code(409).send({ error: 'A question is already being answered' });
     const cat = programCatalog(req);
     if (!cat) return reply.code(503).send({ error: 'The chat needs a program catalog' });
-    chatting = true;
+    chatting.add(uidOf(req));
     try {
       return await askAdvisor({
         store: userStore(), claude: services.claude(uidOf(req)), text: req.body.text.trim(), today: q.localDate(clock()), catalog: cat,
@@ -375,7 +387,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
         logger: { info() {}, warn() {}, error() {} },
       });
     } finally {
-      chatting = false;
+      chatting.delete(uidOf(req));
     }
   });
   app.delete('/api/advisor/chat/:id', {
@@ -452,6 +464,43 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       return reply.code(502).send({ error: err.status === 400 ? 'Claude could not read that PDF (it may be over 100 pages or protected)' : 'Claude could not read the PDF; try again' });
     }
   });
+  // ---- workouts logged in the app (ingest/app-workouts.js; tab_year 0, never touched by the Sheets sync) ----
+  const workoutCtx = (req) => ({ today: q.localDate(clock()), now: clock(), dictionary: dictionary ?? loadDictionary(), catalog: () => programCatalog(req) });
+  const workoutError = (reply, err) => {
+    if (err instanceof WorkoutError) return reply.code(400).send({ error: err.message });
+    throw err;
+  };
+  const dateOnly = { type: 'object', required: ['date'], properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } } };
+  app.get('/api/workouts', {
+    schema: { summary: 'Days with workouts, newest first: app-logged ones (editable) and Workout Log sheet ones (read only); default the last 30 days',
+      querystring: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } }, response: { 200: { type: 'array', items: anyObject } } },
+  }, async (req) => {
+    const today = q.localDate(clock());
+    const to = req.query.to ? requireDate(req.query.to) : today;
+    const from = req.query.from ? requireDate(req.query.from) : addDays(to, -29);
+    if (from > to) throw badRequest('from must not be after to');
+    return listWorkouts(db, { from, to });
+  });
+  app.get('/api/workouts/suggest', { schema: { summary: 'Exercise names (yours, then the dictionary) and your own programs\' workouts to start from', response: { 200: anyObject } } },
+    async () => workoutSuggestions(db, { dictionary: dictionary ?? loadDictionary(), ownPrograms: loadUserPrograms(db).map((r) => r.program) }));
+  const setItem = { type: 'object', additionalProperties: false, properties: { weight: { type: ['string', 'null'], maxLength: 40 }, reps: { type: ['string', 'null'], maxLength: 40 } } };
+  app.put('/api/workouts/:date', {
+    schema: {
+      summary: "Save the day's workout logged in the app (replaces that day's app workout; sheet rows are left alone)",
+      params: dateOnly,
+      body: { type: 'object', additionalProperties: false, required: ['exercises'], properties: {
+        workout: { type: ['string', 'null'], maxLength: 200 },
+        exercises: { type: 'array', maxItems: 30, items: { type: 'object', additionalProperties: false, required: ['name'], properties: {
+          name: { type: 'string', maxLength: 120 }, comment: { type: ['string', 'null'], maxLength: 500 }, sets: { type: 'array', maxItems: 8, items: setItem } } } },
+      } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => {
+    try { return saveWorkout(db, requireDate(req.params.date), req.body, workoutCtx(req)); } catch (err) { return workoutError(reply, err); }
+  });
+  app.delete('/api/workouts/:date', { schema: { summary: "Delete the day's workout logged in the app", params: dateOnly, response: { 200: anyObject } } },
+    async (req, reply) => (deleteWorkout(db, requireDate(req.params.date), workoutCtx(req)) ? { deleted: true } : reply.code(404).send({ error: 'No workout logged in the app that day' })));
+
   // Program blocks for a user to confirm in the app (the owner also has npm run programs:review for edits, merges and splits).
   app.get('/api/program/blocks', { schema: { summary: 'Your program blocks, detected and confirmed, oldest first', response: { 200: { type: 'array', items: anyObject } } } },
     async () => listBlocks(db));
@@ -564,8 +613,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   const reviewState = (req) => ({
     ...q.reviewStatus(db, q.localDate(clock()), clock()),
-    running: reviewRun.running,
-    error: reviewRun.error,
+    running: reviewRunOf(req).running,
+    error: reviewRunOf(req).error,
     canRun: typeof services.review === 'function' && aiOn(req),
     needsKey: typeof services.review === 'function' && !aiOn(req),
     aiReason: typeof services.review === 'function' ? aiReason(req) : null,
@@ -584,13 +633,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req, reply) => {
     if (typeof services.review !== 'function') return reply.code(503).send({ error: 'Writing reviews is not available in this server' });
     if (!aiOn(req)) return noAi(reply, aiReason(req));
+    const reviewRun = reviewRunOf(req);
+    const uid = uidOf(req);
     if (reviewRun.running) return reply.code(409).send({ error: 'A review is already being written' });
     reviewRun.running = true;
     reviewRun.error = null;
     try {
-      if (services.sync && !syncing) {
-        syncing = true;
-        try { await services.sync({ uid: uidOf(req) }); } catch { /* review the data already stored, as npm run review does */ } finally { syncing = false; }
+      if (services.sync && !syncing.has(uid)) {
+        syncing.add(uid);
+        try { await services.sync({ uid }); } catch { /* review the data already stored, as npm run review does */ } finally { syncing.delete(uid); }
       }
       const status = q.reviewStatus(db, q.localDate(clock()), clock());
       if (!status.ready && !req.body?.force) {
@@ -618,14 +669,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.post('/api/sync', { schema: { summary: 'Copy new rows from the Google Sheets now', response: { 200: anyObject } } }, async (req, reply) => {
     if (!services.sync) return reply.code(503).send({ error: 'Sync is not available in this server' });
     if (isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
-    if (syncing) return reply.code(409).send({ error: 'A sync is already running' });
-    syncing = true;
+    const uid = uidOf(req);
+    if (syncing.has(uid)) return reply.code(409).send({ error: 'A sync is already running' });
+    syncing.add(uid);
     try {
       const { counts, warnings } = await services.sync({ uid: uidOf(req) });
       log.info(`[sync] ok ${JSON.stringify(counts)} warnings=${warnings.length}`);
       return { counts, warnings: warnings.length };
     } finally {
-      syncing = false;
+      syncing.delete(uid);
     }
   });
 
@@ -865,6 +917,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       claudeKey: uid === OWNER_ID ? { source: 'server' } : u?.claude_key_enc ? { source: 'yours', setAt: u.claude_key_set_at } : null,
       ai: access.source !== null,
       aiReason: access.reason ?? null,
+      // The zone this account runs in: its own (Settings), else the server default; the owner's is always the default.
+      timeZone: { zone: ownerTz(), own: Boolean(timeZoneOf(store.db, uid)), fromServer: uid === OWNER_ID },
       pausedBySelf: u?.status === 'paused' && Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
       // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
       ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
@@ -934,7 +988,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
   app.delete('/api/account/google', { schema: { summary: 'Disconnect Google Sheets: forgets your permission and your sheet', response: { 200: anyObject } } }, async (req) => {
     setGoogleToken(store.db, uidOf(req), null);
-    db.prepare("DELETE FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").run();
+    db.prepare("DELETE FROM settings WHERE user_id = @uid AND key IN ('workout_log_sheet_id', 'workout_log_created')").run();
     return accountView(req);
   });
   app.get('/api/account', { schema: { summary: "The signed-in user's account: name, email, role, and whether a Claude key is set (never the key)", response: { 200: anyObject } } },
@@ -952,6 +1006,21 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     setClaudeKey(store.db, uid, seal(req.body.key, uid, keyBox ?? boxKey()));
     log.info('[users] a Claude key was saved');
     return accountView(req);
+  });
+  // Your time zone: decides your "today", the review week and file times (tools/time.js). The owner's is OWNER_TZ.
+  app.put('/api/account/time-zone', {
+    schema: { summary: 'Set your time zone (an IANA name such as America/Chicago), or null for the server default', body: { type: 'object', additionalProperties: false, required: ['timeZone'], properties: { timeZone: { type: ['string', 'null'], maxLength: 64 } } }, response: { 200: anyObject } },
+  }, async (req, reply) => {
+    if (uidOf(req) === OWNER_ID) return reply.code(409).send({ error: "The owner's time zone comes from the server's settings (OWNER_TZ)" });
+    const tz = req.body.timeZone;
+    if (tz !== null && !isTimeZone(tz)) throw badRequest('Unknown time zone');
+    if (tz === null) db.prepare("DELETE FROM settings WHERE user_id = @uid AND key = 'time_zone'").run();
+    else {
+      db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'time_zone', ?, ?)
+        ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(tz, clock().toISOString());
+    }
+    // This request began in the old zone; answer in the new one.
+    return withTimeZone(tz ?? process.env.OWNER_TZ, () => accountView(req));
   });
   app.delete('/api/account/claude-key', { schema: { summary: 'Remove your Claude API key (no AI is used without one)', response: { 200: anyObject } } }, async (req) => {
     setClaudeKey(store.db, uidOf(req), null);
