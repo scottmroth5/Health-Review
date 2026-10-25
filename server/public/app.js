@@ -15,7 +15,7 @@ async function api(method, url, body) {
   });
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
+  if (!res.ok) throw Object.assign(new Error(data.error ?? `Request failed (${res.status})`), { data });
   return data;
 }
 
@@ -53,8 +53,8 @@ function setupDemo() {
 }
 
 // ---------------- routing ----------------
-const VIEWS = ['home', 'today', 'training', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity', 'settings', 'users'];
-const VIEW_TITLES = { home: 'Home', today: 'Today', training: 'Training', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity', settings: 'Settings', users: 'Users' };
+const VIEWS = ['home', 'today', 'training', 'programs', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity', 'settings', 'users'];
+const VIEW_TITLES = { home: 'Home', today: 'Today', training: 'Training', programs: 'Programs', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity', settings: 'Settings', users: 'Users' };
 let currentView = null;
 function route() {
   if (location.hash === '#history') return location.replace('#health'); // the old name of the Health tab
@@ -71,7 +71,7 @@ function route() {
   $('#view-title').textContent = VIEW_TITLES[view];
   $$('.top nav a').forEach((a) => (a.getAttribute('href') === `#${view}` ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (moved) window.scrollTo(0, 0);
-  ({ home: loadHome, settings: loadSettingsView, users: loadUsers, today: loadDay, training: loadTrainingTab, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
+  ({ home: loadHome, settings: loadSettingsView, users: loadUsers, today: loadDay, training: loadTrainingTab, programs: loadPrograms, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
 }
 
 // ---------------- 1 to 10 scales ----------------
@@ -352,6 +352,173 @@ function setHomeBadge(name, text) {
   node.hidden = !text;
 }
 
+// ---------------- programs (multi-user, phase 5): the user's own catalog ----------------
+const programsView = { draft: null };
+const sayPrograms = (text) => { $('#programs-status').textContent = text; };
+const listProblems = (err) => (err.data?.problems?.length ? `${err.message}: ${err.data.problems.join('; ')}` : err.message);
+const blankProgram = () => ({ name: '', weeks: 4, profile: { standalone: true }, phases: [{ name: 'Phase 1', weeks: [1, 4], workouts_per_week: 3, workouts: [{ name: 'Workout A', exercises: [{ name: '', sets: '3', reps: '8-12' }] }] }] });
+const weekList = (text) => String(text).split(',').map((w) => Number(w.trim())).filter((n) => Number.isInteger(n) && n > 0);
+
+async function loadPrograms() {
+  const [view, blocks] = await Promise.all([api('GET', '/api/programs'), api('GET', '/api/program/blocks').catch(() => [])]);
+  renderProgramList(view);
+  renderProgramBlocks(blocks);
+}
+
+/** The list of the user's programs, and the shared catalog's names. */
+function renderProgramList(view) {
+  $('#program-pdf-box').hidden = !view.canExtract;
+  $('#programs-export').hidden = !view.programs.length;
+  fill($('#programs-list'), view.programs.length ? view.programs.map((r) => h('div', { class: 'user-row' },
+    h('div', { class: 'user-facts' }, h('strong', {}, r.name),
+      h('div', { class: 'muted small' }, `${r.program.weeks} weeks · ${r.program.phases.length} phase${r.program.phases.length === 1 ? '' : 's'} · match: ${r.match} · ${{ manual: 'built here', import: 'imported', pdf: 'read from a PDF' }[r.source]}`)),
+    h('div', { class: 'actions' },
+      h('button', { type: 'button', class: 'ghost', onclick: () => openBuilder({ id: r.id, program: structuredClone(r.program), match: r.match, source: r.source }) }, 'Edit'),
+      h('button', { type: 'button', class: 'ghost danger', onclick: async () => {
+        if (!confirm(`Delete ${r.name}? Blocks of it lose their phases.`)) return;
+        try { renderProgramList(await api('DELETE', `/api/programs/${encodeURIComponent(r.id)}`)); sayPrograms(`${r.name} deleted.`); } catch (err) { sayPrograms(err.message); }
+      } }, 'Delete')))) : [h('p', { class: 'muted' }, 'No programs of your own yet.')]);
+  $('#programs-shared-card').hidden = !view.shared.length;
+  $('#programs-shared-title').textContent = view.owner ? 'Your MAPS catalog' : 'Shared with you';
+  $('#programs-shared-note').textContent = view.owner ? 'From data/maps/programs.json on the server (npm run programs:catalog checks it). A program of your own with the same name is used instead.'
+    : "These programs come from the administrator's catalog; their phases and lengths are used for you, but their contents are not shown or exported.";
+  fill($('#programs-shared'), view.shared.map((n) => h('li', {}, n)));
+}
+
+/** Program blocks found in the log, with Confirm on detected ones. */
+function renderProgramBlocks(blocks) {
+  const label = (b) => `${b.start_date} to ${b.end_date ?? 'now'} · ${b.sessions} lifting days · ${b.source === 'confirmed' ? 'confirmed' : 'detected'}`;
+  fill($('#program-blocks'), blocks.length ? [...blocks].reverse().map((b) => h('div', { class: 'user-row' },
+    h('div', { class: 'user-facts' }, h('strong', {}, b.program), h('div', { class: 'muted small' }, label(b))),
+    b.source === 'confirmed' ? null : h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: async () => {
+      try { renderProgramBlocks((await api('POST', `/api/program/blocks/${encodeURIComponent(b.id)}/confirm`)).blocks); } catch (err) { sayPrograms(err.message); }
+    } }, 'Confirm')))) : [h('p', { class: 'muted small' }, 'No program blocks yet: they appear once Workout Log names match a program.')]);
+}
+
+function openBuilder(draft, problems = [], notes = []) {
+  programsView.draft = draft;
+  renderBuilder(problems, notes);
+  $('#program-builder').hidden = false;
+  $('#program-builder').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** The builder: every field writes into the draft as typed; adding or removing rows redraws it. */
+function renderBuilder(problems = [], notes = []) {
+  const d = programsView.draft;
+  const p = d.program;
+  p.profile ??= {};
+  const redraw = () => renderBuilder(problems, notes);
+  const field = (label, value, set, attrs = {}) => h('label', {}, label, h('input', { value: value ?? '', oninput: (e) => set(e.target.value), ...attrs }));
+  const num = (v) => (v === '' ? undefined : Number(v));
+  const remove = (list, i) => () => { list.splice(i, 1); redraw(); };
+  const exerciseRow = (ex, list, i) => h('div', { class: 'exercise-row' },
+    h('input', { value: ex.name ?? '', placeholder: 'Exercise', 'aria-label': 'Exercise', oninput: (e) => { ex.name = e.target.value; } }),
+    h('input', { value: ex.sets ?? '', placeholder: 'Sets', 'aria-label': 'Sets', class: 'short', oninput: (e) => { ex.sets = e.target.value; } }),
+    h('input', { value: ex.reps ?? '', placeholder: 'Reps', 'aria-label': 'Reps', class: 'short', oninput: (e) => { ex.reps = e.target.value; } }),
+    h('button', { type: 'button', class: 'ghost danger icon', 'aria-label': 'Remove exercise', onclick: remove(list, i) }, '×'));
+  const workoutBox = (wo, list, i) => h('div', { class: 'workout-box' },
+    h('div', { class: 'row-head' }, h('input', { value: wo.name ?? '', placeholder: 'Workout name (Workout A, Day 1)', 'aria-label': 'Workout name', oninput: (e) => { wo.name = e.target.value; } }),
+      h('button', { type: 'button', class: 'ghost danger icon', 'aria-label': 'Remove workout', onclick: remove(list, i) }, '×')),
+    h('div', { class: 'muted small' }, 'Each exercise: its name, then sets and reps (8-12, or 30s for a hold)'),
+    (wo.exercises ??= []).map((ex, j) => exerciseRow(ex, wo.exercises, j)),
+    h('button', { type: 'button', class: 'ghost small-button', onclick: () => { wo.exercises.push({ name: '', sets: '3', reps: '8-12' }); redraw(); } }, 'Add exercise'));
+  const phaseBox = (ph, i) => {
+    ph.special_weeks ??= {};
+    return h('fieldset', { class: 'phase-box' }, h('legend', {}, ph.name || `Phase ${i + 1}`),
+      h('div', { class: 'grid2' },
+        field('Name', ph.name, (v) => { ph.name = v; }),
+        field('Workouts a week', ph.workouts_per_week, (v) => { ph.workouts_per_week = num(v); }, { type: 'number', min: '1', max: '14' }),
+        field('First week', ph.weeks?.[0], (v) => { ph.weeks = [num(v), ph.weeks?.[1]]; }, { type: 'number', min: '1' }),
+        field('Last week', ph.weeks?.[1], (v) => { ph.weeks = [ph.weeks?.[0], num(v)]; }, { type: 'number', min: '1' }),
+        field('Deload weeks', (ph.special_weeks.deload ?? []).join(', '), (v) => { ph.special_weeks.deload = weekList(v); }, { placeholder: 'e.g. 4, 8' }),
+        field('Failure weeks', (ph.special_weeks.failure ?? []).join(', '), (v) => { ph.special_weeks.failure = weekList(v); })),
+      (ph.workouts ??= []).map((wo, j) => workoutBox(wo, ph.workouts, j)),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'ghost', onclick: () => { ph.workouts.push({ name: `Workout ${String.fromCharCode(65 + ph.workouts.length)}`, exercises: [] }); redraw(); } }, 'Add workout'),
+        p.phases.length > 1 ? h('button', { type: 'button', class: 'ghost danger', onclick: remove(p.phases, i) }, 'Remove phase') : null));
+  };
+  fill($('#program-builder'), [
+    h('h2', {}, d.id ? `Edit ${p.name}` : d.source === 'pdf' ? 'Check the program Claude read' : 'New program'),
+    d.source === 'pdf' && !d.id ? h('p', { class: 'small' }, 'Compare it with your PDF and fix anything Claude got wrong, then save. Nothing is saved until you do.') : null,
+    notes.length ? h('ul', { class: 'small muted' }, notes.map((n) => h('li', {}, n))) : null,
+    problems.length ? h('div', { class: 'review-notice' }, h('p', {}, h('strong', {}, 'To fix before saving:')), h('ul', { class: 'small' }, problems.map((x) => h('li', {}, x)))) : null,
+    h('div', { class: 'grid2' },
+      field('Program name', p.name, (v) => { p.name = v; }, { maxlength: '80', required: true }),
+      field('Weeks', p.weeks, (v) => { p.weeks = num(v); }, { type: 'number', min: '1', max: '104' })),
+    field('Match words (comma separated; Workout Log names with any of them belong to this program)', d.match ?? '', (v) => { d.match = v; }, { placeholder: p.name || 'e.g. 5x5, stronglifts', maxlength: '200' }),
+    field('Focus (one line)', p.profile.focus, (v) => { p.profile.focus = v; }),
+    h('div', { class: 'grid2' },
+      h('label', {}, 'Conditioning', h('select', { onchange: (e) => { p.profile.conditioning = num(e.target.value); } },
+        ['', '0', '1', '2'].map((v) => h('option', { value: v, selected: String(p.profile.conditioning ?? '') === v }, { '': 'Not set', 0: 'None', 1: 'Some', 2: 'A lot' }[v])))),
+      h('label', {}, 'Mobility', h('select', { onchange: (e) => { p.profile.mobility = num(e.target.value); } },
+        ['', '0', '1', '2'].map((v) => h('option', { value: v, selected: String(p.profile.mobility ?? '') === v }, { '': 'Not set', 0: 'None', 1: 'Some', 2: 'A lot' }[v]))))),
+    h('label', { class: 'feed-choice small' }, h('input', { type: 'checkbox', checked: p.profile.standalone !== false, onchange: (e) => { p.profile.standalone = e.target.checked; } }), ' A full program (untick for an add-on, like an ab program)'),
+    ...p.phases.map(phaseBox),
+    h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: () => {
+      const last = p.phases.at(-1)?.weeks?.[1] ?? 0;
+      p.phases.push({ name: `Phase ${p.phases.length + 1}`, weeks: [last + 1, last + 4], workouts_per_week: 3, workouts: [] });
+      p.weeks = Math.max(p.weeks ?? 0, last + 4);
+      redraw();
+    } }, 'Add phase')),
+    h('div', { class: 'actions' },
+      h('button', { type: 'button', onclick: saveDraft }, 'Save program'),
+      h('button', { type: 'button', class: 'ghost', onclick: () => { $('#program-builder').hidden = true; programsView.draft = null; } }, 'Cancel')),
+  ]);
+}
+
+async function saveDraft() {
+  const d = programsView.draft;
+  try {
+    const body = { program: d.program, match: d.match ?? '', source: d.source ?? 'manual' };
+    const view = await api(d.id ? 'PUT' : 'POST', d.id ? `/api/programs/${encodeURIComponent(d.id)}` : '/api/programs', body);
+    $('#program-builder').hidden = true;
+    programsView.draft = null;
+    sayPrograms(`${d.program.name} saved.`);
+    renderProgramList(view);
+    renderProgramBlocks(await api('GET', '/api/program/blocks').catch(() => []));
+  } catch (err) {
+    if (err.data?.problems?.length) renderBuilder(err.data.problems);
+    sayPrograms(err.data?.problems?.length ? 'Not saved: see the list above the form.' : err.message);
+  }
+}
+
+$('#program-new').addEventListener('click', () => openBuilder({ program: blankProgram(), match: '', source: 'manual' }));
+$('#program-import').addEventListener('click', async () => {
+  try {
+    const file = $('#program-import-file').files[0];
+    const text = file ? await file.text() : $('#program-import-text').value;
+    let json;
+    try { json = JSON.parse(text); } catch { return sayPrograms('That is not valid JSON.'); }
+    const r = await api('POST', '/api/programs/import', json);
+    sayPrograms(`${r.added} program${r.added === 1 ? '' : 's'} imported.`);
+    $('#program-import-file').value = '';
+    $('#program-import-text').value = '';
+    renderProgramList(r);
+    renderProgramBlocks(await api('GET', '/api/program/blocks').catch(() => []));
+  } catch (err) { sayPrograms(listProblems(err)); }
+});
+$('#program-pdf-read').addEventListener('click', async () => {
+  const file = $('#program-pdf-file').files[0];
+  if (!file) return sayPrograms('Choose a PDF first.');
+  if (!$('#program-pdf-right').checked) return sayPrograms('Tick that you own this program or have the right to use it.');
+  if (file.size > 20 * 1024 * 1024) return sayPrograms('The PDF is over 20 MB.');
+  const button = $('#program-pdf-read');
+  button.disabled = true;
+  sayPrograms('Claude is reading the PDF; this can take a few minutes...');
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const r = await api('POST', '/api/programs/extract', { pdf: btoa(bin), filename: file.name.slice(0, 200), rightToUse: true });
+    sayPrograms('Read. Check it below, then save.');
+    openBuilder({ program: r.program, match: '', source: 'pdf' }, r.problems, r.notes);
+  } catch (err) {
+    sayPrograms(err.data?.aiReason ? NO_KEY_NOTE(err.data.aiReason).textContent : err.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 // ---------------- settings and users (multi-user, phase 2) ----------------
 /** Why there is no AI for this user (aiReason from the API): no key, the administrator's monthly allowance used up, or paused. */
 const NO_KEY_NOTE = (reason = 'no_key') => (reason === 'paused' ? h('span', {}, 'Your account is paused by the administrator, so no AI is used.')
@@ -504,7 +671,7 @@ async function loadUsers() {
         h('div', { class: 'muted small' }, `${statusName} · joined ${shortDate(u.created_at)} · last seen ${shortDate(u.last_seen_at)}`),
         u.status === 'pending' ? null : h('div', { class: 'small' }, userFeedsLine(u)),
         u.status === 'pending' ? null : h('div', { class: 'small' }, userAiLine(u)),
-        u.status === 'pending' ? null : h('div', { class: 'muted small' }, `Data: ${u.health_days} health days, ${u.lifting_days} lifting days, ${u.reviews} reviews${!admin && u.maps_shared ? ' · MAPS catalog shared' : ''}`)),
+        u.status === 'pending' ? null : h('div', { class: 'muted small' }, `Data: ${u.health_days} health days, ${u.lifting_days} lifting days, ${u.reviews} reviews, ${u.programs} programs${!admin && u.maps_shared ? ' · MAPS catalog shared' : ''}`)),
       admin ? null : h('div', { class: 'user-controls' },
         active ? ownerKeyControl(u, run, done) : null,
         active ? h('label', { class: 'feed-choice small' }, h('input', { type: 'checkbox', checked: u.maps_shared, onchange: run(async (e) => {

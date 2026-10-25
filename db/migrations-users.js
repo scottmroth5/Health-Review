@@ -209,8 +209,9 @@ const TABLES = [
   )`, ['CREATE INDEX lab_results_drawn_on ON lab_results(user_id, drawn_on)']],
 ];
 
-/** Every table that carries user_id (test/user-scope.test.js checks each query on them names user_id). */
-export const USER_TABLES = TABLES.map(([name]) => name);
+/** Every table that carries user_id (test/user-scope.test.js checks each query on them names user_id): the ones 025
+ * rebuilt, and the user tables later migrations made with user_id from the start. */
+export const USER_TABLES = [...TABLES.map(([name]) => name), 'user_programs'];
 
 export const USER_MIGRATIONS = [
   {
@@ -276,6 +277,25 @@ export const USER_MIGRATIONS = [
       ALTER TABLE users ADD COLUMN google_refresh_enc TEXT;
       ALTER TABLE users ADD COLUMN google_connected_at TEXT;
       CREATE INDEX users_ingest_token ON users(ingest_token_hash);
+    `,
+  },
+  {
+    // Phase 5 (each user's own program catalog): one row per program, in the MAPS catalog's format (metrics/catalog.js),
+    // with the words that tie Workout Log names to it. Built in the app, imported as JSON, or drafted by Claude from a
+    // PDF the user uploaded (the PDF itself is never stored).
+    id: '028-user-programs',
+    up: `
+      CREATE TABLE user_programs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL,
+        match TEXT NOT NULL,
+        program TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('manual', 'import', 'pdf')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (user_id, name)
+      );
     `,
   },
 ];

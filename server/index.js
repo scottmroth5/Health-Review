@@ -18,6 +18,8 @@ import { restoreTestJob } from '../jobs/restore-check.js';
 import { createScheduler, schedulesFromEnv } from './scheduler.js';
 import { jobRunsLookup, activeUserIds } from './admin-queries.js';
 import { buildApp } from './app.js';
+import { loadCatalog } from '../metrics/catalog.js';
+import { userCatalog } from '../metrics/load.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { runReview } from '../agent/review.js';
 import { assertSafeBinding, authSettings } from './auth.js';
@@ -96,10 +98,11 @@ if (demo) {
   const userFeedFor = (uid) => {
     const sheetId = forUser(uid).db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").pluck().get() ?? null;
     if (!sheetId || !getUser(store.db, uid)?.google_refresh_enc) return null;
-    return { auth: sheetsAuthFor(uid), sheetId, catalog: catalogFor(uid) === undefined ? undefined : null };
+    return { auth: sheetsAuthFor(uid), sheetId, catalog: catalogFor(uid) };
   };
-  // The owner's MAPS catalog for the owner and the users the owner shares it with; none for others (phase 5 adds theirs).
-  const catalogFor = (uid) => (uid === OWNER_ID || getUser(store.db, uid)?.maps_shared ? undefined : null);
+  // A user's program catalog: their own programs (phase 5), plus the owner's MAPS catalog when the owner shares it with
+  // them. The owner's is left undefined, so each job reads the MAPS file and the owner's own programs when it runs.
+  const catalogFor = (uid) => (uid === OWNER_ID ? undefined : userCatalog(forUser(uid).db, getUser(store.db, uid)?.maps_shared ? loadCatalog() : null));
   const services = {
     sync: ({ uid = OWNER_ID } = {}) => syncJob({ store: forUser(uid), userFeed: uid === OWNER_ID ? undefined : userFeedFor(uid) }),
     // A user's sheet: its tab names, read with their own Google permission (checks a sheet before it is saved).

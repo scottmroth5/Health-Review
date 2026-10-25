@@ -66,7 +66,10 @@ Anthropic for their own use), or you let them use yours: **Use my Claude key** o
 confirm and a monthly cap ($1 to $100). At the cap their AI stops until next month and you both get an email. Each card
 also shows their feeds (set up or not, never a token or sheet link), last post and sync, AI spend this month and counts of
 their data, with **Share my MAPS catalog** (for family), **Pause** (they can still sign in and look, but posts, syncs and
-AI stop) and **End access**. They see only their own data. Each user sets up their own feeds in **Settings, Data feeds**:
+AI stop) and **End access**. They see only their own data. On **Programs** (Home) each user builds their own training
+programs, imports them as JSON, or has Claude read a program's PDF with their own AI (checked in the builder before
+saving; the PDF is not kept), and confirms the program blocks found in their log; your MAPS catalog shows there by name
+for the users you share it with. Each user sets up their own feeds in **Settings, Data feeds**:
 a Health Auto Export token of their own (their posts land in their account), and their own Workout Log through Google
 Sheets (read-only permission they grant), with step-by-step guides at `/guides`. The server needs `USER_KEY_SECRET`, `SMTP_USER` and
 `SMTP_APP_PASSWORD` (`deploy/cloud.env.example`), and the Google OAuth consent screen set to In production.

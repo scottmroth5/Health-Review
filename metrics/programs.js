@@ -1,5 +1,6 @@
 // Which training program a lifting day belongs to, read from the Workout Log's "Workout" names.
-// To add or rename a program, edit PROGRAMS (first match wins, so specific patterns go first).
+// To add or rename a built-in program, edit PROGRAMS (first match wins, so specific patterns go first). A user's own
+// programs (multi-user, phase 5) add their match words in front of these (userMatchers), so theirs win.
 
 export const PROGRAMS = [
   ['MAPS Anabolic Advanced', /anabolic advanced/i],
@@ -18,9 +19,24 @@ export const PROGRAMS = [
 ];
 
 /** The program a workout name belongs to, or null (one-offs, notes typed in the column, blanks). */
-export function programOf(workoutName) {
+export function programOf(workoutName, matchers = PROGRAMS) {
   if (!workoutName) return null;
-  return PROGRAMS.find(([, re]) => re.test(workoutName))?.[0] ?? null;
+  return matchers.find(([, re]) => re.test(workoutName))?.[0] ?? null;
+}
+
+const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * A user's own programs as matchers, in front of PROGRAMS: each program's match words (comma separated; each one a
+ * whole word or phrase, any case, spaces flexible), or its name when it has none.
+ * @param {Array<{ name: string, match?: string }>} programs
+ */
+export function userMatchers(programs = []) {
+  const own = programs.map(({ name, match }) => {
+    const words = String(match || name).split(',').map((w) => w.trim()).filter(Boolean);
+    return [name, new RegExp(words.map((w) => `(?<![\\w])${escape(w).replace(/\s+/g, '\\s+')}(?![\\w])`).join('|'), 'i')];
+  });
+  return own.length ? [...own, ...PROGRAMS] : PROGRAMS;
 }
 
 // Programs run for weeks and the log names a workout only on its first row (and not every day), so a
@@ -36,12 +52,13 @@ export const TRIGGER_FILL_DAYS = 14;
  * Program per lifting day.
  * @param {Array<{date, workout}>} sets      set rows (any order); a day's first named workout wins
  * @param {Iterable<string>} liftingDates    the days to label
+ * @param {Array} [matchers]                  [name, RegExp] pairs, first match wins (userMatchers; default PROGRAMS)
  * @returns {Map<string, string|null>}
  */
-export function programsByDay(sets, liftingDates) {
+export function programsByDay(sets, liftingDates, matchers = PROGRAMS) {
   const named = new Map();
   for (const s of [...sets].sort((a, b) => a.date.localeCompare(b.date))) {
-    const program = programOf(s.workout);
+    const program = programOf(s.workout, matchers);
     if (program && !named.has(s.date)) named.set(s.date, program);
   }
   const shift = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);

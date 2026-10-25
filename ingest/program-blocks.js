@@ -3,7 +3,7 @@
 // Sessions are one per lifting day with a UUID derived from the date, so reruns update rather than add.
 import { createHash, randomUUID } from 'node:crypto';
 import { detectBlocks, loggedPhases, phaseOnDay, programProgress, weekOf } from '../metrics/blocks.js';
-import { loadStrengthSets } from '../metrics/load.js';
+import { loadStrengthSets, programMatchers } from '../metrics/load.js';
 import { performed } from '../metrics/strength.js';
 import { daysBetween } from '../metrics/stats.js';
 import { OWNER_ID } from '../db/users.js';
@@ -32,7 +32,7 @@ function history(db, today) {
 export function detect(db, today) {
   const { sets, liftingDates } = history(db, today);
   const held = new Set(db.prepare("SELECT date FROM log_sessions WHERE user_id = @uid AND source IN ('confirmed', 'forward')").all().map((r) => r.date));
-  return detectBlocks(sets, liftingDates.filter((d) => !held.has(d)), today);
+  return detectBlocks(sets, liftingDates.filter((d) => !held.has(d)), today, programMatchers(db));
 }
 
 /** Replaces previously detected blocks and sessions with a new detection. Confirmed ones are untouched. */

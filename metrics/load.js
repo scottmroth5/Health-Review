@@ -5,7 +5,8 @@ import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { addDays } from './stats.js';
 import { DICTIONARY_PATH, loadDictionary } from './dictionary.js';
-import { loadCatalog } from './catalog.js';
+import { loadCatalog, mergeCatalogs } from './catalog.js';
+import { userMatchers } from './programs.js';
 import { programAt, programProgress } from './blocks.js';
 import { liftProgress } from './plateau.js';
 import { advisorDue } from './advisor.js';
@@ -31,9 +32,28 @@ export function programForWeek(db, weekEnd, catalog) {
   return programAt(block, catalog, weekEnd, rows);
 }
 
+/** A user's own programs (user_programs, phase 5), by name: [{ id, name, match, source, program, created_at, updated_at }]. */
+export function loadUserPrograms(db) {
+  return db.prepare('SELECT id, name, match, source, program, created_at, updated_at FROM user_programs WHERE user_id = @uid ORDER BY name COLLATE NOCASE')
+    .all().map((r) => ({ ...r, program: JSON.parse(r.program) }));
+}
+
+/** The program matchers for a user's Workout Log names: their own programs' match words, then metrics/programs.js. */
+export const programMatchers = (db) => userMatchers(loadUserPrograms(db));
+
+/**
+ * The program catalog a user gets: their own programs, then the shared catalog's (theirs win a name clash); null when
+ * there are neither. shared left out means the owner's MAPS file (the owner, and scripts acting as the owner); pass null
+ * for a user it is not shared with.
+ */
+export function userCatalog(db, shared = loadCatalog()) {
+  const own = loadUserPrograms(db).map((r) => r.program);
+  return own.length ? mergeCatalogs(own, shared) : shared ?? null;
+}
+
 export function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions } = {}) {
   const from = addDays(weekEnd, -125);
-  const cat = catalog === undefined ? loadCatalog() : catalog;
+  const cat = catalog === undefined ? userCatalog(db) : catalog;
   const program = programForWeek(db, weekEnd, cat);
   // The Program Advisor's input, only when the review should carry the ranking (near the end of a block or between).
   const advisorInput = cat && advisorDue(program, weekEnd)

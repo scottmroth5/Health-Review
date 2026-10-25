@@ -33,11 +33,13 @@ test('024 and 025: rows kept and given to the owner, children intact, user_id re
       INSERT INTO runs (name, started_at) VALUES ('sync', '${x}');
     `);
     const count = (db, t) => db.prepare(`SELECT COUNT(*) FROM "${t}"`).pluck().get();
-    const counts = Object.fromEntries(USER_TABLES.map((t) => [t, count(old.db, t)]));
+    // The tables 025 rebuilt (later user tables, like user_programs, did not exist yet).
+    const rebuilt = USER_TABLES.filter((t) => old.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t));
+    const counts = Object.fromEntries(rebuilt.map((t) => [t, count(old.db, t)]));
     old.close();
 
     const store = openHealthStore(path);
-    for (const t of USER_TABLES) {
+    for (const t of rebuilt) {
       assert.equal(count(store.db, t), counts[t], `${t} keeps its rows`);
       assert.equal(store.db.prepare(`SELECT COUNT(*) FROM "${t}" WHERE user_id <> ?`).pluck().get(OWNER_ID), 0, `${t} rows are the owner's`);
     }

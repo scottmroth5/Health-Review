@@ -27,6 +27,7 @@
       <a href="#home">Home</a>
       <a href="#today">Today</a>
       <a href="#training">Training</a>
+      <a href="#programs">Programs</a>
       <a href="#health">Health</a>
       <a href="#meds">Meds</a>
       <a href="#labs">Labs</a>
@@ -53,6 +54,10 @@
         <a class="home-tile" href="#training">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/></svg>
           <span class="tile-name">Training</span><span class="tile-desc">Program, volume, lifts</span>
+        </a>
+        <a class="home-tile" href="#programs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+          <span class="tile-name">Programs</span><span class="tile-desc">Your training programs</span>
         </a>
         <a class="home-tile" href="#health">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 13h4l2.5-6 4 11 2.5-7.5 1.5 2.5h4.5"/></svg>
@@ -428,6 +433,45 @@
         <p id="settings-account" class="small"></p>
         <p class="muted small">Your profile for targets and heart rate zones (birth year, sex, height, Zone 2) is on the Health tab.
           <a href="/privacy" target="_blank">Privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
+      </div>
+    </section>
+
+    <!-- Programs: the user's own catalog (built, imported, or read from a PDF by Claude), shared names, program blocks -->
+    <section id="view-programs" class="view" hidden>
+      <div class="card">
+        <h2>Your programs</h2>
+        <p class="muted small">Programs you add here give your Training tab phases, the Next program ranking and "called for vs logged". A Workout Log "Workout" name with a program's match words belongs to it; name phases "Phase 1", "Phase 2", ... in the log to track them. <a href="/guides/programs" target="_blank">Guide</a></p>
+        <div id="programs-list"></div>
+        <div class="actions">
+          <button type="button" id="program-new">New program</button>
+          <a class="button ghost" href="/api/programs/export" id="programs-export" download>Export mine</a>
+        </div>
+        <details class="program-more">
+          <summary>Import JSON</summary>
+          <p class="muted small">One program, or a file of them from Export ({ "version": 1, "programs": [...] }). Nothing is added unless all of them check out.</p>
+          <input type="file" id="program-import-file" accept="application/json,.json">
+          <textarea id="program-import-text" rows="4" placeholder="Or paste JSON here"></textarea>
+          <div class="actions"><button type="button" id="program-import">Import</button></div>
+        </details>
+        <details class="program-more" id="program-pdf-box">
+          <summary>Read a PDF with Claude</summary>
+          <p class="muted small">Claude reads the program's structure from the PDF with your AI (your key, or the administrator's allowance) and opens it here to check before you save. The PDF is not kept. A long program can cost about a dollar.</p>
+          <input type="file" id="program-pdf-file" accept="application/pdf,.pdf">
+          <label class="feed-choice small"><input type="checkbox" id="program-pdf-right"> I own this program or have the right to use it</label>
+          <div class="actions"><button type="button" id="program-pdf-read">Read it</button></div>
+        </details>
+        <p class="status" id="programs-status" role="status"></p>
+      </div>
+      <div class="card" id="program-builder" hidden></div>
+      <div class="card" id="programs-shared-card" hidden>
+        <h2 id="programs-shared-title">Shared with you</h2>
+        <p class="muted small" id="programs-shared-note"></p>
+        <ul id="programs-shared" class="small"></ul>
+      </div>
+      <div class="card">
+        <h2>Program blocks</h2>
+        <p class="muted small">Each run of a program found in your Workout Log. Confirm a block so phases and progress follow it.</p>
+        <div id="program-blocks"></div>
       </div>
     </section>
 

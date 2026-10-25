@@ -110,14 +110,14 @@ const monthsBack = (date, k) => {
 };
 
 /** Adds each bucket's training programs (by lifting day, gaps filled from nearby named days). */
-function withPrograms(sets, buckets, range) {
+function withPrograms(sets, buckets, range, matchers) {
   const liftingDates = [...new Set(doneIn(sets, range).map((s) => s.date))];
-  const byDay = programsByDay(sets, liftingDates);
+  const byDay = programsByDay(sets, liftingDates, matchers);
   return buckets.map((b) => ({ ...b, ...programSummary(liftingDates.filter((d) => inRange(d, b.start, b.end)), byDay) }));
 }
 
-/** Everything the training dashboard shows for one view, ending today. */
-export function trainingView(sets, view, today) {
+/** Everything the training dashboard shows for one view, ending today (matchers: the user's program names, userMatchers). */
+export function trainingView(sets, view, today, matchers) {
   let range;
   let previous = null;
   let bucket;
@@ -154,7 +154,7 @@ export function trainingView(sets, view, today) {
     view,
     range,
     bucket,
-    buckets: withPrograms(sets, volumeBuckets(sets, { ...range, bucket }), range),
+    buckets: withPrograms(sets, volumeBuckets(sets, { ...range, bucket }), range, matchers),
     totals: volumeTotals(sets, range),
     previous: previous && { range: previous, totals: volumeTotals(sets, previous) },
     weeklyTotals: view === 'month' ? volumeBuckets(sets, { ...range, bucket: 'week' }) : null,

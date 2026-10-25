@@ -13,11 +13,13 @@ import { VO2_VIEWS } from '../metrics/vo2max.js';
 import { repoPath } from '../tools/paths.js';
 import { loadCatalog } from '../metrics/catalog.js';
 import { loadDictionary } from '../metrics/dictionary.js';
-import { loadSubstitutions, loadTargets, loadProfile } from '../metrics/load.js';
+import { loadSubstitutions, loadTargets, loadProfile, loadUserPrograms, userCatalog } from '../metrics/load.js';
 import { loadTargetConfig } from '../metrics/targets.js';
 import { loadLabRanges } from '../metrics/labs.js';
 import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
-import { currentProgram } from '../ingest/program-blocks.js';
+import { confirmBlocks, currentProgram, listBlocks, refreshPhases, ReviewError } from '../ingest/program-blocks.js';
+import { ProgramError, SOURCES, deleteProgram, exportPrograms, importPrograms, saveProgram } from '../ingest/user-programs.js';
+import { MAX_PDF_BYTES, extractProgram, isPdf } from '../agent/extract-program.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../agent/advisor-chat.js';
 // agent-core prices calls but does not export its price table yet; import it by path until a release exports it.
 import { costFromUsage } from '../node_modules/@scottmroth5/agent-core/src/pricing.js';
@@ -170,7 +172,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md')));
   app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md')));
   // Setup guides for each data feed (docs/guides), readable before signing in.
-  const GUIDES = ['health-auto-export', 'workout-log', 'manual-entry', 'claude-key'];
+  const GUIDES = ['health-auto-export', 'workout-log', 'manual-entry', 'programs', 'claude-key'];
   app.get('/guides/:name', { schema: { hide: true } }, async (req, reply) => (GUIDES.includes(req.params.name)
     ? reply.type('text/html').send(policyPage(`docs/guides/${req.params.name}.md`, { SITE: appUrl() }))
     : reply.code(404).type('text/html').send(policyPage('docs/guides/index.md'))));
@@ -262,13 +264,14 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req) => q.trainingDashboard(db, req.query.view, q.localDate(clock())));
 
   // The MAPS catalog is read per request when not injected, so edits to data/maps/programs.json show without a restart.
-  // The program catalog a request may use: the owner's (MAPS) for the owner and for users the owner shares it with
-  // (users.maps_shared); others have none until they add their own (multi-user, phase 5).
+  // The program catalog a request may use (metrics/load.js userCatalog): the user's own programs (phase 5), then the
+  // owner's (MAPS) for the owner and for users the owner shares it with (users.maps_shared); theirs win a name clash.
   const ownerCatalog = () => (catalog === undefined ? loadCatalog() : catalog);
-  const programCatalog = (req) => {
+  const sharedCatalog = (req) => {
     const uid = uidOf(req);
     return uid === OWNER_ID || getUser(store.db, uid)?.maps_shared ? ownerCatalog() : null;
   };
+  const programCatalog = (req) => userCatalog(db, sharedCatalog(req));
   app.get('/api/program', {
     schema: {
       summary: 'The confirmed in-progress program block: week, phase, deload or failure week, expected end (program is null when none)',
@@ -365,6 +368,89 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req, reply) => (deleteChatNote(db, req.params.id) ? { deleted: 1 } : reply.code(404).send({ error: 'Not found' })));
   app.delete('/api/advisor/chat', { schema: { summary: 'Clear the whole thread', response: { 200: anyObject } } },
     async () => ({ deleted: clearChat(db) }));
+
+  // ---- a user's own programs (multi-user, phase 5; ingest/user-programs.js): built here, imported as JSON, or drafted
+  // by Claude from a PDF (never stored). The shared catalog (the owner's MAPS) shows by name only, never its contents.
+  const programsView = (req) => {
+    const own = loadUserPrograms(db);
+    const names = new Set(own.map((r) => r.name));
+    return {
+      programs: own,
+      shared: (sharedCatalog(req)?.programs ?? []).map((p) => p.name).filter((n) => !names.has(n)),
+      canExtract: typeof services.claude === 'function',
+      owner: uidOf(req) === OWNER_ID,
+    };
+  };
+  const programError = (reply, err) => {
+    if (err instanceof ProgramError) return reply.code(400).send({ error: err.message, problems: err.problems });
+    throw err;
+  };
+  const programWrite = (req) => ({ today: q.localDate(clock()), catalog: () => programCatalog(req), now: clock() });
+  const programBody = {
+    type: 'object', additionalProperties: false, required: ['program'],
+    properties: { program: anyObject, match: { type: 'string', maxLength: 200 }, source: { type: 'string', enum: SOURCES } },
+  };
+  const programIdParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64 } } };
+  app.get('/api/programs', { schema: { summary: 'Your own programs in full, and the names of the shared catalog\'s programs', response: { 200: anyObject } } },
+    async (req) => programsView(req));
+  app.post('/api/programs', { schema: { summary: 'Add a program of your own (checked like a catalog entry; problems listed)', body: programBody, response: { 200: anyObject } } },
+    async (req, reply) => {
+      try { saveProgram(db, { ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
+      return programsView(req);
+    });
+  app.put('/api/programs/:id', { schema: { summary: 'Replace one of your programs', params: programIdParams, body: programBody, response: { 200: anyObject } } },
+    async (req, reply) => {
+      try { saveProgram(db, { id: req.params.id, ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
+      return programsView(req);
+    });
+  app.delete('/api/programs/:id', { schema: { summary: 'Delete one of your programs', params: programIdParams, response: { 200: anyObject } } },
+    async (req, reply) => (deleteProgram(db, req.params.id, programWrite(req)) ? programsView(req) : reply.code(404).send({ error: 'No such program' })));
+  app.post('/api/programs/import', { schema: { summary: 'Import one program or a catalog of programs, all or nothing', body: anyObject, response: { 200: anyObject } } },
+    async (req, reply) => {
+      let added;
+      try { added = importPrograms(db, req.body, programWrite(req)); } catch (err) { return programError(reply, err); }
+      return { added, ...programsView(req) };
+    });
+  app.get('/api/programs/export', { schema: { summary: 'Your own programs as a catalog file (never the shared catalog)', response: { 200: anyObject } } },
+    async (req, reply) => reply.header('Content-Disposition', 'attachment; filename="my-programs.json"').send(exportPrograms(db)));
+  // Claude reads a PDF the user uploaded, on their own AI; the draft comes back to check in the builder, nothing saved.
+  app.post('/api/programs/extract', {
+    bodyLimit: Math.ceil(MAX_PDF_BYTES * 1.4),
+    schema: {
+      summary: 'Draft a program from a PDF you have the right to use (Claude reads it with your AI; the PDF is never stored)',
+      body: { type: 'object', additionalProperties: false, required: ['pdf', 'rightToUse'], properties: {
+        pdf: { type: 'string', minLength: 8, maxLength: Math.ceil(MAX_PDF_BYTES * 1.37) }, rightToUse: { type: 'boolean' }, filename: { type: 'string', maxLength: 200 } } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => {
+    if (typeof services.claude !== 'function') return reply.code(503).send({ error: 'Reading PDFs is not available in this server' });
+    const reason = aiReason(req);
+    if (reason) return noAi(reply, reason);
+    if (req.body.rightToUse !== true) throw badRequest('Confirm that you own this program or have the right to use it');
+    const pdf = Buffer.from(req.body.pdf, 'base64');
+    if (!isPdf(pdf)) throw badRequest('That file is not a PDF');
+    if (pdf.length > MAX_PDF_BYTES) throw badRequest('The PDF is over 20 MB');
+    try {
+      return await extractProgram({ store: userStore(), claude: services.claude(uidOf(req)), pdf, logger: { info() {}, warn() {}, error() {} } });
+    } catch (err) {
+      log.warn(`[programs] reading a PDF failed: ${err.name}`);
+      return reply.code(502).send({ error: err.status === 400 ? 'Claude could not read that PDF (it may be over 100 pages or protected)' : 'Claude could not read the PDF; try again' });
+    }
+  });
+  // Program blocks for a user to confirm in the app (the owner also has npm run programs:review for edits, merges and splits).
+  app.get('/api/program/blocks', { schema: { summary: 'Your program blocks, detected and confirmed, oldest first', response: { 200: { type: 'array', items: anyObject } } } },
+    async () => listBlocks(db));
+  app.post('/api/program/blocks/:id/confirm', { schema: { summary: 'Confirm a detected program block (phases and progress then follow it)', params: programIdParams, response: { 200: anyObject } } },
+    async (req, reply) => {
+      try {
+        confirmBlocks(db, req.params.id, { today: q.localDate(clock()), now: clock() });
+      } catch (err) {
+        if (err instanceof ReviewError) return reply.code(409).send({ error: err.message });
+        throw err;
+      }
+      refreshPhases(db, programCatalog(req));
+      return { blocks: listBlocks(db) };
+    });
 
   app.get('/api/lifts', {
     schema: {

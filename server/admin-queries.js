@@ -35,7 +35,8 @@ export function listUsers(db, { now = new Date() } = {}) {
       (SELECT COALESCE(SUM(cost_usd), 0) FROM runs r WHERE r.user_id = u.id AND r.started_at >= @since) AS spent_month,
       (SELECT COUNT(*) FROM daily_metrics d WHERE d.user_id = u.id) AS health_days,
       (SELECT COUNT(*) FROM log_sessions l WHERE l.user_id = u.id) AS lifting_days,
-      (SELECT COUNT(*) FROM reviews v WHERE v.user_id = u.id) AS reviews
+      (SELECT COUNT(*) FROM reviews v WHERE v.user_id = u.id) AS reviews,
+      (SELECT COUNT(*) FROM user_programs p WHERE p.user_id = u.id) AS programs
     FROM users u ORDER BY u.status = 'pending' DESC, u.role = 'admin' DESC, u.created_at DESC`).all({ since: monthStartIso(now) })
     .map(({ feeds, ...u }) => {
       let chosen = {};

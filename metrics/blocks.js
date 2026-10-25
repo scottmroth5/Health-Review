@@ -148,9 +148,9 @@ export function programAt(block, catalog, date, rows = []) {
  * @returns {{ blocks: Array<{program, phases: string[], notes, start_date, end_date, last_session, status, sessions: string[]}>,
  *             unassigned: string[] }}
  */
-export function detectBlocks(sets, liftingDates, today) {
+export function detectBlocks(sets, liftingDates, today, matchers) {
   const dates = [...new Set(liftingDates)].sort();
-  const byDay = programsByDay(sets, dates);
+  const byDay = programsByDay(sets, dates, matchers);
   const phasesByDay = new Map();
   for (const s of [...sets].sort((a, b) => a.date.localeCompare(b.date))) {
     const p = phaseOf(s.workout);

@@ -529,3 +529,23 @@ body.demo .demo-toggle { color: var(--accent); font-weight: 600; }
 body.read-only form button[type="submit"], body.read-only button.danger, body.read-only #sync-now,
 body.read-only .actions button:not([data-range]):not([data-vview]):not([data-zview]):not([data-zgroup]),
 body.read-only #add-section { display: none !important; }
+
+/* Programs (phase 5): the user's own catalog and its builder */
+.program-more { margin: 10px 0; }
+.program-more summary { cursor: pointer; color: var(--accent); }
+.program-more textarea, .program-more input[type="file"] { width: 100%; margin: 6px 0; }
+fieldset.phase-box { border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; padding: 8px 10px; display: grid; gap: 8px; min-width: 0; }
+fieldset.phase-box legend { font-size: 0.9rem; color: var(--text-secondary); padding: 0 4px; }
+.workout-box { border-left: 3px solid var(--grid); padding-left: 8px; display: grid; gap: 6px; }
+.workout-box .row-head { display: flex; gap: 6px; align-items: center; }
+.workout-box .row-head input { flex: 1; min-width: 0; font-weight: 600; }
+.exercise-row { display: grid; grid-template-columns: minmax(0, 1fr) 4.2em 5.2em auto; gap: 6px; align-items: center; }
+.exercise-row input { margin: 0; min-width: 0; }
+button.icon { padding: 4px 10px; min-width: 0; }
+button.small-button { justify-self: start; padding: 4px 10px; font-size: 0.9rem; }
+body.read-only .program-more, body.read-only #program-builder { display: none !important; }
+@media (max-width: 720px) {
+  .exercise-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; padding-bottom: 4px; border-bottom: 1px dashed var(--grid); }
+  .exercise-row input:first-child { grid-column: 1 / -1; }
+  fieldset.phase-box { padding: 8px 6px; }
+}

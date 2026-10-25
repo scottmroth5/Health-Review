@@ -10,7 +10,7 @@
 //  - Drinking log and weekly check-in are imported only on backfill: the UI owns them after
 //    that, and rows entered in the UI are never overwritten.
 import { dataChecks } from '../metrics/dataquality.js';
-import { loadDataCheckInput } from '../metrics/load.js';
+import { loadDataCheckInput, userCatalog } from '../metrics/load.js';
 import { createHash } from 'node:crypto';
 import {
   parseHealthMetrics,
@@ -24,7 +24,6 @@ import {
 import { canonicalSetCounts, normalizeAll, unmappedNames } from './normalize.js';
 import { typoCandidates } from '../metrics/name-typos.js';
 import { assignForward, refreshPhases } from './program-blocks.js';
-import { loadCatalog } from '../metrics/catalog.js';
 import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
 import { existsSync } from 'node:fs';
 import { localDate, zonedParts } from '../tools/time.js';
@@ -81,7 +80,7 @@ export async function runSync({ store, source, backfill = false, now = new Date(
     if (counts.workout_log.tabsReplaced) {
       counts.normalized = normalizeLog(store.db, dictionary, now, warnings);
       counts.sessions = assignForward(store.db, localDay(now), { now });
-      try { refreshPhases(store.db, catalog === undefined ? loadCatalog() : catalog); } catch (err) {
+      try { refreshPhases(store.db, catalog === undefined ? userCatalog(store.db) : catalog); } catch (err) {
         warnings.push({ source: 'program_catalog', kind: 'invalid catalog, phases not updated', detail: err.problems?.length ? `${err.problems.length} problems; run npm run programs:catalog` : err.message });
       }
     }

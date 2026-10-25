@@ -11,7 +11,7 @@ import { openOwnerStore } from '../db/store.js';
 import {
   ReviewError, blockStatus, confirmBlocks, editBlock, listBlocks, mergeBlocks, refreshPhases, sessionCoverage, splitBlock, unassignDays,
 } from '../ingest/program-blocks.js';
-import { loadCatalog } from '../metrics/catalog.js';
+import { userCatalog } from '../metrics/load.js';
 import { localDate } from '../server/queries.js';
 
 const [command, ...rest] = process.argv.slice(2);
@@ -26,7 +26,7 @@ const today = localDate();
 const opts = { today };
 const store = openOwnerStore();
 const db = store.db;
-const catalog = loadCatalog();
+const catalog = userCatalog(db);
 const shortDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 function printList(unconfirmed) {

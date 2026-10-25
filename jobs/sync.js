@@ -21,7 +21,7 @@ export function syncJob({ store, backfill = false, logger = quiet, source, userF
     return runSync({
       store, source: source ?? createSheetsSource(userFeed.auth, { WORKOUT_LOG_SHEET_ID: userFeed.sheetId }),
       apple: 'rest', exportFolders: {}, logger,
-      // null: no catalog (phase 5 adds theirs); left out, the owner's MAPS catalog (users the owner shares it with).
+      // Their catalog (server/index.js catalogFor: their own programs, plus MAPS when shared); null: none.
       ...(userFeed.catalog === undefined ? {} : { catalog: userFeed.catalog }),
     });
   }

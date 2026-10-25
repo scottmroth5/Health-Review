@@ -405,6 +405,21 @@ other) plus the review eval's results.jsonl usage priced with agent-core's prici
 exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
+Users, phase 5 (2026-10-24), each user's own programs: user_programs (migration 028; in USER_TABLES, so the scope and
+isolation guards cover it) holds programs in the catalog format with match words; ingest/user-programs.js (saveProgram,
+deleteProgram, importPrograms all or nothing, exportPrograms their own only) checks each with metrics/catalog.js
+programProblems (any name, 80 characters) and re-runs detection (detected blocks only) and refreshPhases after every
+change. metrics/load.js userCatalog(db, shared) is the catalog a user gets: their own first, then the shared one (the MAPS
+file for the owner and maps_shared users; mergeCatalogs, theirs win a name clash); left undefined, every default reads
+the MAPS file plus the user's own (loadWeekData, sync, the programs scripts). programMatchers(db) (metrics/programs.js
+userMatchers: whole-word match words, any case, before PROGRAMS) names days in detectBlocks and trainingView. Routes:
+GET/POST /api/programs, PUT/DELETE /api/programs/:id, POST /api/programs/import, GET /api/programs/export, GET
+/api/program/blocks and POST /api/program/blocks/:id/confirm (users confirm blocks in the app; edits, merges and splits
+stay npm run programs:review), and POST /api/programs/extract: a PDF (20 MB, base64, rightToUse required, the user's AI by
+ai-access) read by agent/extract-program.js (claude-opus-5-5, DRAFT_SCHEMA structured output, the PDF as a document
+block) into a draft the user checks in the builder; nothing saved, and the PDF is never stored, logged or in the run
+record (program-extract: bytes, model, counts, cost). GET /api/programs shows the shared catalog by name only. The Users
+screen shows each user's program count only.
 Users, phase 4 (2026-10-24), administration: server/ai-access.js decides each user's AI (aiAccess, pure): the owner's
 server key for the owner; a user's own key first; else the owner's key when the admin turned it on (users.uses_owner_key
 with owner_key_cap_usd, $1 to $100 a month) while their runs.cost_usd since the start of the owner's month is under the
@@ -436,7 +451,7 @@ sent). A user's Claude key (PUT/DELETE /api/account/claude-key) is checked with 
 AES-256-GCM under USER_KEY_SECRET bound to the user id (tools/secret-box.js), decrypted only in memory for that user's
 own call (server/index.js claudeFor), and never returned, logged or shown to the admin (only "set"). No key, no AI: chat
 and review answer needsKey, and the scheduled review records a skipped run (reason no_key). The owner's key is
-ANTHROPIC_API_KEY. The program catalog (MAPS) is the owner's and maps_shared users' only; others have none (phase 5).
+ANTHROPIC_API_KEY. The owner's MAPS catalog file is the owner's and maps_shared users' only (phase 5 adds each user's own).
 Users (owner's choice, 2026-10-24: one shared database, user_id on every user table, ahead of the RDS move): every query
 on a user table is scoped to one user, writing "user_id = @uid" (inserts include user_id with @uid) and run on a scoped
 database (db/scope.js); joins and subqueries scope each user table too. Only server/admin-queries.js reads across users
@@ -491,6 +506,9 @@ dictionary's own names), and only after the owner types yes; never weights, date
 (owner's choice, 2026-10-02). Its proposals reach the dictionary only through --accept.
 The demo may use MAPS program names (owner's choice, 2026-10-24; the app shows only name, phase and week); its phases,
 weeks and workouts are made up, never copied from data/maps or the PDFs.
+A user's own programs (user_programs) and the PDFs they upload are theirs: a PDF goes to the Claude API only through
+POST /api/programs/extract, after the user confirms the right to use it, on their own AI, and is never kept; their
+programs never reach another user, the admin screens, logs or fixtures.
 The MAPS PDFs and anything transcribed from them (data/maps) are Mind Pump's copyrighted material: never commit them,
 put them in fixtures or the image, or send their text anywhere; only computed facts (program, phase, week) leave the
 owner's machine (as defined above, so the server may hold them in its data folder).

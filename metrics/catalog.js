@@ -36,7 +36,8 @@ const isInt = (n) => Number.isInteger(n) && n > 0;
 /**
  * Validates a parsed catalog (throws listing every problem) and builds its lookups.
  * @param {object} json
- * @param {{ programs?: string[] }} [options]  known program names (defaults to PROGRAMS in metrics/programs.js)
+ * @param {{ programs?: string[]|null }} [options]  known program names (defaults to PROGRAMS in metrics/programs.js); null
+ *   allows any name (a user's own programs, phase 5)
  */
 export function createCatalog(json, { programs = PROGRAM_NAMES } = {}) {
   const problems = [];
@@ -45,7 +46,9 @@ export function createCatalog(json, { programs = PROGRAM_NAMES } = {}) {
   const seen = new Set();
   for (const [i, p] of list.entries()) {
     const at = p?.name ? `${p.name}` : `program #${i + 1}`;
-    if (!programs.includes(p?.name)) problems.push(`${at}: name must be one of the programs in metrics/programs.js`);
+    if (programs ? !programs.includes(p?.name) : !(typeof p?.name === 'string' && p.name.trim())) {
+      problems.push(programs ? `${at}: name must be one of the programs in metrics/programs.js` : `${at}: needs a name`);
+    }
     if (seen.has(p?.name)) problems.push(`${at}: listed twice`);
     seen.add(p?.name);
     if (!isInt(p?.weeks)) problems.push(`${at}: weeks must be a whole number of weeks`);
@@ -141,6 +144,34 @@ export function phaseStats(phase, lookup) {
     unilateralPct: share(unilateral),
     unmapped: [...unmapped],
   };
+}
+
+/**
+ * One of a user's own programs checked like a catalog entry: the list of problems (empty when it is valid). Names may be
+ * anything (not only metrics/programs.js), up to 80 characters.
+ */
+export function programProblems(program) {
+  const extra = typeof program?.name === 'string' && program.name.length > 80 ? ['name: at most 80 characters'] : [];
+  try {
+    createCatalog({ version: 1, programs: [program] }, { programs: null });
+    return extra;
+  } catch (err) {
+    if (!err.problems) throw err;
+    return [...extra, ...err.problems];
+  }
+}
+
+/**
+ * A user's catalog (multi-user, phase 5): their own programs first, then the shared catalog's (the owner's MAPS file, for
+ * the owner and the users it is shared with), leaving out a shared program with the name of one of theirs. own lists
+ * the names that are the user's own.
+ * @param {object[]} own  the user's programs (already checked with programProblems)
+ * @param {object|null} shared  a catalog from createCatalog, or null
+ */
+export function mergeCatalogs(own, shared) {
+  const names = new Set(own.map((p) => p.name));
+  const catalog = createCatalog({ version: 1, programs: [...own, ...(shared?.programs ?? []).filter((p) => !names.has(p.name))] }, { programs: null });
+  return { ...catalog, own: names };
 }
 
 /** The catalog, or null when the file does not exist (an invalid file throws). */
