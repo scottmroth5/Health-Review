@@ -104,6 +104,7 @@ code { font-size: 0.85em; }
 .token-once { background: var(--surface-0); border: 1px solid var(--accent); border-radius: 8px; padding: 10px; margin: 8px 0; }
 .token-once .token { display: block; word-break: break-all; user-select: all; font-size: 0.85rem; padding: 6px 0; }
 a.button { display: inline-block; padding: 8px 14px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); text-decoration: none; }
+a.button.ghost { background: transparent; color: var(--text-primary); border: 1px solid var(--border); }
 /* Users (administrators) */
 .user-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 0; border-bottom: 1px solid var(--grid); }
 .user-row.pending { border-left: 3px solid var(--accent); padding-left: 10px; }

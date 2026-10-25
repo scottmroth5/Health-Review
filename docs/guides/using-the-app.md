@@ -4,7 +4,7 @@ Health Review shows your own health and training data back to you, with a weekly
 
 ## The tiles
 
-- **Today:** the day's check-in (readiness, energy, mood, stress, nutrition on 1 to 10, optional weight and body measurements, a note), your medications and supplements to tick off, and drinks. Use the arrows to go back to an earlier day.
+- **Daily Check-in:** the day's check-in (readiness, energy, mood, stress, nutrition on 1 to 10, optional weight and body measurements, a note), your medications and supplements to tick off, and drinks. Use the arrows to go back to an earlier day.
 - **Training:** your current program and its phase, training volume by week or month, lift progress (progressing, stalled or regressing within one rep range), the Next program ranking with its goal weights, and "called for vs logged".
 - **Programs:** your own training programs (built in the app, imported as JSON, or read from a PDF by Claude), with the program blocks found in your Workout Log to confirm.
 - **Health:** VO2 max, the heart rate zones card, and charts of every Apple Health metric with suggested targets. Your profile (birth year, sex, height, Zone 2 range) is here too.

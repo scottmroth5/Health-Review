@@ -20,6 +20,8 @@ export const CALLBACK_PATH = '/auth/google/callback';
 // A user's own Google Sheets permission (read only) for their Workout Log (multi-user, phase 3), asked separately from sign-in.
 export const SHEETS_CALLBACK_PATH = '/auth/google/sheets/callback';
 export const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+// "Create my Workout Log": drive.file lets the app create a sheet and open only the files it created (non-sensitive).
+export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const SHEETS_COOKIE = 'hr_sheets';
 // The app icon and manifest are open too: iOS fetches them for Add to Home Screen without the session cookie (code-only files).
 const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png)$/, /^\/(privacy|terms)$/, /^\/guides(\/[a-z-]+)?$/];
@@ -114,7 +116,7 @@ const safeNext = (next) => (typeof next === 'string' && /^\/(?!\/)/.test(next) &
  *   tells the admin (google mode)
  */
 export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now(), findUser = () => null, registerUser = async () => {},
-  sheetsExchange, connectSheets = async () => {} } = {}) {
+  sheetsExchange, connectSheets = async () => {}, createSheet = async () => { throw new Error('Creating sheets is not available'); } } = {}) {
   app.get('/api/me', {
     schema: { summary: 'The signed-in user (google mode), or the open or demo mode', response: { 200: { type: 'object', additionalProperties: true } } },
   }, async (req) => ({ authMode: mode, email: req.user ?? null, name: req.userName ?? null, ...(mode === 'demo' ? { demo: true } : {}) }));
@@ -208,6 +210,7 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
   });
 
   // ---- Connecting a user's own Google Sheets (read only), for their Workout Log (multi-user, phase 3) ----
+  // ?create=1 ("Create my Workout Log") also asks for drive.file, then creates their sheet (createSheet) on the way back.
   // Only an approved user, after signing in; the refresh token goes to connectSheets (sealed there), never to a log.
   const sheetsRedirect = `${settings.publicUrl}${SHEETS_CALLBACK_PATH}`;
   const tokensFor = sheetsExchange ?? googleTokenExchange(settings);
@@ -216,10 +219,11 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     if (findUser(session?.email ?? '')?.status !== 'approved') return reply.redirect('/auth/login');
     const state = b64url(randomBytes(24));
     const codeVerifier = b64url(randomBytes(32));
-    const pending = sign({ state, codeVerifier, email: session.email, exp: now() + LOGIN_MINUTES * 60_000 }, key);
+    const create = req.query?.create === '1';
+    const pending = sign({ state, codeVerifier, email: session.email, create, exp: now() + LOGIN_MINUTES * 60_000 }, key);
     const url = new URL(GOOGLE_AUTH);
     for (const [k, v] of Object.entries({
-      client_id: settings.clientId, redirect_uri: sheetsRedirect, response_type: 'code', scope: SHEETS_SCOPE, access_type: 'offline',
+      client_id: settings.clientId, redirect_uri: sheetsRedirect, response_type: 'code', scope: create ? `${SHEETS_SCOPE} ${DRIVE_FILE_SCOPE}` : SHEETS_SCOPE, access_type: 'offline',
       prompt: 'consent', login_hint: session.email, state, code_challenge: createHash('sha256').update(codeVerifier).digest('base64url'), code_challenge_method: 'S256',
     })) url.searchParams.set(k, v);
     reply.header('Set-Cookie', cookie(SHEETS_COOKIE, pending, { maxAge: LOGIN_MINUTES * 60, secure }));
@@ -234,12 +238,20 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     if (!pending || !session || pending.email !== session.email || req.query?.state !== pending.state || !req.query?.code) return back('expired');
     try {
       const tokens = await tokensFor({ code: req.query.code, codeVerifier: pending.codeVerifier, redirectUri: sheetsRedirect });
-      if (!tokens?.refresh_token || !String(tokens.scope ?? SHEETS_SCOPE).includes(SHEETS_SCOPE)) return back('incomplete');
+      const granted = String(tokens?.scope ?? (pending.create ? '' : SHEETS_SCOPE));
+      if (!tokens?.refresh_token || !granted.includes(SHEETS_SCOPE) || (pending.create && !granted.includes(DRIVE_FILE_SCOPE))) return back('incomplete');
       await connectSheets({ email: session.email, refreshToken: tokens.refresh_token });
-      return back('connected');
+      if (!pending.create) return back('connected');
     } catch (err) {
       console.warn(`[auth] Google Sheets connection failed: ${err.name}`);
       return back('failed');
+    }
+    try {
+      await createSheet({ email: session.email });
+      return back('created');
+    } catch (err) {
+      console.warn(`[auth] creating a Workout Log failed: ${err.name}`);
+      return back('create-failed');
     }
   });
 

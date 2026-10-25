@@ -7,6 +7,7 @@ import { OWNER_ID, getUser, startUserRun } from '../db/users.js';
 import { open } from '../tools/secret-box.js';
 import { OAuth2Client } from 'google-auth-library';
 import { createSheetsSource } from '../ingest/sheets.js';
+import { createWorkoutSheet } from '../ingest/create-sheet.js';
 import { createMailer } from '../tools/mail.js';
 import { repoPath, dataPath } from '../tools/paths.js';
 import { localDate as ownerDate, zonedInstant } from '../tools/time.js';
@@ -108,6 +109,8 @@ if (demo) {
     sync: ({ uid = OWNER_ID } = {}) => syncJob({ store: forUser(uid), userFeed: uid === OWNER_ID ? undefined : userFeedFor(uid) }),
     // A user's sheet: its tab names, read with their own Google permission (checks a sheet before it is saved).
     sheetTabs: async (uid, sheetId) => createSheetsSource(sheetsAuthFor(uid), { WORKOUT_LOG_SHEET_ID: sheetId }).listTabs('workout_log'),
+    // "Create my Workout Log": a new sheet in their Drive with their drive.file permission, tabbed for this year.
+    createWorkoutSheet: (uid) => createWorkoutSheet({ auth: sheetsAuthFor(uid), year: ownerDate().slice(0, 4) }),
     claude: claudeFor,
     hasAi,
     aiAccess: (uid) => ai.check(uid),

@@ -24,7 +24,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 ## Your data feeds
 
 - **Health Auto Export:** your iPhone sends your Apple Health data to Health Review over HTTPS with a token only you have (shown once; only a fingerprint of it is stored).
-- **Google Sheets (only if you connect it):** read-only access to your spreadsheets (`spreadsheets.readonly`), used only to read the one Workout Log sheet you choose. Health Review never changes or deletes anything. The permission is stored encrypted, and you can disconnect it in Settings or at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+- **Google Sheets (only if you connect it):** read-only access to your spreadsheets (`spreadsheets.readonly`), used only to read the one Workout Log sheet you choose. If you choose **Create my Workout Log**, Health Review also asks for access to only the files it creates in your Drive (`drive.file`), and uses it once to create that sheet; it cannot see your other files. Health Review never changes or deletes anything. The permission is stored encrypted, and you can disconnect it in Settings or at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
 ## AI (Anthropic's Claude)
 

@@ -34,7 +34,7 @@ Health specific logic stays in this repo; never add it to agent-core.
                     pendingMigrations runs the migrations on a throwaway temp copy (npm run db:pending: exit 0 none, 10 some)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
-                    Home (#home, the default): a tile per section (Today and Reviews tiles carry badges from /api/status
+                    Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status
                     and /api/reviews/status), Sync now with the last sync, Demo mode and the account; wide screens keep the tab bar, phones (720 px and
                     under) show "‹ Home" and the section name instead. Installable on iPhone: manifest.webmanifest and
                     icon-180/192/512.png (scripts/make-icons.js; test/icons.test.js checks they are current).
@@ -175,7 +175,7 @@ daily_metrics.exported_through, migration 021, set by syncExports as the latest 
 no file time, from the consolidated sheet, falls back to steps under a quarter of the 28-day median, at least 10 days of
 it; partialReasons says which), lifting days with no Apple Watch strength
 workout (info only), durations longer than their start-to-end span, and impossible values. Findings name dates and
-counts only; warnings show on the Today tab, all go to the sync log, and the weekly summary's dataQuality carries the
+counts only; warnings show on Daily Check-in (#today), all go to the sync log, and the weekly summary's dataQuality carries the
 week's missing and partial days (only when there are any), which CONTRACT says to treat as incomplete, never as bad days. The Workout Log has one tab per year: normal syncs
 read the current year (and last year in January), and a tab is replaced only when its content hash changes.
 Drinking days and check-ins came from v1 sheets once (source 'v1-sheet'); the UI owns them now and imports never
@@ -213,7 +213,7 @@ started_on but never produces a start event. Daily check-off (medication_doses):
 or skipped; a day with no rows is unknown, never missed. The weekly summary reports doses taken out of doses logged.
 A saved slot can carry a one-day adjustment (migration 014): dose (taken instead of the period's dose) and moved_to (the
 slot it was taken in; timing stays the scheduled slot, the key). Values equal to the default are stored as NULL. The
-Today tab shows and edits them; the Meds tab periods stay the defaults, and the weekly review ignores adjustments
+Daily Check-in (#today) shows and edits them; the Meds tab periods stay the defaults, and the weekly review ignores adjustments
 (owner's choice, 2026-10-07).
 A dose or timing change is a new dated period; a correction (fixing a typo) updates the current period in place and
 records no event.
@@ -335,7 +335,7 @@ of sensitive sections sent; prompt and report text never go to logs or run recor
 Data gate (reviewStatus in server/queries.js, weekDataQuality underneath): without --force, a week with any day missing
 from daily_metrics or a likely partial export is skipped, recorded as a 'skipped' review run with the dates, and nothing is
 sent. GET /api/reviews/status (overdue: no review and a run was tried or it is past 9am on the Sunday after) drives a notice
-on the Today and Reviews tabs; POST /api/reviews/run syncs, applies the same gate (force to override), and writes the review
+on Daily Check-in and Reviews; POST /api/reviews/run syncs, applies the same gate (force to override), and writes the review
 in the background through services.review (main instance only; never in the demo). A failed manual run keeps its error name only.
 Scheduling (server/scheduler.js, ported from Job-Agent; test/scheduler.test.js): while the server runs, SCHEDULE_SYNC
 ("daily 07:00"), SCHEDULE_REVIEW ("Sun,Mon,Tue 08:00"), SCHEDULE_BACKUP ("daily 23:00") and SCHEDULE_RESTORE_TEST
@@ -443,6 +443,12 @@ access), /:id/pause and /:id/resume (approved to paused and back), /:id/owner-ke
 user's email typed and a cap; the user is emailed on and off), /:id/maps ({ shared }). None act on an admin; owner-key and
 maps need an approved or paused user. Paused: signs in and sees their data; ingest token 401, POST /api/sync 403, no AI,
 no scheduled jobs (activeUserIds), and a note on Home. The scheduled review skips a user with no AI with its reason.
+Create my Workout Log (2026-10-25): /auth/google/sheets?create=1 asks for spreadsheets.readonly plus drive.file (DRIVE_FILE_SCOPE,
+non-sensitive: only files the app created); the callback refuses a grant without both, stores the token, then app.js
+createSheet (never the owner) calls services.createWorkoutSheet (ingest/create-sheet.js: "Health Review Workout Log",
+a tab named with the owner's year holding WORKOUT_LOG_HEADER in row 1, bold and frozen, and a How to use tab; no example
+rows) and saves it as workout_log_sheet_id (sheets-created, or sheets-create-failed). feedsView gives the user their own
+sheetUrl (never the admin screens) and canCreate. The Today section is labeled Daily Check-in (#today unchanged).
 Users, phase 3 (2026-10-24), per-user feeds: a user's Health Auto Export token (POST/DELETE /api/account/ingest-token;
 32 random bytes shown once, only its SHA-256 in users.ingest_token_hash) makes the ingest guard store their posts under
 their id (INGEST_TOKEN stays the owner's; a pending, rejected or paused user's token gets 401). Their Workout Log: a
@@ -493,7 +499,7 @@ npm run backup:test) proves the newest backup can be read: decrypted into a new 
 path), integrity checked, and compared with the live database by table row counts only. It fails on a decrypt or integrity
 failure, a table missing from the backup (unless the backup predates the migration that added it), or a table empty in
 the backup that holds 10+ rows live; other differences are recorded (a backup is a day old, and some rows are replaced on
-purpose). Each result is a 'restore-test' run; a failed last run is a warning on the Today tab until a later one passes.
+purpose). Each result is a 'restore-test' run; a failed last run is a warning on Daily Check-in until a later one passes.
 Send the Claude API computed summaries only, never raw exports. The one exception is the owner's own notes from the review
 week (check-in, drinking, Workout Log comments and date-column notes), sent as written by the owner's choice (2026-10-01).
 Genetics and medication data (prompt sections marked sensitive, and the medications tracker) go to the Claude API only

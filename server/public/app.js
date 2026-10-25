@@ -54,7 +54,7 @@ function setupDemo() {
 
 // ---------------- routing ----------------
 const VIEWS = ['home', 'today', 'training', 'programs', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity', 'settings', 'users', 'help'];
-const VIEW_TITLES = { home: 'Home', today: 'Today', training: 'Training', programs: 'Programs', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity', settings: 'Settings', users: 'Users', help: 'Help' };
+const VIEW_TITLES = { home: 'Home', today: 'Daily Check-in', training: 'Training', programs: 'Programs', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity', settings: 'Settings', users: 'Users', help: 'Help' };
 let currentView = null;
 function route() {
   if (location.hash === '#history') return location.replace('#health'); // the old name of the Health tab
@@ -609,7 +609,9 @@ async function loadSettingsView() {
 }
 
 const FEED_LABELS = { appleHealth: 'Apple Health (Health Auto Export)', workoutLog: 'Workout Log (Google Sheets)', manual: 'Entered in the app (check-ins, drinks, meds, labs)' };
-const SHEETS_RESULTS = { connected: 'Google Sheets connected. Now paste your Workout Log link.', cancelled: 'Google Sheets was not connected.',
+const SHEETS_RESULTS = { connected: 'Google Sheets connected. Now paste your Workout Log link, or create one.', cancelled: 'Google Sheets was not connected.',
+  created: 'Your Workout Log was created in your Google Drive and saved here. Open it to start logging; it syncs every morning or when you tap Sync now.',
+  'create-failed': 'Google Sheets is connected, but the Workout Log could not be created. Try Create my Workout Log again.',
   expired: 'That took too long; try Connect Google Sheets again.', incomplete: 'Google did not grant read access to Sheets; try again and allow it.', failed: 'Google Sheets could not be connected; try again.' };
 const feedTime = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'never');
 
@@ -647,8 +649,15 @@ function renderFeeds(a, shownToken = null) {
       : `${wl.connected ? 'Google Sheets connected' : 'Not connected'}${wl.connected ? (wl.sheetSet ? '; sheet chosen' : '; no sheet chosen yet') : ''}. Last sync: ${feedTime(wl.lastSync)}. `,
       h('a', { href: '/guides/workout-log', target: '_blank' }, 'Guide')),
     f.fromServer ? null : !wl.canConnect ? h('p', { class: 'muted small' }, 'Connecting Google Sheets works on the hosted app (with Google sign-in).')
-      : !wl.connected ? h('div', { class: 'actions' }, h('a', { class: 'button', href: '/auth/google/sheets' }, 'Connect Google Sheets'))
-      : h('form', { class: 'sheet-form', onsubmit: async (e) => {
+      : !wl.connected ? h('div', {},
+        h('div', { class: 'actions' },
+          wl.canCreate ? h('a', { class: 'button', href: '/auth/google/sheets?create=1' }, 'Create my Workout Log') : null,
+          h('a', { class: wl.canCreate ? 'button ghost' : 'button', href: '/auth/google/sheets' }, 'Connect an existing sheet')),
+        wl.canCreate ? h('p', { class: 'muted small' }, 'Create makes a new sheet in your Google Drive with the right columns. Health Review can open only the files it created and the sheet you choose, never the rest of your Drive.') : null)
+      : h('div', {},
+        wl.sheetUrl ? h('p', { class: 'small' }, h('a', { href: wl.sheetUrl, target: '_blank', rel: 'noopener' }, 'Open my Workout Log in Google Sheets')) : null,
+        !wl.sheetSet && wl.canCreate ? h('div', { class: 'actions' }, h('a', { class: 'button', href: '/auth/google/sheets?create=1' }, 'Create my Workout Log')) : null,
+        h('form', { class: 'sheet-form', onsubmit: async (e) => {
         e.preventDefault();
         try {
           const r = await api('PUT', '/api/account/workout-sheet', { sheet: e.target.elements.sheet.value.trim() });
@@ -661,7 +670,7 @@ function renderFeeds(a, shownToken = null) {
           h('button', { type: 'button', class: 'ghost danger', onclick: async () => {
             if (!confirm('Disconnect Google Sheets? Health Review forgets the permission and your sheet.')) return;
             renderFeeds(await api('DELETE', '/api/account/google'));
-          } }, 'Disconnect'))),
+          } }, 'Disconnect')))),
   ]);
   if (!f.chosen.manual && !f.fromServer) return;
 }
@@ -757,7 +766,7 @@ function homeSettingsVisibility() {
   $('.home-settings').hidden = $('.demo-toggle').hidden && $('#account').hidden;
 }
 
-/** Moves the Today tab back or forward by days, never past today. */
+/** Moves Daily Check-in back or forward by days, never past today. */
 function stepDay(n) {
   const next = addDays($('#day').value || state.today, n);
   if (next > state.today) return;
@@ -881,7 +890,7 @@ const CHARTS = [
   { key: 'sleep_total_hr', title: 'Sleep', from: 'metrics', format: fmt(1, ' h') },
   { key: 'steps', title: 'Steps', from: 'metrics', format: fmt(0) },
   { key: 'exercise_min', title: 'Exercise minutes', from: 'metrics', format: fmt(0, ' min'), columns: true },
-  // Body composition from the Today tab check-in; readings up to 8 days apart are joined, like readiness.
+  // Body composition from the Daily Check-in; readings up to 8 days apart are joined, like readiness.
   { key: 'weight_lbs', title: 'Weight', from: 'checkins', format: fmt(1, ' lbs'), gapDays: 8 },
   { key: 'body_fat_pct', title: 'Body fat', from: 'checkins', format: fmt(1, '%'), gapDays: 8 },
   { key: 'muscle_mass_lbs', title: 'Muscle mass', from: 'checkins', format: fmt(1, ' lbs'), gapDays: 8 },
@@ -2118,7 +2127,7 @@ async function loadTraining(view = trainingViewChoice()) {
 // ---------------- reviews ----------------
 
 // The notice when last week's review is missing (the Sunday run skipped for missing Apple Health days, failed, or did
-// not run), with a manual run. Shown on the Today and Reviews tabs; hidden in the demo (no review service).
+// not run), with a manual run. Shown on Daily Check-in and Reviews; hidden in the demo (no review service).
 const reviewNotice = { timer: null };
 const fmtDay = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const dayList = (dates) => dates.map(fmtDay).join(', ');

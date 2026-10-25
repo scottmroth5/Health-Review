@@ -310,7 +310,7 @@ export function parseSet(cell) {
   return out;
 }
 
-const SET_PAIRS = 8;
+export const SET_PAIRS = 8;
 
 /**
  * One tab of the Workout Log. Each non-blank row with an Exercise is one exercise; its

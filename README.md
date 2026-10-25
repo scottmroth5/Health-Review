@@ -273,7 +273,7 @@ speed, walking asymmetry (lower is more even), heart rate (min, max, average), s
 disturbances. The Health tab charts cardio recovery, walking heart rate and speed, wrist temperature, blood oxygen and
 breathing disturbances. The weekly review compares each with the previous week and your 28-day baseline. Blood oxygen
 and breathing disturbances are values only (no high or low labels) and appear in the review only for
-physician discussion. The Health tab also charts weight, body fat, muscle mass and visceral fat from the Today tab
+physician discussion. The Health tab also charts weight, body fat, muscle mass and visceral fat from Daily Check-in
 check-in. A partial day (see the data checks below) is drawn in red on the Apple
 Health charts, its hover says so, and it is left out of the card's average. A chart with no data in the range you picked is left out, and a line below the charts names it, so it comes
 back by itself once data arrives. To fill earlier days, export a past date range from Health Auto Export into the same folder;
@@ -362,7 +362,7 @@ catalog lists for that phase. Pick any confirmed block; the one in progress show
 
 ## One-day dose adjustments
 
-On the Today tab, **Adjust** next to a supplement or medication changes, for that day only, the dose you took and the
+On Daily Check-in, **Adjust** next to a supplement or medication changes, for that day only, the dose you took and the
 slot you took it in (for example, the morning magnesium taken before bed). The values on the Meds tab stay the
 defaults. A lasting change is still a dated change on the Meds tab, which is what the before-and-after averages use.
 Adjustments are saved with the day's check-off, and the weekly review counts only taken or skipped.
@@ -374,7 +374,7 @@ a blend). Choose between them in the Dose box of the Meds tab's Add, Change and 
 - **Each ingredient's dose history is kept.** Changing one ingredient's dose from a date is a dated change like any
   other: the dose history and the Changes and impact list show it as, for example, "Beta 10 mg to 20 mg". Fix a mistake
   marks it as a correction, with no change recorded.
-- **On the Today tab** the item has one checkbox, with its ingredients on the line underneath.
+- **On Daily Check-in** the item has one checkbox, with its ingredients on the line underneath.
 - **Each current item's card** shows the last 12 weeks of check-offs: this week so far, the share taken over the 12
   weeks, a bar per week (an outlined box when nothing was logged, which counts as unknown, not missed), and the numbers
   as a table.
@@ -480,7 +480,7 @@ sheets are no longer read by the app, so you can turn off their triggers. `HEALT
 3-hour workout time shift was fixed once in the stored rows (`npm run fix:session-times`, 2026-10-15).
 `tools/apps-script/ConsolidateHealthMetrics.gs` is kept for reference only.
 
-**Data checks:** after every sync, the app checks the data. Problems show above the day on the Today tab, and
+**Data checks:** after every sync, the app checks the data. Problems show above the day on Daily Check-in, and
 `npm run sync` prints them all (the server's `[sync]` line gives only their count). The checks look for:
 - **Apple Health data that stopped:** nothing after a given day. Today is never expected to be complete.
 - **The workouts export stopped:** the same for the JSON workouts folder at 72 hours, since a rest day can write no file.
@@ -501,7 +501,7 @@ The weekly review gets the week's missing and partial days, so it doesn't read t
 
 **The Sunday review waits for complete data.** If any day of the review week (Sunday to Saturday) has no Apple Health
 data, or looks like a partial export, the scheduled run skips the review. It sends nothing and records a *skipped*
-run with the dates (Activity tab). From 9am on Sunday, while last week has no review, the Today and Reviews tabs say
+run with the dates (Activity tab). From 9am on Sunday, while last week has no review, Daily Check-in and Reviews say
 why and offer **Run review now**, which syncs first. While days are still missing the button reads **Run anyway** and
 asks first. From the command line, `npm run review -- --force` writes it anyway, and `-- --dry-run` shows the check.
 
@@ -510,7 +510,7 @@ the server). Once the week's review exists those runs do nothing (no sync, no co
 skipped on Sunday for a late Apple Health export is usually written by Monday.
 
 **Rewrite with the full week.** If a review was written while days were missing or partial (with Run anyway, or
-`--force`) and those days arrive later, the Today and Reviews tabs offer **Rewrite with the full week** (about $0.35).
+`--force`) and those days arrive later, Daily Check-in and Reviews offer **Rewrite with the full week** (about $0.35).
 It replaces that week's review. Nothing rewrites a review automatically.
 
 **What it costs:** the Activity tab's Claude API spend card shows this month, this year and all time, plus the last 12
@@ -584,7 +584,7 @@ nothing else in your Drive.
 
 **Monthly restore test:** `SCHEDULE_RESTORE_TEST=monthly 1 05:00` (or `npm run backup:test`) decrypts the newest backup
 into a temporary folder, checks its integrity, compares row counts with the live database, and deletes it. A failure
-shows on the Today tab.
+shows on Daily Check-in.
 
 **USB copies:** `npm run backup -- --to E:\HealthBackups` writes the same encrypted file to a folder, with no upload.
 

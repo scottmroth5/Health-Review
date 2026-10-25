@@ -168,8 +168,19 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     setGoogleToken(store.db, u.id, seal(refreshToken, u.id, keyBox ?? boxKey()));
     log.info('[users] Google Sheets connected');
   };
+  // "Create my Workout Log": a new sheet in their Drive (services.createWorkoutSheet, ingest/create-sheet.js), saved as
+  // their Workout Log. Never the owner, whose Workout Log comes from the server's settings.
+  const createSheet = async ({ email }) => {
+    const u = userByEmail(store.db, email);
+    if (!u || u.id === OWNER_ID || u.status !== 'approved') throw new Error('not for this account');
+    if (typeof services.createWorkoutSheet !== 'function') throw new Error('not available');
+    const { id } = await services.createWorkoutSheet(u.id);
+    scopeDb(store.db, u.id).prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'workout_log_sheet_id', ?, ?)
+      ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(id, clock().toISOString());
+    log.info('[users] a Workout Log sheet was created');
+  };
   registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
-    sheetsExchange: auth.sheetsExchange, connectSheets });
+    sheetsExchange: auth.sheetsExchange, connectSheets, createSheet });
   // The privacy policy and terms, readable before signing in.
   app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md')));
   app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md')));
@@ -870,14 +881,18 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     try { chosen = JSON.parse(u?.feeds ?? '{}') ?? {}; } catch { chosen = {}; }
     const lastPost = db.prepare("SELECT MAX(received_at) FROM ingest_log WHERE user_id = @uid AND result = 'ok'").pluck().get() ?? null;
     const lastSync = db.prepare("SELECT MAX(finished_at) FROM runs WHERE user_id = @uid AND name = 'sync' AND status = 'ok'").pluck().get() ?? null;
-    const sheetSet = Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").get());
+    const sheetId = db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").pluck().get() ?? null;
+    const sheetSet = Boolean(sheetId);
     return {
       chosen: Object.fromEntries(FEEDS.map((f) => [f, chosen[f] ?? (owner || f === 'manual')])),
       // The owner's feeds come from the server's settings (INGEST_TOKEN, WORKOUT_LOG_SHEET_ID and the Google files).
       fromServer: owner,
       appleHealth: { token: owner ? Boolean(ingest.token) : Boolean(u?.ingest_token_hash), lastPost,
         urls: { health: `${appUrl()}/api/ingest/health`, workouts: `${appUrl()}/api/ingest/workouts` } },
-      workoutLog: { connected: owner || Boolean(u?.google_refresh_enc), sheetSet: owner || sheetSet, lastSync, canConnect: authMode === 'google' },
+      workoutLog: { connected: owner || Boolean(u?.google_refresh_enc), sheetSet: owner || sheetSet, lastSync, canConnect: authMode === 'google',
+        // Their own sheet's link, for them only (never on the admin screens).
+        sheetUrl: !owner && sheetId ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/edit` : null,
+        canCreate: authMode === 'google' && typeof services.createWorkoutSheet === 'function' },
     };
   };
   app.put('/api/account/feeds', {

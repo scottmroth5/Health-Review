@@ -2,7 +2,7 @@
 
 Some things are entered right in Health Review. Everything here is yours only.
 
-## Today
+## Daily Check-in
 
 - **Check-in:** readiness, energy, mood, stress and nutrition on a 1 to 10 scale, plus optional weight and body measurements and a note. A day or two of these gives the weekly review a feel for how you are doing.
 - **Medications and supplements:** tick what you took each day. Use **Adjust** for a one-day change of dose or time.

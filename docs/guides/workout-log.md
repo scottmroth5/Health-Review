@@ -2,6 +2,15 @@
 
 Health Review can read your lifting log from your own Google Sheet: training volume, lift progress, program blocks and phases come from it.
 
+## The easy way: Create my Workout Log
+
+- In **Settings**, then **Data feeds**, tick **Workout Log** and tap **Create my Workout Log**.
+- Google asks to let Health Review see your spreadsheets (read only) and create files in your Drive. Health Review can open only the files it created and the sheet you choose, never the rest of your Drive.
+- Google may show "Google hasn't verified this app" while the app's review with Google is pending. Choose **Advanced**, then **Go to Health Review**.
+- You come back to Settings with a new sheet named **Health Review Workout Log** in your Google Drive, already set up and saved. Tap **Open my Workout Log in Google Sheets** to start logging. Its **How to use** tab repeats the layout below.
+
+Already keep a log in Google Sheets? Use **Connect an existing sheet** instead, and lay it out as below.
+
 ## The sheet layout
 
 - One **tab per year**, named with the year only: `2025`, `2026`.
@@ -21,7 +30,7 @@ Health Review can read your lifting log from your own Google Sheet: training vol
 
 ## Connect it
 
-- In **Settings**, then **Data feeds**, tap **Connect Google Sheets** and allow **read-only** access to your spreadsheets. Health Review can only read; it never changes or deletes anything.
+- In **Settings**, then **Data feeds**, tap **Connect an existing sheet** and allow **read-only** access to your spreadsheets. Health Review can only read; it never changes or deletes anything.
 - Google may show "Google hasn't verified this app" while the app's review with Google is pending. Choose **Advanced**, then **Go to Health Review**.
 - Paste the link to your Workout Log sheet and tap **Save sheet**. Health Review checks it can open it and that it has a year tab.
 
