@@ -79,3 +79,29 @@ test('the review summary and its instructions carry the goals (labels only); non
   assert.deepEqual(prepareReview(db, week).summary.goals, { primary: 'Cardio fitness', secondary: 'Lose weight / body composition' });
   assert.match(CONTRACT, /"goals" \(present only when the owner set them\)/);
 });
+
+test('arranged: a saved order wins over the goals; unknown names dropped, newer items added at the end', async () => {
+  const { arranged, LAYOUT_ITEMS } = await import('../server/public/goals.js');
+  const cards = LAYOUT_ITEMS.training;
+  assert.deepEqual(arranged(null, { primary: 'strength' }, cards, 'training'), orderFor({ primary: 'strength' }, cards, 'training'), 'none saved: the goals');
+  const own = arranged(['advisor-card', 'gone-card', 'lifts-card'], { primary: 'strength' }, cards, 'training');
+  assert.deepEqual(own.slice(0, 2), ['advisor-card', 'lifts-card']);
+  assert.equal(own.length, cards.length);
+  assert.deepEqual(arranged(['steps', 'hrv_ms'], {}, ['hrv_ms', 'steps', 'new_chart'], 'charts'), ['steps', 'hrv_ms', 'new_chart']);
+});
+
+test('saving a tab layout: known items only, per area, null resets; other users untouched', async () => {
+  const { store, signIn } = await setup();
+  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
+  const lee = await signIn('lee@example.com');
+  assert.equal((await lee.send('PUT', '/api/account/layout', { area: 'training', order: ['advisor-card', 'bogus'] })).statusCode, 400);
+  assert.equal((await lee.send('PUT', '/api/account/layout', { area: 'kitchen', order: [] })).statusCode, 400);
+  assert.equal((await lee.send('PUT', '/api/account/layout', { area: 'charts', order: ['advisor-card'] })).statusCode, 400, 'a card is not a chart');
+  const t = (await lee.send('PUT', '/api/account/layout', { area: 'training', order: ['advisor-card', 'lifts-card', 'advisor-card'] })).json();
+  assert.deepEqual(t.layouts.training, ['advisor-card', 'lifts-card']);
+  const c = (await lee.send('PUT', '/api/account/layout', { area: 'charts', order: ['weight_lbs', 'steps'] })).json();
+  assert.deepEqual(c.layouts, { training: ['advisor-card', 'lifts-card'], health: null, charts: ['weight_lbs', 'steps'] });
+  assert.equal((await lee.send('PUT', '/api/account/layout', { area: 'training', order: null })).json().layouts.training, null);
+  const kim = await signIn('kim@example.com');
+  assert.deepEqual((await kim.get('/api/account')).json().layouts, { training: null, health: null, charts: null });
+});

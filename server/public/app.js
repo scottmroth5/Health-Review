@@ -1,6 +1,6 @@
 import { lineChart, columnChart } from './charts.js';
 import { DEMO_KEY, demoFromLocation, redactReview, isDrinkingChart } from './demo.js';
-import { GOALS, orderFor, tileOrder, goalWeights } from './goals.js';
+import { GOALS, LAYOUT_ITEMS, arranged, tileOrder, goalWeights } from './goals.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -298,7 +298,11 @@ async function loadAccount() {
   // Goals order the pages; the tile order is the user's own (or the goals' default).
   state.goals = account?.goals ?? {};
   state.tileOrder = account?.tileOrder ?? null;
+  state.layouts = account?.layouts ?? {};
   applyTileOrder();
+  // The tab on screen may have drawn before the account arrived: put it in the saved (or goal) order now.
+  if (currentView === 'training') orderCards('training');
+  if (currentView === 'health') { orderCards('health'); loadHistory().catch(() => {}); }
   $('#goal-nudge').hidden = !account || demo || Boolean(state.goals.primary);
   setHomeBadge('settings', account && !account.ai && account.aiReason === 'no_key' && !demo ? 'Add key' : '');
   $('#paused-note').hidden = account?.status !== 'paused';
@@ -363,19 +367,67 @@ function setHomeBadge(name, text) {
 }
 
 // ---------------- goals, tile order, feedback and the prompt builder ----------------
-const CARD_IDS = {
-  training: ['log-workout-card', 'program-card', 'adherence-card', 'lifts-card', 'training-card', 'advisor-card'],
-  health: ['vo2-card', 'zones-card'],
-};
-/** Puts a tab's cards in the goals' order (Training: all its cards; Health: the cards above the profile). */
+/** Puts a tab's cards in the user's arranged order, else the goals' (Training: all its cards; Health: those above the profile). */
 function orderCards(kind) {
-  if (!state.goals?.primary) return;
-  const order = orderFor(state.goals, CARD_IDS[kind], kind);
+  const order = arranged(state.layouts?.[kind], state.goals ?? {}, LAYOUT_ITEMS[kind], kind);
   const before = kind === 'health' ? $('#profile-card') : null;
   for (const id of order) {
     const el = document.getElementById(id);
     if (el) el.parentNode.insertBefore(el, before);
   }
+}
+
+// Arrange on the Training and Health tabs: arrows on each card (and each Health chart); Done saves the order to the
+// account (layout_training, layout_health, layout_charts), Reset to default clears it. The demo arranges on screen only.
+const tabArrange = { training: false, health: false };
+const VIEW_AREAS = { training: ['training'], health: ['health', 'charts'] };
+// An area's items in their order on screen.
+const areaItems = (area) => (area === 'charts' ? $$('#charts .chart-card') : LAYOUT_ITEMS[area].map((id) => document.getElementById(id)).filter(Boolean)
+  .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)));
+function moveItem(area, el, d) {
+  const items = areaItems(area);
+  const other = items[items.indexOf(el) + d];
+  if (!other) return;
+  other.parentNode.insertBefore(el, d < 0 ? other : other.nextSibling);
+}
+function decorateArrange(view) {
+  for (const area of VIEW_AREAS[view]) {
+    for (const el of areaItems(area)) {
+      el.querySelector(':scope > .card-move')?.remove();
+      if (!tabArrange[view]) continue;
+      const label = el.querySelector('h2, h3')?.textContent?.trim() ?? 'this';
+      el.prepend(h('span', { class: 'card-move' },
+        h('button', { type: 'button', class: 'ghost icon', 'aria-label': `Move ${label} earlier`, onclick: () => moveItem(area, el, -1) }, '▲'),
+        h('button', { type: 'button', class: 'ghost icon', 'aria-label': `Move ${label} later`, onclick: () => moveItem(area, el, 1) }, '▼')));
+    }
+  }
+  document.body.classList.toggle(`arranging-${view}`, tabArrange[view]);
+  $(`[data-arrange-start="${view}"]`).hidden = tabArrange[view];
+  $(`[data-arrange-controls="${view}"]`).hidden = !tabArrange[view];
+}
+async function saveLayout(area, order) {
+  state.layouts = { ...(state.layouts ?? {}), [area]: order };
+  if (state.readOnly) return;
+  try { state.layouts = (await api('PUT', '/api/account/layout', { area, order })).layouts; } catch { /* kept on screen */ }
+}
+for (const view of Object.keys(tabArrange)) {
+  $(`[data-arrange-start="${view}"]`).addEventListener('click', () => { tabArrange[view] = true; decorateArrange(view); });
+  $(`[data-arrange-done="${view}"]`).addEventListener('click', async () => {
+    tabArrange[view] = false;
+    decorateArrange(view);
+    for (const area of VIEW_AREAS[view]) {
+      let order = areaItems(area).map((el) => el.dataset.key ?? el.id);
+      // Charts with no data in this range are not on screen: they keep their place after the ones shown.
+      if (area === 'charts') order = [...order, ...arranged(state.layouts?.charts, state.goals ?? {}, LAYOUT_ITEMS.charts, 'charts').filter((k) => !order.includes(k))];
+      await saveLayout(area, order);
+    }
+  });
+  $(`[data-arrange-reset="${view}"]`).addEventListener('click', async () => {
+    for (const area of VIEW_AREAS[view]) await saveLayout(area, null);
+    orderCards(view);
+    if (view === 'health') await loadHistory();
+    decorateArrange(view);
+  });
 }
 
 /** The Home tiles and the tab bar in the user's order. */
@@ -1288,7 +1340,7 @@ async function loadHistory() {
   // A chart with no data in the range is left out, and named in one line below the charts.
   const hidden = [];
   const partial = new Set(data.partialDays ?? []);
-  const chartOrder = orderFor(state.goals ?? {}, CHARTS.map((c) => c.key), 'charts');
+  const chartOrder = arranged(state.layouts?.charts, state.goals ?? {}, CHARTS.map((c) => c.key), 'charts');
   for (const c of chartOrder.map((k) => CHARTS.find((x) => x.key === k)).filter((x) => !(state.demo && isDrinkingChart(x)))) {
     // Apple Health days that look like a partial export are marked (red, with a hover line) and left out of the avg.
     const points = data[c.from].filter((r) => r[c.key] !== null && r[c.key] !== undefined).map((r) => (c.from === 'metrics' && partial.has(r.date)
@@ -1300,6 +1352,7 @@ async function loadHistory() {
     }
     const card = document.createElement('div');
     card.className = 'chart-card';
+    card.dataset.key = c.key;
     const head = document.createElement('div');
     head.className = 'chart-head';
     const h = document.createElement('h3');
@@ -1321,6 +1374,7 @@ async function loadHistory() {
     const opts = { from, to, format: c.format, label: c.title, gapDays: c.gapDays, target: chartTarget(t) };
     (c.columns ? columnChart : lineChart)(chart, points, opts);
   }
+  if (tabArrange.health) decorateArrange('health');
   fill($('#charts-hidden'), hidden.length ? `No data in this range: ${hidden.join(', ')}.` : '');
 }
 

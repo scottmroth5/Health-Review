@@ -174,6 +174,10 @@
 
     <!-- Training volume -->
     <section id="view-training" class="view" hidden>
+      <div class="tile-arrange" data-arrange-bar="training">
+        <button type="button" class="ghost small-button" data-arrange-start="training">Arrange</button>
+        <span data-arrange-controls="training" hidden><button type="button" class="small-button" data-arrange-done="training">Done</button> <button type="button" class="ghost small-button" data-arrange-reset="training">Reset to default</button> <span class="muted small">Use the arrows to move cards.</span></span>
+      </div>
       <div class="card" id="log-workout-card">
         <h2>Log workout</h2>
         <p class="muted small">Log a lifting session here, no Google Sheet needed. It counts everywhere a Workout Log day does (volume, lifts, programs, the weekly review). One logged workout per day; pick a day to change it.</p>
@@ -243,6 +247,10 @@
 
     <!-- Health trends -->
     <section id="view-health" class="view" hidden>
+      <div class="tile-arrange" data-arrange-bar="health">
+        <button type="button" class="ghost small-button" data-arrange-start="health">Arrange</button>
+        <span data-arrange-controls="health" hidden><button type="button" class="small-button" data-arrange-done="health">Done</button> <button type="button" class="ghost small-button" data-arrange-reset="health">Reset to default</button> <span class="muted small">Use the arrows to move cards and charts.</span></span>
+      </div>
       <div class="card vo2" id="vo2-card">
         <div class="training-head">
           <h2>VO2 max</h2>

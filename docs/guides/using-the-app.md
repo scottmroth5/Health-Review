@@ -20,6 +20,7 @@ Health Review shows your own health and training data back to you, with a weekly
 
 - **Your goals** (Settings): pick a primary goal and an optional second one. Home, Training and Health put that information first, and your weekly review opens with it.
 - **Arrange tiles** (under the Home tiles): use the arrows to move tiles, then Done. Reset goes back to the default.
+- **Arrange** on Training and Health works the same way for their cards, and on Health for each chart too. Your order is saved to your account, so it is the same on every device.
 - **Your prompt** (Prompt tab): Help me write a section drafts a section from a few answers. See [Writing your review prompt](/guides/prompts).
 
 ## Sync now

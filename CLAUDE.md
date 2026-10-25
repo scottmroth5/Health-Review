@@ -452,7 +452,10 @@ holds the goals (strength, cardio, weight, endurance, health; settings goal_prim
 /api/account/goals) and what each puts first: Home tiles (after Daily Check-in), Training and Health card ids, Health chart
 keys, and the Next program card's default weights (when the browser has none saved). Order only, nothing hidden. The
 review summary's goals (labels, metrics/load.js loadGoals) and a CONTRACT line make the review open with them; the chat
-context carries them too. Home's Arrange tiles saves settings tile_order (PUT /api/account/tile-order, known tiles only);
+context carries them too. Arrange on Training and Health (server/public/goals.js LAYOUT_ITEMS and arranged: a saved order,
+unknown items dropped and newer ones appended, else the goals', else the usual) saves settings layout_training,
+layout_health and layout_charts (PUT /api/account/layout { area, order }, known items only; null resets); the page re-applies
+them once the account loads. Home's Arrange tiles saves settings tile_order (PUT /api/account/tile-order, known tiles only);
 the tab bar follows it. Feedback (migration 029 feedback, a user table): POST /api/feedback (feedback, enhancement, bug;
 subject 120, body 5,000, screen and app version and browser as context; 5 an hour; not the demo or paused accounts) is
 stored and emailed to the admin with the sender as reply-to; GET /api/feedback (their own), GET /api/admin/feedback and

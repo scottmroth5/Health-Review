@@ -37,7 +37,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
 import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, startUserRun, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
 import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus } from './admin-queries.js';
-import { GOALS as GOAL_LABELS, GOAL_KEYS, TILES, cleanGoals } from './public/goals.js';
+import { GOALS as GOAL_LABELS, GOAL_KEYS, LAYOUT_ITEMS, TILES, cleanGoals } from './public/goals.js';
 import { MAX_ANSWER_CHARS, SECTION_KINDS, builderSpec, claudeDraft, templateDraft } from '../agent/prompt-draft.js';
 import { askHelp, MAX_QUESTION_CHARS } from '../agent/help.js';
 import { SESSION_COOKIE, cookie } from './session.js';
@@ -969,6 +969,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       // Training goals (Settings) and the Home tile order the user arranged (null: the goals' default).
       goals: loadGoals(db),
       tileOrder: (() => { try { return JSON.parse(db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'tile_order'").pluck().get() ?? 'null'); } catch { return null; } })(),
+      layouts: Object.fromEntries(Object.keys(LAYOUT_ITEMS).map((area) => {
+        try { return [area, JSON.parse(db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck().get(`layout_${area}`) ?? 'null')]; } catch { return [area, null]; }
+      })),
       pausedBySelf: u?.status === 'paused' && Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
       // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
       ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
@@ -1076,6 +1079,21 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     schema: { summary: 'Your Home tile order (view names), or null for the default', body: { type: 'object', additionalProperties: false, required: ['tiles'], properties: { tiles: { type: ['array', 'null'], maxItems: 30, items: { type: 'string', enum: TILES } } } }, response: { 200: anyObject } },
   }, async (req) => {
     putSetting('tile_order', req.body.tiles ? JSON.stringify([...new Set(req.body.tiles)]) : null);
+    return accountView(req);
+  });
+
+  // The Training and Health tabs' order (Arrange on each tab): training cards, health cards, or health charts; null resets.
+  app.put('/api/account/layout', {
+    schema: {
+      summary: 'Your order of the Training cards, the Health cards or the Health charts, or null for the default',
+      body: { type: 'object', additionalProperties: false, required: ['area', 'order'], properties: {
+        area: { type: 'string', enum: Object.keys(LAYOUT_ITEMS) }, order: { type: ['array', 'null'], maxItems: 40, items: { type: 'string', maxLength: 40 } } } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => {
+    const { area, order } = req.body;
+    if (order && order.some((x) => !LAYOUT_ITEMS[area].includes(x))) throw badRequest(`Unknown item for ${area}`);
+    putSetting(`layout_${area}`, order ? JSON.stringify([...new Set(order)]) : null);
     return accountView(req);
   });
 

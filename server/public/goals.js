@@ -46,10 +46,7 @@ export function orderFor(goals, list, kind) {
 
 /** The Home tiles' order: the user's own (unknown names dropped, newer tiles added at the end), else the goals' default. */
 export function tileOrder(saved, goals) {
-  if (Array.isArray(saved) && saved.length) {
-    const own = [...new Set(saved.filter((t) => TILES.includes(t)))];
-    return [...own, ...TILES.filter((t) => !own.includes(t))];
-  }
+  if (Array.isArray(saved) && saved.length) return arranged(saved, goals, TILES, 'tiles');
   return ['today', ...orderFor(goals, TILES.filter((t) => t !== 'today'), 'tiles')];
 }
 
@@ -59,4 +56,24 @@ export function goalWeights(goals) {
   const w = { strength: 1, joint: 1, time: 1, vo2: 1 };
   for (const key of [g.secondary, g.primary]) for (const [k, v] of Object.entries(ORDER[key]?.weights ?? {})) w[k] = Math.max(w[k], key === g.primary ? v : Math.min(v, 2));
   return w;
+}
+
+// What can be arranged on the Training and Health tabs (Arrange on each tab; saved to the account as layout_<area>).
+export const LAYOUT_ITEMS = {
+  training: ['log-workout-card', 'program-card', 'adherence-card', 'lifts-card', 'training-card', 'advisor-card'],
+  health: ['vo2-card', 'zones-card'],
+  charts: ['hrv_ms', 'resting_hr', 'sleep_total_hr', 'steps', 'exercise_min', 'weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat',
+    'cardio_recovery_bpm', 'walking_hr_avg', 'walking_speed_mph', 'walking_asymmetry_pct', 'wrist_temp_f', 'spo2_pct', 'breathing_disturbances', 'readiness', 'alcohol'],
+};
+
+/**
+ * An area's order: the user's saved one (unknown names dropped, newer items added at the end), else the goals' order,
+ * else the usual one.
+ */
+export function arranged(saved, goals, list, kind) {
+  if (Array.isArray(saved) && saved.length) {
+    const own = [...new Set(saved.filter((x) => list.includes(x)))];
+    return [...own, ...list.filter((x) => !own.includes(x))];
+  }
+  return orderFor(goals, list, kind);
 }
