@@ -1,0 +1,27 @@
+# Weekly vulnerability scan of the public demo (made-up data): OWASP ZAP's baseline scan, which only looks (no attacks),
+# Sunday nights. Findings open or update a GitHub issue. The demo's address comes from the repository variable DEMO_URL,
+# so it is never written in the repo; without it the scan is skipped.
+name: ZAP scan
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  baseline:
+    if: vars.DEMO_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: ${{ vars.DEMO_URL }}
+          allow_issue_writing: true
+          issue_title: ZAP scan of the demo
+          fail_action: false

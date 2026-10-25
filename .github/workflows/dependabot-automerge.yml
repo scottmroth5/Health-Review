@@ -1,0 +1,24 @@
+# Dependabot's patch-level updates (most security fixes are patch-level) merge on their own once the required checks (CI)
+# pass; minor and major updates, security ones included, wait for the owner. Needs the repository settings "Allow auto-merge" and a branch rule on main requiring the
+# CI checks. Merged updates ship with the weekly rebuild (deploy.yml).
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      - name: Merge patch-level updates once CI passes
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"

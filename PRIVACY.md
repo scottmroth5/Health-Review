@@ -41,6 +41,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 
 ## Where data is kept
 
+- Health Review answers only in the United States: the server looks up the country of the address a request comes from (IP to Country Lite by DB-IP, https://db-ip.com, CC BY 4.0) and keeps no record of it.
 - In a database on a server in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
 - The server's disk is encrypted by Amazon with keys Amazon manages. The operator accepts this for now; a later move will use encryption keys the operator controls.
 - Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS. Seven nightly, three weekly and one monthly backup are kept, so a backup ages out within about two months.

@@ -21,6 +21,8 @@ services:
       HOST: 0.0.0.0
       PORT: "5188"
       TRUST_PROXY: "1"
+      # US-only access (server/geo.js); Health Auto Export posts and the health check always pass.
+      GEO_ALLOW: US
     volumes:
       # The database, the MAPS catalog and PDFs, and the Google sign-in files. Survives every deploy.
       - ./data:/app/data
@@ -43,6 +45,7 @@ services:
       PUBLIC_URL: https://${DEMO_SITE_ADDRESS:?set DEMO_SITE_ADDRESS in .env}
       # The demo's "Request access" link: the main app's sign-in, which leads new people to Request access.
       REQUEST_ACCESS_URL: https://${SITE_ADDRESS:?set SITE_ADDRESS in .env}/auth/login
+      GEO_ALLOW: US
       DATA_DIR: /app/data
       HOST: 0.0.0.0
       PORT: "5188"

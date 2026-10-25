@@ -447,6 +447,17 @@ access), /:id/pause and /:id/resume (approved to paused and back), /:id/owner-ke
 user's email typed and a cap; the user is emailed on and off), /:id/maps ({ shared }). None act on an admin; owner-key and
 maps need an approved or paused user. Paused: signs in and sees their data; ingest token 401, POST /api/sync 403, no AI,
 no scheduled jobs (activeUserIds), and a note on Home. The scheduled review skips a user with no AI with its reason.
+Security (2026-10-25): US-only access (server/geo.js, GEO_ALLOW=US for app and demo in deploy/compose.yml): an onRequest
+hook answers 403 with a short page outside the allowed countries, by req.ip (Caddy's forwarded address) in DB-IP's IP to
+Country Lite (CC BY 4.0) read with maxmind; /api/ingest/* and /api/health always pass, as do private and loopback
+addresses; unset GEO_ALLOW blocks nothing; without the database (downloaded in the Dockerfile's geo stage, GEO_STAMP
+forcing a fresh download per build) it fails open and the admin is emailed. Weekly: Dependabot (npm, Actions, Docker;
+patch-level updates auto-merge once CI passes, dependabot-automerge.yml), the scheduled rebuild in deploy.yml
+(Mondays 13:00 UTC: checks, newest base image and country database, Trivy, deploy, tag sha-<7>-<date>), and the OWASP ZAP
+baseline scan of the demo (zap.yml, vars.DEMO_URL). Third-party actions are pinned to commit SHAs. Email subjects drop
+control characters (tools/mail.js). A self-run pen test (2026-10-25, 35 checks: stored XSS on every screen, CSRF, open
+redirects, traversal, tampering, prototype pollution, oversized bodies, headers) found one issue, fixed: line breaks in a
+feedback subject.
 Goals, tiles, feedback, prompt builder (2026-10-25): server/public/goals.js (pure; the browser and the server import it)
 holds the goals (strength, cardio, weight, endurance, health; settings goal_primary and goal_secondary, PUT
 /api/account/goals) and what each puts first: Home tiles (after Daily Check-in), Training and Health card ids, Health chart
@@ -581,6 +592,13 @@ stops if it fails (deploy/deploy.sh).
 Never commit anything under /data, or any .csv or .xml file. Never log or print API keys.
 
 ## Conventions
+Security and code review before every push (owner's rule, 2026-10-25), unless the owner says to skip it: review the diff
+for injection (SQL, XSS, email headers, commands), cross-user access, auth and CSRF, secrets and logging, uploads and
+input limits, and dependency changes, plus correctness; report the findings and fix serious ones before pushing. Then
+CI gates every deploy: npm audit, npm run check:security (scripts/security-check.js: no raw HTML sinks or eval in the
+browser code, CSP script-src 'self' only, no stray child_process, request-built redirects or paths, or raw control
+characters), CodeQL (security-extended; an open high or critical alert fails CI), and Trivy on the image (fixable high or
+critical stops the publish; accepted exceptions in .trivyignore with a reason).
 Every new tool gets a JSON schema, a handler, and a unit test.
 Every metric change requires passing fixture tests.
 Use plan mode for any change touching more than one file.

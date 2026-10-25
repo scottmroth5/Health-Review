@@ -1,0 +1,51 @@
+// US-only access (server/geo.js): requests from outside the allowed countries get the 403 page; ingest posts, the deploy
+// check and private addresses always pass; no GEO_ALLOW or no database means nothing is blocked. A fake country lookup;
+// no download, no network.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { openHealthStore } from '../db/store.js';
+import { buildApp } from '../server/app.js';
+import { geoAllowFromEnv, geoBlocker, isPrivateAddress } from '../server/geo.js';
+
+const COUNTRY = { '8.8.8.8': 'US', '81.2.69.142': 'GB', '203.0.113.9': null };
+const lookup = (ip) => COUNTRY[ip] ?? null;
+
+test('settings and private addresses', () => {
+  assert.deepEqual(geoAllowFromEnv({ GEO_ALLOW: 'us, ca ,x' }), ['US', 'CA']);
+  assert.deepEqual(geoAllowFromEnv({}), []);
+  for (const ip of ['127.0.0.1', '10.1.2.3', '172.20.0.5', '192.168.1.9', '169.254.1.1', '100.64.0.1', '::1', 'fd00::1', 'fe80::1', '::ffff:10.0.0.1']) {
+    assert.equal(isPrivateAddress(ip), true, ip);
+  }
+  for (const ip of ['8.8.8.8', '172.32.0.1', '81.2.69.142', '2001:4860::8888']) assert.equal(isPrivateAddress(ip), false, ip);
+  assert.equal(geoBlocker({ allow: [], lookup })({ ip: '81.2.69.142', url: '/' }), false, 'no allow list: off');
+  assert.equal(geoBlocker({ allow: ['US'], lookup: null })({ ip: '81.2.69.142', url: '/' }), false, 'no database: fails open');
+});
+
+async function appFrom(ip, { allow = ['US'], authMode = 'none' } = {}) {
+  const store = openHealthStore(':memory:');
+  // trustProxy: req.ip is the forwarded client address, as behind Caddy.
+  const app = await buildApp({ store, authMode, trustProxy: true, geo: { allow, lookup }, ingest: { token: 'made-up-ingest-token-0123456789', apple: 'rest' } });
+  return (url, opts = {}) => app.inject({ url, ...opts, headers: { 'x-forwarded-for': ip, ...(opts.headers ?? {}) } });
+}
+
+test('outside the US: the 403 page on pages and the API; ingest posts and the health check still pass', async () => {
+  const uk = await appFrom('81.2.69.142');
+  for (const url of ['/', '/api/status', '/privacy', '/guides', '/app.js', '/auth/login']) {
+    const res = await uk(url);
+    assert.equal(res.statusCode, 403, url);
+    assert.match(res.body, /available in the United States only/);
+  }
+  assert.equal((await uk('/api/health')).statusCode, 200, 'the deploy check');
+  const post = await uk('/api/ingest/health', { method: 'POST', headers: { authorization: 'Bearer made-up-ingest-token-0123456789', 'content-type': 'application/json' }, payload: { data: { metrics: [] } } });
+  assert.notEqual(post.statusCode, 403, 'Health Auto Export posts from abroad');
+  const unknown = await appFrom('203.0.113.9');
+  assert.equal((await unknown('/api/status')).statusCode, 403, 'a public address with no country is outside');
+});
+
+test('in the US, from inside the server, or with blocking off: everything as usual', async () => {
+  assert.equal((await (await appFrom('8.8.8.8'))('/api/status')).statusCode, 200);
+  assert.equal((await (await appFrom('172.18.0.1'))('/api/status')).statusCode, 200, "Docker's network (Caddy)");
+  assert.equal((await (await appFrom('81.2.69.142', { allow: [] }))('/api/status')).statusCode, 200, 'GEO_ALLOW unset');
+  // The demo is covered the same way.
+  assert.equal((await (await appFrom('81.2.69.142', { authMode: 'demo' }))('/api/status')).statusCode, 403);
+});

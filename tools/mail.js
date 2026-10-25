@@ -16,7 +16,9 @@ export function createMailer({ env = process.env, transport, log = console } = {
     : null);
   return {
     configured: Boolean(t),
-    async send({ to, subject, text, replyTo }) {
+    async send({ to, subject: rawSubject, text, replyTo }) {
+      // Header values never carry line breaks or other control characters (no header injection from user text).
+      const subject = String(rawSubject ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
       if (!t) {
         log.info?.(`[mail] not configured; "${subject}" not sent`);
         return false;

@@ -68,6 +68,18 @@ test('feedback: stored, emailed to the admin with the sender as reply-to; the ad
   assert.equal(store.db.prepare('SELECT COUNT(*) FROM feedback').pluck().get(), 0);
 });
 
+test('a subject can never add an email header: line breaks and control characters become spaces', async () => {
+  const { mail, signIn } = await setup();
+  const lee = await signIn('lee@example.com');
+  await lee.send('POST', '/api/feedback', { kind: 'feedback', subject: 'Hi\r\nBcc: someone@example.com\tthere', body: 'y' });
+  assert.equal(mail[0].subject, 'Health Review [feedback] Hi Bcc: someone@example.com there');
+  const { createMailer } = await import('../tools/mail.js');
+  const sent = [];
+  const m = createMailer({ env: {}, transport: { sendMail: async (x) => { sent.push(x); } }, log: {} });
+  await m.send({ to: 'a@example.com', subject: 'One\nTwo\u0000', text: 'x' });
+  assert.equal(sent[0].subject, 'One Two');
+});
+
 test('feedback limits: bad kinds, blank or long text, 5 an hour, paused accounts', async () => {
   const { signIn } = await setup();
   const lee = await signIn('lee@example.com');

@@ -46,6 +46,7 @@ import { createMailer } from '../tools/mail.js';
 import { boxKey, seal } from '../tools/secret-box.js';
 import { addDefaultPromptSections } from '../agent/default-prompts.js';
 import { policyPage } from './pages.js';
+import { BLOCKED_PAGE, geoBlocker } from './geo.js';
 
 /** Checks a Claude API key with Anthropic's free model list (the key goes only to Anthropic; nothing is logged). */
 export async function anthropicKeyCheck(key) {
@@ -124,8 +125,13 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  *   prompt or report text), so docker compose logs shows what ran
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null, geo = {} }) {
   const app = Fastify({ logger, trustProxy });
+  // US-only access (server/geo.js): refused before anything else runs; ingest posts and the health check always pass.
+  const blocked = geoBlocker(geo);
+  app.addHook('onRequest', async (req, reply) => {
+    if (blocked(req)) return reply.code(403).type('text/html').header('Cache-Control', 'no-store').send(BLOCKED_PAGE);
+  });
   // Every route's method and path, so tests can check each write route (demo mode refuses them all).
   const routeList = [];
   app.addHook('onRoute', (r) => { for (const method of [r.method].flat()) routeList.push({ method, url: r.url }); });
@@ -1117,7 +1123,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (authMode === 'demo') return reply.code(403).send({ error: 'Feedback is turned off in the demo' });
     if (isPaused(req)) return reply.code(403).send({ error: 'Your account is paused; email the administrator instead' });
     const uid = uidOf(req);
-    const subject = req.body.subject.trim();
+    // A subject is one line: control characters (line breaks, tabs) become spaces, so it can never add an email header.
+    const subject = req.body.subject.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
     const body = req.body.body.trim();
     if (!subject || !body) throw badRequest('Add a subject and the details');
     const hourAgo = clock().getTime() - 3600_000;

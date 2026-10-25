@@ -1,7 +1,9 @@
 # Tests on every push to main and every pull request. No secrets and no real data: the tests use synthetic fixtures only.
 # The suite runs in New York time and in UTC, so a calendar-day bug that only shows on a UTC server fails here
 # (tools/time.js, OWNER_TZ). The personal-data check runs its always-on part here (forbidden paths, secret shapes);
-# the .env and private-terms part runs in the pre-commit hook on the owner's computer.
+# the .env and private-terms part runs in the pre-commit hook on the owner's computer. Security on every push: npm audit, the
+# static security check (scripts/security-check.js), and CodeQL, whose open high or critical alerts fail CI and so stop
+# the deploy (deploy.yml runs only after CI passes).
 name: CI
 
 on:
@@ -34,3 +36,38 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm test
       - run: npm run check:personal -- --all
+      - run: npm run check:security
+
+  codeql:
+    name: CodeQL (security)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript
+      # Fail on any open high or critical alert for this ref, so a deploy never ships one.
+      - name: No open high or critical alerts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
+        run: |
+          total=0
+          for sev in critical high; do
+            list=$(gh api "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?state=open&severity=${sev}&ref=${REF}&per_page=100" \
+              --jq '.[] | "\(.rule.id) \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line) \(.rule.description)"')
+            n=$(printf '%s' "$list" | grep -c . || true)
+            echo "${sev}: ${n}"
+            if [ -n "$list" ]; then printf '%s\n' "$list"; fi
+            total=$((total + n))
+          done
+          if [ "$total" -gt 0 ]; then echo "Fix the CodeQL alerts above (Security > Code scanning) before deploying." >&2; exit 1; fi

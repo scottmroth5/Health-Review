@@ -26,6 +26,7 @@ import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from 
 import { runReview } from '../agent/review.js';
 import { assertSafeBinding, authSettings } from './auth.js';
 import { createAiAccess } from './ai-access.js';
+import { geoAllowFromEnv, loadCountryLookup } from './geo.js';
 
 const demo = process.env.HEALTH_INSTANCE === 'demo';
 const host = process.env.HOST ?? '127.0.0.1';
@@ -41,6 +42,10 @@ const trustProxy = (() => {
   return /^\d+$/.test(v) ? Number(v) : v;
 })();
 const auth = { settings };
+// US-only access (GEO_ALLOW, server/geo.js): the country database ships in the image; without it nothing is blocked.
+const geoAllow = geoAllowFromEnv();
+const geo = { allow: geoAllow, lookup: geoAllow.length ? await loadCountryLookup().catch(() => null) : null };
+if (geoAllow.length) console.log(geo.lookup ? `[geo] only ${geoAllow.join(', ')} allowed` : '[geo] the country database is missing: nothing is blocked');
 
 const quiet = { info() {}, warn() {}, error() {} };
 let store;
@@ -68,7 +73,7 @@ if (demo) {
   setInterval(() => { try { refresh(); } catch (err) { console.error(`[demo] refresh failed: ${err.name}: ${err.message}`); } }, 10 * 60 * 1000).unref();
   app = await buildApp({
     clock: () => zonedInstant(builtFor, 12, 0),
-    store, services: {}, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, instance: 'demo', features: { chat: false },
+    store, services: {}, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, instance: 'demo', features: { chat: false }, geo,
     requestAccessUrl: process.env.REQUEST_ACCESS_URL || null,
     catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')),
   });
@@ -183,6 +188,8 @@ if (demo) {
       if (!r.ok) throw Object.assign(new Error('restore test failed'), { name: 'RestoreTestFailed' });
     }),
   };
+  // A missing country database means the US-only block is off: email the administrator (once a day at most).
+  if (geoAllow.length && !geo.lookup) alerts.alert('geo-db', 'US-only blocking is off', 'The country database is missing from the server image, so requests from outside the allowed countries are not blocked. The next image build adds it.').catch(() => {});
   scheduler = createScheduler({
     jobs: schedulesFromEnv().filter((j) => runners[j.name]).map((j) => ({ ...j, run: runners[j.name] })),
     runs: jobRunsLookup(store.db),
@@ -190,7 +197,7 @@ if (demo) {
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
   app = await buildApp({
-    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer,
+    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer, geo,
     schedule: () => scheduler.status(),
   });
 }

@@ -34,7 +34,8 @@
     "check:personal": "node scripts/check-personal.js",
     "prepare": "node -e \"try{require('fs').existsSync('.git')&&require('child_process').execFileSync('git',['config','core.hooksPath','.githooks'],{stdio:'ignore'})}catch{}\"",
     "backup:test": "node --env-file=.env scripts/backup-verify.js",
-    "db:pending": "node scripts/migrations-pending.js"
+    "db:pending": "node scripts/migrations-pending.js",
+    "check:security": "node scripts/security-check.js"
   },
   "keywords": [],
   "author": "",
@@ -48,6 +49,7 @@
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.12.5",
     "google-auth-library": "^11.1.0",
+    "maxmind": "^5.0.7",
     "nodemailer": "^10.2.1"
   }
 }
