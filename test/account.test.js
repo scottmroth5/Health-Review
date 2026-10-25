@@ -164,7 +164,7 @@ test('Ask: the guides and the question only, on the user\'s AI; refused without 
   assert.equal(res.json().answer, 'Open Settings, then Data feeds.', 'dashes replaced');
   assert.equal(calls[0].model, HELP_MODEL);
   assert.equal(calls[0].prompt, 'How do I connect my Workout Log?');
-  assert.match(calls[0].system, /Connect Google Sheets/, 'the guides are the context');
+  assert.match(calls[0].system, /Create my Workout Log/, 'the guides are the context');
   const sent = JSON.stringify(calls[0]);
   for (const mine of ['Made-up Supplement', 'made-up-sheet', 'lee@example.com', 'Barbell Squat 100']) assert.ok(!sent.includes(mine), `never their data (${mine})`);
   const runRow = store.db.prepare("SELECT * FROM runs WHERE name = 'help-ask'").get();
