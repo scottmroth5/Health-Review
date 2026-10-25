@@ -31,6 +31,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 - No AI is used for you until you add your own Claude API key in Settings, and then only for your own weekly review, Next program chat, Help's Ask and reading program PDFs you choose, billed to you by Anthropic.
 - The operator may instead let you use the operator's own key up to a monthly limit, after telling you by email. Your use then shows on the operator's administration screen as a dollar amount, and when the limit is reached the AI stops until the next month. Your own key, if you add one, is always used instead.
 - What is sent: computed summaries of your data (averages, changes, statuses, never raw exports) and your own notes for the week, under Anthropic's API terms.
+- Excel uploads: an Excel Workout Log you upload is read once on the server to take your workouts out of it, and the file is not kept. It is never sent to Claude or anywhere else.
 - Help's Ask: only your question and the app's own guides are sent, never your data, and the answer is not kept.
 - Program PDFs: only when you choose **Read a PDF with Claude** on the Programs screen and confirm you have the right to use the program. The file is sent once so Claude can read the program's structure, and Health Review does not keep it; only the program you check and save stays in your account.
 - The server needs to use your key while you are away (the weekly review is scheduled), so the server can decrypt it; it does so only for your own requests.

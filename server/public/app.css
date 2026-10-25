@@ -566,3 +566,9 @@ fieldset.phase-box .row-head { display: flex; gap: 6px; align-items: center; }
 fieldset.phase-box .row-head input { flex: 1; min-width: 0; font-weight: 600; margin: 0; }
 .recent-workout { padding: 6px 0; border-bottom: 1px solid var(--grid); }
 body.read-only #log-workout-card { display: none !important; }
+
+/* Excel Workout Log (Settings) */
+.excel-box { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--grid); }
+.excel-box h4 { margin: 0 0 6px; }
+.excel-upload input[type="file"] { max-width: 100%; }
+body.read-only .excel-upload { display: none !important; }

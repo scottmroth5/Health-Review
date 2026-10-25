@@ -55,8 +55,8 @@ export function checkWorkout(body) {
   return { workout: clean(body.workout, 200), exercises };
 }
 
-/** After a change: the dictionary onto the new names, then blocks and phases as a sync does (confirmed blocks untouched). */
-function afterChange(db, names, { today, now, dictionary, catalog }) {
+/** After a change to the log: the dictionary onto the given names, then blocks and phases as a sync does (confirmed blocks untouched). */
+export function afterChange(db, names, { today, now, dictionary, catalog }) {
   const update = db.prepare(`UPDATE strength_exercises SET canonical_id = ?, implement = ?, movement_pattern = ?, is_primary = ?, map_status = ?, normalized_at = ?
     WHERE user_id = @uid AND exercise = ?`);
   for (const name of new Set(names)) {

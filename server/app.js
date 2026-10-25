@@ -22,6 +22,8 @@ import { confirmBlocks, currentProgram, listBlocks, refreshPhases, ReviewError }
 import { ProgramError, SOURCES, deleteProgram, exportPrograms, importPrograms, saveProgram } from '../ingest/user-programs.js';
 import { MAX_PDF_BYTES, extractProgram, isPdf } from '../agent/extract-program.js';
 import { WorkoutError, deleteWorkout, listWorkouts, saveWorkout, workoutSuggestions } from '../ingest/app-workouts.js';
+import { MAX_UPLOAD_BYTES, TEMPLATE_NAME, UploadError, ingestWorkbook, workoutTemplate } from '../ingest/excel-upload.js';
+import { XLSX_TYPE, XlsxError } from '../tools/xlsx.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../agent/advisor-chat.js';
 // agent-core prices calls but does not export its price table yet; import it by path until a release exports it.
 import { costFromUsage } from '../node_modules/@scottmroth5/agent-core/src/pricing.js';
@@ -33,7 +35,7 @@ import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
 import { isTimeZone, localStamp, ownerTz, withTimeZone } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
-import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
+import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, startUserRun, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
 import { createPendingUser, deleteUserData, exportUserData, listUsers, setMapsShared, setOwnerKey, setUserStatus } from './admin-queries.js';
 import { askHelp, MAX_QUESTION_CHARS } from '../agent/help.js';
 import { SESSION_COOKIE, cookie } from './session.js';
@@ -500,6 +502,49 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
   app.delete('/api/workouts/:date', { schema: { summary: "Delete the day's workout logged in the app", params: dateOnly, response: { 200: anyObject } } },
     async (req, reply) => (deleteWorkout(db, requireDate(req.params.date), workoutCtx(req)) ? { deleted: true } : reply.code(404).send({ error: 'No workout logged in the app that day' })));
+
+  // ---- the Excel Workout Log (ingest/excel-upload.js, tools/xlsx.js): a template to download, and uploading it ----
+  // Only .xlsx is accepted: this content type (any other gets 415 before anything is read), a name ending .xlsx, up to
+  // 5 MB; the workbook itself is checked by tools/xlsx.js (a real zip, no macros, no legacy .xls, no external links,
+  // no DOCTYPE, size and row limits). Read in memory, never stored or logged; never in the demo.
+  app.addContentTypeParser(XLSX_TYPE, { parseAs: 'buffer', bodyLimit: MAX_UPLOAD_BYTES }, (req, body, done) => done(null, body));
+  app.get('/api/workout-log/template.xlsx', { schema: { summary: 'The Excel Workout Log to download: a tab for this year with the Workout Log columns, and How to use' } },
+    async (req, reply) => reply.type(XLSX_TYPE).header('Content-Disposition', `attachment; filename="${TEMPLATE_NAME}"`).send(workoutTemplate(q.localDate(clock()).slice(0, 4))));
+  const uploadTimes = new Map(); // uid -> this hour's upload times
+  const UPLOADS_PER_HOUR = 10;
+  app.post('/api/workout-log/upload', {
+    bodyLimit: MAX_UPLOAD_BYTES,
+    schema: { summary: 'Upload your Excel Workout Log (.xlsx only, up to 5 MB): each tab named with a year replaces that year\'s rows', response: { 200: anyObject } },
+  }, async (req, reply) => {
+    if (authMode === 'demo' || instance === 'demo') return reply.code(403).send({ error: 'Uploads are turned off in the demo' });
+    if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith(XLSX_TYPE)) return reply.code(415).send({ error: 'Upload an Excel workbook (.xlsx)' });
+    let name = '';
+    try { name = decodeURIComponent(String(req.headers['x-file-name'] ?? '')); } catch { name = ''; }
+    if (!/\.xlsx$/i.test(name) || name.length > 200) return reply.code(415).send({ error: 'Upload an Excel workbook (.xlsx); other files are not accepted' });
+    const uid = uidOf(req);
+    if (uid === OWNER_ID) return reply.code(409).send({ error: "The owner's Workout Log comes from the server's Google Sheet" });
+    if (isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
+    if (db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").get()) {
+      return reply.code(409).send({ error: 'You sync a Google Sheet Workout Log. Disconnect Google Sheets in Settings to upload Excel instead.' });
+    }
+    const hourAgo = clock().getTime() - 3600_000;
+    const recent = (uploadTimes.get(uid) ?? []).filter((t) => t > hourAgo);
+    if (recent.length >= UPLOADS_PER_HOUR) return reply.code(429).send({ error: `At most ${UPLOADS_PER_HOUR} uploads an hour; try again later` });
+    uploadTimes.set(uid, [...recent, clock().getTime()]);
+    if (!Buffer.isBuffer(req.body) || !req.body.length) return reply.code(400).send({ error: 'The file is empty' });
+    const run = startUserRun(userStore(), 'workout-upload', { bytes: req.body.length }, { info() {}, warn() {}, error() {} });
+    let result;
+    try {
+      result = ingestWorkbook(db, req.body, workoutCtx(req));
+    } catch (err) {
+      if (!(err instanceof XlsxError || err instanceof UploadError)) { run.finish('error', { error: err.name }); throw err; }
+      run.finish('error', { error: 'not_accepted' });
+      return reply.code(400).send({ error: err.message });
+    }
+    run.finish('ok', { years: result.years.length, exercises: result.exercises, sets: result.sets, notes: result.notes });
+    log.info(`[upload] workout log ok years=${result.years.length} exercises=${result.exercises} sets=${result.sets}`);
+    return result;
+  });
 
   // Program blocks for a user to confirm in the app (the owner also has npm run programs:review for edits, merges and splits).
   app.get('/api/program/blocks', { schema: { summary: 'Your program blocks, detected and confirmed, oldest first', response: { 200: { type: 'array', items: anyObject } } } },

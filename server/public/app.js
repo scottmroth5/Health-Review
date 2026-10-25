@@ -621,7 +621,7 @@ async function loadSettingsView() {
   renderAccountControls(a);
 }
 
-const FEED_LABELS = { appleHealth: 'Apple Health (Health Auto Export)', workoutLog: 'Workout Log (Google Sheets)', manual: 'Entered in the app (check-ins, drinks, meds, labs, workouts)' };
+const FEED_LABELS = { appleHealth: 'Apple Health (Health Auto Export)', workoutLog: 'Workout Log (Google Sheets or Excel)', manual: 'Entered in the app (check-ins, drinks, meds, labs, workouts)' };
 const SHEETS_RESULTS = { connected: 'Google Sheets connected. Now paste your Workout Log link, or create one.', cancelled: 'Google Sheets was not connected.',
   created: 'Your Workout Log was created in your Google Drive and saved here. Open it to start logging; it syncs every morning or when you tap Sync now.',
   'create-failed': 'Google Sheets is connected, but the Workout Log could not be created. Try Create my Workout Log again.',
@@ -684,6 +684,7 @@ function renderFeeds(a, shownToken = null) {
             if (!confirm('Disconnect Google Sheets? Health Review forgets the permission and your sheet.')) return;
             renderFeeds(await api('DELETE', '/api/account/google'));
           } }, 'Disconnect')))),
+    f.fromServer ? null : excelBox(wl),
   ]);
   if (!f.chosen.manual && !f.fromServer) return;
 }
@@ -728,6 +729,42 @@ function ownerKeyControl(u, run, done) {
   h('label', {}, `Type ${u.email} to confirm`, h('input', { name: 'confirm', type: 'email', autocomplete: 'off', required: true })),
   h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Use my key'), h('button', { type: 'button', class: 'ghost', onclick: () => { form.hidden = true; } }, 'Cancel')));
   return h('div', {}, h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: () => { form.hidden = false; form.elements.cap.focus(); } }, 'Use my Claude key')), form);
+}
+
+/**
+ * The Excel Workout Log: download the workbook, and upload it (.xlsx only, up to 5 MB; checked here and again on the
+ * server). Not while a Google Sheet is the Workout Log, so the two never overwrite each other.
+ */
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+function excelBox(wl) {
+  const status = h('p', { class: 'status small', role: 'status' });
+  const file = h('input', { type: 'file', accept: `.xlsx,${XLSX_MIME}`, 'aria-label': 'Excel Workout Log file' });
+  const upload = async () => {
+    const f = file.files[0];
+    if (!f) { status.textContent = 'Choose your Excel Workout Log first.'; return; }
+    if (!/\.xlsx$/i.test(f.name)) { status.textContent = 'Only Excel workbooks (.xlsx) can be uploaded.'; return; }
+    if (f.size > 5 * 1024 * 1024) { status.textContent = 'The file is over 5 MB.'; return; }
+    if (state.readOnly) { status.textContent = READ_ONLY_MESSAGE; return; }
+    status.textContent = 'Uploading...';
+    try {
+      const res = await fetch('/api/workout-log/upload', { method: 'POST', headers: { 'Content-Type': XLSX_MIME, 'X-File-Name': encodeURIComponent(f.name) }, body: f });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `Upload failed (${res.status})`);
+      const warned = Object.values(data.warnings ?? {}).reduce((s, n) => s + n, 0);
+      status.textContent = `Read ${data.years.join(', ')}: ${data.exercises.toLocaleString()} exercises, ${data.sets.toLocaleString()} sets${data.notes ? `, ${data.notes} notes` : ''}.${warned ? ` ${warned} rows had something odd; see the Workout Log guide.` : ''}`;
+      file.value = '';
+    } catch (err) {
+      status.textContent = err.message;
+    }
+  };
+  return h('div', { class: 'excel-box' },
+    h('h4', {}, 'Or use Excel'),
+    wl.sheetSet ? h('p', { class: 'muted small' }, 'You sync a Google Sheet as your Workout Log. To use Excel instead, Disconnect Google Sheets first.')
+      : h('div', {},
+        h('p', { class: 'muted small' }, 'Keep your log in Excel: download the workbook, log your workouts in it, then upload it here whenever you like. Each upload replaces the years in the file. Only .xlsx files are accepted.'),
+        h('div', { class: 'actions' }, h('a', { class: 'button ghost', href: '/api/workout-log/template.xlsx', download: '' }, 'Download the Excel Workout Log')),
+        h('div', { class: 'actions excel-upload' }, file, h('button', { type: 'button', onclick: upload }, 'Upload')),
+        status));
 }
 
 /** Users (administrators): pending requests first; each user's status, feeds, AI and counts, with the account switches. */

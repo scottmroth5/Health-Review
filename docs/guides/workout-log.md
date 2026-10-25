@@ -11,6 +11,14 @@ Health Review can read your lifting log from your own Google Sheet: training vol
 
 Already keep a log in Google Sheets? Use **Connect an existing sheet** instead, and lay it out as below.
 
+## Excel instead
+
+- Don't use Google? In **Settings**, then **Data feeds**, under **Workout Log**, tap **Download the Excel Workout Log**. It has the same columns as below and a **How to use** tab.
+- Log your workouts in it in Excel, save it, then choose the file under **Or use Excel** and tap **Upload**. Each upload replaces the years in the file (workouts you logged in the app stay).
+- Only Excel workbooks (`.xlsx`) up to 5 MB are accepted. Files with macros (`.xlsm`), old `.xls` files, password-protected workbooks and workbooks linking to other files are refused; save a plain `.xlsx` copy and upload that.
+- The file is read once to take your workouts out of it and is not kept. You can upload up to 10 times an hour.
+- If you sync a Google Sheet, disconnect it first: the two would overwrite each other.
+
 ## The sheet layout
 
 - One **tab per year**, named with the year only: `2025`, `2026`.

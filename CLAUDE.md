@@ -447,6 +447,17 @@ access), /:id/pause and /:id/resume (approved to paused and back), /:id/owner-ke
 user's email typed and a cap; the user is emailed on and off), /:id/maps ({ shared }). None act on an admin; owner-key and
 maps need an approved or paused user. Paused: signs in and sees their data; ingest token 401, POST /api/sync 403, no AI,
 no scheduled jobs (activeUserIds), and a note on Home. The scheduled review skips a user with no AI with its reason.
+Excel Workout Log (2026-10-25): GET /api/workout-log/template.xlsx (ingest/excel-upload.js workoutTemplate: the year tab with
+WORKOUT_LOG_HEADER, bold and frozen, Date as m/d/yyyy, and How to use) and POST /api/workout-log/upload: the raw body with
+the .xlsx content type only (its own parser, 5 MB; anything else 415), an X-File-Name ending .xlsx, never the demo, the
+owner, a paused user or one with a Google Sheet Workout Log set, 10 an hour per user. tools/xlsx.js (no dependency; Node
+zlib) reads it strictly: the central directory, no encryption or zip64, safe part names, at most 200 parts, inflation
+capped (10 MB a part, 40 MB in all, ratio 200), a spreadsheetml workbook only (no .xls, macros, external links or
+embedded objects), no DOCTYPE or ENTITY, at most 50 tabs, 20,000 rows and 60 columns, cells cut at 2,000 characters,
+formulas as their cached values; 1904 workbooks shift the Date column. Year tabs go through parseWorkoutLogTab and replace
+those years (tab_year = year), then afterChange (ingest/app-workouts.js); the file is never stored or logged, and the
+workout-upload run keeps counts only. test/fixtures/excel holds files saved by Excel with made-up rows and personal
+information removed.
 Enhancements (2026-10-25): sync, the manual review run and the chat question are one at a time per user (app.js syncing,
 reviewRuns, chatting), never shared. server/alerts.js emails the admin: a scheduled job failing (per user for sync and
 review, at most once a day per kind, settings row alert:<key> on the owner, cleared on recovery), the owner's week still

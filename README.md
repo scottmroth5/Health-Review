@@ -510,6 +510,10 @@ asks first. From the command line, `npm run review -- --force` writes it anyway,
 sync, no cost); otherwise they try again, so a week skipped on Sunday morning for a late Apple Health export is usually
 written that afternoon. If it is still skipped at Tuesday's catch-up you get an email.
 
+**Excel Workout Log.** Users without Google can download an Excel workbook laid out like the Workout Log (Settings,
+Data feeds, Workout Log), log in it, and upload it; each upload replaces the years in the file. Only .xlsx up to 5 MB, no
+macros or old .xls; the file is read in memory and not kept. Not in the demo.
+
 **Emails when something needs attention.** The server emails you (ADMIN_EMAIL, else your address) when a scheduled
 sync, review, backup or restore test fails (once a day at most, and again after it recovers), and when your Health Auto
 Export goes quiet (once, until it is back). Dates and error names only.
