@@ -1,0 +1,4 @@
+# CodeQL alerts reviewed and accepted: rule id, the file, then why. The CI gate (ci.yml) skips exactly these pairs;
+# anything else that is high or critical fails CI and stops the deploy. Review this list when the code it names changes.
+js/weak-cryptographic-algorithm ingest/program-blocks.js  UUID v5 is defined with SHA-1 (RFC 9562); it derives stable, non-secret session IDs, not a security use, and changing it would change stored IDs
+js/file-system-race evals/run-review-eval.mjs  the review eval runner, run by hand on the owner's computer over its own result files; editing it needs a harness re-approval

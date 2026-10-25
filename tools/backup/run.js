@@ -98,19 +98,21 @@ export async function runBackup({ db, passphrase, extras = [], drive, toDir, dat
  * files next to it as restored-<name>. Checks the restored database's integrity.
  */
 export function restoreBackup({ file, passphrase, outPath }) {
-  if (existsSync(outPath)) throw new Error(`${outPath} already exists; choose a new file name`);
+  // Never over an existing file: 'wx' refuses one in the same step as the write (no check-then-write gap).
+  const writeNew = (path, data, message) => {
+    try { writeFileSync(path, data, { flag: 'wx' }); } catch (err) { throw err.code === 'EEXIST' ? new Error(message) : err; }
+  };
   const files = unpack(decrypt(file, passphrase));
   const db = files.find((f) => f.name === 'health.db');
   if (!db) throw new Error('The backup has no database in it');
-  writeFileSync(outPath, db.data);
+  writeNew(outPath, db.data, `${outPath} already exists; choose a new file name`);
   const check = new Database(outPath, { readonly: true });
   const integrity = check.pragma('integrity_check', { simple: true });
   check.close();
   if (integrity !== 'ok') throw new Error('The restored database failed its integrity check');
   const others = files.filter((f) => f !== db).map((f) => {
     const p = join(dirname(outPath), `restored-${basename(f.name)}`);
-    if (existsSync(p)) throw new Error(`${p} already exists`);
-    writeFileSync(p, f.data);
+    writeNew(p, f.data, `${p} already exists`);
     return p;
   });
   return { database: outPath, others };

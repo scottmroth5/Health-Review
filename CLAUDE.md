@@ -455,7 +455,11 @@ forcing a fresh download per build) it fails open and the admin is emailed. Week
 patch-level updates auto-merge once CI passes, dependabot-automerge.yml), the scheduled rebuild in deploy.yml
 (Mondays 13:00 UTC: checks, newest base image and country database, Trivy, deploy, tag sha-<7>-<date>), and the OWASP ZAP
 baseline scan of the demo (zap.yml, vars.DEMO_URL). Third-party actions are pinned to commit SHAs. Email subjects drop
-control characters (tools/mail.js). A self-run pen test (2026-10-25, 35 checks: stored XSS on every screen, CSRF, open
+control characters (tools/mail.js). Every route has a per-address ceiling (@fastify/rate-limit, 600 a minute; 6000 locally;
+/api/health exempt) under the tighter sign-in, refused-request, ingest and demo limits. The first CodeQL run (18 high)
+led to: that ceiling, cookie and spreadsheet attribute names kept off object prototypes (parseCookies, tools/xlsx.js
+attrs as a Map), the Excel reader's XML read by linear scans instead of backtracking regexes (no ReDoS), and
+check-then-read file code replaced by single-step opens; two reviewed exceptions are listed in codeql-accepted.txt. A self-run pen test (2026-10-25, 35 checks: stored XSS on every screen, CSRF, open
 redirects, traversal, tampering, prototype pollution, oversized bodies, headers) found one issue, fixed: line breaks in a
 feedback subject.
 Goals, tiles, feedback, prompt builder (2026-10-25): server/public/goals.js (pure; the browser and the server import it)
@@ -597,7 +601,8 @@ for injection (SQL, XSS, email headers, commands), cross-user access, auth and C
 input limits, and dependency changes, plus correctness; report the findings and fix serious ones before pushing. Then
 CI gates every deploy: npm audit, npm run check:security (scripts/security-check.js: no raw HTML sinks or eval in the
 browser code, CSP script-src 'self' only, no stray child_process, request-built redirects or paths, or raw control
-characters), CodeQL (security-extended; an open high or critical alert fails CI), and Trivy on the image (fixable high or
+characters), CodeQL (security-extended; an open high or critical alert fails CI unless its rule and file are in
+.github/codeql-accepted.txt with a reason), and Trivy on the image (fixable high or
 critical stops the publish; accepted exceptions in .trivyignore with a reason).
 Every new tool gets a JSON schema, a handler, and a unit test.
 Every metric change requires passing fixture tests.

@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
+import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { registerAuth } from './auth.js';
 import { registerSecurityHeaders, registerRateLimits, errorReply, DEMO_REQUEST_LIMIT } from './security.js';
@@ -165,6 +166,16 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // Security headers always; rate limits once the server can be reached from outside (sign-in, refused requests, and every
   // request in the public demo); then the sign-in check (server/auth.js).
   registerSecurityHeaders(app, { https: String(auth.settings?.publicUrl ?? '').startsWith('https://') });
+  // A ceiling on every route per address (@fastify/rate-limit): far above normal use (a screen makes about 15 requests),
+  // it stops floods and scripted abuse. The deploy check is exempt. Tighter limits for sign-in, refused requests, ingest
+  // posts and the demo follow (server/security.js).
+  await app.register(fastifyRateLimit, {
+    global: true,
+    max: authMode === 'none' ? 6000 : 600,
+    timeWindow: '1 minute',
+    allowList: (req) => req.url === '/api/health',
+    errorResponseBuilder: (req, ctx) => ({ statusCode: 429, error: 'Too many requests from this address. Try again later.', retryAfter: Math.ceil(ctx.ttl / 1000) }),
+  });
   if (authMode !== 'none') registerRateLimits(app, { all: authMode === 'demo' ? DEMO_REQUEST_LIMIT : null, now: auth.now });
   // Google sign-in maps an address to its users row; the first allowed address is the owner (user 1) until registration.
   if (authMode === 'google' && auth.settings?.allowed?.[0]) syncOwnerEmail(store.db, { OWNER_EMAIL: auth.settings.allowed[0] });

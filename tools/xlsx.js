@@ -101,12 +101,66 @@ function decode(s) {
     return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : '';
   });
 }
+// Uploaded XML is read with linear scans (indexOf), never backtracking regular expressions, so a crafted file cannot
+// make reading it slow; attribute names go into a Map, never onto an object (no prototype tampering).
+const SPACE = new Set([' ', '\t', '\r', '\n']);
+const NAME_CHAR = /[\w:.-]/;
+/** A tag's attributes: Map name -> decoded value. */
 function attrs(text) {
-  const out = {};
-  for (const m of text.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) out[m[1]] = decode(m[2] ?? m[3]);
+  const out = new Map();
+  const n = text.length;
+  let i = 0;
+  while (i < n) {
+    while (i < n && SPACE.has(text[i])) i += 1;
+    const start = i;
+    while (i < n && NAME_CHAR.test(text[i])) i += 1;
+    if (i === start) { i += 1; continue; }
+    const name = text.slice(start, i);
+    while (i < n && SPACE.has(text[i])) i += 1;
+    if (text[i] !== '=') continue;
+    i += 1;
+    while (i < n && SPACE.has(text[i])) i += 1;
+    const quote = text[i];
+    if (quote !== '"' && quote !== "'") continue;
+    const end = text.indexOf(quote, i + 1);
+    if (end < 0) break;
+    out.set(name, decode(text.slice(i + 1, end)));
+    i = end + 1;
+  }
   return out;
 }
-const textOf = (xml) => [...xml.replace(/<rPh\b[\s\S]*?<\/rPh>/g, '').matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>|<t\b[^>]*\/>/g)].map((m) => decode(m[1] ?? '')).join('');
+/** Each <name ...>inner</name> or <name .../> in order: { attrs: the tag's attribute text, inner: text or null }. */
+function* elements(xml, name) {
+  const open = `<${name}`;
+  const close = `</${name}>`;
+  let i = 0;
+  while ((i = xml.indexOf(open, i)) !== -1) {
+    const after = xml[i + open.length];
+    if (after !== undefined && !SPACE.has(after) && after !== '/' && after !== '>') { i += open.length; continue; }
+    const gt = xml.indexOf('>', i + open.length);
+    if (gt < 0) return;
+    const head = xml.slice(i + open.length, gt);
+    if (head.endsWith('/')) { yield { attrs: head.slice(0, -1), inner: null }; i = gt + 1; continue; }
+    const end = xml.indexOf(close, gt + 1);
+    if (end < 0) { yield { attrs: head, inner: xml.slice(gt + 1) }; return; }
+    yield { attrs: head, inner: xml.slice(gt + 1, end) };
+    i = end + close.length;
+  }
+}
+const first = (xml, name) => elements(xml, name).next().value ?? null;
+/** The text of a string item: its <t> runs joined, leaving out phonetic guides (<rPh>). */
+function textOf(xml) {
+  let plain = '';
+  let i = 0;
+  for (let at; (at = xml.indexOf('<rPh', i)) !== -1;) {
+    plain += xml.slice(i, at);
+    const end = xml.indexOf('</rPh>', at);
+    if (end < 0) { i = xml.length; break; }
+    i = end + 6;
+  }
+  plain += xml.slice(i);
+  return [...elements(plain, 't')].map((e) => decode(e.inner ?? '')).join('');
+}
 const colIndex = (ref) => {
   const letters = /^([A-Z]{1,3})\d*$/.exec(ref ?? '')?.[1];
   if (!letters) return null;
@@ -133,47 +187,48 @@ export function readXlsx(buf, limits = LIMITS) {
   if (!/spreadsheetml\.(sheet|template)\.main\+xml/.test(types)) fail('This is not an Excel workbook (.xlsx).');
   const workbook = safeXml(zip.text('xl/workbook.xml'), 'workbook') ?? fail('This is not an Excel workbook (.xlsx): it has no workbook part.');
   const rels = safeXml(zip.text('xl/_rels/workbook.xml.rels'), 'workbook links') ?? fail('This is not an Excel workbook (.xlsx): the file is damaged.');
-  const date1904 = /<workbookPr\b[^>]*\bdate1904\s*=\s*["'](1|true)["']/i.test(workbook);
+  const date1904 = ['1', 'true'].includes(String(attrs(first(workbook, 'workbookPr')?.attrs ?? '').get('date1904') ?? '').toLowerCase());
   const targets = new Map();
-  for (const m of rels.matchAll(/<Relationship\b([^>]*?)\/?>/g)) {
-    const a = attrs(m[1]);
-    if (a.TargetMode === 'External') continue;
-    const t = String(a.Target ?? '');
+  for (const rel of elements(rels, 'Relationship')) {
+    const a = attrs(rel.attrs);
+    if (a.get('TargetMode') === 'External') continue;
+    const t = String(a.get('Target') ?? '');
     const path = t.startsWith('/') ? t.slice(1) : `xl/${t}`;
     if (path.split('/').includes('..')) fail('This workbook has a part with an unsafe name.');
-    targets.set(a.Id, path);
+    targets.set(a.get('Id'), path);
   }
   const shared = [];
   const sst = safeXml(zip.text('xl/sharedStrings.xml'), 'shared strings');
-  if (sst) for (const m of sst.matchAll(/<si>([\s\S]*?)<\/si>|<si\/>/g)) shared.push(textOf(m[1] ?? ''));
-  const sheetTags = [...workbook.matchAll(/<sheet\b([^>]*?)\/?>/g)].map((m) => attrs(m[1]));
+  if (sst) for (const si of elements(sst, 'si')) shared.push(textOf(si.inner ?? ''));
+  const sheetTags = [...elements(workbook, 'sheet')].map((e) => attrs(e.attrs));
   if (sheetTags.length > limits.sheets) fail(`This workbook has more than ${limits.sheets} tabs.`);
   const cut = (s) => (s.length > limits.cellChars ? s.slice(0, limits.cellChars) : s);
   const sheets = sheetTags.map((a) => {
-    const rid = Object.entries(a).find(([k]) => k === 'r:id' || k.endsWith(':id'))?.[1];
-    const xml = safeXml(zip.text(targets.get(rid) ?? ''), `tab ${a.name}`);
-    if (xml === null) return { name: a.name ?? '', rows: [] };
+    const name = a.get('name') ?? '';
+    const rid = [...a].find(([k]) => k === 'r:id' || k.endsWith(':id'))?.[1];
+    const xml = safeXml(zip.text(targets.get(rid) ?? ''), `tab ${name}`);
+    if (xml === null) return { name, rows: [] };
     const rows = [];
     let nextRow = 0;
-    for (const rm of xml.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
-      const r = Number(attrs(rm[1]).r);
+    for (const rm of elements(xml, 'row')) {
+      const r = Number(attrs(rm.attrs).get('r'));
       const at = Number.isInteger(r) && r > 0 ? r - 1 : nextRow;
       nextRow = at + 1;
-      if (!rm[2]) continue;
-      if (at >= limits.rows + 1) fail(`Tab ${a.name} has more than ${limits.rows} rows.`);
+      if (!rm.inner) continue;
+      if (at >= limits.rows + 1) fail(`Tab ${name} has more than ${limits.rows} rows.`);
       const row = [];
       let nextCol = 0;
-      for (const cm of rm[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-        const ca = attrs(cm[1]);
-        const col = colIndex(ca.r) ?? nextCol;
+      for (const cm of elements(rm.inner, 'c')) {
+        const ca = attrs(cm.attrs);
+        const col = colIndex(ca.get('r')) ?? nextCol;
         nextCol = col + 1;
         if (col >= limits.columns) continue;
-        const inner = cm[2] ?? '';
-        const v = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(inner)?.[1];
+        const inner = cm.inner ?? '';
+        const v = first(inner, 'v')?.inner ?? undefined;
         let value = '';
-        switch (ca.t) {
+        switch (ca.get('t')) {
           case 's': value = shared[Number(v)] ?? ''; break;
-          case 'inlineStr': value = textOf(/<is\b[^>]*>([\s\S]*?)<\/is>/.exec(inner)?.[1] ?? ''); break;
+          case 'inlineStr': value = textOf(first(inner, 'is')?.inner ?? ''); break;
           case 'str': value = v === undefined ? '' : decode(v); break;
           case 'b': value = v === '1' || v === 'true'; break;
           case 'e': value = ''; break;
@@ -193,8 +248,8 @@ export function readXlsx(buf, limits = LIMITS) {
       while (rows.length < at) rows.push([]);
       rows[at] = row;
     }
-    if (rows.length > limits.rows + 1) fail(`Tab ${a.name} has more than ${limits.rows} rows.`);
-    return { name: a.name ?? '', rows };
+    if (rows.length > limits.rows + 1) fail(`Tab ${name} has more than ${limits.rows} rows.`);
+    return { name, rows };
   });
   return { sheets, date1904 };
 }

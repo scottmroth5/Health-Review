@@ -65,6 +65,15 @@ jobs:
           for sev in critical high; do
             list=$(gh api "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?state=open&severity=${sev}&ref=${REF}&per_page=100" \
               --jq '.[] | "\(.rule.id) \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line) \(.rule.description)"')
+            # Reviewed, accepted alerts (.github/codeql-accepted.txt: rule and file) are listed but do not fail the gate.
+            list=$(printf '%s\n' "$list" | while read -r rule loc rest; do
+              [ -z "$rule" ] && continue
+              if grep -v '^#' .github/codeql-accepted.txt | awk 'NF { print $1 " " $2 }' | grep -qxF "$rule ${loc%%:*}"; then
+                echo "accepted: $rule $loc" >&2
+              else
+                echo "$rule $loc $rest"
+              fi
+            done)
             n=$(printf '%s' "$list" | grep -c . || true)
             echo "${sev}: ${n}"
             if [ -n "$list" ]; then printf '%s\n' "$list"; fi

@@ -35,7 +35,8 @@ const STATE = {
 function ensureState() {
   mkdirSync(FLOW, { recursive: true });
   const path = join(FLOW, '_state.json');
-  if (!existsSync(path)) writeFileSync(path, `${JSON.stringify(STATE, null, 2)}\n`);
+  // Created only when missing, in one step ('wx' fails if it exists), so nothing can slip in between a check and the write.
+  try { writeFileSync(path, `${JSON.stringify(STATE, null, 2)}\n`, { flag: 'wx' }); } catch (err) { if (err.code !== 'EEXIST') throw err; }
 }
 
 function readJsonl(path) {

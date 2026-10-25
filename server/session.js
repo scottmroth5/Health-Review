@@ -39,14 +39,22 @@ export function verify(token, key, now = Date.now()) {
   }
 }
 
-/** Cookie header -> { name: value }. */
+/**
+ * Cookie header -> { name: value }, a plain object with no prototype. Only ordinary cookie names are kept (letters,
+ * digits, _ and -), so a cookie named __proto__ or constructor can never reach an object's prototype.
+ */
 export function parseCookies(header) {
-  const out = {};
+  const found = new Map();
   for (const part of String(header ?? '').split(';')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i <= 0) continue;
+    const name = part.slice(0, i).trim();
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(name) || name === '__proto__' || name === 'constructor' || name === 'prototype') continue;
+    let value = part.slice(i + 1).trim();
+    try { value = decodeURIComponent(value); } catch { continue; }
+    found.set(name, value);
   }
-  return out;
+  return Object.assign(Object.create(null), Object.fromEntries(found));
 }
 
 /** A Set-Cookie value. maxAge in seconds (0 clears the cookie). */

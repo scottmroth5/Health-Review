@@ -1,5 +1,5 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { localDate as ownerDate, zonedParts } from '../tools/time.js';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
@@ -180,9 +180,17 @@ export function evalSpendRows(evalDir, price) {
   const rows = [];
   for (const variant of readdirSync(evalDir, { withFileTypes: true })) {
     const file = join(evalDir, variant.name, 'results.jsonl');
-    if (!variant.isDirectory() || !existsSync(file)) continue;
-    const month = localDate(statSync(file).mtime).slice(0, 7);
-    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    if (!variant.isDirectory()) continue;
+    // Opened once: its date and its text come from the same open file (no check-then-read gap); a missing one is skipped.
+    let text;
+    let month;
+    let fd;
+    try {
+      fd = openSync(file, 'r');
+      month = localDate(fstatSync(fd).mtime).slice(0, 7);
+      text = readFileSync(fd, 'utf8');
+    } catch { continue; } finally { if (fd !== undefined) closeSync(fd); }
+    for (const line of text.split(/\r?\n/)) {
       if (!line.trim()) continue;
       let row;
       try { row = JSON.parse(line); } catch { continue; }
