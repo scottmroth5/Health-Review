@@ -41,6 +41,8 @@ services:
     environment:
       AUTH_MODE: demo
       PUBLIC_URL: https://${DEMO_SITE_ADDRESS:?set DEMO_SITE_ADDRESS in .env}
+      # The demo's "Request access" link: the main app's sign-in, which leads new people to Request access.
+      REQUEST_ACCESS_URL: https://${SITE_ADDRESS:?set SITE_ADDRESS in .env}/auth/login
       DATA_DIR: /app/data
       HOST: 0.0.0.0
       PORT: "5188"

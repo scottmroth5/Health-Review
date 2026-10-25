@@ -67,6 +67,7 @@ if (demo) {
   app = await buildApp({
     clock: () => zonedInstant(builtFor, 12, 0),
     store, services: {}, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, instance: 'demo', features: { chat: false },
+    requestAccessUrl: process.env.REQUEST_ACCESS_URL || null,
     catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')),
   });
 } else {

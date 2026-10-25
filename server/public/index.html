@@ -34,12 +34,13 @@
       <a href="#reviews">Reviews</a>
       <a href="#prompt">Prompt</a>
       <a href="#activity">Activity</a>
+      <a href="#help">Help</a>
       <a href="#settings">Settings</a>
       <a href="#users" data-admin-only hidden>Users</a>
     </nav>
   </header>
 
-  <p id="instance-banner" class="instance-banner" role="note" hidden><span class="long">Demo instance: everything here is made-up sample data. Sync, reviews and the Claude chat are off.</span><span class="short">Demo: made-up data, sync and reviews off.</span></p>
+  <p id="instance-banner" class="instance-banner" role="note" hidden><span class="long">Demo instance: everything here is made-up sample data. Sync, reviews and the Claude chat are off.</span><span class="short">Demo: made-up data, sync and reviews off.</span> <a id="request-access" hidden>Request access</a></p>
 
   <main>
     <!-- Home: a tile per section; Demo mode and the account live here only -->
@@ -90,11 +91,16 @@
           <span class="tile-name">Users</span><span class="tile-desc">Approve and manage</span>
           <span class="tile-badge" data-home-badge="users" hidden></span>
         </a>
+        <a class="home-tile" href="#help">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/></svg>
+          <span class="tile-name">Help</span><span class="tile-desc">Guides and questions</span>
+        </a>
         <a class="home-tile" href="#activity">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
           <span class="tile-name">Activity</span><span class="tile-desc">Jobs, runs, spend</span>
         </a>
       </nav>
+      <div class="card home-request" id="home-request" hidden><strong>Want your own?</strong> Health Review is shared by invitation. <a id="home-request-link">Request access</a> with your Google account.</div>
       <div class="card home-sync sync"><span id="sync-status" class="muted" role="status"></span> <button type="button" id="sync-now" class="ghost">Sync now</button></div>
       <div class="card home-settings">
         <label class="demo-toggle"><input type="checkbox" id="demo-mode"> <span><strong>Demo mode</strong><span class="small muted block">Hides drinking and CBD on screen, for showing the app to others. Saved in this browser; nothing stored changes.</span></span></label>
@@ -431,6 +437,8 @@
       <div class="card">
         <h2>Account</h2>
         <p id="settings-account" class="small"></p>
+        <div id="account-controls"></div>
+        <p class="status" id="account-status" role="status"></p>
         <p class="muted small">Your profile for targets and heart rate zones (birth year, sex, height, Zone 2) is on the Health tab.
           <a href="/privacy" target="_blank">Privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
       </div>
@@ -472,6 +480,32 @@
         <h2>Program blocks</h2>
         <p class="muted small">Each run of a program found in your Workout Log. Confirm a block so phases and progress follow it.</p>
         <div id="program-blocks"></div>
+      </div>
+    </section>
+
+    <!-- Help: the setup guides, and Ask (answered from the guides with the user's own AI) -->
+    <section id="view-help" class="view" hidden>
+      <div class="card">
+        <h2>Guides</h2>
+        <ul class="small">
+          <li><a href="/guides/using-the-app" target="_blank">Using Health Review</a>: what each part of the app does</li>
+          <li><a href="/guides/health-auto-export" target="_blank">Apple Health with Health Auto Export</a></li>
+          <li><a href="/guides/workout-log" target="_blank">Workout Log in Google Sheets</a></li>
+          <li><a href="/guides/manual-entry" target="_blank">Entering data in the app</a></li>
+          <li><a href="/guides/programs" target="_blank">Your training programs</a></li>
+          <li><a href="/guides/claude-key" target="_blank">Your Claude API key</a></li>
+        </ul>
+        <p class="muted small"><a href="/privacy" target="_blank">Privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
+      </div>
+      <div class="card">
+        <h2>Ask</h2>
+        <p class="muted small">A question about using the app, answered by Claude from these guides with your AI (about a cent). Only your question and the guides are sent, never your data, and the answer is not saved. Not for health advice.</p>
+        <form id="help-form">
+          <textarea id="help-question" rows="3" maxlength="1000" placeholder="How do I connect my Workout Log?"></textarea>
+          <div class="actions"><button type="submit">Ask</button></div>
+        </form>
+        <p class="status" id="help-status" role="status"></p>
+        <div id="help-answer" class="help-answer" hidden></div>
       </div>
     </section>
 

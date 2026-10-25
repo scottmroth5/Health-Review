@@ -4,6 +4,7 @@
 
 import { RUNNING_STALE_MINUTES } from './scheduler.js';
 import { monthStartIso } from './ai-access.js';
+import { USER_TABLES } from '../db/migrations-users.js';
 
 /**
  * When each job last ran and whether one is running now, for any user (a scheduled job runs for every user in turn, so
@@ -81,4 +82,46 @@ export function setOwnerKey(db, id, { on, cap = null }) {
 /** Shares the owner's MAPS catalog with a user, or stops. Never an admin. */
 export function setMapsShared(db, id, shared) {
   (db.unscoped ?? db).prepare("UPDATE users SET maps_shared = ? WHERE id = ? AND role <> 'admin'").run(shared ? 1 : 0, id);
+}
+
+/** Every table with a user_id column, read from the schema (so a new user table is never missed), parents first. */
+function userIdTables(raw) {
+  const tables = raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all()
+    .filter((t) => raw.prepare(`PRAGMA table_info("${t}")`).all().some((c) => c.name === 'user_id'));
+  const order = new Map(USER_TABLES.map((t, i) => [t, i]));
+  return tables.sort((a, b) => (order.get(a) ?? -1) - (order.get(b) ?? -1));
+}
+
+// Columns of a users row that never leave the server: sealed keys and permissions, and the token's hash.
+const SECRET_USER_COLUMNS = ['claude_key_enc', 'ingest_token_hash', 'google_refresh_enc'];
+
+/**
+ * Everything stored for one user (multi-user, phase 6, "Export my data"): their account facts and every row of theirs
+ * in every table with a user_id, plus their runs' call metadata. Never their sealed keys, Google permission or token hash.
+ */
+export function exportUserData(db, uid, { now = new Date() } = {}) {
+  const raw = db.unscoped ?? db;
+  const user = raw.prepare('SELECT * FROM users WHERE id = ?').get(uid);
+  if (!user) return null;
+  for (const c of SECRET_USER_COLUMNS) delete user[c];
+  const tables = Object.fromEntries(userIdTables(raw).map((t) => [t, raw.prepare(`SELECT * FROM "${t}" WHERE user_id = ? ORDER BY rowid`).all(uid)]));
+  tables.run_calls = raw.prepare('SELECT c.* FROM run_calls c JOIN runs r ON r.id = c.run_id WHERE r.user_id = ? ORDER BY c.id').all(uid);
+  return { exportedAt: now.toISOString(), format: 'health-review-export-1', account: user, tables };
+}
+
+/**
+ * Deletes a user and everything stored for them (phase 6): every row of theirs in every table with a user_id (children
+ * first; run_calls go with their runs), then the users row, in one transaction. Never an admin. Returns the counts
+ * deleted per table, or null when there is no such user (or it is an admin).
+ */
+export function deleteUserData(db, uid) {
+  const raw = db.unscoped ?? db;
+  const user = raw.prepare('SELECT role FROM users WHERE id = ?').get(uid);
+  if (!user || user.role === 'admin') return null;
+  const counts = {};
+  raw.transaction(() => {
+    for (const t of userIdTables(raw).reverse()) counts[t] = raw.prepare(`DELETE FROM "${t}" WHERE user_id = ?`).run(uid).changes;
+    raw.prepare('DELETE FROM users WHERE id = ?').run(uid);
+  })();
+  return counts;
 }

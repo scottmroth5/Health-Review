@@ -549,3 +549,11 @@ body.read-only .program-more, body.read-only #program-builder { display: none !i
   .exercise-row input:first-child { grid-column: 1 / -1; }
   fieldset.phase-box { padding: 8px 6px; }
 }
+
+/* Help and the demo's Request access (phase 6) */
+.help-answer { margin-top: 10px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-0); border-radius: 6px; }
+.help-answer p { margin: 0 0 8px; }
+.help-answer p:last-child { margin-bottom: 0; }
+#help-question { width: 100%; }
+.instance-banner #request-access { font-weight: 600; white-space: nowrap; }
+.home-request { border-left: 3px solid var(--accent); }

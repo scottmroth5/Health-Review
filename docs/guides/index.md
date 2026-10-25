@@ -2,6 +2,8 @@
 
 Health Review shows your own data back to you. Choose the feeds you want in **Settings**, then set each one up here.
 
+- [Using Health Review](/guides/using-the-app): what each part of the app does, and common questions.
+
 - [Apple Health with Health Auto Export](/guides/health-auto-export): steps, sleep, heart rate, VO2 max and Apple Watch workouts, sent from your iPhone.
 - [Workout Log in Google Sheets](/guides/workout-log): your lifting log, read from your own sheet.
 - [Entering data in the app](/guides/manual-entry): daily check-ins, drinks, medications and supplements, and lab results.

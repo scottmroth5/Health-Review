@@ -28,9 +28,10 @@ Health Review is a personal project run by its owner (the operator), shared with
 
 ## AI (Anthropic's Claude)
 
-- No AI is used for you until you add your own Claude API key in Settings, and then only for your own weekly review and Next program chat, billed to you by Anthropic.
+- No AI is used for you until you add your own Claude API key in Settings, and then only for your own weekly review, Next program chat, Help's Ask and reading program PDFs you choose, billed to you by Anthropic.
 - The operator may instead let you use the operator's own key up to a monthly limit, after telling you by email. Your use then shows on the operator's administration screen as a dollar amount, and when the limit is reached the AI stops until the next month. Your own key, if you add one, is always used instead.
 - What is sent: computed summaries of your data (averages, changes, statuses, never raw exports) and your own notes for the week, under Anthropic's API terms.
+- Help's Ask: only your question and the app's own guides are sent, never your data, and the answer is not kept.
 - Program PDFs: only when you choose **Read a PDF with Claude** on the Programs screen and confirm you have the right to use the program. The file is sent once so Claude can read the program's structure, and Health Review does not keep it; only the program you check and save stays in your account.
 - The server needs to use your key while you are away (the weekly review is scheduled), so the server can decrypt it; it does so only for your own requests.
 
@@ -38,7 +39,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 
 - In a database on a server in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
 - The server's disk is encrypted by Amazon with keys Amazon manages. The operator accepts this for now; a later move will use encryption keys the operator controls.
-- Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS.
+- Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS. Seven nightly, three weekly and one monthly backup are kept, so a backup ages out within about two months.
 
 ## The operator's own data
 
@@ -46,9 +47,10 @@ The operator's account also reads the operator's own Google Sheets and Drive fil
 
 ## Your choices
 
-- Remove your Claude key at any time in Settings.
-- The operator can pause your account: you can still sign in and see your data, but new data and AI stop until it is resumed.
-- Ask the operator to delete your account and all of your data (a delete button in the app is coming). Revoke the app's Google sign-in access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+- **Export:** Settings, **Export my data** downloads everything stored for you as one file (never your encrypted key or tokens).
+- **Pause:** Settings, **Pause my account** stops new data and AI until you resume; your data stays. The operator can pause your account too, and then only the operator can resume it.
+- **Delete:** Settings, **Delete my account** removes your account and everything stored for you at once, after you type your email to confirm. Copies in the encrypted backups age out within about two months. You can also ask the operator to delete it.
+- Remove your Claude key or disconnect Google Sheets at any time in Settings, and revoke the app's Google access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
 ## Not medical advice
 

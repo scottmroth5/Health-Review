@@ -32,7 +32,9 @@ import { localStamp } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
 import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, syncOwnerEmail, userByEmail, userByIngestToken } from '../db/users.js';
-import { createPendingUser, listUsers, setMapsShared, setOwnerKey, setUserStatus } from './admin-queries.js';
+import { createPendingUser, deleteUserData, exportUserData, listUsers, setMapsShared, setOwnerKey, setUserStatus } from './admin-queries.js';
+import { askHelp, MAX_QUESTION_CHARS } from '../agent/help.js';
+import { SESSION_COOKIE, cookie } from './session.js';
 import { OWNER_KEY_CAP, clearCapNotice, spentThisMonth } from './ai-access.js';
 import { createMailer } from '../tools/mail.js';
 import { boxKey, seal } from '../tools/secret-box.js';
@@ -116,7 +118,7 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  *   prompt or report text), so docker compose logs shows what ran
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null }) {
   const app = Fastify({ logger, trustProxy });
   // Every route's method and path, so tests can check each write route (demo mode refuses them all).
   const routeList = [];
@@ -172,7 +174,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md')));
   app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md')));
   // Setup guides for each data feed (docs/guides), readable before signing in.
-  const GUIDES = ['health-auto-export', 'workout-log', 'manual-entry', 'programs', 'claude-key'];
+  const GUIDES = ['using-the-app', 'health-auto-export', 'workout-log', 'manual-entry', 'programs', 'claude-key'];
   app.get('/guides/:name', { schema: { hide: true } }, async (req, reply) => (GUIDES.includes(req.params.name)
     ? reply.type('text/html').send(policyPage(`docs/guides/${req.params.name}.md`, { SITE: appUrl() }))
     : reply.code(404).type('text/html').send(policyPage('docs/guides/index.md'))));
@@ -226,7 +228,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.get('/api/status', { schema: { summary: 'Today, the last sync, and data check warnings as of today (stale or missing Apple Health days, partial days, impossible values)', response: { 200: anyObject } } }, async () => {
     const today = q.localDate(clock());
-    return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }) };
+    return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }),
+      // The demo's "Request access" link to the main app (REQUEST_ACCESS_URL; none when unset).
+      ...(authMode === 'demo' && requestAccessUrl ? { requestAccessUrl } : {}) };
   });
 
   // ---- one day ----
@@ -850,6 +854,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       claudeKey: uid === OWNER_ID ? { source: 'server' } : u?.claude_key_enc ? { source: 'yours', setAt: u.claude_key_set_at } : null,
       ai: access.source !== null,
       aiReason: access.reason ?? null,
+      pausedBySelf: u?.status === 'paused' && Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
       // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
       ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
         ? { cap: u.owner_key_cap_usd, spent: Math.round(spentThisMonth(store.db, uid, clock()) * 100) / 100 } : null,
@@ -938,6 +943,86 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     return accountView(req);
   });
 
+  // ---- your account (multi-user, phase 6): export, pause and resume yourself, delete ----
+  const selfFlag = (uid) => scopeDb(store.db, uid);
+  const setSelfPaused = (uid, on) => {
+    const sdb = selfFlag(uid);
+    if (on) {
+      sdb.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'paused_by_self', '1', ?)
+        ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(clock().toISOString());
+    } else {
+      sdb.prepare("DELETE FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").run();
+    }
+  };
+  const notOwner = (req, reply, what) => {
+    if (uidOf(req) !== OWNER_ID && getUser(store.db, uidOf(req))) return true;
+    reply.code(409).send({ error: `The owner's account cannot be ${what} here` });
+    return false;
+  };
+  app.get('/api/account/export', { schema: { summary: 'Everything stored for you, as one JSON file (never your sealed key, tokens or Google permission)', response: { 200: anyObject } } },
+    async (req, reply) => {
+      const data = exportUserData(store.db, uidOf(req), { now: clock() });
+      if (!data) return reply.code(404).send({ error: 'No such account' });
+      return reply.header('Content-Disposition', `attachment; filename="health-review-export-${q.localDate(clock())}.json"`).send(data);
+    });
+  app.post('/api/account/pause', { schema: { summary: 'Pause your account: posts, syncs and AI stop until you resume; your data stays', response: { 200: anyObject } } },
+    async (req, reply) => {
+      if (!notOwner(req, reply, 'paused')) return reply;
+      if (getUser(store.db, uidOf(req)).status !== 'approved') return reply.code(409).send({ error: 'Your account is not active' });
+      setUserStatus(store.db, uidOf(req), 'paused');
+      setSelfPaused(uidOf(req), true);
+      return accountView(req);
+    });
+  app.post('/api/account/resume', { schema: { summary: 'Resume your account after pausing it yourself (a pause by the administrator stays)', response: { 200: anyObject } } },
+    async (req, reply) => {
+      if (!notOwner(req, reply, 'resumed')) return reply;
+      if (!accountView(req).pausedBySelf) return reply.code(409).send({ error: 'Only the administrator can resume this account' });
+      setSelfPaused(uidOf(req), false);
+      setUserStatus(store.db, uidOf(req), 'approved');
+      return accountView(req);
+    });
+  app.post('/api/account/delete', {
+    schema: { summary: 'Delete your account and everything stored for you (confirm with your email); signs you out',
+      body: { type: 'object', additionalProperties: false, required: ['confirmEmail'], properties: { confirmEmail: { type: 'string', maxLength: 320 } } }, response: { 200: anyObject } },
+  }, async (req, reply) => {
+    if (!notOwner(req, reply, 'deleted')) return reply;
+    const u = getUser(store.db, uidOf(req));
+    if (String(req.body.confirmEmail).trim().toLowerCase() !== u.email) throw badRequest('Type your email exactly to confirm');
+    deleteUserData(store.db, u.id);
+    log.info('[users] a user deleted their account');
+    await mailer.send({ to: adminEmail(), subject: 'Health Review: a user deleted their account',
+      text: `${u.name || u.email} (${u.email}) deleted their Health Review account and its data. Encrypted backups keep a copy until they age out.\n` });
+    reply.header('Set-Cookie', cookie(SESSION_COOKIE, '', { maxAge: 0, secure: appUrl().startsWith('https:') }));
+    return { deleted: true };
+  });
+
+  // ---- help (phase 6): the guides, and Ask on the user's own AI (the guides and the question only, never their data) ----
+  const asks = new Map(); // uid -> times of this hour's questions
+  const ASKS_PER_HOUR = 20;
+  app.get('/api/help', { schema: { summary: 'Whether Ask is on for you, and why not', response: { 200: anyObject } } },
+    async (req) => ({ ask: typeof services.claude === 'function' && aiOn(req), aiReason: typeof services.claude === 'function' ? aiReason(req) : null }));
+  app.post('/api/help/ask', {
+    schema: { summary: 'Ask a question about using the app (answered from the guides with your AI; nothing of your data is sent or the answer kept)',
+      body: { type: 'object', additionalProperties: false, required: ['question'], properties: { question: { type: 'string', minLength: 1, maxLength: MAX_QUESTION_CHARS } } }, response: { 200: anyObject } },
+  }, async (req, reply) => {
+    if (typeof services.claude !== 'function') return reply.code(503).send({ error: 'Ask is not available in this server' });
+    const reason = aiReason(req);
+    if (reason) return noAi(reply, reason);
+    const question = req.body.question.trim();
+    if (!question) throw badRequest('question must not be blank');
+    const uid = uidOf(req);
+    const hourAgo = clock().getTime() - 3600_000;
+    const recent = (asks.get(uid) ?? []).filter((t) => t > hourAgo);
+    if (recent.length >= ASKS_PER_HOUR) return reply.code(429).send({ error: `At most ${ASKS_PER_HOUR} questions an hour; try again later` });
+    asks.set(uid, [...recent, clock().getTime()]);
+    try {
+      return await askHelp({ store: userStore(), claude: services.claude(uid), question, site: appUrl(), logger: { info() {}, warn() {}, error() {} } });
+    } catch (err) {
+      log.warn(`[help] ask failed: ${err.name}`);
+      return reply.code(502).send({ error: 'Claude could not answer just now; try again' });
+    }
+  });
+
   // ---- user administration (admin only, multi-user phase 4): account facts, never keys, tokens, sheet IDs or health data ----
   // Checked on request, after sign-in and before body validation, so a non-admin learns nothing about these routes.
   const isAdmin = (req) => authMode !== 'demo' && (req.role === 'admin' || (authMode === 'none' && uidOf(req) === OWNER_ID));
@@ -975,10 +1060,25 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     app.post(`/api/admin/users/:id/${action}`, { onRequest: adminOnly, schema: { summary, params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
       if (!changeable(reply, req.params.id, [from])) return reply;
       setUserStatus(store.db, req.params.id, to);
+      setSelfPaused(req.params.id, false); // the administrator's pause or resume: only the administrator resumes it
       log.info(`[users] a user was ${to === 'paused' ? 'paused' : 'resumed'}`);
       return adminUser(req.params.id);
     });
   }
+  // Delete a user and everything stored for them, confirmed with their email (for a user who asks the administrator).
+  app.post('/api/admin/users/:id/delete', {
+    onRequest: adminOnly,
+    schema: { summary: "Delete a user's account and all of their data (confirm with their email)", params: userIdParams,
+      body: { type: 'object', additionalProperties: false, required: ['confirmEmail'], properties: { confirmEmail: { type: 'string', maxLength: 320 } } }, response: { 200: anyObject } },
+  }, async (req, reply) => {
+    const u = getUser(store.db, req.params.id);
+    if (!u) return reply.code(404).send({ error: 'No such user' });
+    if (u.role === 'admin') return reply.code(409).send({ error: "An administrator's account is not deleted here" });
+    if (String(req.body.confirmEmail).trim().toLowerCase() !== u.email) throw badRequest("Type the user's email exactly to confirm");
+    deleteUserData(store.db, u.id);
+    log.info('[users] a user and their data were deleted by the administrator');
+    return { deleted: true };
+  });
   // The administrator's Claude key for a user without their own: turned on only with their email typed to confirm and a
   // monthly cap in dollars; off in one step. The user gets an email either way.
   app.post('/api/admin/users/:id/owner-key', {

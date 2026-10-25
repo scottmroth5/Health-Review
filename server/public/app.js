@@ -53,8 +53,8 @@ function setupDemo() {
 }
 
 // ---------------- routing ----------------
-const VIEWS = ['home', 'today', 'training', 'programs', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity', 'settings', 'users'];
-const VIEW_TITLES = { home: 'Home', today: 'Today', training: 'Training', programs: 'Programs', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity', settings: 'Settings', users: 'Users' };
+const VIEWS = ['home', 'today', 'training', 'programs', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity', 'settings', 'users', 'help'];
+const VIEW_TITLES = { home: 'Home', today: 'Today', training: 'Training', programs: 'Programs', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity', settings: 'Settings', users: 'Users', help: 'Help' };
 let currentView = null;
 function route() {
   if (location.hash === '#history') return location.replace('#health'); // the old name of the Health tab
@@ -71,7 +71,7 @@ function route() {
   $('#view-title').textContent = VIEW_TITLES[view];
   $$('.top nav a').forEach((a) => (a.getAttribute('href') === `#${view}` ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (moved) window.scrollTo(0, 0);
-  ({ home: loadHome, settings: loadSettingsView, users: loadUsers, today: loadDay, training: loadTrainingTab, programs: loadPrograms, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
+  ({ home: loadHome, help: loadHelp, settings: loadSettingsView, users: loadUsers, today: loadDay, training: loadTrainingTab, programs: loadPrograms, health: loadHealthTab, meds: loadMeds, labs: loadLabs, reviews: loadReviews, prompt: loadSections, activity: loadActivity })[view]();
 }
 
 // ---------------- 1 to 10 scales ----------------
@@ -327,6 +327,10 @@ async function loadStatus() {
     $('#instance-banner .long').textContent = 'Demo: everything here is made-up sample data, and changes are turned off.';
     $('#instance-banner .short').textContent = 'Demo: made-up data, changes off.';
   }
+  // The public demo's link to the main app's sign-in (Request access), when the server is given one.
+  for (const a of [$('#request-access'), $('#home-request-link')]) if (s.requestAccessUrl) a.href = s.requestAccessUrl;
+  $('#request-access').hidden = !s.requestAccessUrl;
+  $('#home-request').hidden = !s.requestAccessUrl;
   $('#sync-now').hidden = s.sync === false;
   document.querySelector('.demo-toggle').hidden = demoInstance;
   homeSettingsVisibility();
@@ -351,6 +355,61 @@ function setHomeBadge(name, text) {
   node.textContent = text;
   node.hidden = !text;
 }
+
+// ---------------- your account and help (multi-user, phase 6) ----------------
+/** Settings, Account: export your data, pause or resume yourself, delete your account (typed email to confirm). */
+function renderAccountControls(a) {
+  const say = (t) => { $('#account-status').textContent = t; };
+  const run = (fn) => async (e) => { e?.preventDefault?.(); try { await fn(e); } catch (err) { say(err.message); } };
+  const owner = a.owner;
+  const deleteForm = h('form', { class: 'owner-key-form', hidden: true, onsubmit: run(async (e) => {
+    await api('POST', '/api/account/delete', { confirmEmail: e.target.elements.confirm.value.trim() });
+    await fetch('/auth/logout', { method: 'POST' }).catch(() => {});
+    location.href = '/auth/signed-out';
+  }) },
+  h('p', { class: 'small' }, h('strong', {}, 'This deletes everything stored for you: '), 'health data, check-ins, medications, labs, workouts, programs, reviews, your key and feeds. It cannot be undone. Encrypted backups keep a copy until they age out (about two months). Export your data first if you want a copy.'),
+  h('label', {}, `Type ${a.email} to confirm`, h('input', { name: 'confirm', type: 'email', autocomplete: 'off', required: true })),
+  h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'danger' }, 'Delete my account'), h('button', { type: 'button', class: 'ghost', onclick: () => { deleteForm.hidden = true; } }, 'Cancel')));
+  fill($('#account-controls'), [
+    h('div', { class: 'actions' },
+      h('a', { class: 'button ghost', href: '/api/account/export', download: '' }, 'Export my data'),
+      owner ? null : a.status === 'paused'
+        ? (a.pausedBySelf ? h('button', { type: 'button', onclick: run(async () => { renderAccountControls(await api('POST', '/api/account/resume')); say('Resumed: posts, syncs and AI are back on.'); loadAccount(); }) }, 'Resume my account')
+          : h('span', { class: 'muted small' }, 'Paused by the administrator.'))
+        : h('button', { type: 'button', class: 'ghost', onclick: run(async () => {
+          if (!confirm('Pause your account? Health Auto Export posts, syncs, the weekly review and the chat stop until you resume. Your data stays.')) return;
+          renderAccountControls(await api('POST', '/api/account/pause')); say('Paused. Resume here any time.'); loadAccount();
+        }) }, 'Pause my account'),
+      owner ? null : h('button', { type: 'button', class: 'ghost danger', onclick: () => { deleteForm.hidden = false; deleteForm.elements.confirm.focus(); } }, 'Delete my account')),
+    owner ? h('p', { class: 'muted small' }, "The owner's account can be exported here, but not paused or deleted.") : deleteForm,
+  ]);
+}
+
+async function loadHelp() {
+  const r = await api('GET', '/api/help').catch(() => ({ ask: false }));
+  $('#help-form').hidden = !r.ask;
+  if (!r.ask) fill($('#help-status'), [r.aiReason ? NO_KEY_NOTE(r.aiReason) : 'Ask is off in this instance.']);
+  else $('#help-status').textContent = '';
+}
+
+$('#help-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const question = $('#help-question').value.trim();
+  if (!question) return;
+  const button = $('#help-form button[type="submit"]');
+  button.disabled = true;
+  $('#help-status').textContent = 'Asking...';
+  try {
+    const { answer } = await api('POST', '/api/help/ask', { question });
+    fill($('#help-answer'), answer.split(/\n+/).filter(Boolean).map((p) => h('p', {}, p)));
+    $('#help-answer').hidden = false;
+    $('#help-status').textContent = '';
+  } catch (err) {
+    $('#help-status').textContent = err.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 // ---------------- programs (multi-user, phase 5): the user's own catalog ----------------
 const programsView = { draft: null };
@@ -546,6 +605,7 @@ async function loadSettingsView() {
   }
   renderFeeds(a);
   $('#settings-account').textContent = a.email ? `${a.name ? `${a.name}, ` : ''}${a.email} (${a.role === 'admin' ? 'administrator' : 'user'})` : 'Local mode: no sign-in.';
+  renderAccountControls(a);
 }
 
 const FEED_LABELS = { appleHealth: 'Apple Health (Health Auto Export)', workoutLog: 'Workout Log (Google Sheets)', manual: 'Entered in the app (check-ins, drinks, meds, labs)' };
@@ -681,7 +741,13 @@ async function loadUsers() {
           u.status === 'pending' || u.status === 'rejected' ? h('button', { type: 'button', onclick: act(u, 'approve') }, 'Approve') : null,
           u.status === 'approved' ? h('button', { type: 'button', class: 'ghost', onclick: act(u, 'pause') }, 'Pause') : null,
           u.status === 'paused' ? h('button', { type: 'button', onclick: act(u, 'resume') }, 'Resume') : null,
-          u.status !== 'rejected' ? h('button', { type: 'button', class: 'ghost danger', onclick: act(u, 'reject') }, u.status === 'pending' ? 'Reject' : 'End access') : null)));
+          u.status !== 'rejected' ? h('button', { type: 'button', class: 'ghost danger', onclick: act(u, 'reject') }, u.status === 'pending' ? 'Reject' : 'End access') : null,
+          u.status === 'pending' ? null : h('button', { type: 'button', class: 'ghost danger', onclick: run(async () => {
+            const typed = prompt(`Delete ${u.email} and everything stored for them? This cannot be undone. Type their email to confirm.`);
+            if (typed === null) return;
+            await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/delete`, { confirmEmail: typed.trim() });
+            done(u, 'account and data deleted');
+          }) }, 'Delete account and data'))));
   };
   fill($('#users-list'), users.length ? users.map(card) : [h('p', { class: 'muted' }, 'No users yet.')]);
 }

@@ -405,6 +405,16 @@ other) plus the review eval's results.jsonl usage priced with agent-core's prici
 exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
+Users, phase 6 (2026-10-24), account controls and help: GET /api/account/export (server/admin-queries.js exportUserData:
+the account row without claude_key_enc, ingest_token_hash or google_refresh_enc, plus every row of theirs in every table
+with a user_id column, found from the schema, and their run_calls); POST /api/account/pause and /resume (settings row
+paused_by_self; an admin's pause or resume clears it, so only the admin resumes theirs); POST /api/account/delete and POST
+/api/admin/users/:id/delete, both with the typed email (deleteUserData: every user_id table children first, run_calls by
+cascade, then the users row, one transaction, never an admin; the admin is emailed, the session cookie cleared). Help
+(#help, agent/help.js): GET /api/help and POST /api/help/ask (claude-sonnet-5-5, the user's AI by ai-access, 20 an hour per
+user in memory; system prompt is the guides HELP_GUIDES, the prompt is the question; dashes replaced; nothing stored, the
+help-ask run keeps lengths and cost). docs/guides/using-the-app.md is the tile-by-tile guide. The demo's banner and Home
+link to REQUEST_ACCESS_URL (deploy/compose.yml: the main app's /auth/login from SITE_ADDRESS), only in the demo.
 Users, phase 5 (2026-10-24), each user's own programs: user_programs (migration 028; in USER_TABLES, so the scope and
 isolation guards cover it) holds programs in the catalog format with match words; ingest/user-programs.js (saveProgram,
 deleteProgram, importPrograms all or nothing, exportPrograms their own only) checks each with metrics/catalog.js
@@ -506,6 +516,7 @@ dictionary's own names), and only after the owner types yes; never weights, date
 (owner's choice, 2026-10-02). Its proposals reach the dictionary only through --accept.
 The demo may use MAPS program names (owner's choice, 2026-10-24; the app shows only name, phase and week); its phases,
 weeks and workouts are made up, never copied from data/maps or the PDFs.
+Help's Ask sends the app's guides and the user's question only, never any of their data.
 A user's own programs (user_programs) and the PDFs they upload are theirs: a PDF goes to the Claude API only through
 POST /api/programs/extract, after the user confirms the right to use it, on their own AI, and is never kept; their
 programs never reach another user, the admin screens, logs or fixtures.

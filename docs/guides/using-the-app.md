@@ -1,0 +1,30 @@
+# Using Health Review
+
+Health Review shows your own health and training data back to you, with a weekly review if you use AI. Everything starts from **Home**, a tile for each part of the app. On a wide screen the same parts are tabs along the top.
+
+## The tiles
+
+- **Today:** the day's check-in (readiness, energy, mood, stress, nutrition on 1 to 10, optional weight and body measurements, a note), your medications and supplements to tick off, and drinks. Use the arrows to go back to an earlier day.
+- **Training:** your current program and its phase, training volume by week or month, lift progress (progressing, stalled or regressing within one rep range), the Next program ranking with its goal weights, and "called for vs logged".
+- **Programs:** your own training programs (built in the app, imported as JSON, or read from a PDF by Claude), with the program blocks found in your Workout Log to confirm.
+- **Health:** VO2 max, the heart rate zones card, and charts of every Apple Health metric with suggested targets. Your profile (birth year, sex, height, Zone 2 range) is here too.
+- **Meds:** each medication and supplement with its dose and timing; a dose change is a new dated period, so the history shows what changed when.
+- **Labs:** lab results by panel, with a range for each test that you can change.
+- **Reviews:** the weekly review, written each Sunday morning from the week's computed summary when you use AI. Anything about medications, labs or symptoms is listed only under "Discuss with your physician".
+- **Prompt:** the instructions the weekly review follows; edit them to change its tone and focus. Every change keeps the old version.
+- **Activity:** what ran (syncs, reviews, backups), when, and what the AI cost.
+- **Settings:** your Claude API key, your data feeds (Health Auto Export, the Workout Log sheet), and your account: export your data, pause or delete your account.
+- **Help:** these guides, and Ask for a question about using the app.
+
+## Sync now
+
+**Sync now** on Home reads your Workout Log sheet straight away. Health Auto Export sends Apple Health data on its own schedule; the last sync time shows next to the button.
+
+## Common questions
+
+- **A day shows red or is missing:** Health Auto Export had not sent the full day yet. It fills in when the next export arrives. A partial day is never treated as a bad day.
+- **My workouts have no program:** add the program on **Programs** with match words found in your Workout Log's "Workout" names, then confirm its block.
+- **No AI:** add your Claude API key in Settings (see the Claude key guide). Without one, everything except the weekly review, the chat and Ask still works.
+- **Stop for a while:** Settings, **Pause my account** stops posts, syncs and AI until you resume. Your data stays.
+
+[All guides](/guides)

@@ -76,12 +76,17 @@ test('isolation: no write route sent by B changes any of A\'s rows', async () =>
     'POST /api/medications/:id/changes': { dose: '9 g', timings: ['morning'], effective_on: '2026-10-06' },
     'POST /api/medications/combine': { ids: [1, 2], name: 'Combined by B', timing: 'morning' },
     'PUT /api/doses/:date': { doses: [{ medication_id: 1, timing: 'morning', taken: false }] },
+    // B deletes their own account last (multi-user, phase 6): it must remove nothing of A's.
+    'POST /api/account/delete': { confirmEmail: 'b@example.com' },
   };
+  const last = (r) => (r.url === '/api/account/delete' ? 1 : 0);
+  writes.sort((x, y) => last(x) - last(y));
   for (const r of writes) {
     const body = BODIES[`${r.method} ${r.url}`] ?? (r.method === 'DELETE' ? undefined : {});
     await app.inject({ method: r.method, url: fill(r.url), headers: { cookie: asB, origin: SITE }, ...(body ? { payload: body } : {}) });
   }
   assert.equal(snapshot(store.db, OWNER_ID), before, "A's rows are unchanged");
+  assert.equal(store.db.prepare("SELECT COUNT(*) FROM users WHERE email = 'b@example.com'").pluck().get(), 0, 'B deleted only themself');
   await app.close();
   store.close();
 });

@@ -69,7 +69,10 @@ their data, with **Share my MAPS catalog** (for family), **Pause** (they can sti
 AI stop) and **End access**. They see only their own data. On **Programs** (Home) each user builds their own training
 programs, imports them as JSON, or has Claude read a program's PDF with their own AI (checked in the builder before
 saving; the PDF is not kept), and confirms the program blocks found in their log; your MAPS catalog shows there by name
-for the users you share it with. Each user sets up their own feeds in **Settings, Data feeds**:
+for the users you share it with. **Help** (Home) has the guides and Ask (a question about using the app, answered from
+the guides with the user's AI; none of their data is sent). In **Settings** each user can export their data, pause their
+own account, or delete it (typed email; you get an email), and you can delete a user from their card. The demo links to
+the app's sign-in ("Request access") through REQUEST_ACCESS_URL in deploy/compose.yml. Each user sets up their own feeds in **Settings, Data feeds**:
 a Health Auto Export token of their own (their posts land in their account), and their own Workout Log through Google
 Sheets (read-only permission they grant), with step-by-step guides at `/guides`. The server needs `USER_KEY_SECRET`, `SMTP_USER` and
 `SMTP_APP_PASSWORD` (`deploy/cloud.env.example`), and the Google OAuth consent screen set to In production.
