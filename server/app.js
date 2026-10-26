@@ -47,6 +47,7 @@ import { createMailer } from '../tools/mail.js';
 import { boxKey, seal } from '../tools/secret-box.js';
 import { addDefaultPromptSections } from '../agent/default-prompts.js';
 import { policyPage, supportEmailFrom } from './pages.js';
+import { SETUP_STEPS, loadSetupFacts, setupSteps } from './setup.js';
 import { BLOCKED_PAGE, geoBlocker } from './geo.js';
 
 /** Checks a Claude API key with Anthropic's free model list (the key goes only to Anthropic; nothing is logged). */
@@ -723,7 +724,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       const status = q.reviewStatus(db, q.localDate(clock()), clock());
       if (!status.ready && !req.body?.force) {
         reviewRun.running = false;
-        return reply.code(409).send({ error: 'Apple Health data is incomplete for the week', missingDays: status.missingDays, partialDays: status.partialDays });
+        return reply.code(409).send({ error: status.reason === 'no_data' ? 'No data for that week yet' : 'Apple Health data is incomplete for the week', reason: status.reason, missingDays: status.missingDays, partialDays: status.partialDays });
       }
       reviewRun.weekEnd = status.weekEnd;
       services.review({ uid: uidOf(req), weekEnd: status.weekEnd, today: q.localDate(clock()) })
@@ -1002,6 +1003,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       layouts: Object.fromEntries(Object.keys(LAYOUT_ITEMS).map((area) => {
         try { return [area, JSON.parse(db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck().get(`layout_${area}`) ?? 'null')]; } catch { return [area, null]; }
       })),
+      // Home's setup checklist was hidden (Settings brings it back).
+      setupHidden: Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'setup_hidden'").get()),
       pausedBySelf: u?.status === 'paused' && Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
       // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
       ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
@@ -1076,6 +1079,63 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
   app.get('/api/account', { schema: { summary: "The signed-in user's account: name, email, role, and whether a Claude key is set (never the key)", response: { 200: anyObject } } },
     async (req) => accountView(req));
+
+  // ---- Home (UX roadmap phase 2): the setup checklist for new users, then a summary of where things stand ----
+  const setupOf = (req) => {
+    const uid = uidOf(req);
+    const u = getUser(store.db, uid);
+    const feeds = feedsView(req, u);
+    const facts = loadSetupFacts(db, { owner: uid === OWNER_ID, chosen: feeds.chosen, ai: aiAccessOf(req).source !== null,
+      appleToken: feeds.appleHealth.token, sheetConnected: feeds.workoutLog.connected });
+    return { facts, feeds, setup: setupSteps(facts, { today: q.localDate(clock()) }) };
+  };
+  /** The newest review's opening: the first two bullets of its first section, as plain text. */
+  const reviewOpening = () => {
+    const latest = db.prepare('SELECT week_ending, report_md FROM reviews WHERE user_id = @uid ORDER BY week_ending DESC LIMIT 1').get();
+    if (!latest) return null;
+    const first = String(latest.report_md).split(/^## /m)[1] ?? '';
+    const lines = first.split('\n').filter((l) => /^\s*[-*] /.test(l)).slice(0, 2)
+      .map((l) => l.replace(/^\s*[-*] /, '').replace(/\*\*|__|`/g, '').trim());
+    return { weekEnding: latest.week_ending, section: first.split('\n')[0].trim() || null, lines };
+  };
+  app.get('/api/home', { schema: { summary: 'Home: the setup checklist (goals, profile, how data comes in, AI, first result) and a summary: today\'s check-in, current program, the latest review\'s opening, each feed\'s freshness, data issue count', response: { 200: anyObject } } }, async (req) => {
+    const today = q.localDate(clock());
+    const { facts, setup } = setupOf(req);
+    const chosen = facts.chosen ?? {};
+    const program = (() => { try { return currentProgram(db, today, programCatalog(req)); } catch { return null; } })();
+    const feedRows = [
+      chosen.appleHealth || facts.owner ? { feed: 'appleHealth', latest: facts.apple.lastPost ?? facts.apple.latestDay ?? null, latestDay: facts.apple.latestDay } : null,
+      chosen.workoutLog || facts.owner ? { feed: 'workoutLog', latest: facts.sheet.lastSync, problem: setup.steps.find((s) => s.id === 'data').ways.workoutLog.problem } : null,
+      chosen.manual !== false ? { feed: 'manual', latest: facts.manual.lastCheckin } : null,
+    ].filter(Boolean);
+    return {
+      setup,
+      summary: {
+        today,
+        checkin: { done: Boolean(db.prepare('SELECT 1 FROM checkins WHERE user_id = @uid AND date = ?').get(today)) },
+        program: program ? { program: program.program, phase: program.phase ?? null, week: program.week ?? null, programWeeks: program.programWeeks ?? null } : null,
+        latestReview: reviewOpening(),
+        feeds: feedRows,
+        dataIssues: q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }).length,
+      },
+    };
+  });
+  app.put('/api/account/setup', {
+    schema: {
+      summary: 'The setup checklist: skip or bring back a step, or hide the checklist',
+      body: { type: 'object', additionalProperties: false, minProperties: 1, properties: {
+        hidden: { type: 'boolean' }, dismiss: { type: 'string', enum: SETUP_STEPS }, restore: { type: 'string', enum: SETUP_STEPS } } },
+      response: { 200: anyObject },
+    },
+  }, async (req) => {
+    const { facts } = setupOf(req);
+    const dismissed = new Set(facts.dismissed);
+    if (req.body.dismiss) dismissed.add(req.body.dismiss);
+    if (req.body.restore) dismissed.delete(req.body.restore);
+    putSetting('setup_dismissed', dismissed.size ? JSON.stringify([...dismissed]) : null);
+    if (req.body.hidden !== undefined) putSetting('setup_hidden', req.body.hidden ? '1' : null);
+    return { setup: setupOf(req).setup };
+  });
   app.put('/api/account/claude-key', {
     schema: {
       summary: 'Save your Claude API key: checked with Anthropic (free), stored encrypted, never shown again',

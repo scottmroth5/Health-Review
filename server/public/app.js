@@ -332,7 +332,6 @@ async function loadAccount() {
   // The tab on screen may have drawn before the account arrived: put it in the saved (or goal) order now.
   if (currentView === 'training') orderCards('training');
   if (currentView === 'health') { orderCards('health'); loadHistory().catch(() => {}); }
-  $('#goal-nudge').hidden = !account || demo || Boolean(state.goals.primary);
   setHomeBadge('settings', account && !account.ai && account.aiReason === 'no_key' && !demo ? 'Add key' : '');
   $('#paused-note').hidden = account?.status !== 'paused';
   if (me?.authMode !== 'google' || !me.email) return;
@@ -393,6 +392,102 @@ async function loadStatus() {
 /** Home: the section tiles; their badges come from the status and the review notice. */
 async function loadHome() {
   await loadStatus();
+  try { renderHome(await api('GET', '/api/home')); } catch { /* Home still shows its tiles */ }
+}
+
+// ---------------- Home: setup checklist and summary (UX roadmap phase 2) ----------------
+const STEP_TEXT = {
+  goals: ['Choose your goals', 'Your primary goal puts what matters to you first on Home, Training and Health, and opens your weekly review.'],
+  profile: ['Add your profile', 'Birth year, sex and height set your suggested targets; your Zone 2 range sets your heart rate zones.'],
+  data: ['Choose how your data comes in', 'Use any mix; all of them are optional. Entering data by hand is a full way to use Health Review.'],
+  ai: ['Optional: turn on AI', 'A Claude API key writes your weekly review and answers the Next program chat. Everything else works without it.'],
+  firstResult: ['See your first result', 'This completes when your first data is in, from any of the ways above.'],
+};
+const stampText = (v) => (!v ? 'never' : /^\d{4}-\d{2}-\d{2}$/.test(v) ? niceDate(v) : feedTime(v));
+const linkTo = (href, text, external = false) => h('a', { href, ...(external ? { target: '_blank' } : {}) }, text);
+
+/** One way in for the data step: its state in plain words and where to set it up. */
+function wayLine(name, label, w) {
+  let state;
+  let links;
+  if (name === 'appleHealth') {
+    state = w.received ? `Receiving: first data ${stampText(w.firstPost)}, ${plural(w.days, 'day')} stored${w.workouts ? `, ${plural(w.workouts, 'workout')}` : ''}.`
+      : w.ready ? 'Token created. Waiting for the first post from Health Auto Export (it sends on its own schedule).' : 'Not set up.';
+    links = [linkTo('#settings', 'Set up in Settings'), ' · ', linkTo('/guides/health-auto-export', 'Guide', true)];
+  } else if (name === 'workoutLog') {
+    state = w.liftingDays ? `Read ${plural(w.liftingDays, 'lifting day')}${w.tabsRead ? ` from ${plural(w.tabsRead, 'tab')}` : ''}; last sync ${stampText(w.lastSync)}.`
+      : w.ready ? 'Sheet set. It is read at the next sync; use Sync now below.' : w.connected ? 'Google Sheets connected; choose or create your sheet in Settings.' : 'Not set up.';
+    links = [linkTo('#settings', 'Set up in Settings'), ' · ', linkTo('/guides/workout-log', 'Guide', true)];
+  } else {
+    const parts = [w.checkins && plural(w.checkins, 'check-in'), w.workouts && plural(w.workouts, 'workout'), w.meds && plural(w.meds, 'med'),
+      w.labs && plural(w.labs, 'lab result'), w.drinks && plural(w.drinks, 'drinks day')].filter(Boolean);
+    state = parts.length ? `Entered so far: ${parts.join(', ')}.` : 'Nothing entered yet.';
+    links = [linkTo('#today', 'Daily Check-in'), ' · ', linkTo('#training', 'Log workout'), ' · ', linkTo('#meds', 'Meds'), ' · ', linkTo('#labs', 'Labs')];
+  }
+  return h('li', { class: 'setup-way' }, h('strong', {}, label), ' ', h('span', { class: w.problem ? 'status error' : 'muted' }, w.problem ?? state), h('span', { class: 'small block' }, ...links));
+}
+
+function stepBody(s) {
+  if (s.id === 'goals') return [linkTo('#settings', 'Choose goals in Settings')];
+  if (s.id === 'profile') return [linkTo('#settings', 'Add your profile in Settings'), s.zone2Set ? '' : ' (and your Zone 2 range, under Heart rate zones)'];
+  if (s.id === 'data') return [h('ul', { class: 'setup-ways' }, wayLine('manual', 'Enter by hand', s.ways.manual), wayLine('appleHealth', 'Apple Health (automatic)', s.ways.appleHealth),
+    wayLine('workoutLog', 'Workout Log (Google Sheet or Excel)', s.ways.workoutLog))];
+  if (s.id === 'ai') return s.done ? ['AI is on.'] : [linkTo('#settings', 'Add your key in Settings'), ' · ', linkTo('/guides/claude-key', 'How to get a key', true)];
+  if (s.id === 'firstResult') {
+    if (!s.done) return [];
+    return [`Your data starts ${niceDate(s.firstDataDate)}. `, linkTo(s.link, 'See it'), '. ',
+      s.needsAi ? 'Weekly reviews need AI (the step above).' : `Your first weekly review comes Sunday, ${niceDate(s.nextReview)}.`];
+  }
+  return [];
+}
+
+async function setupChange(body) {
+  try { renderSetup((await api('PUT', '/api/account/setup', body)).setup); } catch (err) { setStatus($('#home-setup .status'), err.message, 'error'); }
+}
+
+function renderSetup(setup) {
+  const card = $('#home-setup');
+  card.hidden = state.readOnly || setup.complete;
+  if (card.hidden) return;
+  fill(card, [
+    h('div', { class: 'setup-head' }, h('h2', {}, 'Get set up'), h('span', { class: 'muted small' }, `Setup ${setup.doneCount} of ${setup.total}`),
+      h('button', { type: 'button', class: 'ghost small-button', onclick: () => setupChange({ hidden: true }) }, 'Hide setup')),
+    h('p', { class: 'muted small' }, 'Nothing here is required, and nothing is locked: skip any step, or hide this list. It comes back in Settings.'),
+    h('ol', { class: 'setup-steps' }, setup.steps.map((s) => {
+      const [title, why] = STEP_TEXT[s.id];
+      return h('li', { class: `setup-step${s.done ? ' done' : ''}${s.dismissed ? ' skipped' : ''}` },
+        h('div', { class: 'setup-title' }, h('span', { class: 'setup-mark', 'aria-hidden': 'true' }, s.done ? '✓' : s.dismissed ? '–' : '○'),
+          h('strong', {}, title), h('span', { class: 'sr-only' }, s.done ? ' (done)' : s.dismissed ? ' (skipped)' : ' (to do)'),
+          s.done ? null : h('button', { type: 'button', class: 'link small', onclick: () => setupChange(s.dismissed ? { restore: s.id } : { dismiss: s.id }) }, s.dismissed ? 'Bring back' : 'Skip')),
+        s.dismissed ? null : h('p', { class: 'muted small' }, why),
+        s.dismissed ? null : h('div', { class: 'small' }, ...stepBody(s)));
+    })),
+    h('p', { class: 'status small', role: 'status' }),
+  ]);
+}
+
+function renderSummary(home) {
+  const card = $('#home-summary');
+  card.hidden = !(state.readOnly || home.setup.complete);
+  if (card.hidden) return;
+  const s = home.summary;
+  const FEED_LABELS = { appleHealth: 'Apple Health', workoutLog: 'Workout Log', manual: 'Entered by hand' };
+  const review = s.latestReview;
+  const reviewLines = review ? review.lines.filter((l) => !state.demo || redactReview(`- ${l}`).trim()) : [];
+  const rows = [
+    h('li', {}, s.checkin.done ? "Today's check-in is in. " : 'No check-in yet today. ', linkTo('#today', s.checkin.done ? 'See it' : 'Check in')),
+    s.program ? h('li', {}, h('strong', {}, s.program.program), [s.program.phase && `: ${s.program.phase}`, s.program.week && `, week ${s.program.week}${s.program.programWeeks ? ` of ${s.program.programWeeks}` : ''}`].filter(Boolean).join(''), '. ', linkTo('#training', 'Training')) : null,
+    review ? h('li', {}, `Latest review, week ending ${niceDate(review.weekEnding)}${reviewLines.length ? ':' : '.'} `, linkTo('#reviews', 'Read it'),
+      reviewLines.length ? h('ul', { class: 'summary-lines' }, reviewLines.map((l) => h('li', {}, l))) : null) : null,
+    s.feeds.length ? h('li', {}, 'Latest data: ', ...s.feeds.flatMap((f, i) => [i ? '; ' : '', `${FEED_LABELS[f.feed]} ${stampText(f.latest)}`, f.problem ? h('span', { class: 'status error' }, ` (${f.problem})`) : ''])) : null,
+    s.dataIssues ? h('li', {}, `${plural(s.dataIssues, 'data issue')}: `, linkTo('#today', 'see Daily Check-in')) : null,
+  ].filter(Boolean);
+  fill(card, [h('h2', {}, 'Where things stand'), h('ul', { class: 'home-summary-list' }, rows)]);
+}
+
+function renderHome(home) {
+  renderSetup(home.setup);
+  renderSummary(home);
 }
 
 /** A small badge on a Home tile (empty text hides it). */
@@ -539,7 +634,6 @@ function renderGoals(a) {
       state.goals = r.goals;
       renderGoals(r);
       applyTileOrder();
-      $('#goal-nudge').hidden = Boolean(r.goals.primary);
       $('#goals-status').textContent = r.goals.primary ? `Saved: ${GOALS[r.goals.primary]}${r.goals.secondary ? `, then ${GOALS[r.goals.secondary]}` : ''}.` : 'Goals cleared.';
     } catch (err) { $('#goals-status').textContent = err.message; }
   };
@@ -654,14 +748,18 @@ function renderAccountControls(a) {
   const setZone = run(async (zone) => { renderAccountControls(await api('PUT', '/api/account/time-zone', { timeZone: zone })); say(`Time zone set to ${zone ?? 'the server default'}.`); loadStatus(); });
   const zones = (() => { try { return Intl.supportedValuesOf('timeZone'); } catch { return [tz.zone]; } })();
   const zoneRow = tz.fromServer
-    ? h('p', { class: 'small' }, `Time zone: ${tz.zone} (the server's OWNER_TZ).`)
+    ? h('p', { class: 'small' }, `Time zone: ${tz.zone} (set on the server).`)
     : h('div', {},
       h('label', {}, 'Time zone (decides your "today" and your review week)',
         h('select', { onchange: (e) => setZone(e.target.value) }, (zones.includes(tz.zone) ? zones : [tz.zone, ...zones]).map((z) => h('option', { value: z, selected: z === tz.zone }, z.replace(/_/g, ' '))))),
       device && device !== tz.zone ? h('p', { class: 'small' }, `This device is set to ${device.replace(/_/g, ' ')}. `,
         h('button', { type: 'button', class: 'ghost small-button', onclick: () => setZone(device) }, `Use ${device.replace(/_/g, ' ')}`)) : null);
+  // Home's setup checklist, once hidden, comes back from here.
+  const setupRow = a.setupHidden ? h('p', { class: 'small' }, 'The setup checklist is hidden. ',
+    h('button', { type: 'button', class: 'ghost small-button', onclick: run(async () => { await api('PUT', '/api/account/setup', { hidden: false }); renderAccountControls({ ...a, setupHidden: false }); say('The setup checklist is back on Home.'); }) }, 'Show it on Home')) : null;
   fill($('#account-controls'), [
     zoneRow,
+    setupRow,
     h('div', { class: 'actions' },
       h('a', { class: 'button ghost', href: '/api/account/export', download: '' }, 'Export my data'),
       owner ? null : a.status === 'paused'
@@ -1073,7 +1171,7 @@ async function loadUsers() {
         h('div', { class: 'muted small' }, `${statusName} · joined ${shortDate(u.created_at)} · last seen ${shortDate(u.last_seen_at)}`),
         u.status === 'pending' ? null : h('div', { class: 'small' }, userFeedsLine(u)),
         u.status === 'pending' ? null : h('div', { class: 'small' }, userAiLine(u)),
-        u.status === 'pending' ? null : h('div', { class: 'muted small' }, `Data: ${u.health_days} health days, ${u.lifting_days} lifting days, ${u.reviews} reviews, ${u.programs} programs${!admin && u.maps_shared ? ' · MAPS catalog shared' : ''}`)),
+        u.status === 'pending' ? null : h('div', { class: 'muted small' }, `${u.setup ? `Setup ${u.setup.complete ? 'done' : `${u.setup.doneCount} of ${u.setup.total}`} · ` : ''}Data: ${u.health_days} health days, ${u.lifting_days} lifting days, ${u.reviews} reviews, ${u.programs} programs${!admin && u.maps_shared ? ' · MAPS catalog shared' : ''}`)),
       admin ? null : h('div', { class: 'user-controls' },
         active ? ownerKeyControl(u, run, done) : null,
         active ? h('label', { class: 'feed-choice small' }, h('input', { type: 'checkbox', checked: u.maps_shared, onchange: run(async (e) => {

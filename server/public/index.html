@@ -55,6 +55,9 @@
         <p><a class="button request-big" data-request-link>Request access to Health Review</a></p>
         <p class="muted small" data-request-contact></p>
       </div>
+      <!-- New users: the setup checklist (server/setup.js); then a summary of where things stand -->
+      <div class="card home-setup" id="home-setup" hidden></div>
+      <div class="card home-summary" id="home-summary" hidden></div>
       <div class="review-notice" id="paused-note" role="status" hidden><p>Your account is paused by the administrator: Health Auto Export posts, syncs, the weekly review and the chat are off. Your data is still here to see.</p></div>
       <nav class="home-tiles" aria-label="Sections">
         <a class="home-tile" href="#today">
@@ -114,7 +117,6 @@
         <button type="button" class="ghost small-button" id="arrange-tiles">Arrange tiles</button>
         <span id="arrange-controls" hidden><button type="button" class="small-button" id="arrange-done">Done</button> <button type="button" class="ghost small-button" id="arrange-reset">Reset to default</button> <span class="muted small">Use the arrows to move tiles.</span></span>
       </div>
-      <p class="card goal-nudge" id="goal-nudge" hidden>Pick your training goals in <a href="#settings">Settings</a> and Health Review puts what matters most to you first.</p>
       <div class="card home-sync sync"><span id="sync-status" class="muted" role="status"></span> <button type="button" id="sync-now" class="ghost">Sync now</button></div>
       <div class="card home-settings">
         <label class="demo-toggle"><input type="checkbox" id="demo-mode"> <span><strong>Demo mode</strong><span class="small muted block">Hides drinking and CBD on screen, for showing the app to others. Saved in this browser; nothing stored changes.</span></span></label>

@@ -32,8 +32,8 @@ export async function weeklyReview({ store, claude, sync = null, weekEnd, catalo
   const gate = reviewStatus(store.db, weekEnd ? addDays(week, 1) : today);
   if (!gate.ready && !force) {
     startUserRun(store, 'review', { weekEnd: week, gate: true }, quiet)
-      .finish('skipped', { weekEnd: week, missingDays: gate.missingDays, partialDays: gate.partialDays });
-    return { status: 'skipped', weekEnd: week, missingDays: gate.missingDays, partialDays: gate.partialDays, syncError };
+      .finish('skipped', { weekEnd: week, reason: gate.reason, missingDays: gate.missingDays, partialDays: gate.partialDays });
+    return { status: 'skipped', weekEnd: week, reason: gate.reason, missingDays: gate.missingDays, partialDays: gate.partialDays, syncError };
   }
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set in .env');
   const result = await runReview({ store, claude: claude(), weekEnd: week, today, catalog, model, effort, logger: quiet });

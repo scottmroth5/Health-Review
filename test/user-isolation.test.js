@@ -76,6 +76,7 @@ test('isolation: no write route sent by B changes any of A\'s rows', async () =>
     'POST /api/medications/:id/changes': { dose: '9 g', timings: ['morning'], effective_on: '2026-10-06' },
     'POST /api/medications/combine': { ids: [1, 2], name: 'Combined by B', timing: 'morning' },
     'PUT /api/doses/:date': { doses: [{ medication_id: 1, timing: 'morning', taken: false }] },
+    'PUT /api/account/setup': { hidden: true, dismiss: 'goals' },
     // B deletes their own account last (multi-user, phase 6): it must remove nothing of A's.
     'POST /api/account/delete': { confirmEmail: 'b@example.com' },
   };

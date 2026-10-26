@@ -5,6 +5,7 @@
 import { RUNNING_STALE_MINUTES } from './scheduler.js';
 import { monthStartIso } from './ai-access.js';
 import { USER_TABLES } from '../db/migrations-users.js';
+import { setupSteps } from './setup.js';
 
 /**
  * When each job last ran and whether one is running now, for any user (a scheduled job runs for every user in turn, so
@@ -37,13 +38,37 @@ export function listUsers(db, { now = new Date() } = {}) {
       (SELECT COUNT(*) FROM daily_metrics d WHERE d.user_id = u.id) AS health_days,
       (SELECT COUNT(*) FROM log_sessions l WHERE l.user_id = u.id) AS lifting_days,
       (SELECT COUNT(*) FROM reviews v WHERE v.user_id = u.id) AS reviews,
-      (SELECT COUNT(*) FROM user_programs p WHERE p.user_id = u.id) AS programs
+      (SELECT COUNT(*) FROM user_programs p WHERE p.user_id = u.id) AS programs,
+      -- Setup progress (server/setup.js): counts and flags only.
+      EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'goal_primary') AS goals_set,
+      (SELECT COUNT(*) FROM settings s WHERE s.user_id = u.id AND s.key IN ('birth_year', 'sex', 'height_in')) AS profile_keys,
+      (SELECT COUNT(*) FROM workout_sessions w WHERE w.user_id = u.id) AS workouts,
+      (SELECT COUNT(DISTINCT date) FROM strength_exercises e WHERE e.user_id = u.id AND e.tab_year <> 0) AS sheet_days,
+      (SELECT COUNT(DISTINCT date) FROM strength_exercises e WHERE e.user_id = u.id AND e.tab_year = 0) AS app_workouts,
+      (SELECT COUNT(*) FROM checkins c WHERE c.user_id = u.id) AS checkins,
+      (SELECT COUNT(*) FROM medications m WHERE m.user_id = u.id) AS meds,
+      (SELECT COUNT(*) FROM lab_results r WHERE r.user_id = u.id) AS labs,
+      (SELECT COUNT(*) FROM drinking_days d WHERE d.user_id = u.id) AS drinks,
+      (SELECT value FROM settings s WHERE s.user_id = u.id AND s.key = 'setup_dismissed') AS setup_dismissed,
+      EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'setup_hidden') AS setup_hidden
     FROM users u ORDER BY u.status = 'pending' DESC, u.role = 'admin' DESC, u.created_at DESC`).all({ since: monthStartIso(now) })
-    .map(({ feeds, ...u }) => {
+    .map(({ feeds, goals_set, profile_keys, workouts, sheet_days, app_workouts, checkins, meds, labs, drinks, setup_dismissed, setup_hidden, ...u }) => {
       let chosen = {};
       try { chosen = JSON.parse(feeds ?? '{}') ?? {}; } catch { chosen = {}; }
+      let dismissed = [];
+      try { dismissed = JSON.parse(setup_dismissed ?? '[]') ?? []; } catch { dismissed = []; }
+      const owner = u.role === 'admin';
+      const setup = setupSteps({
+        owner, chosen, ai: owner || Boolean(u.has_key) || Boolean(u.uses_owner_key), goalsSet: Boolean(goals_set), profileSet: profile_keys === 3,
+        apple: { token: Boolean(u.has_token), days: u.health_days, workouts },
+        sheet: { connected: Boolean(u.google_connected), sheetSet: Boolean(u.sheet_set), liftingDays: sheet_days },
+        manual: { checkins, appWorkouts: app_workouts, meds, labs, drinks },
+        dismissed, hidden: Boolean(setup_hidden),
+      }, { today: now.toISOString().slice(0, 10) });
       return {
         ...u,
+        // How far through Home's setup checklist (never what they entered).
+        setup: { doneCount: setup.doneCount, total: setup.total, complete: setup.complete },
         has_key: Boolean(u.has_key), uses_owner_key: Boolean(u.uses_owner_key), maps_shared: Boolean(u.maps_shared),
         has_token: Boolean(u.has_token), google_connected: Boolean(u.google_connected), sheet_set: Boolean(u.sheet_set),
         spent_month: Math.round(u.spent_month * 100) / 100,

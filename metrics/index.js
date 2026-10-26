@@ -23,8 +23,10 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
   return {
     weekEnd,
     week: w.week,
-    // Days of the week with no Apple Health row, or that look like a partial export (dates only).
-    dataQuality: weekDataQuality(data.daily_metrics, w.week.from, w.week.to),
+    // Days of the week with no Apple Health row, or that look like a partial export (dates only). Left out when the week
+    // and its baseline hold no Apple Health day at all: someone entering data by hand has no Apple Health days to miss.
+    dataQuality: data.daily_metrics.some((d) => d.date >= w.baseline.from && d.date <= w.week.to)
+      ? weekDataQuality(data.daily_metrics, w.week.from, w.week.to) : null,
     recovery: recovery(data.daily_metrics, weekEnd),
     // Blood oxygen and breathing disturbances: values only, for physician discussion (null with no data).
     nightBreathing: nightBreathing(data.daily_metrics, weekEnd),

@@ -125,12 +125,21 @@ test('weekly review job: a scheduled catch-up does nothing once the review exist
   const exists = await weeklyReview({ store, claude, today: '2026-10-26', scheduled: true, sync: async () => { throw new Error('no sync expected'); } });
   assert.deepEqual(exists, { status: 'exists', weekEnd: '2026-10-24' });
 
+  // A week with no data of any kind is never sent (no_data).
+  const empty = await weeklyReview({ store, claude, today: '2026-10-19', scheduled: true });
+  assert.equal(empty.status, 'skipped');
+  assert.equal(empty.weekEnd, '2026-10-17');
+  assert.equal(empty.reason, 'no_data');
+  assert.deepEqual(empty.missingDays, []);
+
+  // With Apple Health days, the missing ones are skipped by date.
+  for (const d of ['2026-10-11', '2026-10-12', '2026-10-13']) store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, 8000, 'x')").run(d);
   const skipped = await weeklyReview({ store, claude, today: '2026-10-19', scheduled: true });
   assert.equal(skipped.status, 'skipped');
-  assert.equal(skipped.weekEnd, '2026-10-17');
-  assert.equal(skipped.missingDays.length, 7, 'no Apple Health days stored');
-  const run = store.db.prepare("SELECT status, summary FROM runs WHERE name = 'review'").get();
+  assert.equal(skipped.reason, 'incomplete');
+  assert.deepEqual(skipped.missingDays, ['2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17']);
+  const run = store.db.prepare("SELECT status, summary FROM runs WHERE name = 'review' ORDER BY id DESC").get();
   assert.equal(run.status, 'skipped');
-  assert.deepEqual(Object.keys(JSON.parse(run.summary)).sort(), ['missingDays', 'partialDays', 'weekEnd']);
+  assert.deepEqual(Object.keys(JSON.parse(run.summary)).sort(), ['missingDays', 'partialDays', 'reason', 'weekEnd']);
   store.close();
 });

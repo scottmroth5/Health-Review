@@ -413,6 +413,15 @@ other) plus the review eval's results.jsonl usage priced with agent-core's prici
 exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
+Guided setup and Home summary (UX roadmap phase 2, 2026-10-26; data/handoff/ux-roadmap-2026-10-26.md): server/setup.js
+setupSteps (pure: goals, profile, data, optional ai, firstResult; done, skipped or hidden) and loadSetupFacts (counts and
+flags only); GET /api/home (setup plus the summary: today's check-in, current program, the latest review's first two
+bullets, each chosen feed's latest data, data issue count) and PUT /api/account/setup (dismiss, restore, hidden; settings
+setup_dismissed and setup_hidden; Settings shows it again). Setup guides and never blocks; entering by hand is a full way
+in (owner's choice). The admin Users screen shows setup N of 5 from the same setupSteps. Hand entry: a user with no
+Apple Health data gets no data checks (dataCheckWarnings), computeWeek leaves dataQuality out when the week and baseline
+hold no Apple Health day, and reviewStatus applies the Apple Health gate only with Apple Health days in the window; a
+week with no data of any kind is skipped as no_data (never due, never sent).
 Users, phase 6 (2026-10-24), account controls and help: GET /api/account/export (server/admin-queries.js exportUserData:
 the account row without claude_key_enc, ingest_token_hash or google_refresh_enc, plus every row of theirs in every table
 with a user_id column, found from the schema, and their run_calls); POST /api/account/pause and /resume (settings row
