@@ -382,7 +382,7 @@ terms checkbox; POST creates a pending user and emails the admin), pending to /a
 required on writes, TRUST_PROXY set behind Caddy; sign-in asks for openid email profile, and the session carries the
 Google first name (given_name, else name; 60 characters, never logged) for the header's "(name)", which GET /api/me
 returns; open without a session: /auth/*, GET /api/health (status and version, the deploy check), /api/ingest/* (its own
-token), and /manifest.webmanifest and /icon-*.png (iOS fetches them without cookies). AUTH_MODE=demo: no sign-in, every non-GET request gets 403 (the
+token), and /manifest.webmanifest, /icon-*.png, /apple-touch-icon.png and /favicon.ico (iOS and browsers fetch them without cookies). AUTH_MODE=demo: no sign-in, every non-GET request gets 403 (the
 test enumerates the route table through app.routeList, so new write routes are covered), /api/status readOnly true hides
 write controls (body.read-only) and api() refuses changes before sending. Security headers (CSP, nosniff, frame DENY,
 HSTS on https) always; rate limits (sign-in, refused requests, the demo's request cap) when not none. Check-in and drinking scales are 1 to 10 to match
