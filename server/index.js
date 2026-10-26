@@ -74,7 +74,7 @@ if (demo) {
   setInterval(() => { try { refresh(); } catch (err) { console.error(`[demo] refresh failed: ${err.name}: ${err.message}`); } }, 10 * 60 * 1000).unref();
   app = await buildApp({
     clock: () => zonedInstant(builtFor, 12, 0),
-    store, services: {}, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, instance: 'demo', features: { chat: false }, geo,
+    store, services: {}, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, instance: 'demo', features: { chat: false }, geo, supportEmail: process.env.SUPPORT_EMAIL,
     requestAccessUrl: process.env.REQUEST_ACCESS_URL || null,
     catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')),
   });
@@ -89,7 +89,7 @@ if (demo) {
   const mailer = createMailer();
   const appUrl = () => auth.settings?.publicUrl || `http://localhost:${port}`;
   const alerts = createAlerts({ db: store.db, mailer, adminEmail: () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email, appUrl });
-  const ai = createAiAccess({ db: store.db, mailer, adminEmail: () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email, appUrl });
+  const ai = createAiAccess({ supportEmail: process.env.SUPPORT_EMAIL, db: store.db, mailer, adminEmail: () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email, appUrl });
   const ownerClaude = (() => { let c; return () => (c ??= createReviewClaude()); })();
   const claudeFor = (uid = OWNER_ID) => {
     const { source } = ai.check(uid);
@@ -198,7 +198,7 @@ if (demo) {
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
   app = await buildApp({
-    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer, geo,
+    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer, geo, supportEmail: process.env.SUPPORT_EMAIL,
     schedule: () => scheduler.status(),
   });
 }

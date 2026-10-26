@@ -48,6 +48,8 @@ services:
       # The demo's "Request access" link: the main app's sign-in, which leads new people to Request access.
       REQUEST_ACCESS_URL: https://${SITE_ADDRESS:?set SITE_ADDRESS in .env}/auth/login
       GEO_ALLOW: US
+      # The published support address, from the server's .env (the demo has no env file of its own).
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
       DATA_DIR: /app/data
       HOST: 0.0.0.0
       PORT: "5188"

@@ -29,4 +29,4 @@ Health Review is a personal project run by its owner, shared with a few people b
 
 ## Contact
 
-Questions can be raised as an issue on this project's GitHub repository.
+Questions, problems or requests: email {{SUPPORT}}, or use Send feedback on the Help screen.

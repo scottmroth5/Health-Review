@@ -8,7 +8,10 @@ const escape = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;',
 const inline = (s) => escape(s)
   .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   .replace(/`([^`]+)`/g, '<code>$1</code>')
-  .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]*)\)/g, '<a href="$2">$1</a>');
+  .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]*|mailto:[^)\s@<>"']+@[^)\s@<>"']+)\)/g, '<a href="$2">$1</a>');
+
+/** The support address from SUPPORT_EMAIL, or null when unset or not an address (pages then name the administrator). */
+export const supportEmailFrom = (value) => (/^[^\s@<>"'()[\]]+@[^\s@<>"'()[\]]+\.[A-Za-z]{2,}$/.test(String(value ?? '').trim()) ? String(value).trim() : null);
 
 /** HTML for the Markdown subset the policy files use. */
 export function markdownToHtml(md) {
@@ -28,8 +31,10 @@ export function markdownToHtml(md) {
 
 /** A full page around a policy file. */
 export function policyPage(file, vars = {}) {
-  // {{SITE}} and the like are filled in at render time, so the repo never names the live address.
-  const md = readFileSync(repoPath(file), 'utf8').replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] ?? m);
+  // {{SITE}} and {{SUPPORT}} are filled in at render time, so the repo never names the live address or the support
+  // mailbox; without SUPPORT_EMAIL, {{SUPPORT}} reads "the administrator".
+  const support = vars.SUPPORT ? `[${vars.SUPPORT}](mailto:${vars.SUPPORT})` : 'the administrator';
+  const md = readFileSync(repoPath(file), 'utf8').replace(/\{\{(\w+)\}\}/g, (m, k) => (k === 'SUPPORT' ? support : vars[k] ?? m));
   const title = /^# (.*)$/m.exec(md)?.[1] ?? 'Health Review';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title>` +
     '<style>body{font:16px/1.55 system-ui,sans-serif;margin:0;background:#f4f3f0;color:#1d1d1b}main{max-width:720px;margin:0 auto;padding:24px 16px}' +

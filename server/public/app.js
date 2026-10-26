@@ -341,6 +341,12 @@ async function loadStatus() {
   for (const a of [$('#request-access'), $('#home-request-link')]) if (s.requestAccessUrl) a.href = s.requestAccessUrl;
   $('#request-access').hidden = !s.requestAccessUrl;
   $('#home-request').hidden = !s.requestAccessUrl;
+  // The published support address (SUPPORT_EMAIL): on Help, and on the demo's Request access card.
+  state.supportEmail = s.supportEmail ?? null;
+  const mail = () => h('a', { href: `mailto:${state.supportEmail}` }, state.supportEmail);
+  fill($('#home-request-contact'), state.supportEmail ? [' Questions: ', mail(), '.'] : []);
+  $('#help-contact').hidden = !state.supportEmail;
+  fill($('#help-contact'), state.supportEmail ? ['Problems, questions or requests: email ', mail(), ', or use Send feedback below.'] : []);
   $('#sync-now').hidden = s.sync === false;
   document.querySelector('.demo-toggle').hidden = demoInstance;
   homeSettingsVisibility();

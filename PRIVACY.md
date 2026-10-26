@@ -63,4 +63,4 @@ Nothing in Health Review is medical advice. See the [terms](/terms).
 
 ## Contact
 
-Questions about this policy can be raised as an issue on this project's GitHub repository.
+Questions about this policy, your data or the app: email {{SUPPORT}}.

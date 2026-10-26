@@ -7,6 +7,7 @@
 import { OWNER_ID, getUser } from '../db/users.js';
 import { scopeDb } from '../db/scope.js';
 import { localDate, zonedInstant } from '../tools/time.js';
+import { supportEmailFrom } from './pages.js';
 
 /** The monthly cap the admin may set, in US dollars. */
 export const OWNER_KEY_CAP = { min: 1, max: 100 };
@@ -49,7 +50,8 @@ export function clearCapNotice(db, uid) {
  * The server's AI access check: check(uid) gives aiAccess for the user now, and sends the cap emails once a month.
  * @param {{ db: object, mailer?: { send: Function }, adminEmail?: () => string, appUrl?: () => string, clock?: () => Date, log?: object }} options
  */
-export function createAiAccess({ db, mailer, adminEmail = () => null, appUrl = () => '', clock = () => new Date(), log = console }) {
+export function createAiAccess({ db, mailer, adminEmail = () => null, appUrl = () => '', clock = () => new Date(), log = console, supportEmail = null }) {
+  const support = supportEmailFrom(supportEmail);
   const raw = db.unscoped ?? db;
   const notifyCap = (user) => {
     const sdb = scopeDb(raw, user.id);
@@ -62,7 +64,7 @@ export function createAiAccess({ db, mailer, adminEmail = () => null, appUrl = (
     const cap = `$${Number(user.owner_key_cap_usd).toFixed(2)}`;
     const send = (to, subject, text) => mailer.send({ to, subject, text }).catch(() => false);
     send(user.email, 'Health Review: AI paused for this month',
-      `Your Health Review AI allowance for this month (${cap}) is used up, so the weekly review and chat are paused until next month.\n\nTo keep going now, add your own Claude API key in Settings at ${appUrl()}.\n`);
+      `Your Health Review AI allowance for this month (${cap}) is used up, so the weekly review and chat are paused until next month.\n\nTo keep going now, add your own Claude API key in Settings at ${appUrl()}.\n${support ? `\nQuestions or problems: ${support}\n` : ''}`);
     const admin = adminEmail();
     if (admin) send(admin, 'Health Review: a user reached their AI cap',
       `${user.name || user.email} (${user.email}) used this month's ${cap} AI allowance on your Claude key. Their AI is paused until next month; you can raise the cap on the Users screen.\n`);

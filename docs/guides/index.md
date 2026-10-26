@@ -11,4 +11,6 @@ Health Review shows your own data back to you. Choose the feeds you want in **Se
 - [Writing your review prompt](/guides/prompts): what to put in each prompt section, what to leave out, and examples.
 - [Your Claude API key](/guides/claude-key): turns on the AI weekly review and the Next program chat.
 
+Questions or problems? Email {{SUPPORT}}, or use Send feedback on the Help screen.
+
 [Back to Health Review](/)

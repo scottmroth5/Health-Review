@@ -116,7 +116,9 @@ const safeNext = (next) => (typeof next === 'string' && /^\/(?!\/)/.test(next) &
  *   tells the admin (google mode)
  */
 export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now(), findUser = () => null, registerUser = async () => {},
-  sheetsExchange, connectSheets = async () => {}, createSheet = async () => { throw new Error('Creating sheets is not available'); } } = {}) {
+  sheetsExchange, connectSheets = async () => {}, createSheet = async () => { throw new Error('Creating sheets is not available'); }, supportEmail = null } = {}) {
+  // The published support address on the sign-in pages (escaped; null leaves the line out).
+  const contact = supportEmail ? `<p>Questions: <a href="mailto:${escapeHtml(supportEmail)}">${escapeHtml(supportEmail)}</a></p>` : '';
   app.get('/api/me', {
     schema: { summary: 'The signed-in user (google mode), or the open or demo mode', response: { 200: { type: 'object', additionalProperties: true } } },
   }, async (req) => ({ authMode: mode, email: req.user ?? null, name: req.userName ?? null, ...(mode === 'demo' ? { demo: true } : {}) }));
@@ -294,9 +296,9 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     return reply.redirect(statusPage(findUser(session.email)) ?? '/');
   });
   app.get('/auth/waiting', { schema: { hide: true } }, async (req, reply) =>
-    reply.type('text/html').send(page('Thanks, your request is in', `<p>Approval usually takes up to 24 hours. You'll get an email when you're in; then just open the app again.</p>${signOut}`)));
+    reply.type('text/html').send(page('Thanks, your request is in', `<p>Approval usually takes up to 24 hours. You'll get an email when you're in; then just open the app again.</p>${contact}${signOut}`)));
   app.get('/auth/not-approved', { schema: { hide: true } }, async (req, reply) =>
-    reply.type('text/html').send(page('Access was not approved', `<p>This account can't use Health Review.</p>${signOut}`)));
+    reply.type('text/html').send(page('Access was not approved', `<p>This account can't use Health Review.</p>${contact}${signOut}`)));
 
   app.post('/auth/logout', { schema: { hide: true } }, async (req, reply) => {
     if (req.headers.origin && req.headers.origin !== origin) return reply.code(403).send({ error: 'Requests that change data must come from this site.' });

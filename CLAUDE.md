@@ -447,6 +447,10 @@ access), /:id/pause and /:id/resume (approved to paused and back), /:id/owner-ke
 user's email typed and a cap; the user is emailed on and off), /:id/maps ({ shared }). None act on an admin; owner-key and
 maps need an approved or paused user. Paused: signs in and sees their data; ingest token 401, POST /api/sync 403, no AI,
 no scheduled jobs (activeUserIds), and a note on Home. The scheduled review skips a user with no AI with its reason.
+Support address (2026-10-26): SUPPORT_EMAIL (server .env; compose passes it to the demo) is filled in as {{SUPPORT}} by
+server/pages.js policyPage (a mailto link; unset or invalid: "the administrator") on the policies and guides, and by the
+app on the sign-in waiting pages, the US-only 403 page, /api/status supportEmail (Help, the demo's Request access card)
+and emails to users. Never write the address in the repo.
 Security (2026-10-25): US-only access (server/geo.js, GEO_ALLOW=US for app and demo in deploy/compose.yml): an onRequest
 hook answers 403 with a short page outside the allowed countries, by req.ip (Caddy's forwarded address) in DB-IP's IP to
 Country Lite (CC BY 4.0) read with maxmind; /api/ingest/* and /api/health always pass, as do private and loopback

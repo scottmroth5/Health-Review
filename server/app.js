@@ -46,7 +46,7 @@ import { OWNER_KEY_CAP, clearCapNotice, spentThisMonth } from './ai-access.js';
 import { createMailer } from '../tools/mail.js';
 import { boxKey, seal } from '../tools/secret-box.js';
 import { addDefaultPromptSections } from '../agent/default-prompts.js';
-import { policyPage } from './pages.js';
+import { policyPage, supportEmailFrom } from './pages.js';
 import { BLOCKED_PAGE, geoBlocker } from './geo.js';
 
 /** Checks a Claude API key with Anthropic's free model list (the key goes only to Anthropic; nothing is logged). */
@@ -126,12 +126,16 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  *   prompt or report text), so docker compose logs shows what ran
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null, geo = {} }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null, geo = {}, supportEmail = null }) {
+  // The published support address (SUPPORT_EMAIL), never written in the repo; null shows "the administrator".
+  const support = supportEmailFrom(supportEmail);
+  const supportLine = support ? `\nQuestions or problems: ${support}\n` : '';
   const app = Fastify({ logger, trustProxy });
   // US-only access (server/geo.js): refused before anything else runs; ingest posts and the health check always pass.
   const blocked = geoBlocker(geo);
+  const blockedPage = support ? BLOCKED_PAGE.replace('</p></body>', `</p><p>Questions: <a href="mailto:${support}">${support}</a></p></body>`) : BLOCKED_PAGE;
   app.addHook('onRequest', async (req, reply) => {
-    if (blocked(req)) return reply.code(403).type('text/html').header('Cache-Control', 'no-store').send(BLOCKED_PAGE);
+    if (blocked(req)) return reply.code(403).type('text/html').header('Cache-Control', 'no-store').send(blockedPage);
   });
   // Every route's method and path, so tests can check each write route (demo mode refuses them all).
   const routeList = [];
@@ -211,17 +215,17 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     upsert.run('workout_log_created', id, clock().toISOString());
     log.info('[users] a Workout Log sheet was created');
   };
-  registerAuth(app, { mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
+  registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
     sheetsExchange: auth.sheetsExchange, connectSheets, createSheet });
   // The privacy policy and terms, readable before signing in.
-  app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md')));
-  app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md')));
+  app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md', { SUPPORT: support })));
+  app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md', { SUPPORT: support })));
   // Setup guides for each data feed (docs/guides), readable before signing in.
   const GUIDES = ['using-the-app', 'health-auto-export', 'workout-log', 'manual-entry', 'programs', 'prompts', 'claude-key'];
   app.get('/guides/:name', { schema: { hide: true } }, async (req, reply) => (GUIDES.includes(req.params.name)
-    ? reply.type('text/html').send(policyPage(`docs/guides/${req.params.name}.md`, { SITE: appUrl() }))
-    : reply.code(404).type('text/html').send(policyPage('docs/guides/index.md'))));
-  app.get('/guides', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('docs/guides/index.md')));
+    ? reply.type('text/html').send(policyPage(`docs/guides/${req.params.name}.md`, { SITE: appUrl(), SUPPORT: support }))
+    : reply.code(404).type('text/html').send(policyPage('docs/guides/index.md', { SUPPORT: support }))));
+  app.get('/guides', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('docs/guides/index.md', { SUPPORT: support })));
   app.addHook('preHandler', (req, reply, done) => {
     const uid = uidOf(req);
     if (!uid) return done();
@@ -274,7 +278,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const today = q.localDate(clock());
     return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }),
       // The demo's "Request access" link to the main app (REQUEST_ACCESS_URL; none when unset).
-      ...(authMode === 'demo' && requestAccessUrl ? { requestAccessUrl } : {}) };
+      ...(authMode === 'demo' && requestAccessUrl ? { requestAccessUrl } : {}),
+      // The published support address, for Help and the demo's Request access card.
+      supportEmail: support };
   });
 
   // ---- one day ----
@@ -1306,7 +1312,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!u) return reply.code(404).send({ error: 'No such user' });
     addDefaultPromptSections(scopeDb(store.db, u.id));
     await mailer.send({ to: u.email, subject: "You're in: Health Review",
-      text: `Your Health Review account is approved.\n\nOpen ${appUrl()} and sign in with this Google account. To use the AI weekly review and chat, add your own Claude API key in Settings (see https://docs.claude.com/en/api/getting-started). Everything else works without one.\n` });
+      text: `Your Health Review account is approved.\n\nOpen ${appUrl()} and sign in with this Google account. To use the AI weekly review and chat, add your own Claude API key in Settings (see https://docs.claude.com/en/api/getting-started). Everything else works without one.\n${supportLine}` });
     return adminUser(u.id);
   });
   app.post('/api/admin/users/:id/reject', { onRequest: adminOnly, schema: { summary: 'Reject a pending user (or end access)', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
@@ -1374,8 +1380,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     clearCapNotice(store.db, u.id);
     log.info(`[users] the owner's key was turned ${on ? 'on' : 'off'} for a user`);
     await mailer.send({ to: u.email, subject: on ? 'Health Review: AI turned on for you' : 'Health Review: AI allowance ended',
-      text: on ? `The administrator turned on the AI weekly review and chat for you, up to $${cap.toFixed(2)} a month. Open ${appUrl()} to use them. If you add your own Claude API key in Settings, it is used instead.\n`
-        : `The administrator's AI allowance for you has ended. To keep using the AI weekly review and chat, add your own Claude API key in Settings at ${appUrl()}.\n` });
+      text: on ? `The administrator turned on the AI weekly review and chat for you, up to $${cap.toFixed(2)} a month. Open ${appUrl()} to use them. If you add your own Claude API key in Settings, it is used instead.\n${supportLine}`
+        : `The administrator's AI allowance for you has ended. To keep using the AI weekly review and chat, add your own Claude API key in Settings at ${appUrl()}.\n${supportLine}` });
     return adminUser(u.id);
   });
   // Share the owner's MAPS catalog (family): their Advisor, phases and called-for comparisons use it; only computed facts
