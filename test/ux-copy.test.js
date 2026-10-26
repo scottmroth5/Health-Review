@@ -20,7 +20,9 @@ test('Labs says what it does: ranges and below or above range marks, never "no r
 test('ordinary screens carry no npm commands or server file paths (comments aside)', () => {
   const strings = [...script.replace(/^\s*(\/\/|\*).*$/gm, '').matchAll(/(['"`])((?:(?!\1).)*)\1/g)].map((m) => m[2]);
   for (const s of strings) assert.doesNotMatch(s, /npm run|data\/maps|programs\.json|\b[A-Z]+_(API_KEY|TOKEN|SECRET|ID)\b/, s);
-  assert.doesNotMatch(page.replace(/<!--[\s\S]*?-->/g, ''), /npm run|data\/maps/);
+  // The page's text outside its HTML comments (split on the markers, so nothing is "sanitized").
+  const visible = page.split('<!--').map((part, i) => (i ? part.split('-->').slice(1).join('-->') : part)).join(' ');
+  assert.doesNotMatch(visible, /npm run|data\/maps/);
 });
 
 test('the Zone 2 range is in Settings, and the Prompt tab no longer holds it', () => {
@@ -55,8 +57,9 @@ test("the demo's guides say they are the demo's copy and show the main app's add
   const demo = await buildApp({ store: openHealthStore(':memory:'), instance: 'demo', requestAccessUrl: `${MAIN}/auth/login` });
   const body = (await demo.inject('/guides/health-auto-export')).body;
   assert.match(body, /the demo(&#39;|')s copy of the guide/);
-  assert.match(body, new RegExp(`href="${MAIN}/auth/login"`));
-  assert.ok(body.includes(MAIN), "the main app's address in the steps");
+  // The banner's link and the guide's first ingest address, compared whole.
+  assert.equal(/<p style="[^"]*">[^<]*<a href="([^"]+)">/.exec(body)?.[1], `${MAIN}/auth/login`);
+  assert.equal(/<code>([^<]*\/api\/ingest\/health)<\/code>/.exec(body)?.[1], `${MAIN}/api/ingest/health`, "the main app's address in the steps");
   await demo.close();
   // A request access link that is not http(s) never becomes a link.
   const odd = await buildApp({ store: openHealthStore(':memory:'), instance: 'demo', requestAccessUrl: 'javascript:alert(1)' });
