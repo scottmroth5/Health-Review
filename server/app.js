@@ -222,8 +222,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md', { SUPPORT: support })));
   // Setup guides for each data feed (docs/guides), readable before signing in.
   const GUIDES = ['using-the-app', 'health-auto-export', 'workout-log', 'manual-entry', 'programs', 'prompts', 'claude-key'];
+  // The demo's guides are its copy of the real ones: a banner says so and links to Request access, and the addresses in
+  // them are the main app's (from its Request access link), since nothing can be set up against the demo.
+  const demoGuides = instance === 'demo' || authMode === 'demo';
+  const accessUrl = (() => { try { const u = new URL(requestAccessUrl ?? ''); return /^https?:$/.test(u.protocol) ? u : null; } catch { return null; } })();
+  const mainOrigin = accessUrl?.origin ?? null;
+  const guideNotice = demoGuides ? { notice: { text: "This is the demo's copy of the guide, for reading only. To set it up with your own data,",
+    linkText: 'request access to Health Review', href: accessUrl?.href ?? '/' } } : {};
   app.get('/guides/:name', { schema: { hide: true } }, async (req, reply) => (GUIDES.includes(req.params.name)
-    ? reply.type('text/html').send(policyPage(`docs/guides/${req.params.name}.md`, { SITE: appUrl(), SUPPORT: support }))
+    ? reply.type('text/html').send(policyPage(`docs/guides/${req.params.name}.md`, { SITE: (demoGuides && mainOrigin) || appUrl(), SUPPORT: support }, guideNotice))
     : reply.code(404).type('text/html').send(policyPage('docs/guides/index.md', { SUPPORT: support }))));
   app.get('/guides', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('docs/guides/index.md', { SUPPORT: support })));
   app.addHook('preHandler', (req, reply, done) => {

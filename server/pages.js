@@ -29,8 +29,11 @@ export function markdownToHtml(md) {
   return out.join('\n');
 }
 
-/** A full page around a policy file. */
-export function policyPage(file, vars = {}) {
+/**
+ * A full page around a policy file. notice ({ text, linkText, href }) puts a banner above it: the demo's guides say they
+ * are the demo's copy and link to Request access.
+ */
+export function policyPage(file, vars = {}, { notice = null } = {}) {
   // {{SITE}} and {{SUPPORT}} are filled in at render time, so the repo never names the live address or the support
   // mailbox; without SUPPORT_EMAIL, {{SUPPORT}} reads "the administrator".
   const support = vars.SUPPORT ? `[${vars.SUPPORT}](mailto:${vars.SUPPORT})` : 'the administrator';
@@ -39,5 +42,5 @@ export function policyPage(file, vars = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title>` +
     '<style>body{font:16px/1.55 system-ui,sans-serif;margin:0;background:#f4f3f0;color:#1d1d1b}main{max-width:720px;margin:0 auto;padding:24px 16px}' +
     '@media (prefers-color-scheme: dark){body{background:#121211;color:#e8e7e3}a{color:#6da7ec}}h1{font-size:24px}h2{font-size:18px;margin-top:28px}code{word-break:break-all}</style></head>' +
-    `<body><main>${markdownToHtml(md)}<p><a href="/">Back to Health Review</a></p></main></body></html>`;
+    `<body><main>${notice ? `<p style="border:2px solid #2a78d6;border-radius:8px;padding:10px 12px">${escape(notice.text)}${notice.href ? ` <a href="${escape(notice.href)}">${escape(notice.linkText ?? notice.href)}</a>.` : ''}</p>` : ''}${markdownToHtml(md)}<p><a href="/">Back to Health Review</a></p></main></body></html>`;
 }

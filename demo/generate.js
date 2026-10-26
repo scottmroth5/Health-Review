@@ -275,7 +275,7 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
     ['owner', 'Sample note: I can only train four days a week, about an hour each.', { strength: 2, joint: 1, time: 2, vo2: 2 }],
     ['claude', `Sample reply: counting time double, ${top1} still fits at three main sessions a week; ${top2} asks for a bit more time across the week.`],
     ['owner', 'Sample note: what about my shoulders? Overhead pressing bothers them some weeks.', null],
-    ['claude', `Sample reply: the Advisor scores joint health from one-side work and mobility; ${top3} has the most of both. You can also pause an exercise on the Training tab so it counts against programs that lean on it.`],
+    ['claude', `Sample reply: shoulder pain that keeps coming back is worth raising with your physician or a physical therapist before you change programs around it. For the ranking itself: the Advisor scores joint health from one-side work and mobility, and ${top3} has the most of both. You can also pause an exercise on the Training tab so it counts against programs that lean on it.`],
   ];
   thread.forEach(([role, text, weights], i) => insertNote.run(`00000000-0000-4000-8000-0000000000${String(i + 1).padStart(2, '0')}`,
     `${addDays(today, -3)}T18:${String(i * 2).padStart(2, '0')}:00.000Z`, role, text, role === 'claude' ? '[]' : null, weights ? JSON.stringify(weights) : null, role === 'claude' ? 'sample' : null));

@@ -79,8 +79,12 @@ test('demo instance: reports itself, refuses sync and chat, shows only its own r
     assert.equal(renderReport(report), r.report_md);
     assert.deepEqual(checkReport(report, { allowed: allowedNumbers(summary), medicationNames: [], labNames }), [], r.week_ending);
     assert.ok(report.sections.length >= 7, `${r.week_ending}: a full review`);
+    assert.doesNotMatch(r.report_md, /\b[a-z]+_[a-z]+(_[a-z]+)*\b/, `${r.week_ending}: readable names, never metric keys`);
   }
   assert.ok(store.db.prepare('SELECT COUNT(*) FROM advisor_notes WHERE user_id = @uid').pluck().get() >= 8, 'a chat thread');
+  // The sample chat keeps the boundary the chat states: pain goes to a physician before any program talk.
+  const replies = store.db.prepare("SELECT text FROM advisor_notes WHERE user_id = @uid AND role = 'claude'").pluck().all();
+  assert.ok(replies.some((t) => /shoulder pain .* physician/.test(t)), 'the shoulder reply points to a physician');
   await app.close();
   store.close();
   rmSync(dir, { recursive: true, force: true });

@@ -20,7 +20,8 @@ function chooser(seedText) {
   };
 }
 
-const LABELS = { hrv_ms: 'HRV', resting_hr: 'resting heart rate', sleep_total_hr: 'sleep', steps: 'steps', active_energy_kcal: 'active energy', exercise_min: 'exercise minutes',
+const LABELS = { hrv_ms: 'HRV', resting_hr: 'resting heart rate', sleep_total_hr: 'sleep', sleep_deep_hr: 'deep sleep', sleep_rem_hr: 'REM sleep',
+  sleep_core_hr: 'core sleep', sleep_awake_hr: 'time awake', stand_hours: 'stand hours', steps: 'steps', active_energy_kcal: 'active energy', exercise_min: 'exercise minutes',
   respiratory_rate: 'breathing rate', walking_hr_avg: 'walking heart rate', walking_speed_mph: 'walking speed', walking_asymmetry_pct: 'walking asymmetry',
   cardio_recovery_bpm: 'cardio recovery', wrist_temp_f: 'wrist temperature', hr_min: 'lowest heart rate', hr_max: 'highest heart rate', hr_avg: 'average heart rate',
   physical_effort: 'physical effort', vo2max: 'VO2 max' };

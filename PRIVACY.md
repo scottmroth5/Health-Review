@@ -21,7 +21,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 
 - **You** see only your own data. Every part of the app is limited to the signed-in user.
 - **The operator** runs the server and can access the data stored on it, including yours. The app's administration screens show account details (name, email, status, whether a key is set), which feeds you set up (yes or no), when data last arrived, your AI spend this month and counts of your stored days and reviews; never your key, tokens or sheet links.
-- **Nobody else.** Your data is not sold, shared with third parties or used for advertising.
+- **The services that run the app, and nobody else.** Your data is never sold or used for advertising. Besides you and the operator, it is handled only by: Amazon Web Services (the server it is stored on), Anthropic (only when AI is on for you; see AI below) and Google (sign-in, and a Workout Log sheet you connect).
 
 ## Your data feeds
 

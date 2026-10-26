@@ -118,10 +118,10 @@ const setScale = (form, field, value) => {
 // ---------------- today ----------------
 const CHECKIN_SCALES = [
   ['readiness', 'Morning readiness', '1 low, 10 high'],
-  ['energy', 'Energy'],
-  ['mood', 'Mood'],
+  ['energy', 'Energy', '1 drained, 10 energized'],
+  ['mood', 'Mood', '1 low, 10 great'],
   ['stress', 'Stress', '1 calm, 10 very stressed'],
-  ['nutrition', 'Nutrition quality'],
+  ['nutrition', 'Nutrition quality', '1 poor, 10 excellent'],
 ];
 const BODY = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat'];
 const DRINKS = [['beers', 'Beer'], ['wine', 'Wine'], ['bourbon', 'Bourbon'], ['other', 'Other mixed'], ['cbd', 'CBD']];
@@ -274,10 +274,39 @@ function setCount(field, value) {
   $('#drink-total').textContent = `${alcohol} alcoholic drink${alcohol === 1 ? '' : 's'}${counts.cbd ? `, ${counts.cbd} CBD (not counted as alcohol)` : ''}`;
 }
 
-/** Data check warnings under the day line (stale or missing Apple Health days, partial days); hidden when none. */
+/**
+ * The public demo: a tap or edit changes the screen only, so the form's status says so instead of a stale "Saved".
+ * Bound once; reloading a day or page puts the sample data back.
+ */
+const PREVIEW_MESSAGE = "Preview only: the demo doesn't save changes.";
+let previewWatched = false;
+function watchPreviewChanges() {
+  if (previewWatched) return;
+  previewWatched = true;
+  const say = (e) => {
+    const form = e.target.closest?.('form');
+    const status = form && $('.status', form);
+    if (status && (e.type !== 'click' || e.target.closest('.scale-buttons button, .counter button'))) setStatus(status, PREVIEW_MESSAGE, 'muted');
+  };
+  for (const type of ['click', 'input', 'change']) $('main').addEventListener(type, say);
+}
+
+/** The Home badge for the data checks: "N data issues", or nothing. */
+const dataIssuesBadge = (checks = []) => (checks.length ? `${checks.length} data issue${checks.length === 1 ? '' : 's'}` : '');
+
+/**
+ * Data check warnings under the day line (stale or missing Apple Health days, partial days); hidden when none. They are
+ * about recent days, not the day shown, so the list says so, and each date opens that day.
+ */
 function renderDataChecks(checks = []) {
   $('#data-checks').hidden = !checks.length;
-  fill($('#data-checks'), checks.map((c) => h('li', {}, h('span', { 'aria-hidden': 'true' }, '⚠ '), c.message)));
+  const open = (date) => h('button', { type: 'button', class: 'link', onclick: () => { $('#day').value = date; loadDay(); } }, niceDate(date));
+  const days = (c) => (c.dates ?? []).filter((d) => d <= state.today).slice(0, 5);
+  fill($('#data-checks'), checks.length ? [
+    h('li', { class: 'data-checks-title' }, h('strong', {}, 'Recent data issues'), ' (not about the day shown)'),
+    ...checks.map((c) => h('li', {}, h('span', { 'aria-hidden': 'true' }, '⚠ '), c.message,
+      days(c).length ? h('span', { class: 'small' }, ' Go to ', ...days(c).flatMap((d, i) => (i ? [', ', open(d)] : [open(d)]))) : null)),
+  ] : []);
 }
 
 /**
@@ -325,7 +354,7 @@ async function loadStatus() {
   $('#day').max = s.today;
   if (!$('#day').value) $('#day').value = s.today;
   renderDataChecks(s.dataChecks);
-  setHomeBadge('today', s.dataChecks?.length ? `${s.dataChecks.length} warning${s.dataChecks.length === 1 ? '' : 's'}` : '');
+  setHomeBadge('today', dataIssuesBadge(s.dataChecks));
   loadReviewNotice();
   // The demo instance (npm run demo): a banner, no sync, and no privacy toggle (there is nothing real to hide).
   const demoInstance = s.instance === 'demo';
@@ -334,6 +363,7 @@ async function loadStatus() {
   state.readOnly = Boolean(s.readOnly);
   document.body.classList.toggle('read-only', state.readOnly);
   if (state.readOnly) {
+    watchPreviewChanges();
     $('#instance-banner .long').textContent = 'Demo: everything here is made-up sample data, and changes are turned off.';
     $('#instance-banner .short').textContent = 'Demo: made-up data, changes off.';
   }
@@ -701,7 +731,7 @@ function renderProgramList(view) {
       } }, 'Delete')))) : [h('p', { class: 'muted' }, 'No programs of your own yet.')]);
   $('#programs-shared-card').hidden = !view.shared.length;
   $('#programs-shared-title').textContent = view.owner ? 'Your MAPS catalog' : 'Shared with you';
-  $('#programs-shared-note').textContent = view.owner ? 'From data/maps/programs.json on the server (npm run programs:catalog checks it). A program of your own with the same name is used instead.'
+  $('#programs-shared-note').textContent = view.owner ? 'Your own catalog, kept on the server. A program of your own with the same name is used instead.'
     : "These programs come from the administrator's catalog; their phases and lengths are used for you, but their contents are not shown or exported.";
   fill($('#programs-shared'), view.shared.map((n) => h('li', {}, n)));
 }
@@ -848,6 +878,7 @@ const NO_KEY_NOTE = (reason = 'no_key') => (reason === 'paused' ? h('span', {}, 
 
 /** Settings: the signed-in user's Claude key (never shown; only whether it is set) and account. */
 async function loadSettingsView() {
+  loadSettings().catch(() => {});
   const a = await api('GET', '/api/account');
   state.account = a;
   // Back from Google's Sheets permission: #settings/sheets-<result>.
@@ -856,7 +887,7 @@ async function loadSettingsView() {
   const form = $('#claude-key-form');
   const status = $('#claude-key-status');
   if (a.claudeKey?.source === 'server') {
-    status.textContent = "Your key comes from the server's settings (ANTHROPIC_API_KEY); it can't be changed here.";
+    status.textContent = "Your key is set on the server, so it can't be changed here.";
     form.hidden = true;
   } else {
     status.textContent = a.claudeKey ? `Key saved on ${new Date(a.claudeKey.setAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}. Enter a new one to replace it.`
@@ -882,7 +913,7 @@ const feedTime = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateS
 /** Settings, Data feeds: which feeds, the Health Auto Export token (shown once) and the Google Sheets Workout Log. */
 function renderFeeds(a, shownToken = null) {
   const f = a.feeds;
-  $('#feeds-note').textContent = f.fromServer ? "Your feeds come from the server's settings (INGEST_TOKEN, the Workout Log sheet and the Google files)." : 'Choose what you use; each one has a setup guide.';
+  $('#feeds-note').textContent = f.fromServer ? "Your feeds are set up on the server (the Apple Health token, the Workout Log sheet and the Google files)." : 'Choose what you use; each one has a setup guide.';
   fill($('#feeds-choices'), f.fromServer ? [] : Object.entries(FEED_LABELS).map(([k, label]) => h('label', { class: 'feed-choice' },
     h('input', { type: 'checkbox', checked: f.chosen[k], onchange: async (e) => {
       try { renderFeeds(await api('PUT', '/api/account/feeds', { ...f.chosen, [k]: e.target.checked })); } catch (err) { $('#feeds-status').textContent = err.message; }
@@ -1091,7 +1122,7 @@ async function loadDay() {
   $('#body-details').open = BODY.some((f) => checkin?.[f] != null);
   cf.elements.notes.value = checkin?.notes ?? '';
   $('[data-delete="checkin"]').hidden = !checkin;
-  setStatus($('.status', cf), checkin ? `Saved${checkin.cadence === 'weekly' ? ' (weekly check-in from v1)' : ''}` : '');
+  setStatus($('.status', cf), checkin ? (state.readOnly ? 'Sample data' : `Saved${checkin.cadence === 'weekly' ? ' (weekly check-in from v1)' : ''}`) : '');
 
   const df = $('#drinking');
   for (const [f] of DRINKS) setCount(f, drinking?.[f] ?? 0);
@@ -1171,7 +1202,7 @@ async function syncNow() {
     $('#sync-status').textContent = `Synced: ${parts.join(', ') || 'done'}${r.warnings ? `, ${r.warnings} warning${r.warnings === 1 ? '' : 's'}` : ''}`;
     const s = await api('GET', '/api/status');
     renderDataChecks(s.dataChecks);
-    setHomeBadge('today', s.dataChecks?.length ? `${s.dataChecks.length} warning${s.dataChecks.length === 1 ? '' : 's'}` : '');
+    setHomeBadge('today', dataIssuesBadge(s.dataChecks));
   } catch (err) {
     $('#sync-status').textContent = `Sync failed: ${err.message}`;
   } finally {
@@ -2225,8 +2256,8 @@ async function loadAdherence(blockId) {
   const body = $('#adherence-body');
   const a = await api('GET', `/api/program/adherence${blockId ? `?block=${encodeURIComponent(blockId)}` : ''}`);
   body.className = '';
-  if (!a.available) return fill(body, h('p', { class: 'muted small' }, 'Needs the MAPS catalog (data/maps/programs.json).'));
-  if (!a.block) return fill(body, h('p', { class: 'muted small' }, 'No confirmed program block yet. Confirm one with npm run programs:review.'));
+  if (!a.available) return fill(body, h('p', { class: 'muted small' }, 'Needs a training program catalog: add a program on the ', h('a', { href: '#programs' }, 'Programs'), ' tab.'));
+  if (!a.block) return fill(body, h('p', { class: 'muted small' }, 'No confirmed program block yet. Confirm one on the ', h('a', { href: '#programs' }, 'Programs'), ' tab.'));
 
   const picker = h('select', { id: 'adherence-block' }, a.blocks.map((b) => h('option', { value: b.id, selected: b.id === a.block.id },
     `${b.program}, ${niceDate(b.start_date)} to ${b.end_date ? niceDate(b.end_date) : 'now'}`)));
@@ -2319,8 +2350,8 @@ async function loadAdvisor() {
   const a = await api('GET', `/api/advisor?${qs}`);
   const body = $('#advisor-body');
   if (!a.available) {
-    body.className = 'muted small';
-    body.textContent = 'Needs the MAPS catalog (data/maps/programs.json).';
+    body.className = '';
+    fill(body, h('p', { class: 'muted small' }, 'Needs a training program catalog: add a program on the ', h('a', { href: '#programs' }, 'Programs'), ' tab.'));
     return;
   }
   body.className = '';
@@ -2421,7 +2452,9 @@ async function loadLifts() {
   const idle = lifts.filter((l) => l.status === 'not_trained');
   const row = (l) => {
     const [sym, label] = LIFT_STATUS[l.status];
-    const change = l.changePct == null ? '' : ` (${l.changePct > 0 ? '+' : ''}${l.changePct}%)`;
+    // Too few sessions to judge: how far along the history is, never a percentage that reads as a trend.
+    const change = l.status === 'not_enough_data' ? ` (${l.recentSessions ?? 0} of 4 recent sessions so far)`
+      : l.changePct == null ? '' : ` (${l.changePct > 0 ? '+' : ''}${l.changePct}%)`;
     const compare = l.baselineBest == null ? liftValue(l, l.recentBest) : `${liftValue(l, l.recentBest)} vs ${liftValue(l, l.baselineBest)}${change}`;
     const chart = h('div', { class: 'chart' });
     const details = h('details', { class: `lift ${l.status}` },
@@ -2449,8 +2482,8 @@ async function loadProgram() {
   const body = $('#program-body');
   const { program: p } = await api('GET', '/api/program');
   if (!p) {
-    body.className = 'muted small';
-    body.textContent = 'No program in progress. Confirm your current block with npm run programs:review.';
+    body.className = '';
+    fill(body, h('p', { class: 'muted small' }, 'No program in progress. Confirm your current block on the ', h('a', { href: '#programs' }, 'Programs'), ' tab.'));
     return;
   }
   body.className = '';
@@ -2820,7 +2853,6 @@ async function saveSettings(evt) {
 }
 
 async function loadSections() {
-  loadSettings();
   loadBuilder().catch(() => {});
   const sections = await api('GET', '/api/prompt/sections');
   const container = $('#sections');
@@ -2828,7 +2860,7 @@ async function loadSections() {
   if (!sections.length) {
     const p = document.createElement('p');
     p.className = 'empty-state';
-    p.textContent = 'No prompt sections yet. Add one, or import the v1 sections with npm run prompts:import-v1.';
+    p.textContent = 'No prompt sections yet. Add one, or use Help me write a section above.';
     container.append(p);
   }
   for (const s of sections) container.append(sectionCard(s));

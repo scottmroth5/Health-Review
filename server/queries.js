@@ -98,9 +98,9 @@ export function listReviews(db) {
 const parseJson = (text) => { try { return text ? JSON.parse(text) : null; } catch { return null; } };
 const RUN_COLUMNS = 'id, name, status, started_at, finished_at, duration_ms, calls, errors, input_tokens, output_tokens, cost_usd';
 
-/** Recent runs, newest first. */
+/** Recent runs, newest first by when they started (rows can be written out of order, such as the demo's). */
 export function listRuns(db, limit = 100) {
-  return db.prepare(`SELECT ${RUN_COLUMNS} FROM runs WHERE user_id = @uid ORDER BY id DESC LIMIT ?`).all(limit);
+  return db.prepare(`SELECT ${RUN_COLUMNS} FROM runs WHERE user_id = @uid ORDER BY started_at DESC, id DESC LIMIT ?`).all(limit);
 }
 
 /** One run with its parsed meta and summary and its Claude calls, or null. */

@@ -302,7 +302,7 @@
         <div id="zones-table"></div>
       </div>
 
-      <p class="muted small health-profile-note">Suggested targets use your profile (birth year, sex, height) in <a href="#settings">Settings</a>.</p>
+      <p class="muted small health-profile-note">Suggested targets and heart rate zones use your profile (birth year, sex, height) and Zone 2 range in <a href="#settings">Settings</a>.</p>
 
       <div class="filters" role="group" aria-label="Range">
         <button type="button" data-range="30">30 days</button>
@@ -366,8 +366,9 @@
 
     <!-- Labs -->
     <section id="view-labs" class="view" hidden>
-      <p class="muted small">Values as reported, with the change since each test's previous draw. No reference ranges are
-        applied, so nothing is marked high or low; discuss results with your physician. Tap a test for its history.</p>
+      <p class="muted small">Values as reported, with the change since each test's previous draw. Each test's range is your lab's own
+        when you've set it, otherwise a typical adult range; check it against your lab report. Results outside it are marked below
+        or above range; discuss them with your physician. Tap a test for its history and to set its range.</p>
       <div id="labs-panels"></div>
       <details class="card" id="lab-add-card">
         <summary><strong>Add a result</strong></summary>
@@ -400,7 +401,8 @@
       <div class="card intro">
         <h2>Weekly review prompt</h2>
         <p class="muted small">Sections are joined in position order. <code>{{TODAY}}</code> becomes the run date.
-          Sections marked sensitive (medications, genetics) are sent with every weekly review; each run records their names.
+          Sensitive is a label, not a way to hide a section: sections marked sensitive (medications, genetics) are sent with
+          every weekly review, and each run records their names.
           Every save keeps the previous version.</p>
         <p class="muted small">Medications and supplements now come from the <a href="#meds">Meds</a> tab. Remove that list from the
           medical section so the review has one source; keep pharmacogenomics and other notes there.</p>
@@ -420,18 +422,6 @@
         </div>
         <p class="status small" id="builder-status" role="status"></p>
       </div>
-      <form id="settings" class="card">
-        <h2>Settings</h2>
-        <p class="muted small">Your Zone 2 heart rate range. A cardio session counts as Zone 2 when its average heart rate falls inside it.</p>
-        <div class="grid2">
-          <label>Zone 2 low (bpm) <input type="number" name="zone2_low_bpm" min="40" max="220" step="1" inputmode="numeric"></label>
-          <label>Zone 2 high (bpm) <input type="number" name="zone2_high_bpm" min="40" max="220" step="1" inputmode="numeric"></label>
-        </div>
-        <div class="actions">
-          <button type="submit">Save settings</button>
-          <span class="status" role="status"></span>
-        </div>
-      </form>
       <div id="preview" class="card" hidden>
         <h2>Preview</h2>
         <p class="muted small" id="preview-meta"></p>
@@ -466,6 +456,20 @@
           <div class="actions"><button type="submit">Save</button><span class="status" role="status"></span></div>
         </form>
       </div>
+      <form id="settings" class="card">
+        <h2>Heart rate zones</h2>
+        <p class="muted small">Your Zone 2 heart rate range. Zone 1 is below it, and Zones 3 to 5 split the rest up to your estimated
+          maximum from your birth year. Cardio minutes count in a zone by each minute's heart rate; workouts without minute detail
+          count as a whole session by their average.</p>
+        <div class="grid2">
+          <label>Zone 2 low (bpm) <input type="number" name="zone2_low_bpm" min="40" max="220" step="1" inputmode="numeric"></label>
+          <label>Zone 2 high (bpm) <input type="number" name="zone2_high_bpm" min="40" max="220" step="1" inputmode="numeric"></label>
+        </div>
+        <div class="actions">
+          <button type="submit">Save zones</button>
+          <span class="status" role="status"></span>
+        </div>
+      </form>
       <div class="card" id="claude-key-card">
         <h2>Claude API key</h2>
         <p class="muted small" id="claude-key-status"></p>
@@ -490,8 +494,7 @@
         <p id="settings-account" class="small"></p>
         <div id="account-controls"></div>
         <p class="status" id="account-status" role="status"></p>
-        <p class="muted small">Your Zone 2 heart rate range is on the Prompt tab.
-          <a href="/privacy" target="_blank">Privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
+        <p class="muted small"><a href="/privacy" target="_blank">Privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
       </div>
     </section>
 
