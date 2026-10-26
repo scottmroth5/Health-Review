@@ -270,8 +270,9 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     if (!session) return reply.redirect('/auth/login');
     const there = statusPage(findUser(session.email));
     if (there) return reply.redirect(there);
-    return reply.type('text/html').send(page('Request access', `
-      <p>Health Review turns your Apple Health data, workouts and check-ins into charts and a weekly review.</p>
+    return reply.type('text/html').send(page('Request access to Health Review', `
+      <p>You're asking to use <strong>Health Review with your own data</strong>. It's a private app shared by invitation, and the owner approves each request.</p>
+      <p>Health Review turns your Apple Health data, workouts and daily check-ins into charts, tracks your goals and training programs, and can write a weekly review with AI. It's free; AI uses your own Claude key, only if you add one.</p>
       <p>Signed in as <strong>${escapeHtml(session.email)}</strong>.</p>
       <p><strong>No AI is used</strong> until you add your own Claude API key in Settings; everything else works without one.</p>
       <p>Requests are approved by hand, usually within 24 hours, and you get an email when you're in.</p>
@@ -295,8 +296,11 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     }
     return reply.redirect(statusPage(findUser(session.email)) ?? '/');
   });
-  app.get('/auth/waiting', { schema: { hide: true } }, async (req, reply) =>
-    reply.type('text/html').send(page('Thanks, your request is in', `<p>Approval usually takes up to 24 hours. You'll get an email when you're in; then just open the app again.</p>${contact}${signOut}`)));
+  app.get('/auth/waiting', { schema: { hide: true } }, async (req, reply) => {
+    const email = sessionOf(req)?.email;
+    return reply.type('text/html').send(page('Thanks, your request is in', `<p>Your request to use Health Review is waiting for the owner's approval, usually within 24 hours.</p>
+      <p>You'll get an email${email ? ` at <strong>${escapeHtml(email)}</strong>` : ''} when you're in; then just open the app again and sign in with the same Google account.</p>${contact}${signOut}`));
+  });
   app.get('/auth/not-approved', { schema: { hide: true } }, async (req, reply) =>
     reply.type('text/html').send(page('Access was not approved', `<p>This account can't use Health Review.</p>${contact}${signOut}`)));
 

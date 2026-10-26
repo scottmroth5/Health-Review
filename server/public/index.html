@@ -40,11 +40,18 @@
     </nav>
   </header>
 
-  <p id="instance-banner" class="instance-banner" role="note" hidden><span class="long">Demo instance: everything here is made-up sample data. Sync, reviews and the Claude chat are off.</span><span class="short">Demo: made-up data, sync and reviews off.</span> <a id="request-access" hidden>Request access</a></p>
+  <p id="instance-banner" class="instance-banner" role="note" hidden><span class="long">Demo instance: everything here is made-up sample data. Sync, reviews and the Claude chat are off.</span><span class="short">Demo: made-up data, sync and reviews off.</span> <a id="request-access" class="banner-cta" data-request-link hidden><span class="long">Get Health Review with your own data &rarr;</span><span class="short">Get your own &rarr;</span></a></p>
 
   <main>
     <!-- Home: a tile per section; Demo mode and the account live here only -->
     <section id="view-home" class="view" hidden>
+      <div class="card request-card" data-request-card="home" hidden>
+        <h2>Use Health Review with your own data</h2>
+        <p>This demo shows made-up data. The real Health Review turns <strong>your</strong> Apple Health data, workouts and daily check-ins into charts, tracks your goals and training programs, and can write you a weekly review with AI if you add your own Claude key.</p>
+        <p class="small">It's free and by invitation: sign in with Google, say what you'll use, and you'll get an email when you're approved, usually within a day. Your data is private to you.</p>
+        <p><a class="button request-big" data-request-link>Request access to Health Review</a></p>
+        <p class="muted small" data-request-contact></p>
+      </div>
       <div class="review-notice" id="paused-note" role="status" hidden><p>Your account is paused by the administrator: Health Auto Export posts, syncs, the weekly review and the chat are off. Your data is still here to see.</p></div>
       <nav class="home-tiles" aria-label="Sections">
         <a class="home-tile" href="#today">
@@ -100,7 +107,6 @@
           <span class="tile-name">Activity</span><span class="tile-desc">Jobs, runs, spend</span>
         </a>
       </nav>
-      <div class="card home-request" id="home-request" hidden><strong>Want your own?</strong> Health Review is shared by invitation. <a id="home-request-link">Request access</a> with your Google account.<span id="home-request-contact"></span></div>
       <div class="tile-arrange" id="tile-arrange">
         <button type="button" class="ghost small-button" id="arrange-tiles">Arrange tiles</button>
         <span id="arrange-controls" hidden><button type="button" class="small-button" id="arrange-done">Done</button> <button type="button" class="ghost small-button" id="arrange-reset">Reset to default</button> <span class="muted small">Use the arrows to move tiles.</span></span>
@@ -525,6 +531,13 @@
 
     <!-- Help: the setup guides, and Ask (answered from the guides with the user's own AI) -->
     <section id="view-help" class="view" hidden>
+      <div class="card request-card" data-request-card="help" hidden>
+        <h2>Use Health Review with your own data</h2>
+        <p>This demo shows made-up data. The real Health Review turns <strong>your</strong> Apple Health data, workouts and daily check-ins into charts, tracks your goals and training programs, and can write you a weekly review with AI if you add your own Claude key.</p>
+        <p class="small">It's free and by invitation: sign in with Google, say what you'll use, and you'll get an email when you're approved, usually within a day. Your data is private to you.</p>
+        <p><a class="button request-big" data-request-link>Request access to Health Review</a></p>
+        <p class="muted small" data-request-contact></p>
+      </div>
       <div class="card">
         <h2>Guides</h2>
         <ul class="small">
