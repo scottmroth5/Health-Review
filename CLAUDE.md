@@ -37,7 +37,9 @@ Health specific logic stays in this repo; never add it to agent-core.
                     Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status
                     and /api/reviews/status), Sync now with the last sync, Demo mode and the account; wide screens keep the tab bar, phones (720 px and
                     under) show "‹ Home" and the section name instead. Installable on iPhone: manifest.webmanifest and
-                    icon-180/192/512.png (scripts/make-icons.js; test/icons.test.js checks they are current).
+                    apple-touch-icon.png, icon-16/32/192/512.png and favicon.ico from the owner's icon pack (2026-10-26;
+                    the 1024 master in data/icon-pack; the touch icon cropped to the art's edge, as iOS rounds it;
+                    test/icons.test.js checks sizes and that the head and manifest name files that exist).
                     Demo mode (Home page checkbox, or ?demo=1 / ?demo=0; saved per browser, server/public/demo.js) hides
                     drinking and CBD on screen only: the Drinks box, the alcohol chart, and drinking or CBD lines in reviews
 /evals              fixtures/metrics (metric regression), fixtures/v1 (v1 golden outputs, see its README), and the review

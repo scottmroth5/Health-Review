@@ -23,8 +23,9 @@ export const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readon
 // "Create my Workout Log": drive.file lets the app create a sheet and open only the files it created (non-sensitive).
 export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const SHEETS_COOKIE = 'hr_sheets';
-// The app icon and manifest are open too: iOS fetches them for Add to Home Screen without the session cookie (code-only files).
-const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png)$/, /^\/(privacy|terms)$/, /^\/guides(\/[a-z-]+)?$/];
+// The app icons, favicon and manifest are open too: iOS fetches them for Add to Home Screen without the session cookie, and
+// browsers ask for /favicon.ico on the sign-in and policy pages (code-only files).
+const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png|apple-touch-icon\.png|favicon\.ico)$/, /^\/(privacy|terms)$/, /^\/guides(\/[a-z-]+)?$/];
 const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 export const DEMO_REFUSAL = 'This is a read-only demo with made-up data, so changes are turned off.';
 

@@ -1,25 +1,41 @@
-// The Add to Home Screen icons: scripts/make-icons.js draws them, and the committed files match what it draws.
+// The app icons (the owner's icon pack, 2026-10-26): each committed PNG is the size its name says, favicon.ico holds
+// 16 and 32, and every icon the page head and the manifest name exists.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { inflateSync } from 'node:zlib';
-import { drawIcon, encodePng } from '../scripts/make-icons.js';
+import { existsSync, readFileSync } from 'node:fs';
 import { repoPath } from '../tools/paths.js';
 
-test('icons: a valid RGB PNG of the right size, blue background with a white line, and the committed files are current', () => {
-  const png = encodePng(32, drawIcon(32));
-  assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const pub = (name) => repoPath('server', 'public', name);
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+function pngSize(file) {
+  const png = readFileSync(file);
+  assert.deepEqual([...png.subarray(0, 8)], PNG_SIGNATURE, `${file} is a PNG`);
   assert.equal(png.toString('ascii', 12, 16), 'IHDR');
-  assert.equal(png.readUInt32BE(16), 32);
-  assert.equal(png.readUInt32BE(20), 32);
-  const idat = png.indexOf('IDAT');
-  const rows = inflateSync(png.subarray(idat + 4, idat + 4 + png.readUInt32BE(idat - 4)));
-  assert.equal(rows.length, 32 * (32 * 3 + 1));
-  const pixels = drawIcon(180);
-  assert.deepEqual([...pixels.subarray(0, 3)], [0x2a, 0x78, 0xd6], 'corner is the accent blue');
-  const center = (90 * 180 + 90) * 3;
-  assert.ok(pixels[center] > 200 && pixels[center + 2] > 200, 'the line crosses the middle');
-  for (const size of [180, 192, 512]) {
-    assert.ok(readFileSync(repoPath('server', 'public', `icon-${size}.png`)).equals(encodePng(size, drawIcon(size))), `icon-${size}.png is current (run node scripts/make-icons.js)`);
+  return [png.readUInt32BE(16), png.readUInt32BE(20)];
+}
+
+test('icons: each PNG is the size it is named for', () => {
+  for (const [name, size] of [['icon-16.png', 16], ['icon-32.png', 32], ['apple-touch-icon.png', 180], ['icon-192.png', 192], ['icon-512.png', 512]]) {
+    assert.deepEqual(pngSize(pub(name)), [size, size], name);
   }
+});
+
+test('icons: favicon.ico is an icon file holding 16 and 32 px images', () => {
+  const ico = readFileSync(pub('favicon.ico'));
+  assert.equal(ico.readUInt16LE(0), 0);
+  assert.equal(ico.readUInt16LE(2), 1, 'type 1 is an icon');
+  const sizes = Array.from({ length: ico.readUInt16LE(4) }, (_, i) => ico[6 + i * 16] || 256);
+  assert.ok(sizes.includes(16) && sizes.includes(32), `sizes ${sizes}`);
+});
+
+test('icons: every icon the page head and the manifest name exists', () => {
+  const head = readFileSync(pub('index.html'), 'utf8');
+  const linked = [...head.matchAll(/<link rel="(?:icon|apple-touch-icon)"[^>]*href="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(linked.length >= 3, 'favicon, PNG icons and the touch icon are linked');
+  const manifest = JSON.parse(readFileSync(pub('manifest.webmanifest'), 'utf8'));
+  for (const src of [...linked, ...manifest.icons.map((i) => i.src)]) {
+    assert.ok(!src.startsWith('data:') && existsSync(pub(src)), `${src} exists`);
+  }
+  for (const icon of manifest.icons) assert.deepEqual(pngSize(pub(icon.src)).join('x'), icon.sizes, icon.src);
 });

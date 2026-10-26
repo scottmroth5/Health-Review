@@ -210,7 +210,7 @@ test('the first name from Google rides in the signed session and /api/me; the ic
   const second = await fallback.signIn();
   assert.equal((await fallback.app.inject({ url: '/api/me', headers: { cookie: second.session } })).json().name, 'Pat Example');
   await fallback.done();
-  for (const url of ['/manifest.webmanifest', '/icon-180.png']) {
+  for (const url of ['/manifest.webmanifest', '/icon-192.png', '/apple-touch-icon.png', '/favicon.ico']) {
     assert.notEqual((await app.inject(url)).statusCode, 302, `${url} is not sent to sign-in`);
   }
   assert.equal((await app.inject('/index.html')).statusCode, 302, 'pages still need a session');

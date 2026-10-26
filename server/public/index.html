@@ -4,16 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Health Review</title>
-  <!-- Add to Home Screen: opens full screen as its own app (manifest.webmanifest; icons from scripts/make-icons.js) -->
+  <!-- Add to Home Screen: opens full screen as its own app (manifest.webmanifest; icons from the owner's icon pack,
+       apple-touch-icon.png cropped to the art's edge since iOS rounds the corners itself) -->
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Health">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1 9h3l2-5 3 9 2-6 1 2h3' fill='none' stroke='%232a78d6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="icon-16.png">
   <link rel="stylesheet" href="app.css">
   <script type="module" src="app.js"></script>
 </head>

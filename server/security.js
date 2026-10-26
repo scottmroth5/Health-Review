@@ -4,7 +4,7 @@
 // listens on this computer, so the rate limits are off there; the headers are always on.
 
 // The web page loads only its own scripts and styles. 'unsafe-inline' for styles covers style attributes set by the UI;
-// scripts stay strict, so injected markup can never run code. The favicon is a data: URL.
+// scripts stay strict, so injected markup can never run code. Icons are the app's own files.
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
