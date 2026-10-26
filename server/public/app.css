@@ -86,7 +86,7 @@ code { font-size: 0.85em; }
 .home-tile:hover { border-color: var(--accent); }
 .home-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .home-tile:active { background: var(--surface-0); }
-.home-tile svg { width: 28px; height: 28px; margin-bottom: 6px; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.home-tile .tile-icon { width: 44px; height: 44px; margin-bottom: 8px; border-radius: 22%; display: block; }
 .tile-name { font-weight: 600; font-size: 1rem; }
 .tile-desc { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.3; }
 .tile-badge { position: absolute; top: 10px; right: 10px; font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;

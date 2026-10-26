@@ -36,7 +36,9 @@ Health specific logic stays in this repo; never add it to agent-core.
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status
                     and /api/reviews/status), Sync now with the last sync, Demo mode and the account; wide screens keep the tab bar, phones (720 px and
-                    under) show "‹ Home" and the section name instead. Installable on iPhone: manifest.webmanifest and
+                    under) show "‹ Home" and the section name instead. Each Home tile shows its dashboard icon
+                    (server/public/tiles/<tile>.png, 128 px, cropped by hand from the owner's icon pack so each glyph is
+                    centered in its own pastel square; 2026-10-26). Installable on iPhone: manifest.webmanifest and
                     apple-touch-icon.png, icon-16/32/192/512.png and favicon.ico from the owner's icon pack (2026-10-26;
                     the 1024 master in data/icon-pack; the touch icon cropped to the art's edge, as iOS rounds it;
                     test/icons.test.js checks sizes and that the head and manifest name files that exist).

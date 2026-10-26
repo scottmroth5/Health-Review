@@ -39,3 +39,14 @@ test('icons: every icon the page head and the manifest name exists', () => {
   }
   for (const icon of manifest.icons) assert.deepEqual(pngSize(pub(icon.src)).join('x'), icon.sizes, icon.src);
 });
+
+test('Home tiles: each tile has its dashboard icon, a 128 px PNG in tiles/, and every image the page names exists', async () => {
+  const { TILES } = await import('../server/public/goals.js');
+  const page = readFileSync(pub('index.html'), 'utf8');
+  for (const tile of TILES) {
+    const name = tile === 'today' ? 'daily-check-in' : tile;
+    assert.match(page, new RegExp(String.raw`href="#${tile}"[^>]*>\s*<img class="tile-icon" src="tiles/${name}\.png"`), tile);
+    assert.deepEqual(pngSize(pub(`tiles/${name}.png`)), [128, 128], name);
+  }
+  for (const [, src] of page.matchAll(/<img[^>]*src="([^"]+)"/g)) assert.ok(existsSync(pub(src)), `${src} exists`);
+});
