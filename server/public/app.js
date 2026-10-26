@@ -377,7 +377,7 @@ function setHomeBadge(name, text) {
 /** Puts a tab's cards in the user's arranged order, else the goals' (Training: all its cards; Health: those above the profile). */
 function orderCards(kind) {
   const order = arranged(state.layouts?.[kind], state.goals ?? {}, LAYOUT_ITEMS[kind], kind);
-  const before = kind === 'health' ? $('#profile-card') : null;
+  const before = kind === 'health' ? $('#view-health .health-profile-note') : null;
   for (const id of order) {
     const el = document.getElementById(id);
     if (el) el.parentNode.insertBefore(el, before);
@@ -867,6 +867,7 @@ async function loadSettingsView() {
   }
   renderFeeds(a);
   renderGoals(a);
+  loadProfileForm().catch(() => {});
   $('#settings-account').textContent = a.email ? `${a.name ? `${a.name}, ` : ''}${a.email} (${a.role === 'admin' ? 'administrator' : 'user'})` : 'Local mode: no sign-in.';
   renderAccountControls(a);
 }
@@ -1306,7 +1307,6 @@ async function loadProfileForm() {
   f.height_ft.value = profile.heightIn ? Math.floor(profile.heightIn / 12) : '';
   f.height_inch.value = profile.heightIn ? Math.round((profile.heightIn % 12) * 2) / 2 : '';
   const complete = profile.birthYear && profile.sex && profile.heightIn;
-  $('#profile-card').open = !complete;
   $('#profile-summary').textContent = complete
     ? `${profile.sex === 'male' ? 'Male' : 'Female'}, age ${profile.age}, ${Math.floor(profile.heightIn / 12)} ft ${Math.round((profile.heightIn % 12) * 2) / 2} in`
     : 'Add it for age-based targets';

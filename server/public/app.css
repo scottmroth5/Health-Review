@@ -589,7 +589,7 @@ body.read-only #feedback-card, body.read-only #prompt-builder { display: none !i
 /* Arrange on the Training and Health tabs */
 .card-move { display: flex; gap: 6px; justify-content: flex-end; margin: -4px 0 6px; }
 .card-move button { padding: 4px 12px; }
-body.arranging-training #view-training > .card, body.arranging-health #view-health > .card:not(#profile-card), body.arranging-health .chart-card { outline: 2px dashed var(--accent); outline-offset: -2px; }
+body.arranging-training #view-training > .card, body.arranging-health #view-health > .card, body.arranging-health .chart-card { outline: 2px dashed var(--accent); outline-offset: -2px; }
 
 /* The demo's way to the real app (Request access) */
 .request-card { border: 2px solid var(--accent); }

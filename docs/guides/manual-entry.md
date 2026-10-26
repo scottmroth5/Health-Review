@@ -22,7 +22,7 @@ Some things are entered right in Health Review. Everything here is yours only.
 
 - Add lab results by test and draw date. Each test shows a typical range you can change to your lab's own. Lab results are discussed only in the physician list, never turned into advice.
 
-## Health tab profile
+## Your profile, in Settings
 
 - Your birth year, sex and height set the suggested targets, and your Zone 2 heart rate range sets the heart rate zones.
 

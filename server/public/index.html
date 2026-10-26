@@ -299,19 +299,7 @@
         <div id="zones-table"></div>
       </div>
 
-      <details class="card profile-card" id="profile-card">
-        <summary><strong>Your profile</strong> <span id="profile-summary" class="muted small"></span></summary>
-        <p class="muted small">Used for the healthy levels for your sex and age behind each suggested target. Stored with your health data.</p>
-        <form id="profile-form">
-          <div class="grid2">
-            <label>Birth year <input type="number" name="birth_year" min="1900" max="2100" inputmode="numeric"></label>
-            <label>Sex <select name="sex"><option value="">Not set</option><option value="male">Male</option><option value="female">Female</option></select></label>
-            <label>Height, feet <input type="number" name="height_ft" min="3" max="7" inputmode="numeric"></label>
-            <label>Height, inches <input type="number" name="height_inch" min="0" max="11.5" step="0.5" inputmode="decimal"></label>
-          </div>
-          <div class="actions"><button type="submit">Save</button><span class="status" role="status"></span></div>
-        </form>
-      </details>
+      <p class="muted small health-profile-note">Suggested targets use your profile (birth year, sex, height) in <a href="#settings">Settings</a>.</p>
 
       <div class="filters" role="group" aria-label="Range">
         <button type="button" data-range="30">30 days</button>
@@ -461,6 +449,20 @@
         </div>
         <p class="status" id="goals-status" role="status"></p>
       </div>
+      <div class="card profile-card" id="profile-card">
+        <h2>Your profile</h2>
+        <p><span id="profile-summary" class="muted small"></span></p>
+        <p class="muted small">Used for the healthy levels for your sex and age behind each suggested target. Stored with your health data.</p>
+        <form id="profile-form">
+          <div class="grid2">
+            <label>Birth year <input type="number" name="birth_year" min="1900" max="2100" inputmode="numeric"></label>
+            <label>Sex <select name="sex"><option value="">Not set</option><option value="male">Male</option><option value="female">Female</option></select></label>
+            <label>Height, feet <input type="number" name="height_ft" min="3" max="7" inputmode="numeric"></label>
+            <label>Height, inches <input type="number" name="height_inch" min="0" max="11.5" step="0.5" inputmode="decimal"></label>
+          </div>
+          <div class="actions"><button type="submit">Save</button><span class="status" role="status"></span></div>
+        </form>
+      </div>
       <div class="card" id="claude-key-card">
         <h2>Claude API key</h2>
         <p class="muted small" id="claude-key-status"></p>
@@ -485,7 +487,7 @@
         <p id="settings-account" class="small"></p>
         <div id="account-controls"></div>
         <p class="status" id="account-status" role="status"></p>
-        <p class="muted small">Your profile for targets and heart rate zones (birth year, sex, height, Zone 2) is on the Health tab.
+        <p class="muted small">Your Zone 2 heart rate range is on the Prompt tab.
           <a href="/privacy" target="_blank">Privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
       </div>
     </section>
