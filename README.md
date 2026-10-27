@@ -572,14 +572,18 @@ npm run demo:build    # rebuild the demo database from scratch, which also reset
   the PDFs. The generator and `demo/substitutions.json` hold no real values. The generated database stays in `data/`
   (gitignored).
 
-## Planned
+## Future plans
 
-- **Users and logins** (deferred, 2026-10-07): register users, tie your data to your login, mark a user as demo or
-  real, and give each demo user an isolated copy of the demo data while the base never changes. Until then, the
-  separate demo instance covers showing the app. Google sign-in for one allowed email is in place (`AUTH_MODE=google`).
+Health Review is an evolving personal project. Potential areas for continued development include:
+
+- **Mobile experience:** Refine the interface for smaller screens and everyday use.
+- **Guided onboarding:** Help new users connect their data, set goals, and understand where to start.
+- **Native iPhone app:** Explore a native experience designed around mobile health and fitness workflows.
+- **Apple Health integration:** Explore ways to make connecting and updating Apple Health data more seamless.
+- **Personalized insights:** Continue improving weekly reviews and making trends easier to understand and discuss with a
+  healthcare professional.
 - **Keys you control** (after the Lightsail move): RDS plus EC2 with a KMS customer-managed key, which ends the
   temporary AWS-managed-key exception.
-- **An iPhone app** using the same API.
 
 ## Encrypted backups
 
