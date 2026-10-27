@@ -11,7 +11,7 @@
 
 # Tools for installing dependencies. git: agent-core is a public GitHub dependency (no token). python3, make, g++: the
 # fallback if better-sqlite3 has no prebuilt binary for this platform.
-FROM node:22-bookworm-slim AS deps
+FROM node:26-bookworm-slim AS deps
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates python3 make g++ \
  && rm -rf /var/lib/apt/lists/*
@@ -37,7 +37,7 @@ RUN echo "country database for build $GEO_STAMP" && mkdir -p /geo \
     done; rm -f /tmp/country.mmdb.gz; true
 
 # Runtime: the same Debian and Node as above, so the native module built there loads here unchanged.
-FROM node:22-bookworm-slim
+FROM node:26-bookworm-slim
 # tzdata so TZ resolves; the app itself uses OWNER_TZ for every date and does not depend on TZ. The npm, yarn and corepack
 # tools that come with the Node image are removed: the server only ever runs node, and they carry their own
 # dependencies (and their vulnerabilities, which the image scan in deploy.yml would otherwise flag). Debian's security
