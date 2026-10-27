@@ -40,8 +40,11 @@ RUN echo "country database for build $GEO_STAMP" && mkdir -p /geo \
 FROM node:22-bookworm-slim
 # tzdata so TZ resolves; the app itself uses OWNER_TZ for every date and does not depend on TZ. The npm, yarn and corepack
 # tools that come with the Node image are removed: the server only ever runs node, and they carry their own
-# dependencies (and their vulnerabilities, which the image scan in deploy.yml would otherwise flag).
+# dependencies (and their vulnerabilities, which the image scan in deploy.yml would otherwise flag). Debian's security
+# updates are applied here too, so a fix Debian has shipped (such as OpenSSL's, 2026-10-27) is in the image even before
+# the Node base image is rebuilt with it.
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends tzdata ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
