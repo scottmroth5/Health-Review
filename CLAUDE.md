@@ -464,7 +464,8 @@ Support address (2026-10-26): SUPPORT_EMAIL (server .env; compose passes it to t
 server/pages.js policyPage (a mailto link; unset or invalid: "the administrator") on the policies and guides, and by the
 app on the sign-in waiting pages, the US-only 403 page, /api/status supportEmail (Help, the demo's Request access card)
 and emails to users. Never write the address in the repo.
-Security (2026-10-25): US-only access (server/geo.js, GEO_ALLOW=US for app and demo in deploy/compose.yml): an onRequest
+Security (2026-10-25): US-only access for the app (server/geo.js, GEO_ALLOW=US in deploy/compose.yml; the demo, made-up data
+only, has none and is open worldwide, owner's choice 2026-10-27): an onRequest
 hook answers 403 with a short page outside the allowed countries, by req.ip (Caddy's forwarded address) in DB-IP's IP to
 Country Lite (CC BY 4.0) read with maxmind; /api/ingest/* and /api/health always pass, as do private and loopback
 addresses; unset GEO_ALLOW blocks nothing; without the database (downloaded in the Dockerfile's geo stage, GEO_STAMP

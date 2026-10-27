@@ -61,3 +61,11 @@ test('in the US, from inside the server, or with blocking off: everything as usu
   // The demo is covered the same way.
   assert.equal((await (await appFrom('81.2.69.142', { authMode: 'demo' }))('/api/status')).statusCode, 403);
 });
+
+test('deploy: the app is US-only, and the demo (made-up data only) is open worldwide (owner\'s choice, 2026-10-27)', () => {
+  const compose = readFileSync(new URL('../deploy/compose.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const service = (name) => compose.split(/\n(?=  [a-z]+:\n)/).find((block) => block.startsWith(`  ${name}:\n`)) ?? '';
+  const geo = (block) => block.split('\n').filter((l) => /^\s*GEO_ALLOW:/.test(l)).map((l) => l.trim());
+  assert.deepEqual(geo(service('app')), ['GEO_ALLOW: US']);
+  assert.deepEqual(geo(service('demo')), []);
+});

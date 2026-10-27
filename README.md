@@ -510,8 +510,8 @@ asks first. From the command line, `npm run review -- --force` writes it anyway,
 sync, no cost); otherwise they try again, so a week skipped on Sunday morning for a late Apple Health export is usually
 written that afternoon. If it is still skipped at Tuesday's catch-up you get an email.
 
-**Security.** The app and the demo answer only in the United States (GEO_ALLOW=US; Health Auto Export posts pass from
-anywhere, with their token). Every push runs npm audit, a static security check, CodeQL and tests; every image is scanned
+**Security.** The app answers only in the United States (GEO_ALLOW=US; Health Auto Export posts pass from anywhere,
+with their token). The public demo holds made-up data only and is open worldwide. Every push runs npm audit, a static security check, CodeQL and tests; every image is scanned
 with Trivy before it is published. Weekly, Dependabot proposes updates (patch-level ones merge on their own once CI
 passes), the image is rebuilt with the newest base and country data and deployed, and OWASP ZAP scans the demo.
 Country data: IP to Country Lite by DB-IP (https://db-ip.com), CC BY 4.0.

@@ -47,7 +47,8 @@ services:
       PUBLIC_URL: https://${DEMO_SITE_ADDRESS:?set DEMO_SITE_ADDRESS in .env}
       # The demo's "Request access" link: the main app's sign-in, which leads new people to Request access.
       REQUEST_ACCESS_URL: https://${SITE_ADDRESS:?set SITE_ADDRESS in .env}/auth/login
-      GEO_ALLOW: US
+      # No GEO_ALLOW: the demo holds made-up data only, so it is open worldwide (owner's choice, 2026-10-27);
+      # the app above stays US-only.
       # The published support address, from the server's .env (the demo has no env file of its own).
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
       DATA_DIR: /app/data
