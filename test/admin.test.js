@@ -205,3 +205,35 @@ test('the Users screen: feeds and counts as yes or no, never a key, token or she
     assert.equal(res.statusCode, 403, `${r.method} ${r.url} is admins only`);
   }
 });
+
+test("revoking the owner's key: works beside the user's own key and for a rejected user; rejecting ends it; never turned on for a rejected user", async () => {
+  const { app, store, mail, signIn } = await setup();
+  const owner = await signIn('owner@example.com');
+  const key = (id, body) => owner.send('POST', `/api/admin/users/${id}/owner-key`, body);
+  assert.equal((await key('lee', { on: true, cap: 10, confirmEmail: 'lee@example.com' })).statusCode, 200);
+
+  // Lee adds their own key: yours stays assigned as the fallback, and Revoke still takes it back.
+  store.db.prepare("UPDATE users SET claude_key_enc = 'sealed' WHERE id = 'lee'").run();
+  const listed = (await owner.get('/api/admin/users')).json().find((u) => u.id === 'lee');
+  assert.equal(listed.has_key, true);
+  assert.equal(listed.uses_owner_key, true, 'the card shows the assignment, so it can be revoked');
+  const off = await key('lee', { on: false });
+  assert.equal(off.statusCode, 200);
+  assert.equal(getUser(store.db, 'lee').uses_owner_key, 0);
+  assert.equal(getUser(store.db, 'lee').owner_key_cap_usd, null);
+  assert.match(mail.at(-1).subject, /AI allowance ended/);
+
+  // Rejecting a user ends the assignment too, so approving them again never brings it back quietly.
+  store.db.prepare("UPDATE users SET claude_key_enc = NULL WHERE id = 'lee'").run();
+  assert.equal((await key('lee', { on: true, cap: 5, confirmEmail: 'lee@example.com' })).statusCode, 200);
+  assert.equal((await owner.send('POST', '/api/admin/users/lee/reject')).statusCode, 200);
+  assert.equal(getUser(store.db, 'lee').uses_owner_key, 0);
+
+  // A rejected user can still be revoked (an assignment left from before), but never put on the key.
+  store.db.prepare("UPDATE users SET uses_owner_key = 1, owner_key_cap_usd = 5 WHERE id = 'lee'").run();
+  assert.equal((await key('lee', { on: false })).statusCode, 200);
+  assert.equal(getUser(store.db, 'lee').uses_owner_key, 0);
+  assert.equal((await key('lee', { on: true, cap: 5, confirmEmail: 'lee@example.com' })).statusCode, 409);
+  await app.close();
+  store.close();
+});

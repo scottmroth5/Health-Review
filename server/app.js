@@ -1384,7 +1384,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
   app.post('/api/admin/users/:id/reject', { onRequest: adminOnly, schema: { summary: 'Reject a pending user (or end access)', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
     const u = setUserStatus(store.db, req.params.id, 'rejected');
-    return u ? adminUser(u.id) : reply.code(404).send({ error: 'No such user' });
+    if (!u) return reply.code(404).send({ error: 'No such user' });
+    // Ending access also ends the owner's key for them, so approving them again never quietly restores it.
+    if (u.uses_owner_key) { setOwnerKey(store.db, u.id, { on: false }); clearCapNotice(store.db, u.id); }
+    return adminUser(u.id);
   });
   // One user as the Users screen lists them (the same facts as GET /api/admin/users).
   const adminUser = (id) => listUsers(store.db, { now: clock() }).find((u) => u.id === id) ?? null;
@@ -1435,7 +1438,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req, reply) => {
-    const u = changeable(reply, req.params.id);
+    // Revoking is always allowed (any status, even rejected); turning it on needs an approved or paused user.
+    const u = changeable(reply, req.params.id, req.body.on ? ['approved', 'paused'] : ['pending', 'approved', 'paused', 'rejected']);
     if (!u) return reply;
     const { on, confirmEmail } = req.body;
     const cap = req.body.cap === undefined ? null : Math.round(req.body.cap * 100) / 100;

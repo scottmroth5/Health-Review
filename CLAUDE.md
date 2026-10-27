@@ -457,7 +457,7 @@ Admin routes (onRequest adminOnly, so non-admins get 403 before validation): GET
 facts, feeds chosen, has_token, google_connected, sheet_set, last post and sync, has_key, cap, spent_month, maps_shared,
 counts of health days, lifting days and reviews; never a key, token, hash or sheet ID), /:id/approve, /:id/reject (end
 access), /:id/pause and /:id/resume (approved to paused and back), /:id/owner-key ({ on, cap, confirmEmail }: on needs the
-user's email typed and a cap; the user is emailed on and off), /:id/maps ({ shared }). None act on an admin; owner-key and
+user's email typed and a cap; the user is emailed on and off; off (Revoke my key on the Users card, shown while it is assigned, even beside the user's own key) is allowed in any status, and rejecting a user ends it), /:id/maps ({ shared }). None act on an admin; owner-key and
 maps need an approved or paused user. Paused: signs in and sees their data; ingest token 401, POST /api/sync 403, no AI,
 no scheduled jobs (activeUserIds), and a note on Home. The scheduled review skips a user with no AI with its reason.
 Support address (2026-10-26): SUPPORT_EMAIL (server .env; compose passes it to the demo) is filled in as {{SUPPORT}} by

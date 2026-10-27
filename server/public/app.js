@@ -1091,15 +1091,24 @@ function userFeedsLine(u) {
   return `Feeds: ${parts.join('; ') || 'none chosen'}`;
 }
 
-/** "Use my Claude key" for one user: their email typed to confirm and a monthly cap; off is one tap. */
+/**
+ * "Use my Claude key" for one user: their email typed to confirm and a monthly cap. While it is assigned, Revoke always
+ * shows (whatever their status, and even when they have their own key, where yours is the fallback).
+ */
 function ownerKeyControl(u, run, done) {
-  if (u.has_key) return h('p', { class: 'muted small' }, 'They use their own Claude key.');
   if (u.uses_owner_key) {
-    return h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: run(async () => {
-      if (!confirm(`Stop paying for ${u.email}'s AI? Their review and chat stop until they add their own key.`)) return;
-      done(await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/owner-key`, { on: false }), 'no longer on your key');
-    }) }, 'Stop using my key'));
+    const cap = u.owner_key_cap_usd != null ? `$${Number(u.spent_month ?? 0).toFixed(2)} of $${Number(u.owner_key_cap_usd).toFixed(2)} this month` : 'no cap set';
+    return h('div', {},
+      h('p', { class: 'small' }, h('strong', {}, 'On your Claude key: '), cap,
+        u.has_key ? h('span', { class: 'muted' }, ' (their own key is used first; yours is the fallback)') : null),
+      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost danger', onclick: run(async () => {
+        const after = u.has_key ? 'They keep using their own key.' : 'Their weekly review and chat stop until they add their own key.';
+        if (!confirm(`Revoke your Claude key from ${u.email}? ${after} They get an email.`)) return;
+        done(await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/owner-key`, { on: false }), 'your key revoked');
+      }) }, 'Revoke my key')));
   }
+  if (u.has_key) return h('p', { class: 'muted small' }, 'They use their own Claude key.');
+  if (!['approved', 'paused'].includes(u.status)) return null;
   const form = h('form', { class: 'owner-key-form', hidden: true, onsubmit: run(async (e) => {
     const el = e.target.elements;
     done(await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/owner-key`, { on: true, cap: Number(el.cap.value), confirmEmail: el.confirm.value.trim() }), 'now on your key');
@@ -1173,7 +1182,7 @@ async function loadUsers() {
         u.status === 'pending' ? null : h('div', { class: 'small' }, userAiLine(u)),
         u.status === 'pending' ? null : h('div', { class: 'muted small' }, `${u.setup ? `Setup ${u.setup.complete ? 'done' : `${u.setup.doneCount} of ${u.setup.total}`} · ` : ''}Data: ${u.health_days} health days, ${u.lifting_days} lifting days, ${u.reviews} reviews, ${u.programs} programs${!admin && u.maps_shared ? ' · MAPS catalog shared' : ''}`)),
       admin ? null : h('div', { class: 'user-controls' },
-        active ? ownerKeyControl(u, run, done) : null,
+        active || u.uses_owner_key ? ownerKeyControl(u, run, done) : null,
         active ? h('label', { class: 'feed-choice small' }, h('input', { type: 'checkbox', checked: u.maps_shared, onchange: run(async (e) => {
           done(await api('POST', `/api/admin/users/${encodeURIComponent(u.id)}/maps`, { shared: e.target.checked }), e.target.checked ? 'MAPS catalog shared' : 'MAPS catalog no longer shared');
         }) }), ' Share my MAPS catalog') : null,
