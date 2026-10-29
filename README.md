@@ -365,7 +365,12 @@ catalog lists for that phase. Pick any confirmed block; the one in progress show
 On Daily Check-in, **Adjust** next to a supplement or medication changes, for that day only, the dose you took and the
 slot you took it in (for example, the morning magnesium taken before bed). The values on the Meds tab stay the
 defaults. A lasting change is still a dated change on the Meds tab, which is what the before-and-after averages use.
-Adjustments are saved with the day's check-off, and the weekly review counts only taken or skipped.
+Adjustments are saved with the day's check-off (applying one marks that dose taken), and the weekly review counts only
+taken or skipped.
+
+The check-off records only what you mark: check a dose you took, or tap **Skip** for one you deliberately missed.
+Anything left unmarked stays *not logged* and counts neither way, so saving in the morning never marks the evening dose
+as skipped; check it that night and save again.
 
 ## Ingredients and combined pills
 

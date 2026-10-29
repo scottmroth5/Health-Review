@@ -327,6 +327,29 @@ test('daily check-off: lists slots in effect, saves taken and skipped, clears ba
   await done();
 });
 
+test('daily check-off records only what is marked: a morning save leaves the evening dose not logged, counted neither way (UX phase 3, option C)', async () => {
+  const { app, db, done } = await setup();
+  const mag = (await post(app, '/api/medications', { ...MAG, timings: ['morning', 'before_bed'] })).json();
+  const { medicationsWeek } = await import('../metrics/medications.js');
+  const week = () => medicationsWeek(db.prepare('SELECT * FROM medications').all(), db.prepare('SELECT * FROM medication_periods').all(), [], [], '2026-03-14',
+    db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses').all()).current.map((m) => [m.week.dosesTaken, m.week.dosesLogged]);
+
+  // 7am: only the morning dose is marked.
+  let day = (await put(app, '/api/doses/2026-03-09', { doses: [{ medication_id: mag.id, timing: 'morning', taken: true }] })).json();
+  assert.deepEqual(day.items[0].slots.map((s) => [s.timing, s.taken]), [['morning', true], ['before_bed', null]], 'before bed stays not logged');
+  assert.deepEqual(week(), [[1, 1]], 'not logged counts neither way');
+
+  // That night: the before-bed dose is checked and the day saved again.
+  day = (await put(app, '/api/doses/2026-03-09', { doses: [{ medication_id: mag.id, timing: 'morning', taken: true }, { medication_id: mag.id, timing: 'before_bed', taken: true }] })).json();
+  assert.deepEqual(day.items[0].slots.map((s) => s.taken), [true, true]);
+  assert.deepEqual(week(), [[2, 2]]);
+
+  // A deliberate skip is recorded and counted as logged, not taken.
+  assert.equal((await put(app, '/api/doses/2026-03-08', { doses: [{ medication_id: mag.id, timing: 'morning', taken: false }] })).statusCode, 200);
+  assert.deepEqual(week(), [[2, 3]]);
+  await done();
+});
+
 test('daily check-off: one-day dose and slot adjustments are saved for that day only; the defaults stay; the week counts are unchanged', async () => {
   const { app, db, done } = await setup();
   const mag = (await post(app, '/api/medications', { ...MAG, timings: ['morning', 'before_bed'] })).json(); // default 200 mg

@@ -862,7 +862,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.put('/api/doses/:date', {
     schema: {
-      summary: "Save the day's check-off: every listed slot is recorded taken or not, with optional one-day dose and slot adjustments",
+      summary: "Save the day's check-off: each slot sent is recorded taken or skipped (slots not sent stay not logged), with optional one-day dose and slot adjustments",
       params: dateParams,
       body: {
         type: 'object', additionalProperties: false, required: ['doses'],

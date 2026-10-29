@@ -216,8 +216,10 @@ events are derived, never stored. Impact compares the 28 days before an event wi
 days for daily metrics, 7 for check-ins; pending until the after window ends) and lists other events within 28 days.
 These are observational before and after averages; never present them as cause, and route them to physician discussion.
 A period with start_estimated (real start unknown; the owner's existing items count from 2026-01-01) is active from
-started_on but never produces a start event. Daily check-off (medication_doses): saving a day records every slot taken
-or skipped; a day with no rows is unknown, never missed. The weekly summary reports doses taken out of doses logged.
+started_on but never produces a start event. Daily check-off (medication_doses): saving a day records only the slots
+marked (UX roadmap phase 3, option C, owner's choice 2026-10-29): checked is taken, Skip is skipped, and an unmarked slot
+has no row, so it is not logged and counts neither way (a morning save never marks the evening dose skipped); applying an
+adjustment marks its slot taken. A day with no rows is unknown, never missed. The weekly summary reports doses taken out of doses logged.
 A saved slot can carry a one-day adjustment (migration 014): dose (taken instead of the period's dose) and moved_to (the
 slot it was taken in; timing stays the scheduled slot, the key). Values equal to the default are stored as NULL. The
 Daily Check-in (#today) shows and edits them; the Meds tab periods stay the defaults, and the weekly review ignores adjustments

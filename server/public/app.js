@@ -167,7 +167,8 @@ function buildTodayForms() {
   $$('[data-delete]').forEach((b) => b.addEventListener('click', () => deleteEntry(b.dataset.delete)));
   $('#sync-now').addEventListener('click', syncNow);
   $('#doses').addEventListener('submit', saveDoses);
-  $('#doses-all').addEventListener('click', () => $$('#dose-list input[type="checkbox"]').forEach((c) => { c.checked = true; }));
+  // Check all: every slot taken (a skipped one too).
+  $('#doses-all').addEventListener('click', () => { if (!doseDay) return; keepDoseChecks(); for (const m of doseDay.items) for (const s of m.slots) s.taken = true; renderDoses(doseDay); });
   $('#doses-clear').addEventListener('click', clearDoses);
 }
 
@@ -178,12 +179,24 @@ const SLOT_ORDER = ['morning', 'afternoon', 'before_workout', 'during_workout', 
 let doseDay = null;
 let doseEditing = null; // 'medicationId|timing' of the open editor
 
-/** Keeps the checkboxes' current state in doseDay before the list is redrawn. */
+/**
+ * Keeps the checkboxes' current state in doseDay before the list is redrawn. A slot records only what is marked
+ * (UX roadmap phase 3, option C, 2026-10-29): checked is taken, Skip is skipped (taken false), and an unchecked box that
+ * was not skipped is not logged (null), so it counts neither way.
+ */
 function keepDoseChecks() {
   for (const c of $$('#dose-list input[type="checkbox"]')) {
     const slot = doseDay.items.find((m) => m.id === Number(c.dataset.med))?.slots.find((s) => s.timing === c.dataset.timing);
-    if (slot) slot.taken = c.checked;
+    if (!slot) continue;
+    if (c.checked) slot.taken = true;
+    else if (slot.taken === true) slot.taken = null;
   }
+}
+
+/** Taken, skipped and not logged counts for the status line. */
+function doseCounts(day) {
+  const slots = day.items.flatMap((m) => m.slots);
+  return { taken: slots.filter((s) => s.taken === true).length, skipped: slots.filter((s) => s.taken === false).length, open: slots.filter((s) => s.taken == null).length };
 }
 
 /** The inline editor for one slot: dose and slot for this day only, defaults from the Meds tab. */
@@ -196,7 +209,8 @@ function doseEditor(m, s) {
     h('div', { class: 'grid2' }, h('label', {}, 'Dose taken', dose), h('label', {}, 'Taken', slot)),
     h('p', { class: 'muted small' }, 'For this day only. Change the default on the ', h('a', { href: '#meds' }, 'Meds'), ' tab.'),
     h('div', { class: 'actions' },
-      h('button', { type: 'button', onclick: () => { s.dose = dose.value.trim() || null; s.movedTo = slot.value === s.timing ? null : slot.value; close(); } }, 'Apply'),
+      // An adjustment says the dose was taken, so applying one marks the slot taken (an unmarked slot is not saved).
+      h('button', { type: 'button', onclick: () => { keepDoseChecks(); s.dose = dose.value.trim() || null; s.movedTo = slot.value === s.timing ? null : slot.value; if (s.dose || s.movedTo) s.taken = true; doseEditing = null; renderDoses(doseDay); } }, 'Apply'),
       h('button', { type: 'button', class: 'ghost', onclick: () => { s.dose = null; s.movedTo = null; close(); } }, 'Reset to default'),
       h('button', { type: 'button', class: 'ghost', onclick: close }, 'Cancel')));
 }
@@ -228,18 +242,31 @@ function renderDoses(day, { keep = false } = {}) {
         // defaultDose is the period's dose, or its ingredients as one line ("Alpha 5 mg + Beta 10 mg").
         const shownDose = s.dose ?? s.defaultDose;
         const notes = [s.dose && s.defaultDose ? `default ${s.defaultDose}` : s.dose ? 'adjusted' : null, s.movedTo ? `moved from ${TIMING_LABELS[s.timing]}` : null].filter(Boolean);
-        return h('div', { class: `dose-row${notes.length ? ' adjusted' : ''}` },
+        const skipped = s.taken === false;
+        // Skip records a deliberate miss; Undo skip returns the slot to not logged.
+        const skip = () => { keepDoseChecks(); s.taken = skipped ? null : false; renderDoses(doseDay); };
+        return h('div', { class: `dose-row${notes.length ? ' adjusted' : ''}${skipped ? ' skipped' : ''}` },
           h('label', { class: 'check dose' },
             h('input', { type: 'checkbox', checked: s.taken === true, 'data-med': String(m.id), 'data-timing': s.timing }),
             h('span', {}, m.name, shownDose ? h('span', { class: `${s.dose ? '' : 'muted'}${m.ingredients && !s.dose ? ' ingredients-line' : ''}` }, ` ${shownDose}`) : null,
-              notes.length ? h('span', { class: 'muted small' }, ` (${notes.join('; ')})`) : null)),
+              notes.length ? h('span', { class: 'muted small' }, ` (${notes.join('; ')})`) : null,
+              skipped ? h('span', { class: 'muted small' }, ' skipped') : null)),
+          h('button', { type: 'button', class: 'link small dose-skip', 'aria-pressed': String(skipped), 'aria-label': `${skipped ? 'Undo skip for' : 'Skip'} ${m.name}, ${TIMING_LABELS[s.timing]}`, onclick: skip }, skipped ? 'Undo skip' : 'Skip'),
           h('button', { type: 'button', class: 'link small dose-adjust', 'aria-expanded': String(doseEditing === key),
             onclick: () => { doseEditing = doseEditing === key ? null : key; renderDoses(doseDay, { keep: true }); } }, 'Adjust'),
           doseEditing === key ? doseEditor(m, s) : null);
       })));
   }
+  setStatus(status, doseStatus(day));
+}
+
+/** "Saved: 3 taken, 1 skipped, 1 not logged. ..." for a saved day; "Not logged for this day" otherwise. */
+function doseStatus(day) {
+  if (!day.saved) return 'Not logged for this day';
+  const { taken, skipped, open } = doseCounts(day);
   const adjusted = day.items.some((m) => m.slots.some((s) => s.dose || s.movedTo));
-  setStatus(status, day.saved ? `Saved (unchecked items are recorded as skipped)${adjusted ? '; adjustments apply to this day only' : ''}` : 'Not logged for this day');
+  const parts = [`${taken} taken`, skipped ? `${skipped} skipped` : null, open ? `${open} not logged` : null].filter(Boolean);
+  return `Saved: ${parts.join(', ')}.${open ? ' Anything not marked counts neither way.' : ''}${adjusted ? ' Adjustments apply to this day only.' : ''}`;
 }
 
 async function saveDoses(evt) {
@@ -247,10 +274,14 @@ async function saveDoses(evt) {
   const status = $('.status', evt.currentTarget);
   keepDoseChecks();
   doseEditing = null;
-  const doses = doseDay.items.flatMap((m) => m.slots.map((s) => ({ medication_id: m.id, timing: s.timing, taken: s.taken === true, dose: s.dose ?? null, moved_to: s.movedTo ?? null })));
+  // Only marked slots are sent: an unmarked one stays not logged (never a skip).
+  const doses = doseDay.items.flatMap((m) => m.slots.filter((s) => s.taken != null)
+    .map((s) => ({ medication_id: m.id, timing: s.timing, taken: s.taken, dose: s.dose ?? null, moved_to: s.movedTo ?? null })));
+  if (!doses.length && !doseDay.saved) { setStatus(status, 'Nothing marked; the day stays not logged.'); return; }
   try {
-    renderDoses(await api('PUT', `/api/doses/${$('#day').value}`, { doses }));
-    setStatus(status, 'Saved (unchecked items are recorded as skipped)', 'ok');
+    const day = await api('PUT', `/api/doses/${$('#day').value}`, { doses });
+    renderDoses(day);
+    setStatus(status, doses.length ? doseStatus(day) : 'Nothing marked; the day is back to not logged.', 'ok');
   } catch (err) {
     setStatus(status, err.message, 'error');
   }
