@@ -218,7 +218,8 @@ These are observational before and after averages; never present them as cause, 
 A period with start_estimated (real start unknown; the owner's existing items count from 2026-01-01) is active from
 started_on but never produces a start event. Daily check-off (medication_doses): saving a day records only the slots
 marked (UX roadmap phase 3, option C, owner's choice 2026-10-29): checked is taken, Skip is skipped, and an unmarked slot
-has no row, so it is not logged and counts neither way (a morning save never marks the evening dose skipped); applying an
+has no row, so it is not logged and counts neither way (a morning save never marks the evening dose skipped; a skip is
+only ever the user's own click, and migration 030 cleared the skips older saves stored for unchecked boxes); applying an
 adjustment marks its slot taken. A day with no rows is unknown, never missed. The weekly summary reports doses taken out of doses logged.
 A saved slot can carry a one-day adjustment (migration 014): dose (taken instead of the period's dose) and moved_to (the
 slot it was taken in; timing stays the scheduled slot, the key). Values equal to the default are stored as NULL. The

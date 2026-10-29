@@ -316,4 +316,11 @@ export const USER_MIGRATIONS = [
       CREATE INDEX feedback_user ON feedback(user_id, created_at);
     `,
   },
+  {
+    // Before the check-off recorded only what was marked (deployed 2026-10-29 21:11 UTC), saving stored every unchecked
+    // slot as skipped, and there was no Skip control, so none of those were the owner's choice. They become not logged
+    // (no row), which counts neither way; a skip made with the Skip control after that time stays.
+    id: '030-clear-automatic-skips',
+    up: "DELETE FROM medication_doses WHERE taken = 0 AND updated_at < '2026-10-29T21:11:10Z'",
+  },
 ];

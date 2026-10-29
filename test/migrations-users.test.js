@@ -53,3 +53,25 @@ test('024 and 025: rows kept and given to the owner, children intact, user_id re
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('030: skips saved before the check-off recorded only what was marked become not logged; later skips and taken stay', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'health-skips-mig-'));
+  const path = join(dir, 'h.db');
+  try {
+    const before = MIGRATIONS.slice(0, MIGRATIONS.findIndex((m) => m.id === '030-clear-automatic-skips'));
+    const old = openStore(path, { app: 'health-review', migrations: before });
+    old.db.prepare("INSERT INTO medications (id, user_id, name, kind, created_at) VALUES (1, ?, 'Test Item', 'supplement', 'x')").run(OWNER_ID);
+    const ins = old.db.prepare('INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at) VALUES (?, ?, 1, ?, ?, ?)');
+    ins.run(OWNER_ID, '2026-10-28', 'morning', 1, '2026-10-28T12:00:00.000Z');
+    ins.run(OWNER_ID, '2026-10-28', 'before_bed', 0, '2026-10-28T12:00:00.000Z'); // unchecked at a save: automatic
+    ins.run(OWNER_ID, '2026-10-30', 'before_bed', 0, '2026-10-30T12:00:00.000Z'); // the Skip control
+    old.close();
+
+    const store = openHealthStore(path);
+    const rows = store.db.prepare('SELECT date, timing, taken FROM medication_doses ORDER BY date, timing').all();
+    assert.deepEqual(rows.map((r) => `${r.date} ${r.timing} ${r.taken}`), ['2026-10-28 morning 1', '2026-10-30 before_bed 0']);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
