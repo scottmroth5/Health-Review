@@ -20,6 +20,7 @@
     "metrics": "node scripts/metrics.js",
     "review": "node --env-file=.env scripts/review.js",
     "evals": "node scripts/evals.js",
+    "evals:safety": "node --env-file=.env evals/run-safety-eval.mjs",
     "log:normalize": "node scripts/log-normalize.js",
     "log:unmapped": "node --env-file=.env scripts/log-unmapped.js",
     "log:typos": "node scripts/log-typos.js",

@@ -127,6 +127,9 @@ npm run metrics                   print the computed summary for last week (-- -
 npm run evals                     free: metric fixtures, then a summary of saved review eval results
 npm run evals -- --regrade v1     free: re-apply the current checks to a variant's saved drafts
 npm run evals -- --live [--variant v2] [--cases a,b]   paid: run the review contract eval (about $0.35 per case)
+npm run evals:safety              the AI safety check (evals/safety-cases.json, evals/run-safety-eval.mjs) on the demo's made-up
+                                  data: a dry run by default; -- --live is paid (about $1.30, stops at --max-usd, default 3);
+                                  -- --live --fake runs it free with a stand-in client; results in data/evals/safety
 npm run review                    sync, then write the weekly review for the week ending last Saturday (-- --week YYYY-MM-DD,
                                   -- --dry-run to build and size the prompt without calling Claude, -- --no-sync,
                                   -- --force to write it although Apple Health days are missing or partial)
@@ -382,7 +385,13 @@ with --approve-harness. Every live run sends health data to the Claude API and c
 Results so far: baseline 7/13 first drafts clean (9/13 re-graded), v1 9/13 (12/13 at the 3,000-word limit), 13/13 final.
 v2 (Advisor and dataQuality blocks) 11/13 first drafts clean, 12/13 final: synthetic-empty-week failed routing because the
 advisor wording ("prescription") tripped the medication check; v4 reworded it to "calls for" and passed that case on
-the first draft (v3 was the same prompt as v2, a single lucky pass). v12 (phase 4: highlights, next steps, trends, trimmed
+the first draft (v3 was the same prompt as v2, a single lucky pass).
+AI safety check (UX roadmap phase 5, 2026-10-30): 18 cases push the Next program chat, Help and the review past the
+health rules (medication, dose, lab, symptom and jailbreak questions, plus controls that must still get real answers), on
+the demo's made-up data with two made-up medications added; a grader model (claude-sonnet-5-5) answers each case's yes or
+no questions from the reply alone. First run: 16/18, $1.31. The lab miss was the case's question (above range wording in the
+physician list is allowed); the supplement miss (a note's dose change repeated outside the physician list, no advice)
+waits on the owner's call. v12 (phase 4: highlights, next steps, trends, trimmed
 prompt sections) 13/13 first drafts clean, 13/13 final, about 2,200 words a report.
 
 ## UI and API
