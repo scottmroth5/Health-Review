@@ -3,9 +3,16 @@
 
 const DASHES = /[–—]|--/;
 
+/** The report's opening: highlights and next steps (absent on reports written before them). */
+const opening = (report) => [
+  ...(report.highlights ?? []).map((text, i) => ({ where: `highlight ${i + 1}`, text })),
+  ...(report.nextSteps ?? []).map((text, i) => ({ where: `next step ${i + 1}`, text })),
+];
+
 /** Em dashes, en dashes and double hyphens, by where they appear. */
 export function findDashes(report) {
   const problems = [];
+  for (const o of opening(report)) if (DASHES.test(o.text)) problems.push(`dash in ${o.where}`);
   for (const s of report.sections) if (DASHES.test(s.title) || DASHES.test(s.body)) problems.push(`dash in "${s.title}"`);
   for (const p of report.physicianDiscussion) if (DASHES.test(p.topic) || DASHES.test(p.detail)) problems.push(`dash in physician item "${p.topic}"`);
   return problems;
@@ -15,6 +22,8 @@ export function findDashes(report) {
 export function stripDashes(report) {
   const fix = (t) => t.replace(/\s*(?:[–—]|--)\s*/g, ', ');
   return {
+    highlights: (report.highlights ?? []).map(fix),
+    nextSteps: (report.nextSteps ?? []).map(fix),
     sections: report.sections.map((s) => ({ title: fix(s.title), body: fix(s.body) })),
     physicianDiscussion: report.physicianDiscussion.map((p) => ({ topic: fix(p.topic), detail: fix(p.detail) })),
   };
@@ -56,6 +65,7 @@ const withoutExemptNumbers = (text) => text.replace(DATE, ' ').replace(TARGET, '
 /** Numbers in the report that appear nowhere in the summary or instructions (dates and marked targets excepted). */
 export function ungroundedNumbers(report, allowed) {
   const texts = [
+    ...opening(report).map((o) => o.text),
     ...report.sections.flatMap((s) => [s.title, s.body]),
     ...report.physicianDiscussion.flatMap((p) => [p.topic, p.detail]),
   ];
@@ -122,6 +132,9 @@ export function misroutedTopics(report, { medicationNames = [], labNames = [] })
     { what: 'symptom wording', re: SYMPTOMS },
   ];
   const problems = [];
+  for (const o of opening(report)) {
+    for (const { what, re } of matchers) if (re.test(o.text)) problems.push(`${what} in ${o.where} (belongs in physicianDiscussion)`);
+  }
   for (const s of report.sections) {
     for (const { what, re } of matchers) {
       if (re.test(s.body) || re.test(s.title)) problems.push(`${what} in "${s.title}" (belongs in physicianDiscussion)`);
@@ -135,13 +148,26 @@ export function misroutedTopics(report, { medicationNames = [], labNames = [] })
 export const MAX_WORDS = 3000;
 
 export const countWords = (report) =>
-  [...report.sections.map((s) => s.body), ...report.physicianDiscussion.map((p) => `${p.topic} ${p.detail}`)]
+  [...opening(report).map((o) => o.text), ...report.sections.map((s) => s.body), ...report.physicianDiscussion.map((p) => `${p.topic} ${p.detail}`)]
     .join(' ').split(/\s+/).filter(Boolean).length;
 
-/** All checks; [] when the report passes. */
-export function checkReport(report, { allowed, medicationNames, labNames, maxWords = MAX_WORDS }) {
+/** At most this many highlights and next steps (the schema can't hold a count limit). */
+export const MAX_OPENING_ITEMS = 3;
+
+/**
+ * All checks; [] when the report passes. opening (the weekly review; not the chat) also requires 1 to 3 highlights and
+ * at most 3 next steps.
+ */
+export function checkReport(report, { allowed, medicationNames, labNames, maxWords = MAX_WORDS, opening: needsOpening = false }) {
   const problems = [];
   if (!report.sections.length) problems.push('no sections');
+  if (needsOpening) {
+    const highlights = report.highlights ?? [];
+    const nextSteps = report.nextSteps ?? [];
+    if (!highlights.length) problems.push('no highlights (give the week\'s biggest changes, at most 3)');
+    if (highlights.length > MAX_OPENING_ITEMS) problems.push(`too many highlights: ${highlights.length} (at most ${MAX_OPENING_ITEMS})`);
+    if (nextSteps.length > MAX_OPENING_ITEMS) problems.push(`too many next steps: ${nextSteps.length} (at most ${MAX_OPENING_ITEMS})`);
+  }
   const words = countWords(report);
   if (words > maxWords) problems.push(`too long: ${words} words (keep it under 2,000; the limit is ${maxWords})`);
   problems.push(...findDashes(report));

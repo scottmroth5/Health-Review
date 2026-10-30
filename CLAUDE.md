@@ -336,7 +336,14 @@ reset_range.
 npm run review makes one structured-output call (REVIEW_MODEL, default claude-opus-5-5; REVIEW_EFFORT, default high;
 refusal fallbacks on via the beta endpoint). The system prompt is CONTRACT in agent/instructions.js followed by the owner's
 prompt sections; the report format sections in those prompts were written for v1 raw data, and CONTRACT tells the model the
-summary replaces them. Output is checked in code: no em or en dashes or double hyphens; every number must appear in the summary or
+summary replaces them. Format (UX roadmap phase 4, 2026-10-29): the output schema adds highlights (1 to 3, the week's
+biggest changes, each naming its comparison) and nextSteps (up to 3, optional, never medications, labs or symptoms),
+rendered first as "This week at a glance" and "Next steps" (Home shows the first), then the owner's sections, then the
+physician list. Each recovery metric and check-in scale carries trend (metrics/recovery.js trend: up or down when the week's
+mean moved at least half the baseline's daily standard deviation, else steady; null under 14 baseline days, 7 baseline
+check-ins or 3 in the week), and CONTRACT allows improved or declined only for up or down. checkReport's opening option
+(the review, not the chat) checks the counts; dashes, grounding and routing cover the opening too. Older saved reviews keep
+their Markdown. Output is checked in code: no em or en dashes or double hyphens; every number must appear in the summary or
 instructions (small counts, window lengths and calendar dates allowed, and suggested targets written as "target N");
 medication names, lab values (a lab name with a number next to it) and symptom words only in physicianDiscussion; and
 at most 3,000 words (the owner's rules ask for under 2,000; the margin avoids paying for a retry over small overruns). Failed checks get one retry listing the problems; dashes left after that are
@@ -373,7 +380,8 @@ with --approve-harness. Every live run sends health data to the Claude API and c
 Results so far: baseline 7/13 first drafts clean (9/13 re-graded), v1 9/13 (12/13 at the 3,000-word limit), 13/13 final.
 v2 (Advisor and dataQuality blocks) 11/13 first drafts clean, 12/13 final: synthetic-empty-week failed routing because the
 advisor wording ("prescription") tripped the medication check; v4 reworded it to "calls for" and passed that case on
-the first draft (v3 was the same prompt as v2, a single lucky pass).
+the first draft (v3 was the same prompt as v2, a single lucky pass). v12 (phase 4: highlights, next steps, trends, trimmed
+prompt sections) 13/13 first drafts clean, 13/13 final, about 2,200 words a report.
 
 ## UI and API
 Access (server/auth.js, server/session.js, server/security.js; ported from Job-Agent, test/auth.test.js):

@@ -1,13 +1,10 @@
 {
   "description": "Weekly review contract eval. Real weeks are identified by date only: their data is read from the owner's local database at run time and never stored here. Synthetic cases add made-up data on top of a real week, in a throwaway in-memory copy of the database. Why each real week was chosen is kept locally in data/evals/review/real-weeks.md, since it describes the owner.",
   "expectedSections": [
-    "Weekly Wins",
     "Patterns Noticed",
     "Cardiovascular Snapshot",
     "Recovery Signals",
     "Drinking Patterns",
-    "Watch Outs",
-    "This Week's Focus",
     "Strength Progress",
     "Check-In Summary"
   ],

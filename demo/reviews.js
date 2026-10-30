@@ -27,20 +27,23 @@ const LABELS = { hrv_ms: 'HRV', resting_hr: 'resting heart rate', sleep_total_hr
   physical_effort: 'physical effort', vo2max: 'VO2 max' };
 const STATUS_WORDS = { progressing: 'progressing', stalled: 'holding flat', regressing: 'slipping', new_rep_range: 'in a new rep range', not_enough_data: 'still building history' };
 
-function wins(s, pick) {
+/** The opening's highlights: at most three of the week's changes; recovery and check-ins only when their trend moved. */
+function highlights(s, pick) {
   const out = [];
   const up = (s.lifts ?? []).filter((l) => l.status === 'progressing');
-  if (up.length) out.push(`- **${up[0].name}** is progressing in the ${up[0].range} range: best ${fmt(up[0].recentBest)} lbs estimated against ${fmt(up[0].baselineBest)} before (${fmt(up[0].changePct)}%).`);
+  if (up.length) out.push(`**${up[0].name}** is progressing in the ${up[0].range} range: best ${fmt(up[0].recentBest)} lbs estimated against ${fmt(up[0].baselineBest)} before (${fmt(up[0].changePct)}%).`);
   const a = s.programAdherence;
-  if (a?.days) out.push(`- **${a.matched} of ${a.days} lifting days** matched the ${a.program} workout, with ${fmt(a.setsLogged)} sets logged.`);
+  if (a?.days) out.push(`**${a.matched} of ${a.days} lifting days** matched the ${a.program} workout, with ${fmt(a.setsLogged)} sets logged.`);
   const st = s.checkins?.scales?.stress;
-  if (st?.mean != null && st.changeVsBaseline < 0) out.push(`- **Stress eased:** check-ins averaged ${fmt(st.mean)} against ${fmt(st.baselineMean)} over the baseline.`);
+  if (st?.mean != null && st.trend === 'down') out.push(`**Stress eased:** check-ins averaged ${fmt(st.mean)} against ${fmt(st.baselineMean)} over the 28-day baseline.`);
   const hrv = s.recovery?.hrv_ms;
-  if (hrv?.mean != null && hrv.changeVsBaseline > 0) out.push(`- **HRV ${pick(['climbed', 'rose', 'improved'])}** to ${fmt(hrv.mean)} ms, ${signed(hrv.changeVsBaseline)} on the baseline.`);
+  if (hrv?.mean != null && hrv.trend === 'up') out.push(`**HRV ${pick(['climbed', 'rose', 'improved'])}** to ${fmt(hrv.mean)} ms, ${signed(hrv.changeVsBaseline)} on the 28-day baseline.`);
+  if (hrv?.mean != null && hrv.trend === 'down') out.push(`**HRV dipped** to ${fmt(hrv.mean)} ms, ${signed(hrv.changeVsBaseline)} on the 28-day baseline.`);
   const c = s.cardio?.cardio;
-  if (c?.minutes && c.changeVsBaselineMinutes > 0) out.push(`- **Cardio:** ${fmt(c.minutes)} minutes over ${c.sessions} sessions, ahead of the usual ${fmt(c.baselineWeeklyMinutes)}.`);
-  if (!out.length && s.strength?.week?.days) out.push(`- **${s.strength.week.days} lifting days** and ${fmt(s.strength.week.sets)} sets kept the program moving.`);
-  return out.length ? { title: 'Weekly Wins', body: out.join('\n') } : null;
+  if (c?.minutes && c.changeVsBaselineMinutes > 0) out.push(`**Cardio:** ${fmt(c.minutes)} minutes over ${c.sessions} sessions, ahead of the usual ${fmt(c.baselineWeeklyMinutes)}.`);
+  if (!out.length && s.strength?.week?.days) out.push(`**${s.strength.week.days} lifting days** and ${fmt(s.strength.week.sets)} sets kept the program moving.`);
+  if (!out.length) out.push('**A steady week:** recovery held close to the 28-day baseline.');
+  return out.slice(0, 3);
 }
 
 function recovery(s, pick) {
@@ -134,18 +137,19 @@ function targets(s) {
   return { title: 'Targets', body: t.map((x) => `- **${x.metric}:** ${fmt(x.current90d)} over 90 days, target ${fmt(x.target)} (${x.setBy}).`).join('\n') };
 }
 
-function nextWeek(s, pick) {
+/** The opening's next steps: up to three, tied to the program or a highlight. */
+function nextSteps(s, pick) {
   const lines = [];
   const p = s.program;
-  if (p?.phase) lines.push(`- Keep ${p.program} ${p.phase} on its days; ${pick(['aim for every session', 'protect the main lift on each day', 'keep the rest times honest'])}.`);
+  if (p?.phase) lines.push(`Keep ${p.program} ${p.phase} on its days; ${pick(['aim for every session', 'protect the main lift on each day', 'keep the rest times honest'])}.`);
   const top = s.advisor?.top?.[0];
-  if (top) lines.push(`- The block ends soon. The Advisor ranks **${top.program}** first (score ${top.total.toFixed(2)}): ${top.reasons?.[0] ?? 'see the Training tab'}.`);
+  if (top) lines.push(`The block ends soon. The Advisor ranks **${top.program}** first (score ${top.total.toFixed(2)}): ${top.reasons?.[0] ?? 'see the Training tab'}.`);
   const c = s.cardio?.cardio;
-  if (c && c.changeVsBaselineMinutes < 0) lines.push(`- Add a walk or ride to get back toward ${fmt(c.baselineWeeklyMinutes)} cardio minutes.`);
+  if (c && c.changeVsBaselineMinutes < 0) lines.push(`Add a walk or ride to get back toward ${fmt(c.baselineWeeklyMinutes)} cardio minutes.`);
   const hrv = s.recovery?.hrv_ms;
-  if (hrv && hrv.changeVsBaseline < 0) lines.push(`- HRV ran ${fmt(Math.abs(hrv.changeVsBaselinePct))}% under the baseline; ${pick(['guard sleep before heavy days', 'keep late nights for the weekend', 'go easier if readiness drops'])}.`);
-  if (!lines.length) lines.push('- Same plan: lift on schedule, walk most days, and log check-ins.');
-  return { title: 'Next Week', body: lines.join('\n') };
+  if (hrv?.trend === 'down') lines.push(`HRV ran ${fmt(Math.abs(hrv.changeVsBaselinePct))}% under the 28-day baseline; ${pick(['guard sleep before heavy days', 'keep late nights for the weekend', 'go easier if readiness drops'])}.`);
+  if (!lines.length) lines.push('Same plan: lift on schedule, walk most days, and log check-ins.');
+  return lines.slice(0, 3);
 }
 
 function physician(s) {
@@ -162,11 +166,11 @@ function physician(s) {
 }
 
 /**
- * A full weekly review ({ sections, physicianDiscussion }, the shape agent/instructions.js renderReport takes) from one
- * week's summary. Every number comes from the summary itself.
+ * A full weekly review ({ highlights, nextSteps, sections, physicianDiscussion }, the shape agent/instructions.js
+ * renderReport takes) from one week's summary. Every number comes from the summary itself.
  */
 export function writeDemoReview(summary) {
   const pick = chooser(summary.about?.weekEnd ?? 'week');
-  const sections = [wins, recovery, training, cardio, drinks, body, targets, nextWeek].map((f) => f(summary, pick)).filter(Boolean);
-  return { sections, physicianDiscussion: physician(summary) };
+  const sections = [recovery, training, cardio, drinks, body, targets].map((f) => f(summary, pick)).filter(Boolean);
+  return { highlights: highlights(summary, pick), nextSteps: nextSteps(summary, pick), sections, physicianDiscussion: physician(summary) };
 }

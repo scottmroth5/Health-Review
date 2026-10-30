@@ -34,7 +34,19 @@ export const NIGHT_BREATHING_METRICS = {
   breathing_disturbances: 1,
 };
 
-const MIN_BASELINE_DAYS = 14; // unusual-day flags need at least two weeks of baseline
+const MIN_BASELINE_DAYS = 14; // unusual-day flags and trends need at least two weeks of baseline
+const MIN_WEEK_DAYS = 3; // a trend needs at least 3 days in the week
+
+/**
+ * Whether the week's mean really moved from the baseline's: up or down when the difference is at least half the
+ * baseline's day-to-day standard deviation (compared before rounding), else steady; null without enough data or spread.
+ * The review may call a metric better or worse only when this says up or down.
+ */
+export function trend(weekMean, weekCount, baseMean, baseSd, baseCount, { minBase = MIN_BASELINE_DAYS, minWeek = MIN_WEEK_DAYS } = {}) {
+  if (weekMean === null || baseMean === null || !baseSd || weekCount < minWeek || baseCount < minBase) return null;
+  const diff = weekMean - baseMean;
+  return Math.abs(diff) >= 0.5 * baseSd ? (diff > 0 ? 'up' : 'down') : 'steady';
+}
 
 /**
  * @param {Array<object>} rows  daily_metrics rows covering at least the baseline and week
@@ -90,6 +102,7 @@ function weekStats(rows, w, key, d, { flagUnusual = true } = {}) {
     baselineMean: round(baseMean, d),
     changeVsBaseline: weekMean !== null && baseMean !== null ? round(weekMean - baseMean, d) : null,
     changeVsBaselinePct: weekMean !== null && baseMean ? round(((weekMean - baseMean) / baseMean) * 100, 0) : null,
+    trend: trend(weekMean, week.length, baseMean, baseSd, base.length),
     ...(flagUnusual ? { unusualDays } : {}),
   };
 }

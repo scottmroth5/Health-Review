@@ -29,6 +29,7 @@ export function gradeDraft(input, firstDraft, finalWarnings, checks) {
     routing: has(/belongs in physicianDiscussion/) ? 0 : 1,
     physician: physicianOk ? 1 : 0,
     length_ok: n <= maxWords ? 1 : 0,
+    opening_ok: has(/^(no highlights|too many (highlights|next steps))/) ? 0 : 1,
   };
   const explanation = {};
   if (problems.length) explanation.first_clean = problems.join('; ');

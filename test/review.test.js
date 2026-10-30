@@ -11,9 +11,34 @@ import { runReview, prepareReview } from '../agent/review.js';
 import { computeWeek } from '../metrics/index.js';
 import { fakeClaudeClient, silentLogger } from './helpers.js';
 
-const report = (sections, physicianDiscussion = []) => ({ sections: sections.map(([title, body]) => ({ title, body })), physicianDiscussion });
+// A report in the review's shape; the opening holds one plain highlight unless a test sets its own.
+const report = (sections, physicianDiscussion = []) => ({
+  highlights: ['Recovery held steady against the baseline.'], nextSteps: [], sections: sections.map(([title, body]) => ({ title, body })), physicianDiscussion,
+});
 
 // ---- checks ----
+
+test('opening: 1 to 3 highlights and at most 3 next steps, checked like the sections, rendered first', async () => {
+  const { checkReport } = await import('../agent/validate.js');
+  const checks = { allowed: allowedNumbers({ hrv: [52, 55] }), medicationNames: ['Sample Statin'], labNames: [], opening: true };
+  const r = { ...report([['Recovery Signals', 'Held steady.']]), highlights: ['HRV 52 ms against your 28-day baseline of 55.'], nextSteps: ['Guard sleep before heavy days.'] };
+  assert.deepEqual(checkReport(r, checks), []);
+  assert.match(checkReport({ ...r, highlights: [] }, checks).join(' '), /no highlights/);
+  assert.match(checkReport({ ...r, highlights: ['a', 'b', 'c', 'd'] }, checks).join(' '), /too many highlights: 4/);
+  assert.match(checkReport({ ...r, nextSteps: ['a', 'b', 'c', 'd'] }, checks).join(' '), /too many next steps: 4/);
+  assert.deepEqual(checkReport({ ...r, highlights: [] }, { ...checks, opening: false }), [], 'the chat has no opening');
+  // The opening gets the same dash, number and routing checks as the sections.
+  const bad = { ...r, highlights: ['HRV 61 ms — up.'], nextSteps: ['Ask about the Sample Statin dose.'] };
+  const problems = checkReport(bad, checks).join(' | ');
+  assert.match(problems, /dash in highlight 1/);
+  assert.match(problems, /numbers not in the summary: 61/);
+  assert.match(problems, /medication "Sample Statin" in next step 1/);
+  assert.deepEqual(findDashes(stripDashes(bad)), []);
+  assert.equal(renderReport({ ...r, physicianDiscussion: [{ topic: 'Sleep', detail: 'ask' }] }),
+    '## This week at a glance\n- HRV 52 ms against your 28-day baseline of 55.\n\n## Next steps\n- Guard sleep before heavy days.\n\n'
+    + '## Recovery Signals\nHeld steady.\n\n## Discuss with your physician\n- **Sleep**: ask\n');
+  assert.doesNotMatch(renderReport({ ...r, nextSteps: [] }), /Next steps/, 'no empty heading');
+});
 test('dashes: em, en and double hyphen are found anywhere and stripped as a last resort', () => {
   const r = report([['Weekly Wins', 'Good week — HRV up'], ['Watch Outs', 'Zones 2–3 and -- here']], [{ topic: 'A', detail: 'ok' }]);
   assert.equal(findDashes(r).length, 2);
@@ -103,7 +128,7 @@ test('grounding: calendar dates and numbers marked as targets are exempt; ratios
 
 test('length: reports over the limit fail the check (with a margin over the 2,000 the rules ask for)', async () => {
   const { checkReport, countWords, MAX_WORDS } = await import('../agent/validate.js');
-  const long = report([['Weekly Wins', Array(MAX_WORDS).fill('word').join(' ')]], [{ topic: 'One', detail: 'more' }]);
+  const long = { ...report([['Weekly Wins', Array(MAX_WORDS).fill('word').join(' ')]], [{ topic: 'One', detail: 'more' }]), highlights: [] };
   assert.equal(countWords(long), MAX_WORDS + 2);
   const checks = { allowed: new Set(), medicationNames: [], labNames: [] };
   assert.match(checkReport(long, checks).join(' '), /too long: 3002 words/);
@@ -123,7 +148,7 @@ test('system prompt: fixed contract first, then the owner sections with sensitiv
 });
 
 test('rendered report: sections as headings, physician items as a final list', () => {
-  const md = renderReport(report([['Weekly Wins', '- Slept well']], [{ topic: 'Lab follow-up', detail: 'Ask about it.' }]));
+  const md = renderReport({ ...report([['Weekly Wins', '- Slept well']], [{ topic: 'Lab follow-up', detail: 'Ask about it.' }]), highlights: [] });
   assert.equal(md, '## Weekly Wins\n- Slept well\n\n## Discuss with your physician\n- **Lab follow-up**: Ask about it.\n');
 });
 

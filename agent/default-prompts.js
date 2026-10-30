@@ -2,7 +2,7 @@
 // anyone else's. They edit them on the Prompt tab.
 export const DEFAULT_PROMPT_SECTIONS = [
   ['About me', 'Edit me: your age, your goals for the next few months (for example more strength, better sleep, a lower resting heart rate), and anything the review should keep in mind. Today is {{TODAY}}.'],
-  ['Coaching style', 'Be practical and specific, in plain language. Lead with what went well, then what to watch, then two or three things to do next week. Keep the review under 2,000 words.'],
+  ['Coaching style', 'Be practical and specific, in plain language. The review opens with the week\'s biggest changes and next steps on its own; after that, cover recovery, training and anything to watch. Keep the review under 2,000 words.'],
   ['Training', 'Edit me: how many days a week you lift, the equipment you have, and any exercises to avoid.'],
 ];
 

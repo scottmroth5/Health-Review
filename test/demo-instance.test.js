@@ -77,8 +77,9 @@ test('demo instance: reports itself, refuses sync and chat, shows only its own r
     const summary = JSON.parse(r.summary_json);
     const report = writeDemoReview(summary);
     assert.equal(renderReport(report), r.report_md);
-    assert.deepEqual(checkReport(report, { allowed: allowedNumbers(summary), medicationNames: [], labNames }), [], r.week_ending);
-    assert.ok(report.sections.length >= 7, `${r.week_ending}: a full review`);
+    assert.deepEqual(checkReport(report, { allowed: allowedNumbers(summary), medicationNames: [], labNames, opening: true }), [], r.week_ending);
+    assert.ok(report.sections.length >= 5, `${r.week_ending}: a full review`);
+    assert.match(r.report_md, /^## This week at a glance\n- /, `${r.week_ending}: opens with the highlights`);
     assert.doesNotMatch(r.report_md, /\b[a-z]+_[a-z]+(_[a-z]+)*\b/, `${r.week_ending}: readable names, never metric keys`);
   }
   assert.ok(store.db.prepare('SELECT COUNT(*) FROM advisor_notes WHERE user_id = @uid').pluck().get() >= 8, 'a chat thread');

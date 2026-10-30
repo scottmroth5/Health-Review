@@ -44,6 +44,7 @@ export function prepareReview(db, { weekEnd, today, catalog }) {
     sensitiveSent,
     sectionNames: sections.map((s) => s.name),
     checks: {
+      opening: true, // highlights and next steps
       allowed: allowedNumbers(summary, system),
       medicationNames: medicationNames(db),
       // Blood oxygen and breathing disturbances are checked like lab values: a number next to them only in physicianDiscussion.
@@ -111,7 +112,7 @@ export async function runReview({ store, claude, weekEnd, today, catalog, model 
       sensitive: JSON.stringify(prep.sensitiveSent),
     });
     const totals = run.finish('ok', { weekEnd, attempts, warnings: problems.length, model: result.model });
-    return { weekEnd, attempts, warnings: problems, model: result.model, costUsd: totals.costUsd, sections: report.sections.length, physicianItems: report.physicianDiscussion.length };
+    return { weekEnd, attempts, warnings: problems, model: result.model, costUsd: totals.costUsd, highlights: report.highlights.length, nextSteps: report.nextSteps.length, sections: report.sections.length, physicianItems: report.physicianDiscussion.length };
   } catch (err) {
     run.finish('error', { weekEnd, error: err.name });
     throw err;

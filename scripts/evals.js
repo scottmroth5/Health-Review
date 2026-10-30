@@ -21,6 +21,7 @@ const STATE = {
     { id: 'routing', label: 'Routing', kind: 'binary' },
     { id: 'physician', label: 'Physician', kind: 'binary' },
     { id: 'length_ok', label: 'Length', kind: 'binary' },
+    { id: 'opening_ok', label: 'Opening', kind: 'binary' },
   ],
   perf_fields: [
     { id: 'cost_usd', label: 'Cost', unit: '$' },
@@ -92,7 +93,8 @@ async function regrade(variant) {
     const system = trace.find((t) => t.role === 'system').content;
     const summaryText = /```json\n([\s\S]*?)\n```/.exec(trace.find((t) => t.role === 'user').content)[1];
     const drafts = trace.filter((t) => t.role === 'assistant').map((t) => JSON.parse(t.content));
-    const checks = { allowed: allowedNumbers(JSON.parse(summaryText), system), ...names };
+    // Drafts from before the opening (highlights and next steps) are graded without it.
+    const checks = { allowed: allowedNumbers(JSON.parse(summaryText), system), ...names, opening: 'highlights' in drafts[0] };
     let final = drafts[drafts.length - 1];
     if (findDashes(final).length) final = stripDashes(final);
     const input = SPEC.cases.find((c) => c.id === r.prompt_id) ?? {};

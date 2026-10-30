@@ -271,7 +271,10 @@ Each program also has a `profile`, written as short summaries rather than copied
 Turned on in Health Auto Export on 2026-10-15 and stored from then on: cardio recovery, walking heart rate, walking
 speed, walking asymmetry (lower is more even), heart rate (min, max, average), sleeping wrist temperature, physical effort, blood oxygen and breathing
 disturbances. The Health tab charts cardio recovery, walking heart rate and speed, wrist temperature, blood oxygen and
-breathing disturbances. The weekly review compares each with the previous week and your 28-day baseline. Blood oxygen
+breathing disturbances. The weekly review compares each with the previous week and your 28-day baseline, and code marks
+each up, down or steady: up or down only when the week moved by at least half the baseline's usual day-to-day spread,
+so a small difference is never written up as a win. The review opens with "This week at a glance" (the week's three
+biggest changes at most, each saying what it is compared with) and up to three next steps, then your sections. Blood oxygen
 and breathing disturbances are values only (no high or low labels) and appear in the review only for
 physician discussion. The Health tab also charts weight, body fat, muscle mass and visceral fat from Daily Check-in
 check-in. A partial day (see the data checks below) is drawn in red on the Apple

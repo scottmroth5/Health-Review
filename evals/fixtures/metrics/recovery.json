@@ -9,7 +9,9 @@
     "Mar 8 is after the week and must be ignored.",
     "Cardio recovery (added 2026-10-15) only in the week: Mar 2 22, Mar 5 25, Mar 7 28 -> 3 days, mean 25, min 22, max 28; no previous week or baseline, so no changes and no unusual days.",
     "Night breathing: blood oxygen Mar 3 95, Mar 6 96 -> 2 days, mean 95.5; no baseline; never flagged high or low (no unusualDays field). Breathing disturbances have no data, so the block holds spo2_pct only.",
-    "Walking asymmetry (added 2026-10-15) only in the week: Mar 2 3.0, Mar 6 4.0 -> 2 days, mean 3.5, min 3, max 4; no baseline."
+    "Walking asymmetry (added 2026-10-15) only in the week: Mar 2 3.0, Mar 6 4.0 -> 2 days, mean 3.5, min 3, max 4; no baseline.",
+    "Trend (up, down or steady; half the baseline sd, before rounding): HRV 50.33 vs 50, difference 0.33 under half of 2.037 (1.02), so steady. Resting HR has no baseline, so null.",
+    "Steps: baseline Feb 1..14 alternates 9000 (odd days) and 11000: mean 10000, sample sd sqrt(14,000,000 / 13) = 1037.8, half 518.9. Week Mar 1..3: 10600, 10500, 10700 -> mean 10600, difference 600, so up."
   ],
   "weekEnd": "2026-03-07",
   "input": {
@@ -173,6 +175,74 @@
         "date": "2026-03-08",
         "hrv_ms": 99,
         "resting_hr": 99
+      },
+      {
+        "date": "2026-02-01",
+        "steps": 9000
+      },
+      {
+        "date": "2026-02-02",
+        "steps": 11000
+      },
+      {
+        "date": "2026-02-03",
+        "steps": 9000
+      },
+      {
+        "date": "2026-02-04",
+        "steps": 11000
+      },
+      {
+        "date": "2026-02-05",
+        "steps": 9000
+      },
+      {
+        "date": "2026-02-06",
+        "steps": 11000
+      },
+      {
+        "date": "2026-02-07",
+        "steps": 9000
+      },
+      {
+        "date": "2026-02-08",
+        "steps": 11000
+      },
+      {
+        "date": "2026-02-09",
+        "steps": 9000
+      },
+      {
+        "date": "2026-02-10",
+        "steps": 11000
+      },
+      {
+        "date": "2026-02-11",
+        "steps": 9000
+      },
+      {
+        "date": "2026-02-12",
+        "steps": 11000
+      },
+      {
+        "date": "2026-02-13",
+        "steps": 9000
+      },
+      {
+        "date": "2026-02-14",
+        "steps": 11000
+      },
+      {
+        "date": "2026-03-01",
+        "steps": 10600
+      },
+      {
+        "date": "2026-03-02",
+        "steps": 10500
+      },
+      {
+        "date": "2026-03-03",
+        "steps": 10700
       }
     ]
   },
@@ -200,7 +270,8 @@
             "value": 44,
             "direction": "low"
           }
-        ]
+        ],
+        "trend": "steady"
       },
       "resting_hr": {
         "days": 6,
@@ -213,7 +284,8 @@
         "baselineMean": null,
         "changeVsBaseline": null,
         "changeVsBaselinePct": null,
-        "unusualDays": []
+        "unusualDays": [],
+        "trend": null
       },
       "sleep_total_hr": {
         "days": 0,
@@ -247,6 +319,17 @@
         "prevWeekMean": null,
         "baselineDays": 0,
         "unusualDays": []
+      },
+      "steps": {
+        "days": 3,
+        "mean": 10600,
+        "min": 10500,
+        "max": 10700,
+        "baselineDays": 14,
+        "baselineMean": 10000,
+        "changeVsBaseline": 600,
+        "changeVsBaselinePct": 6,
+        "trend": "up"
       }
     },
     "nightBreathing": {

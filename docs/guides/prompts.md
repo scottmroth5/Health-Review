@@ -27,9 +27,10 @@ Who you are and what you want over the next few months.
 
 ## Coaching style
 
-How the review should talk to you.
+How the review should talk to you. Every review already opens with the week's biggest changes (at most three) and up
+to three next steps, so this section is about tone and what to cover after that.
 
-- Be direct and brief. Start with two or three wins, then what slipped, then exactly three things to do next week. Under 600 words.
+- Be direct and brief. After the opening, say what slipped before anything else. Under 600 words.
 - Encouraging but honest. Explain the why behind each suggestion in a sentence. Skip anything that did not change this week.
 - Write like a coach texting me: short paragraphs, plain words, no jargon. If one thing matters most this week, say it first.
 - Use headings for Training, Cardio and Recovery. Compare this week with my four-week average, and flag anything trending the wrong way for two weeks in a row.

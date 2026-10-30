@@ -1,8 +1,10 @@
 // Check-ins: the week's daily scores against the 28-day baseline, body measurements, and how
 // readiness tracks recovery. v1 weekly rows count as one point each (their date is the week's end).
-import { mean, round, inRange, windows, addDays, pearson } from './stats.js';
+import { mean, sd, round, inRange, windows, addDays, pearson } from './stats.js';
+import { trend } from './recovery.js';
 
 export const SCALES = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
+const MIN_BASELINE_ENTRIES = 7; // a scale's trend needs a week of baseline entries and 3 in the week
 const BODY = { weight_lbs: 1, body_fat_pct: 1, muscle_mass_lbs: 1, visceral_fat: 0 };
 
 /**
@@ -29,6 +31,7 @@ export function checkins(rows, metrics, weekEnd) {
       baselineEntries: bv.length,
       baselineMean: round(bm, 1),
       changeVsBaseline: wm !== null && bm !== null ? round(wm - bm, 1) : null,
+      trend: trend(wm, wv.length, bm, sd(bv), bv.length, { minBase: MIN_BASELINE_ENTRIES }),
     };
   }
 
