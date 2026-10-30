@@ -47,11 +47,14 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
     drinking: drinking(data.drinking_days, data.daily_metrics, weekEnd),
     checkins: checkins(data.checkins, data.daily_metrics, weekEnd),
     labs: labsSummary(data.lab_tests ?? [], data.lab_results ?? [], weekEnd, data.lab_ranges ?? null),
-    // Health targets (computed in code): only metrics with data, numbers only.
-    targets: (data.targets ?? []).filter((t) => t.current !== null && t.target !== null).map((t) => ({
-      metric: t.label, target: t.target, setBy: t.setBy, current90d: t.current, basis: t.basis,
-      healthyLow: t.healthy?.low ?? null, healthyHigh: t.healthy?.high ?? null,
-    })),
+    // Health targets (computed in code): only metrics with data, numbers only. A band metric (wrist temperature) has no
+    // target, only the owner's usual range around their 90-day average.
+    targets: (data.targets ?? []).filter((t) => t.current !== null && t.target !== null).map((t) => (t.direction === 'band' && t.band
+      ? { metric: t.label, usualLow: t.band[0], usualHigh: t.band[1], current90d: t.current, basis: t.basis }
+      : {
+        metric: t.label, target: t.target, setBy: t.setBy, current90d: t.current, basis: t.basis,
+        healthyLow: t.healthy?.low ?? null, healthyHigh: t.healthy?.high ?? null,
+      })),
     medications: medicationsWeek(data.medications ?? [], data.medication_periods ?? [], data.daily_metrics, data.checkins, weekEnd, data.medication_doses ?? []),
   };
 }

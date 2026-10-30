@@ -106,15 +106,19 @@ test('summary: nightBreathing is passed to the review only when there is data', 
   assert.deepEqual(buildSummary(withData, [], { today: '2026-09-27' }).nightBreathing.spo2_pct.mean, 95);
 });
 
-test('summary: health targets reach the review (metrics with data only), and their numbers are grounded', async () => {
+test('summary: health targets reach the review (metrics with data only; a band metric as its usual range), and their numbers are grounded', async () => {
   const { loadWeekData } = await import('../metrics/load.js');
   const store = openOwnerStore(':memory:');
-  const add = store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, 6500, 'x')");
+  const add = store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, wrist_temp_f, updated_at) VALUES (@uid, ?, 6500, 97.1, 'x')");
   for (let d = '2026-07-01'; d <= '2026-09-26'; d = addDays(d, 1)) add.run(d);
   for (const [k, v] of [['birth_year', '1975'], ['sex', 'male']]) store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run(k, v);
   store.db.prepare("INSERT INTO health_targets (user_id, metric, target, updated_at) VALUES (@uid, 'resting_hr', 58, 'x')").run(); // no resting HR data: left out
   const s = buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
-  assert.deepEqual(s.targets, [{ metric: 'Steps', target: 7500, setBy: 'suggested', current90d: 6500, basis: 'norm', healthyLow: 8000 }]);
+  assert.deepEqual(s.targets, [
+    { metric: 'Steps', target: 7500, setBy: 'suggested', current90d: 6500, basis: 'norm', healthyLow: 8000 },
+    // A band metric carries the usual range (90-day average 97.1, plus or minus 0.5), never a target.
+    { metric: 'Sleeping wrist temperature', usualLow: 96.6, usualHigh: 97.6, current90d: 97.1, basis: 'personal' },
+  ]);
   assert.deepEqual(ungroundedNumbers(report([['Patterns Noticed', 'Steps averaged 6,500 against a target of 7,500 (healthy is 8,000 or more).']]), allowedNumbers(s, '')), []);
   assert.ok(CONTRACT.includes('"targets"'));
   store.close();

@@ -323,7 +323,9 @@ straight to it when closer; past it, half a step, held at the cap; ranges get in
 to 24.9 for the height; no norm means improving on their own data (said so in the reason). The owner can set any target
 (health_targets, migration 019; GET /api/targets, PUT and DELETE /api/targets/:metric, PUT /api/profile); the rest follow
 the data. The weekly summary's targets block carries each metric with data; CONTRACT says report progress as given, never
-invent a target. Age norms on these metrics are the owner's choice (2026-10-15), replacing "values only, no
+invent a target. A band metric (sleeping wrist temperature, direction band) has no target: the Health tab shows "Your usual
+range" (90-day average plus or minus its band) shaded on the chart with nights outside it in red, nothing to edit, and the
+summary carries usualLow and usualHigh in place of target (Phase 5, 2026-10-30). Age norms on these metrics are the owner's choice (2026-10-15), replacing "values only, no
 fitness-for-age labels".
 Lab ranges (metrics/labs.js; fixture evals/fixtures/metrics/labs-ranges.json): config/lab-ranges.json holds typical adult
 ranges (US conventional units, by name or alias; tests whose unit or method varies are left out); lab_tests.ref_low,
@@ -413,9 +415,10 @@ sheet's copy, and undoing restores the original. Sheet results cannot be deleted
 prompt_sections (edited on the Prompt tab; every save and delete copies the old row to prompt_section_versions);
 sensitive sections are included in the weekly review (WEEKLY_INCLUDES_SENSITIVE in agent/prompts.js) and badged in the UI;
 buildInstructions leaves them out unless a caller opts in.
-The Activity tab lists runs (GET /api/runs, /api/runs/:id: the tracer's runs and run_calls, metadata only) and, under
-Scheduled jobs, each job's last runs (sync, review, backup, restore-test) plus the last Health Auto Export posts
-(GET /api/jobs, queries.js jobsActivity: runs and ingest_log only). It reads no log files (the Windows tasks still write
+The Activity tab opens with Status (each feed's latest data from GET /api/home, each scheduled job's last result and next
+run, the data issue count), then Claude API spend, then a collapsed "Run history and technical details": the runs (GET
+/api/runs, /api/runs/:id: the tracer's runs and run_calls, metadata only), each job's earlier runs (sync, review, backup,
+restore-test) and the last Health Auto Export posts (GET /api/jobs, queries.js jobsActivity: runs and ingest_log only). It reads no log files (the Windows tasks still write
 data/logs until the move, but nothing serves them). The server logs one line per event to stdout through buildApp's log
 (console by default): [sync] ok with counts, [review] ok or failed with the week, [ingest] route ok or error; counts and
 names only, never health, prompt or report text, so docker compose logs shows what ran.
@@ -503,7 +506,8 @@ review summary's goals (labels, metrics/load.js loadGoals) and a CONTRACT line m
 context carries them too. Arrange on Training and Health (server/public/goals.js LAYOUT_ITEMS and arranged: a saved order,
 unknown items dropped and newer ones appended, else the goals', else the usual) saves settings layout_training,
 layout_health and layout_charts (PUT /api/account/layout { area, order }, known items only; null resets); the page re-applies
-them once the account loads. Home's Arrange tiles saves settings tile_order (PUT /api/account/tile-order, known tiles only);
+them once the account loads. Training and Health open with "On this page" jump links (renderJumps: a button per card in the
+order on screen, rebuilt on every reorder; Health adds Charts and a Jump to a chart list). Home's Arrange tiles saves settings tile_order (PUT /api/account/tile-order, known tiles only);
 the tab bar follows it. Feedback (migration 029 feedback, a user table): POST /api/feedback (feedback, enhancement, bug;
 subject 120, body 5,000, screen and app version and browser as context; 5 an hour; not the demo or paused accounts) is
 stored and emailed to the admin with the sender as reply-to; GET /api/feedback (their own), GET /api/admin/feedback and

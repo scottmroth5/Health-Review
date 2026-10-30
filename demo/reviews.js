@@ -132,7 +132,7 @@ function body(s) {
 }
 
 function targets(s) {
-  const t = (s.targets ?? []).filter((x) => x.current90d != null && !/blood oxygen|breathing/i.test(x.metric)).slice(0, 4);
+  const t = (s.targets ?? []).filter((x) => x.current90d != null && x.target != null && !/blood oxygen|breathing/i.test(x.metric)).slice(0, 4);
   if (!t.length) return null;
   return { title: 'Targets', body: t.map((x) => `- **${x.metric}:** ${fmt(x.current90d)} over 90 days, target ${fmt(x.target)} (${x.setBy}).`).join('\n') };
 }

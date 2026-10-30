@@ -385,6 +385,8 @@ h3.sub { font-size: 0.9rem; margin: 14px 0 6px; color: var(--text-secondary); fo
 .activity-output .plain-list { margin-bottom: 8px; }
 /* Scheduled jobs (Activity tab): one line per job, newest run first */
 .job-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.activity-more > summary { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin: 0; }
+.activity-more[open] > summary { margin-bottom: 8px; }
 .job-list li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--grid); overflow-wrap: anywhere; }
 .activity-grid > * { min-width: 0; }
 .tiles.three { grid-template-columns: repeat(3, 1fr); }
@@ -575,6 +577,12 @@ body.read-only .excel-upload { display: none !important; }
 
 /* Arrange tiles, goals, feedback */
 .tile-arrange { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 12px; }
+/* "On this page" on Training and Health: wraps on a phone, never scrolls sideways */
+.jump-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; margin: 0 0 14px; }
+.jump-links button.link { padding: 6px 0; }
+.jump-links select { max-width: 100%; }
+.charts-title { margin: 24px 0 8px; }
+[tabindex="-1"]:focus { outline: none; }
 body.arranging .home-tile { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .tile-move { display: flex; gap: 6px; margin-top: 8px; }
 .tile-move button { padding: 6px 12px; }
@@ -616,3 +624,17 @@ a.button.request-big { display: inline-block; padding: 12px 20px; font-size: 1.0
 .home-summary-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 .summary-lines { margin: 4px 0 0; padding-left: 18px; color: var(--text-secondary); font-size: 0.9rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Phone layout check (2026-10-30, 320 to 430 px): the day row wraps instead of running off the screen, and controls
+   are at least 44 px to tap (Apple's guideline). Expanders and small text links get room without changing how they look. */
+.daynav { flex-wrap: wrap; }
+@media (max-width: 720px) {
+  button, select, main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { min-height: 44px; }
+  button.icon, .counter button { min-width: 44px; min-height: 44px; }
+  .counter button { width: 44px; height: 44px; }
+  button.link { min-height: 44px; display: inline-flex; align-items: center; }
+  .jump-links button.link { padding: 0; }
+  details > summary { padding: 10px 0; }
+  .target-row .target-why summary { padding: 10px 0; }
+  .checkoff-table summary { padding: 10px 0; }
+}

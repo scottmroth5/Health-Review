@@ -143,7 +143,7 @@ export function lineChart(container, points, { from, to, format = String, gapDay
     container.replaceChildren();
     if (!points.length) return container.append(empty(container));
     const { svg, x, y, plotW, plotH } = frame(container, { from, to, yValues: [...points.map((p) => p.value), ...targetValues(target), ...rangeValues(range)] });
-    svg.setAttribute('aria-label', `${label}, ${points.length} values from ${shortDate(from)} to ${shortDate(to)}${partialNote(points)}${range?.label ? `, reference range ${range.label}` : ''}${target?.value !== undefined && target?.value !== null ? `, target ${format(target.value)}` : ''}`);
+    svg.setAttribute('aria-label', `${label}, ${points.length} values from ${shortDate(from)} to ${shortDate(to)}${partialNote(points)}${range?.label ? `, ${range.name ?? 'reference range'} ${range.label}` : ''}${target?.value !== undefined && target?.value !== null ? `, target ${format(target.value)}` : ''}`);
     drawTarget(svg, { y, plotW }, target);
     drawRange(svg, { y, plotW }, range);
 
@@ -165,8 +165,11 @@ export function lineChart(container, points, { from, to, format = String, gapDay
 
     const last = points[points.length - 1];
     el('circle', { class: flagClass(last) ?? 'dot', cx: x(last.date), cy: y(last.value), r: 4 }, svg);
-    el('text', { x: x(last.date) + 8, y: y(last.value) + 4, class: 'axis-end', fill: 'var(--text-secondary)', 'font-size': 11 }, svg)
-      .textContent = format(last.value);
+    // The last value's label sits right of its point, or left of it when it would run past the chart's edge (a phone).
+    const endText = format(last.value);
+    const fitsRight = x(last.date) + 8 + endText.length * 6.5 <= svg.viewBox.baseVal.width;
+    el('text', { x: x(last.date) + (fitsRight ? 8 : -8), y: y(last.value) + (fitsRight ? 4 : -8), class: 'axis-end', fill: 'var(--text-secondary)',
+      'font-size': 11, 'text-anchor': fitsRight ? 'start' : 'end' }, svg).textContent = endText;
 
     const cross = el('line', { class: 'crosshair', y1: M.top, y2: M.top + plotH, visibility: 'hidden' }, svg);
     const focus = el('circle', { class: 'dot', r: 4, visibility: 'hidden' }, svg);

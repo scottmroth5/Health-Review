@@ -538,6 +538,38 @@ function orderCards(kind) {
     const el = document.getElementById(id);
     if (el) el.parentNode.insertBefore(el, before);
   }
+  renderJumps(kind);
+}
+
+/** Scrolls to a card or chart and moves focus to its heading (for keyboard and VoiceOver users). */
+function jumpTo(el) {
+  if (!el) return;
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  const heading = el.matches('h2, h3') ? el : el.querySelector('h2, h3');
+  if (heading) {
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+  }
+}
+
+/**
+ * "On this page" on Training and Health: a button per card in the order on screen (buttons, since the hash picks the
+ * tab), and on Health a Charts button and a list of the charts shown. Rebuilt whenever the order or the charts change.
+ */
+function renderJumps(view) {
+  const nav = $(`[data-jump="${view}"]`);
+  if (!nav) return;
+  const cards = areaItems(view);
+  if (view === 'health') cards.push($('#charts-title'));
+  const label = (el) => el.dataset.jumpLabel ?? (el.matches('h2') ? el : el.querySelector('h2'))?.textContent?.trim() ?? '';
+  const charts = view === 'health' ? $$('#charts .chart-card') : [];
+  const select = charts.length ? h('select', { 'aria-label': 'Jump to a chart', onchange: (e) => {
+    jumpTo(charts.find((c) => c.dataset.key === e.target.value));
+    e.target.value = '';
+  } }, h('option', { value: '' }, 'Jump to a chart…'), charts.map((c) => h('option', { value: c.dataset.key }, c.querySelector('h3')?.textContent ?? c.dataset.key))) : null;
+  fill(nav, h('span', { class: 'muted small' }, 'On this page:'),
+    ...cards.map((el) => h('button', { type: 'button', class: 'link small', onclick: () => jumpTo(el) }, label(el))), select);
 }
 
 // Arrange on the Training and Health tabs: arrows on each card (and each Health chart); Done saves the order to the
@@ -552,6 +584,7 @@ function moveItem(area, el, d) {
   const other = items[items.indexOf(el) + d];
   if (!other) return;
   other.parentNode.insertBefore(el, d < 0 ? other : other.nextSibling);
+  renderJumps(area === 'training' ? 'training' : 'health');
 }
 function decorateArrange(view) {
   for (const area of VIEW_AREAS[view]) {
@@ -1421,8 +1454,13 @@ const getTargets = (fresh = false) => {
 };
 const targetsByMetric = (body) => new Map(body.targets.map((t) => [t.metric, t]));
 
-/** The chart's target option: the line at the target, and the healthy span (or your baseline band) behind it. */
-const chartTarget = (t) => (t && t.target !== null ? { value: t.target, band: t.band ?? null } : null);
+/** A band metric's usual range ([low, high] around your 90-day average), or null for a metric with a target. */
+const usualRange = (t) => (t?.direction === 'band' && Array.isArray(t.band) ? t.band : null);
+/** "95.9 to 96.9 °F": the low end without the unit, the high end with it. */
+const usualRangeText = (t, format) => `${t.band[0].toFixed(t.decimals ?? 1)} to ${format(t.band[1])}`;
+
+/** The chart's target option: the line at the target, and the healthy span behind it (none for a band metric). */
+const chartTarget = (t) => (t && t.target !== null && !usualRange(t) ? { value: t.target, band: t.band ?? null } : null);
 
 /**
  * "Target 7,500 steps · suggested" with Edit (your own number, or back to the suggestion) and Why (the reason and
@@ -1431,6 +1469,12 @@ const chartTarget = (t) => (t && t.target !== null ? { value: t.target, band: t.
 function targetRow(t, format, reload) {
   if (!t || t.target === null) return null;
   const row = h('div', { class: 'target-row' });
+  if (usualRange(t)) {
+    // A band metric (wrist temperature) has no target to aim at, only your usual range; nothing to edit.
+    fill(row, h('span', { class: 'small' }, h('strong', {}, `Your usual range ${usualRangeText(t, format)}`)),
+      h('details', { class: 'target-why' }, h('summary', {}, 'Why'), h('p', { class: 'small' }, t.reason), h('p', { class: 'muted small' }, `Source: ${t.source}`)));
+    return row;
+  }
   const show = () => {
     const why = h('details', { class: 'target-why' }, h('summary', {}, 'Why'),
       h('p', { class: 'small' }, t.reason),
@@ -1519,9 +1563,14 @@ async function loadHistory() {
   const chartOrder = arranged(state.layouts?.charts, state.goals ?? {}, CHARTS.map((c) => c.key), 'charts');
   for (const c of chartOrder.map((k) => CHARTS.find((x) => x.key === k)).filter((x) => !(state.demo && isDrinkingChart(x)))) {
     // Apple Health days that look like a partial export are marked (red, with a hover line) and left out of the avg.
+    // A band metric's nights outside your usual range are marked too.
+    const t = targets.get(c.key);
+    const usual = usualRange(t);
     const points = data[c.from].filter((r) => r[c.key] !== null && r[c.key] !== undefined).map((r) => (c.from === 'metrics' && partial.has(r.date)
       ? { date: r.date, value: r[c.key], partial: true, details: [PARTIAL_LINE] }
-      : { date: r.date, value: r[c.key] }));
+      : usual && (r[c.key] < usual[0] || r[c.key] > usual[1])
+        ? { date: r.date, value: r[c.key], out: true, details: ['Outside your usual range'] }
+        : { date: r.date, value: r[c.key] }));
     if (!points.length) {
       hidden.push(c.title);
       continue;
@@ -1543,15 +1592,16 @@ async function loadHistory() {
     head.append(h, latest);
     const chart = document.createElement('div');
     chart.className = 'chart';
-    const t = targets.get(c.key);
     const row = targetRow(t, c.format, loadHistory);
     card.append(head, ...(row ? [row] : []), chart, tableView(points, c.format));
     container.append(card);
-    const opts = { from, to, format: c.format, label: c.title, gapDays: c.gapDays, target: chartTarget(t) };
+    const opts = { from, to, format: c.format, label: c.title, gapDays: c.gapDays, target: chartTarget(t),
+      range: usual ? { low: usual[0], high: usual[1], label: usualRangeText(t, c.format), name: 'your usual range' } : null };
     (c.columns ? columnChart : lineChart)(chart, points, opts);
   }
   if (tabArrange.health) decorateArrange('health');
   fill($('#charts-hidden'), hidden.length ? `No data in this range: ${hidden.join(', ')}.` : '');
+  renderJumps('health');
 }
 
 // ---------------- medications and supplements ----------------
@@ -3028,12 +3078,18 @@ function initPrompt() {
 }
 
 // ---------------- activity ----------------
-const RUN_LABELS = { sync: 'Sync', review: 'Weekly review', 'review-eval': 'Review eval', backup: 'Encrypted backup', 'restore-test': 'Backup restore test' };
+const RUN_LABELS = {
+  sync: 'Sync', review: 'Weekly review', 'review-eval': 'Review eval', backup: 'Encrypted backup', 'restore-test': 'Backup restore test',
+  'advisor-chat': 'Next program chat', 'help-ask': 'Help question', 'prompt-draft': 'Prompt section draft',
+  'program-extract': 'Program read from a PDF', 'workout-upload': 'Workout Log upload',
+};
 const runLabel = (name) => RUN_LABELS[name] ?? name;
-const RUN_STATUS = { running: 'running', ok: 'finished', error: 'failed', failed: 'failed', skipped: 'skipped (Apple Health data missing)' };
+const RUN_STATUS = { running: 'running', ok: 'finished', error: 'failed', failed: 'failed', skipped: 'skipped' };
 const when = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
 const seconds = (ms) => (ms == null ? '' : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60000)} min`);
-const usd = (v) => (v ? `$${v.toFixed(4)}` : '');
+const usd = (v) => (!v ? '' : v < 0.01 ? 'under $0.01' : `$${v.toFixed(2)}`);
+/** A Claude call's cost to the hundredth of a cent (the run detail's table). */
+const usdExact = (v) => (v ? `$${v.toFixed(4)}` : '');
 const activity = { selected: null, timer: null };
 
 /** A run's summary as label: value lines (nested objects flattened to "source rows read"). */
@@ -3079,6 +3135,7 @@ async function loadSpend() {
 
 async function loadActivity() {
   clearTimeout(activity.timer);
+  const status = loadJobs(); // the Status card first, while the run history loads
   loadSpend();
   const runs = await api('GET', '/api/runs?limit=100');
   const list = $('#activity-list');
@@ -3097,7 +3154,7 @@ async function loadActivity() {
     }));
     await showRun(activity.selected);
   }
-  await loadJobs();
+  await status;
   // Follow a run that is still going.
   if (runs.some((r) => r.status === 'running') && location.hash === '#activity') activity.timer = setTimeout(loadActivity, 3000);
 }
@@ -3117,33 +3174,50 @@ async function showRun(id) {
       ? h('ul', { class: 'plain-list' }, ...lines.filter(([k]) => k !== 'error').map(([k, v]) => h('li', {}, h('span', {}, k), h('strong', {}, v))))
       : h('p', { class: 'muted small' }, 'No counts recorded.'),
     r.calls.length ? h('div', { class: 'table-scroll' }, h('table', { class: 'calls' },
-      h('thead', {}, h('tr', {}, ...['Call', 'Model', 'Stop', 'In', 'Out', 'Cache read', 'Cost', 'Time'].map((t) => h('th', {}, t)))),
+      h('thead', {}, h('tr', {}, ...['Call', 'Model', 'Result', 'Tokens in', 'Tokens out', 'Cached tokens read', 'Cost', 'Time'].map((t) => h('th', {}, t)))),
       h('tbody', {}, ...r.calls.map((c) => h('tr', {},
         h('td', {}, c.label ?? ''), h('td', {}, c.model ?? ''), h('td', {}, c.error_name ?? c.stop_reason ?? ''),
         h('td', {}, c.input_tokens.toLocaleString()), h('td', {}, c.output_tokens.toLocaleString()),
-        h('td', {}, c.cache_read_tokens.toLocaleString()), h('td', {}, usd(c.cost_usd)), h('td', {}, seconds(c.duration_ms))))))) : null);
+        h('td', {}, c.cache_read_tokens.toLocaleString()), h('td', {}, usdExact(c.cost_usd)), h('td', {}, seconds(c.duration_ms))))))) : null);
 }
 
-/** Scheduled jobs: each job's last run (and the ones before it), and the last Health Auto Export posts. */
+const STATUS_FEEDS = { appleHealth: 'Apple Health', workoutLog: 'Workout Log', manual: 'Entered in the app' };
+
+/**
+ * Status first: each feed's latest data (the same facts as Home), each scheduled job's last result and next run, and the
+ * data issue count. Then, under the details, each job's earlier runs and the last Health Auto Export posts.
+ */
 async function loadJobs() {
-  const { jobs, ingest, schedule = [] } = await api('GET', '/api/jobs');
-  const runLine = (r) => `${when(r.started_at)}, ${RUN_STATUS[r.status] ?? r.status}${r.duration_ms != null ? `, ${seconds(r.duration_ms)}` : ''}`;
-  const rows = jobs.map((j) => {
-    const [last, ...before] = j.runs;
+  const [{ jobs, ingest, schedule = [] }, home] = await Promise.all([api('GET', '/api/jobs'), api('GET', '/api/home').catch(() => null)]);
+  const feeds = home?.summary?.feeds ?? [];
+  const issues = home?.summary?.dataIssues ?? 0;
+  const jobLine = (j) => {
+    const last = j.runs[0];
     const s = schedule.find((x) => x.name === j.name);
+    const failed = last && (last.status === 'error' || last.status === 'failed');
     return h('li', {},
       h('span', { class: `dot ${last?.status ?? ''}`, 'aria-hidden': 'true' }),
-      h('span', {}, h('b', {}, runLabel(j.name)), ' ',
-        h('span', { class: 'muted small' }, last ? runLine(last) : 'has not run yet'),
-        before.length ? h('span', { class: 'muted small' }, `; before that: ${before.map((r) => `${when(r.started_at)} ${RUN_STATUS[r.status] ?? r.status}`).join(', ')}`) : null,
-        h('span', { class: 'muted small' }, s ? `. Scheduled ${s.schedule}${s.running ? ', running now' : s.next ? `, next ${when(s.next)}` : ''}` : '. Not scheduled in this app')));
-  });
+      h('span', {}, h('b', {}, runLabel(j.name)), ': ',
+        !last ? 'has not run yet' : failed ? h('span', { class: 'status error' }, `failed ${when(last.started_at)}`) : `${RUN_STATUS[last.status] ?? last.status} ${when(last.started_at)}`,
+        '. ', h('span', { class: 'muted' }, !s ? 'Not scheduled in this app.' : s.running ? 'Running now.' : s.next ? `Next: ${when(s.next)}.` : '')));
+  };
+  fill($('#status-body'),
+    feeds.length ? h('ul', { class: 'plain-list status-feeds' }, feeds.map((f) => h('li', {},
+      h('span', {}, STATUS_FEEDS[f.feed] ?? f.feed), h('strong', {}, `latest ${stampText(f.latest)}`, f.problem ? h('span', { class: 'status error' }, ` (${f.problem})`) : '')))) : null,
+    h('ul', { class: 'job-list' }, jobs.map(jobLine)),
+    h('p', { class: 'small' }, issues
+      ? [`${issues} data ${issues === 1 ? 'issue' : 'issues'}: `, linkTo('#today', 'see Daily Check-in')]
+      : 'No data issues.'));
+
+  const earlier = jobs.filter((j) => j.runs.length > 1).map((j) => h('li', {}, h('b', {}, runLabel(j.name)), ': ',
+    h('span', { class: 'muted small' }, j.runs.slice(1).map((r) => `${when(r.started_at)} ${RUN_STATUS[r.status] ?? r.status}${r.duration_ms != null ? ` (${seconds(r.duration_ms)})` : ''}`).join(', '))));
   const posts = ingest.length
     ? h('ul', { class: 'plain-list' }, ...ingest.map((p) => h('li', {},
       h('span', {}, `${when(p.received_at)} ${p.route}`),
       h('strong', {}, p.result === 'ok' ? Object.entries(p.counts ?? {}).map(([k, v]) => `${v} ${k}`).join(', ') : `error (${p.error})`))))
-    : h('p', { class: 'muted small' }, 'No Health Auto Export posts yet (they arrive on the server, where APPLE_SOURCE=rest).');
-  fill($('#jobs-body'), h('ul', { class: 'job-list' }, rows), h('h3', { class: 'sub' }, 'Health Auto Export posts'), posts);
+    : h('p', { class: 'muted small' }, 'No Health Auto Export posts yet. They arrive on the server once the automation is set up.');
+  fill($('#jobs-body'), earlier.length ? h('ul', { class: 'job-list' }, earlier) : h('p', { class: 'muted small' }, 'No earlier runs yet.'),
+    h('h3', { class: 'sub' }, 'Health Auto Export posts'), posts);
 }
 
 // ---------------- start ----------------
