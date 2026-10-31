@@ -2,10 +2,11 @@
 // Runs are traced with metadata only (model, tokens, cost, timing, which sensitive sections were
 // sent by name); prompt and report text never go to logs.
 import { computeWeek } from '../metrics/index.js';
-import { loadWeekData, loadMetricSettings, loadWeekNotes, loadGoals, medicationNames } from '../metrics/load.js';
+import { loadWeekData, loadMetricSettings, loadWeekNotes, loadGoals, loadProfile, medicationNames } from '../metrics/load.js';
 import { GOALS } from '../server/public/goals.js';
 import { buildSummary } from './summary.js';
-import { buildSystem, REPORT_SCHEMA, renderReport } from './instructions.js';
+import { buildSystem, reportSchema, renderReport } from './instructions.js';
+import { supplementAdviceSince } from './supplements.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
 import { DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from './claude.js';
 import { startUserRun } from '../db/users.js';
@@ -37,10 +38,14 @@ export function prepareReview(db, { weekEnd, today, catalog }) {
   const goals = loadGoals(db);
   if (goals.primary) summary.goals = { primary: GOALS[goals.primary], secondary: goals.secondary ? GOALS[goals.secondary] : null };
   const sections = db.prepare('SELECT position, name, text, sensitive FROM prompt_sections WHERE user_id = @uid ORDER BY position, name').all();
-  const { system, sensitiveSent } = buildSystem(sections, today);
+  // Supplement suggestions (Settings, off by default): their rules, the schema field and the checks, only when on.
+  const supplements = Boolean(supplementAdviceSince(db));
+  const { system, sensitiveSent } = buildSystem(sections, today, { supplements });
   return {
     summary,
     system,
+    schema: reportSchema({ supplements }),
+    supplements,
     sensitiveSent,
     sectionNames: sections.map((s) => s.name),
     checks: {
@@ -49,6 +54,8 @@ export function prepareReview(db, { weekEnd, today, catalog }) {
       medicationNames: medicationNames(db),
       // Blood oxygen and breathing disturbances are checked like lab values: a number next to them only in physicianDiscussion.
       labNames: [...db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(), ...NIGHT_BREATHING_NAMES],
+      // The age decides calcium's upper limit band.
+      supplements: supplements ? { age: loadProfile(db, today).age } : null,
     },
   };
 }
@@ -66,7 +73,7 @@ export function prepareReview(db, { weekEnd, today, catalog }) {
 export async function runReview({ store, claude, weekEnd, today, catalog, model = DEFAULT_REVIEW_MODEL, effort = DEFAULT_REVIEW_EFFORT, logger = console }) {
   const { db } = store;
   const prep = prepareReview(db, { weekEnd, today, catalog });
-  const run = startUserRun(store, 'review', { weekEnd, model, effort, sensitiveSections: prep.sensitiveSent }, logger);
+  const run = startUserRun(store, 'review', { weekEnd, model, effort, sensitiveSections: prep.sensitiveSent, supplements: prep.supplements }, logger);
 
   try {
     const ask = (problems) => claude.send({
@@ -74,7 +81,7 @@ export async function runReview({ store, claude, weekEnd, today, catalog, model 
       maxTokens: MAX_TOKENS,
       system: prep.system,
       prompt: userMessage(prep.summary, problems),
-      schema: REPORT_SCHEMA,
+      schema: prep.schema,
       effort,
       trace: run,
       label: problems.length ? 'review-retry' : 'review',
@@ -112,7 +119,7 @@ export async function runReview({ store, claude, weekEnd, today, catalog, model 
       sensitive: JSON.stringify(prep.sensitiveSent),
     });
     const totals = run.finish('ok', { weekEnd, attempts, warnings: problems.length, model: result.model });
-    return { weekEnd, attempts, warnings: problems, model: result.model, costUsd: totals.costUsd, highlights: report.highlights.length, nextSteps: report.nextSteps.length, sections: report.sections.length, physicianItems: report.physicianDiscussion.length };
+    return { weekEnd, attempts, warnings: problems, model: result.model, costUsd: totals.costUsd, highlights: report.highlights.length, nextSteps: report.nextSteps.length, sections: report.sections.length, physicianItems: report.physicianDiscussion.length, supplementSuggestions: report.supplementSuggestions?.length ?? 0 };
   } catch (err) {
     run.finish('error', { weekEnd, error: err.name });
     throw err;

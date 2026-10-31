@@ -6,6 +6,9 @@ import { createCatalog } from '../metrics/catalog.js';
 import { createDictionary } from '../metrics/dictionary.js';
 import { createReviewClaude } from '../agent/claude.js';
 import { askAdvisor, chatContext, CHAT_CONTRACT } from '../agent/advisor-chat.js';
+import { EMERGENCY_LINE, CONTRACT } from '../agent/instructions.js';
+import { SUPPLEMENT_DISCLAIMER } from '../agent/supplements.js';
+import { allowedNumbers, checkReport } from '../agent/validate.js';
 import { fakeClaudeClient, silentLogger } from './helpers.js';
 
 const TODAY = new Date(2026, 2, 9, 12, 0); // local 2026-03-09
@@ -95,5 +98,42 @@ test('chat API: thread, send, delete and clear; off without a client or when the
     assert.equal((await off.inject({ method: 'POST', url: '/api/advisor/chat', payload: { text: 'hi' } })).statusCode, 503);
     await off.close();
   }
+  store.close();
+});
+
+test('chat: the emergency line in a reply passes the checks (911 is grounded by the contract, no symptom wording)', () => {
+  assert.ok(CHAT_CONTRACT.includes(EMERGENCY_LINE));
+  const report = { sections: [{ title: 'Reply', body: `Hold off on heavy work for now. ${EMERGENCY_LINE}` }], physicianDiscussion: [] };
+  assert.deepEqual(checkReport(report, { allowed: allowedNumbers({}, CHAT_CONTRACT) }), []);
+});
+
+test('review contract: the emergency line is word for word, and its 911 is grounded for the review', () => {
+  assert.ok(CONTRACT.includes(`"${EMERGENCY_LINE}"`));
+  const report = { sections: [{ title: 'Training', body: 'Two lifting days.' }], physicianDiscussion: [{ topic: 'Chest pain', detail: `Discuss the chest pain on the bike with a physician. ${EMERGENCY_LINE}` }] };
+  assert.deepEqual(checkReport(report, { allowed: allowedNumbers({}, CONTRACT) }), []);
+});
+
+test('chat with supplement suggestions on: their facts, rules and schema field; suggestions saved under the statement', async () => {
+  const store = seeded();
+  const prompts = [];
+  const draft = { reply: 'MAPS Powerlift scores strength 1.', physicianDiscussion: [],
+    supplementSuggestions: [{ supplement: 'Creatine monohydrate', action: 'add', amount: '5 g a day', reasons: 'Your goal is strength.',
+      precautions: 'Check interactions with Sample Statin with your pharmacist; avoid with kidney disease.' }] };
+  const ask = () => askAdvisor({ store, claude: fakeClaude([draft], prompts), text: 'Should I take creatine?', today: '2026-03-09',
+    catalog, dictionary, substitutions, logger: silentLogger });
+  const off = await ask();
+  assert.doesNotMatch(prompts[0].messages[0].content, /Sample Statin|supplementFacts/, 'off: no medications or supplement facts');
+  assert.equal(prompts[0].output_config.format.schema.properties.supplementSuggestions, undefined);
+  assert.ok(!off.reply.text.includes(SUPPLEMENT_DISCLAIMER));
+
+  store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', '2026-03-01T12:00:00.000Z', 'x')").run();
+  const on = await ask();
+  const sent = prompts[1];
+  assert.match(sent.messages[0].content, /"supplementFacts":\{"supplements":\[\],"medicationNames":\["Sample Statin"\]/);
+  assert.match(JSON.stringify(sent.system), /Supplement suggestions \(the owner turned these on\)/);
+  assert.ok(sent.output_config.format.schema.properties.supplementSuggestions);
+  assert.deepEqual(on.reply.warnings, [], 'a medication named in the precautions passes');
+  assert.ok(on.reply.text.startsWith(`MAPS Powerlift scores strength 1.\n\n## Supplement suggestions\n${SUPPLEMENT_DISCLAIMER}`));
+  assert.match(on.reply.text, /\*\*Add: Creatine monohydrate, 5 g a day\*\*/);
   store.close();
 });

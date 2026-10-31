@@ -1,6 +1,10 @@
 // The review's system prompt: a fixed contract written in code (how to read the summary, and the hard
 // rules), followed by the owner's prompt sections from the Prompt tab. Kept stable so it caches.
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from './prompts.js';
+import { EMERGENCY_LINE } from './emergency.js';
+import { renderSuggestions, SUPPLEMENT_RULES, withSuggestions } from './supplements.js';
+
+export { EMERGENCY_LINE };
 
 export const CONTRACT = `You write a weekly health review from a computed summary.
 
@@ -26,6 +30,7 @@ How to read the input:
 Hard rules:
 - Never write an em dash, an en dash, or a double hyphen. Use commas, colons, parentheses or separate sentences.
 - Never recommend starting, stopping or changing a medication or its dose, and never interpret a lab value as high, low, normal or abnormal. Any point about medications, lab values, or symptoms (illness, injury, pain) goes only in physicianDiscussion, phrased as something to discuss with a physician. Do not mention medication names, lab results (a lab test with its value) or symptoms in any other section; a lab name without a value may appear as context.
+- When the notes describe something that could be urgent (such as chest pain or tightness, fainting, or trouble breathing), end that physicianDiscussion item's detail with this sentence, word for word: "${EMERGENCY_LINE}"
 - Supplements may be discussed in the sections, observationally, without telling the owner to start or stop one.
 
 How to write the opening:
@@ -40,12 +45,14 @@ Output: the structured format requested. "highlights" and "nextSteps" are plain 
 /**
  * @param {Array<{position, name, text, sensitive}>} sections  prompt_sections rows
  * @param {string} today
+ * @param {{ supplements?: boolean }} [options]  supplements: the user turned on supplement suggestions (their rules follow
+ *   the owner's instructions, so CONTRACT stays the cached prefix)
  * @returns {{ system: string, sensitiveSent: string[] }}
  */
-export function buildSystem(sections, today) {
+export function buildSystem(sections, today, { supplements = false } = {}) {
   const owner = buildInstructions(sections, today, { includeSensitive: WEEKLY_INCLUDES_SENSITIVE });
   return {
-    system: `${CONTRACT}\n\n# The owner's instructions\n\n${owner}`,
+    system: `${CONTRACT}\n\n# The owner's instructions\n\n${owner}${supplements ? `\n\n${SUPPLEMENT_RULES}` : ''}`,
     sensitiveSent: WEEKLY_INCLUDES_SENSITIVE ? sections.filter((s) => s.sensitive).map((s) => s.name) : [],
   };
 }
@@ -79,16 +86,23 @@ export const REPORT_SCHEMA = {
   },
 };
 
+/** The review's schema: supplementSuggestions only when the user turned them on. */
+export const reportSchema = ({ supplements = false } = {}) => (supplements ? withSuggestions(REPORT_SCHEMA) : REPORT_SCHEMA);
+
 export const PHYSICIAN_TITLE = 'Discuss with your physician';
 export const HIGHLIGHTS_TITLE = 'This week at a glance';
 export const NEXT_STEPS_TITLE = 'Next steps';
 
-/** The stored and displayed report: the opening (highlights, then next steps; Home shows the first), the sections, then the physician list. */
+/**
+ * The stored and displayed report: the opening (highlights, then next steps; Home shows the first), supplement
+ * suggestions with the statement (when there are any), the sections, then the physician list.
+ */
 export function renderReport(report) {
   const bullets = (items) => items.map((t) => `- ${t.trim()}`).join('\n');
   const parts = [
     report.highlights?.length ? `## ${HIGHLIGHTS_TITLE}\n${bullets(report.highlights)}` : null,
     report.nextSteps?.length ? `## ${NEXT_STEPS_TITLE}\n${bullets(report.nextSteps)}` : null,
+    renderSuggestions(report.supplementSuggestions) || null,
     ...report.sections.map((s) => `## ${s.title.trim()}\n${s.body.trim()}`),
   ].filter(Boolean);
   if (report.physicianDiscussion.length) {

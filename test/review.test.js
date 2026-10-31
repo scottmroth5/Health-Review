@@ -128,6 +128,8 @@ test('grounding: calendar dates and numbers marked as targets are exempt; ratios
   const allowed = allowedNumbers({ easy: 90 }, '');
   const r = report([['Cardiovascular Snapshot', 'Phase III starts 8/31 (or 8/31/2026). Trim easy intervals from 90 to target 75 sec; target of 130 bpm or higher; keep 20/120.']]);
   assert.deepEqual(ungroundedNumbers(r, allowed), ['20', '120']);
+  const written = report([['Labs', 'Your next panel window opens around March 2027 (or Sept 3, 2027); your record dates from May 2025. You lifted 2027 lbs.']]);
+  assert.deepEqual(ungroundedNumbers(written, allowed), ['2027'], 'a month with a year is a date; a bare year-like number is not');
 });
 
 test('length: reports over the limit fail the check (with a margin over the 2,000 the rules ask for)', async () => {

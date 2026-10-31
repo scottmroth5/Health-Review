@@ -1,5 +1,6 @@
 // Checks on the review model's output, run in code. Each returns a list of problems; the review is
 // retried once with the problems listed, and anything left is saved with the report as warnings.
+import { ACTIONS, overLimit } from './supplements.js';
 
 const DASHES = /[–—]|--/;
 
@@ -9,12 +10,18 @@ const opening = (report) => [
   ...(report.nextSteps ?? []).map((text, i) => ({ where: `next step ${i + 1}`, text })),
 ];
 
+/** Supplement suggestions' text fields (present only when the user turned them on). */
+const suggestionTexts = (report) => (report.supplementSuggestions ?? []).map((s) => ({
+  where: `supplement suggestion "${s.supplement}"`, texts: [s.supplement, s.amount, s.reasons, s.precautions].map((t) => String(t ?? '')),
+}));
+
 /** Em dashes, en dashes and double hyphens, by where they appear. */
 export function findDashes(report) {
   const problems = [];
   for (const o of opening(report)) if (DASHES.test(o.text)) problems.push(`dash in ${o.where}`);
   for (const s of report.sections) if (DASHES.test(s.title) || DASHES.test(s.body)) problems.push(`dash in "${s.title}"`);
   for (const p of report.physicianDiscussion) if (DASHES.test(p.topic) || DASHES.test(p.detail)) problems.push(`dash in physician item "${p.topic}"`);
+  for (const s of suggestionTexts(report)) if (s.texts.some((t) => DASHES.test(t))) problems.push(`dash in ${s.where}`);
   return problems;
 }
 
@@ -26,6 +33,8 @@ export function stripDashes(report) {
     nextSteps: (report.nextSteps ?? []).map(fix),
     sections: report.sections.map((s) => ({ title: fix(s.title), body: fix(s.body) })),
     physicianDiscussion: report.physicianDiscussion.map((p) => ({ topic: fix(p.topic), detail: fix(p.detail) })),
+    ...(report.supplementSuggestions ? { supplementSuggestions: report.supplementSuggestions.map((s) => ({
+      ...s, supplement: fix(s.supplement), amount: fix(s.amount), reasons: fix(s.reasons), precautions: fix(s.precautions) })) } : {}),
   };
 }
 
@@ -60,7 +69,10 @@ const DATE = /(?<![\w/])(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])(?:\/\d{2,4}
 // "target of 130 or higher", "target 6 to 8 rounds"); the instructions tell the model to write them so.
 const TARGET = /\btargets?(?:\s+of)?\s+(?:about\s+|~)?-?\d[\d,]*(?:\.\d+)?(?:\s*(?:to|-)\s*\d[\d,]*(?:\.\d+)?)?/gi;
 
-const withoutExemptNumbers = (text) => text.replace(DATE, ' ').replace(TARGET, ' ');
+// Written dates are not data values either: "March 2027", "March 3, 2027", "Sept 2026" (a month name with a year).
+const MONTH_DATE = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?(?:\s+(?:0?[1-9]|[12]\d|3[01]),?)?\s+(?:19|20)\d{2}\b/gi;
+
+const withoutExemptNumbers = (text) => text.replace(DATE, ' ').replace(MONTH_DATE, ' ').replace(TARGET, ' ');
 
 /** Numbers in the report that appear nowhere in the summary or instructions (dates and marked targets excepted). */
 export function ungroundedNumbers(report, allowed) {
@@ -68,6 +80,7 @@ export function ungroundedNumbers(report, allowed) {
     ...opening(report).map((o) => o.text),
     ...report.sections.flatMap((s) => [s.title, s.body]),
     ...report.physicianDiscussion.flatMap((p) => [p.topic, p.detail]),
+    ...(report.supplementSuggestions ?? []).map((s) => s.reasons),
   ];
   const missing = new Set();
   for (const t of texts) {
@@ -148,8 +161,33 @@ export function misroutedTopics(report, { medicationNames = [], labNames = [] })
 export const MAX_WORDS = 3000;
 
 export const countWords = (report) =>
-  [...opening(report).map((o) => o.text), ...report.sections.map((s) => s.body), ...report.physicianDiscussion.map((p) => `${p.topic} ${p.detail}`)]
+  [...opening(report).map((o) => o.text), ...report.sections.map((s) => s.body), ...report.physicianDiscussion.map((p) => `${p.topic} ${p.detail}`),
+    ...suggestionTexts(report).map((s) => s.texts.join(' '))]
     .join(' ').split(/\s+/).filter(Boolean).length;
+
+/**
+ * Supplement suggestions (the user turned them on): reasons and precautions given, never a medication, the amount
+ * within the adult upper limit (config/supplement-limits.json), and medication names and symptom words only in the
+ * precautions. Lab values may be a reason, so the lab checks do not apply here.
+ * @param {{ medicationNames?: string[], age?: number|null }} o
+ */
+export function checkSuggestions(items = [], { medicationNames = [], age = null } = {}) {
+  const problems = [];
+  if (items.length > MAX_OPENING_ITEMS) problems.push(`too many supplement suggestions: ${items.length} (at most ${MAX_OPENING_ITEMS})`);
+  for (const s of items) {
+    const label = `supplement suggestion "${s.supplement}"`;
+    if (!ACTIONS.includes(s.action)) problems.push(`${label}: action must be add, change or stop`);
+    if (!String(s.reasons ?? '').trim()) problems.push(`${label}: give the reasons`);
+    if (!String(s.precautions ?? '').trim()) problems.push(`${label}: give the precautions`);
+    const med = medicationNames.find((n) => nameMatcher(n).test(s.supplement));
+    if (med) problems.push(`${label}: "${med}" is a medication; never recommend one (it belongs in physicianDiscussion)`);
+    const over = overLimit(s, { age });
+    if (over) problems.push(`${label}: ${s.amount} is above the adult upper intake level for ${over.name} (${over.limit})`);
+    for (const n of medicationNames) if (nameMatcher(n).test(s.reasons ?? '')) problems.push(`${label}: medication "${n}" in the reasons (name it in the precautions)`);
+    if (SYMPTOMS.test(s.reasons ?? '')) problems.push(`${label}: symptom wording in the reasons (it belongs in the precautions or physicianDiscussion)`);
+  }
+  return problems;
+}
 
 /** At most this many highlights and next steps (the schema can't hold a count limit). */
 export const MAX_OPENING_ITEMS = 3;
@@ -158,7 +196,7 @@ export const MAX_OPENING_ITEMS = 3;
  * All checks; [] when the report passes. opening (the weekly review; not the chat) also requires 1 to 3 highlights and
  * at most 3 next steps.
  */
-export function checkReport(report, { allowed, medicationNames, labNames, maxWords = MAX_WORDS, opening: needsOpening = false }) {
+export function checkReport(report, { allowed, medicationNames, labNames, maxWords = MAX_WORDS, opening: needsOpening = false, supplements = null }) {
   const problems = [];
   if (!report.sections.length) problems.push('no sections');
   if (needsOpening) {
@@ -174,5 +212,7 @@ export function checkReport(report, { allowed, medicationNames, labNames, maxWor
   const numbers = ungroundedNumbers(report, allowed);
   if (numbers.length) problems.push(`numbers not in the summary: ${numbers.join(', ')}`);
   problems.push(...misroutedTopics(report, { medicationNames, labNames }));
+  // supplements ({ age }): the user turned suggestions on; off, any suggestions are dropped before rendering.
+  if (supplements) problems.push(...checkSuggestions(report.supplementSuggestions, { medicationNames, age: supplements.age ?? null }));
   return problems;
 }

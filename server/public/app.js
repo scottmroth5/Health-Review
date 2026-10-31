@@ -705,6 +705,27 @@ function renderGoals(a) {
   $('#goal-secondary').onchange = save;
 }
 
+/** Settings, Supplement suggestions: on only after the statement is accepted. */
+function renderSupplementAdvice(a) {
+  const s = a.supplementAdvice ?? { since: null, statement: '' };
+  const box = $('#supplement-statement');
+  fill(box);
+  renderMarkdown(s.statement, box);
+  $('#supplement-accept-row').hidden = Boolean(s.since);
+  $('#supplement-accept').checked = false;
+  const toggle = $('#supplement-toggle');
+  toggle.textContent = s.since ? 'Turn off' : 'Turn on';
+  $('#supplement-status').textContent = s.since ? `On since ${new Date(s.since).toLocaleDateString(undefined, { dateStyle: 'medium' })}.` : 'Off.';
+  toggle.onclick = async () => {
+    if (!s.since && !$('#supplement-accept').checked) { $('#supplement-status').textContent = 'Check the box to accept the statement first.'; return; }
+    try {
+      const r = await api('PUT', '/api/account/supplement-advice', s.since ? { on: false } : { on: true, accept: true });
+      state.account = r;
+      renderSupplementAdvice(r);
+    } catch (err) { $('#supplement-status').textContent = err.message; }
+  };
+}
+
 const FEEDBACK_LABELS = { feedback: 'Feedback', enhancement: 'Enhancement request', bug: 'Bug report' };
 async function loadMyFeedback() {
   const mine = await api('GET', '/api/feedback');
@@ -854,8 +875,14 @@ $('#help-form').addEventListener('submit', async (e) => {
   button.disabled = true;
   $('#help-status').textContent = 'Asking...';
   try {
-    const { answer } = await api('POST', '/api/help/ask', { question });
+    const { answer, statement } = await api('POST', '/api/help/ask', { question });
     fill($('#help-answer'), answer.split(/\n+/).filter(Boolean).map((p) => h('p', {}, p)));
+    // A supplement recommendation (the setting is on) comes with the statement, in code's wording.
+    if (statement) {
+      const box = h('div', { class: 'statement' });
+      renderMarkdown(statement, box);
+      $('#help-answer').append(box);
+    }
     $('#help-answer').hidden = false;
     $('#help-status').textContent = '';
   } catch (err) {
@@ -1060,6 +1087,7 @@ async function loadSettingsView() {
   }
   renderFeeds(a);
   renderGoals(a);
+  renderSupplementAdvice(a);
   loadProfileForm().catch(() => {});
   $('#settings-account').textContent = a.email ? `${a.name ? `${a.name}, ` : ''}${a.email} (${a.role === 'admin' ? 'administrator' : 'user'})` : 'Local mode: no sign-in.';
   renderAccountControls(a);

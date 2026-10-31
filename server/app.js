@@ -41,6 +41,7 @@ import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUs
 import { GOALS as GOAL_LABELS, GOAL_KEYS, LAYOUT_ITEMS, TILES, cleanGoals } from './public/goals.js';
 import { MAX_ANSWER_CHARS, SECTION_KINDS, builderSpec, claudeDraft, templateDraft } from '../agent/prompt-draft.js';
 import { askHelp, MAX_QUESTION_CHARS } from '../agent/help.js';
+import { SUPPLEMENT_DISCLAIMER, supplementAdviceSince } from '../agent/supplements.js';
 import { SESSION_COOKIE, cookie } from './session.js';
 import { OWNER_KEY_CAP, clearCapNotice, spentThisMonth } from './ai-access.js';
 import { createMailer } from '../tools/mail.js';
@@ -1005,6 +1006,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       })),
       // Home's setup checklist was hidden (Settings brings it back).
       setupHidden: Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'setup_hidden'").get()),
+      // Supplement suggestions (off by default): when the statement was accepted, and the statement itself.
+      supplementAdvice: { since: supplementAdviceSince(db), statement: SUPPLEMENT_DISCLAIMER },
       pausedBySelf: u?.status === 'paused' && Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
       // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
       ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
@@ -1164,6 +1167,19 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     putSetting('goal_secondary', g.secondary);
     return accountView(req);
   });
+  // Supplement suggestions in the review, the chat and Help: on only with the statement accepted; a paused account may
+  // turn them off but not on (the demo refuses every change).
+  app.put('/api/account/supplement-advice', {
+    schema: { summary: 'Turn supplement suggestions on (accept: true, after reading the statement) or off', body: { type: 'object', additionalProperties: false, required: ['on'], properties: { on: { type: 'boolean' }, accept: { type: 'boolean' } } }, response: { 200: anyObject } },
+  }, async (req, reply) => {
+    if (req.body.on) {
+      if (req.body.accept !== true) return reply.code(400).send({ error: 'Read and accept the statement to turn supplement suggestions on' });
+      if (isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
+      putSetting('supplement_advice', clock().toISOString());
+    } else putSetting('supplement_advice', null);
+    return accountView(req);
+  });
+
   // Your Home tile order (Arrange on Home); null goes back to the default.
   app.put('/api/account/tile-order', {
     schema: { summary: 'Your Home tile order (view names), or null for the default', body: { type: 'object', additionalProperties: false, required: ['tiles'], properties: { tiles: { type: ['array', 'null'], maxItems: 30, items: { type: 'string', enum: TILES } } } }, response: { 200: anyObject } },

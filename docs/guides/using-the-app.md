@@ -13,7 +13,7 @@ Health Review shows your own health and training data back to you, with a weekly
 - **Reviews:** the weekly review, written each Sunday morning from the week's computed summary when you use AI. Anything about medications, labs or symptoms is listed only under "Discuss with your physician".
 - **Prompt:** the instructions the weekly review follows; edit them to change its tone and focus. Every change keeps the old version.
 - **Activity:** status first (when each feed last sent data, and each scheduled job's last result and next run), then what the AI cost, with the full run history under Run history and technical details.
-- **Settings:** your goals, your profile (birth year, sex and height, for the suggested targets), your Claude API key, your data feeds (Health Auto Export, the Workout Log sheet), your time zone (it decides your "today" and your review week), and your account: export your data, pause or delete your account.
+- **Settings:** your goals, supplement suggestions (off unless you turn them on), your profile (birth year, sex and height, for the suggested targets), your Claude API key, your data feeds (Health Auto Export, the Workout Log sheet), your time zone (it decides your "today" and your review week), and your account: export your data, pause or delete your account.
 - **Help:** these guides, Ask for a question about using the app, and Send feedback (feedback, an idea, or a bug report).
 
 ## Make it yours
@@ -22,6 +22,10 @@ Health Review shows your own health and training data back to you, with a weekly
 - **Arrange tiles** (under the Home tiles): use the arrows to move tiles, then Done. Reset goes back to the default.
 - **Arrange** on Training and Health works the same way for their cards, and on Health for each chart too. Your order is saved to your account, so it is the same on every device.
 - **Your prompt** (Prompt tab): Help me write a section drafts a section from a few answers. See [Writing your review prompt](/guides/prompts).
+
+## Supplement suggestions
+
+Off unless you turn them on in Settings, after reading and accepting the statement there: they are recommendations only, not medical advice, and you alone are responsible for what you decide. When on, the weekly review gets a Supplement suggestions section (after Next steps), and the Next program chat and Help may suggest adding, changing or stopping a supplement. Each suggestion gives the reasons (from your notes, training, goals and labs; Help does not see your data, so its suggestions are general) and the precautions, including interactions with your medications and the adult upper limit, which suggestions never go above. Prescription medications are never recommended. Turn it off in Settings at any time.
 
 ## Sync now
 

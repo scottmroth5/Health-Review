@@ -7,6 +7,13 @@ Health Review is a personal project run by its owner, shared with a few people b
 - Health Review shows your own data back to you and, if you use AI, writes a weekly review of it with Anthropic's Claude.
 - Nothing in the app, its reviews, the chat or Help's answers is medical advice. Talk to your doctor about medications, lab results, symptoms and any change to your health.
 
+## Supplement suggestions
+
+- Supplement suggestions are off unless you turn them on in Settings, after reading and accepting this statement. When on, the weekly review, the Next program chat and Help may recommend adding, changing or stopping a supplement, with reasons and precautions. They never recommend a prescription medication.
+- **These are recommendations only, not medical advice.** They are generated automatically by AI from your data and have not been reviewed by a physician, pharmacist or dietitian. They are not a diagnosis, treatment or prescription. You alone decide whether to act on any of them, and you accept full responsibility for that decision and for any result. Health Review and the person who runs it accept no responsibility or liability for any decision you make, any action you take, or any outcome.
+- Supplements can interact with medications and health conditions: check with your physician or pharmacist before starting, changing or stopping any supplement, especially if you take medication, are pregnant or nursing, or have a medical condition. For immediate medical emergency call 911 or your local emergency number.
+- You can turn supplement suggestions off at any time in Settings.
+
 ## Your account
 
 - Access is approved by hand and can be paused or ended at any time.

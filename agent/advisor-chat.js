@@ -12,6 +12,9 @@ import { loadAdvisorInput, loadGoals, loadPrimarySets, loadSessionPhases, progra
 import { GOALS } from '../server/public/goals.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
 import { DEFAULT_REVIEW_MODEL } from './claude.js';
+import { EMERGENCY_LINE } from './emergency.js';
+import { renderSuggestions, supplementAdviceSince, supplementContext, SUPPLEMENT_RULES, withSuggestions } from './supplements.js';
+import { loadProfile } from '../metrics/load.js';
 import { startUserRun } from '../db/users.js';
 
 export const CHAT_EFFORT = 'medium';
@@ -35,7 +38,8 @@ How to answer:
 
 Hard rules:
 - Never write an em dash, an en dash, or a double hyphen.
-- You are not a physician. Anything about pain, injury, illness, symptoms or medication goes only in "physicianDiscussion", phrased as something to discuss with a physician; never diagnose or suggest treatment. In "reply" you may respect a limit the owner states (for example avoiding an exercise), without naming the condition.`;
+- You are not a physician. Anything about pain, injury, illness, symptoms or medication goes only in "physicianDiscussion", phrased as something to discuss with a physician; never diagnose or suggest treatment. In "reply" you may respect a limit the owner states (for example avoiding an exercise), without naming the condition.
+- When the note describes something that could be urgent (such as chest pain or tightness, fainting, or trouble breathing), end "reply" with this sentence, word for word and without naming the symptom: "${EMERGENCY_LINE}"`;
 
 export const CHAT_SCHEMA = {
   type: 'object',
@@ -51,7 +55,8 @@ export const CHAT_SCHEMA = {
 };
 
 /**
- * The computed training facts the chat may send. No focus text, raw logs, medications, labs or genetics.
+ * The computed training facts the chat may send. No focus text, raw logs, medications, labs or genetics (with supplement
+ * suggestions on, askAdvisor adds supplementContext: supplements, medication names without doses, and the latest labs).
  * @param {{ catalog: object, dictionary: object, substitutions: object, weights?: object }} options
  */
 export function chatContext(db, today, { catalog, dictionary, substitutions = {}, weights }) {
@@ -115,6 +120,9 @@ export async function askAdvisor({ store, claude, text, today, catalog, dictiona
   const { db } = store;
   const earlier = listChat(db).slice(-THREAD_TURNS).map((n) => ({ from: n.role, text: n.text }));
   const context = chatContext(db, today, { catalog, dictionary, substitutions, weights });
+  // Supplement suggestions (Settings, off by default): their facts, rules, schema field and checks only when on.
+  const supplements = Boolean(supplementAdviceSince(db));
+  if (supplements) context.supplementFacts = supplementContext(db, today);
   const insert = db.prepare(`INSERT INTO advisor_notes (user_id, id, created_at, role, text, physician, weights, model, warnings)
     VALUES (@uid, @id, @created_at, @role, @text, @physician, @weights, @model, @warnings)`);
   const note = { id: randomUUID(), created_at: now().toISOString(), role: 'owner', text, physician: null, weights: JSON.stringify(context.advisor.weights), model: null, warnings: null };
@@ -125,13 +133,17 @@ export async function askAdvisor({ store, claude, text, today, catalog, dictiona
     medicationNames: medicationNames(db),
     labNames: db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(),
     maxWords: MAX_WORDS,
+    supplements: supplements ? { age: loadProfile(db, today).age } : null,
   };
-  const asReport = (d) => ({ sections: [{ title: 'Reply', body: d.reply }], physicianDiscussion: d.physicianDiscussion });
-  const run = startUserRun(store, 'advisor-chat', { model, effort, turns: earlier.length }, logger);
+  const asReport = (d) => ({ sections: [{ title: 'Reply', body: d.reply }], physicianDiscussion: d.physicianDiscussion,
+    ...(supplements ? { supplementSuggestions: d.supplementSuggestions ?? [] } : {}) });
+  const run = startUserRun(store, 'advisor-chat', { model, effort, turns: earlier.length, supplements }, logger);
   try {
     const ask = (problems) => claude.send({
-      model, maxTokens: MAX_TOKENS, system: CHAT_CONTRACT, prompt: promptFor(context, earlier, text, problems),
-      schema: CHAT_SCHEMA, effort, trace: run, label: problems.length ? 'advisor-chat-retry' : 'advisor-chat',
+      model, maxTokens: MAX_TOKENS, system: supplements ? `${CHAT_CONTRACT}
+
+${SUPPLEMENT_RULES}` : CHAT_CONTRACT,
+      prompt: promptFor(context, earlier, text, problems), schema: supplements ? withSuggestions(CHAT_SCHEMA) : CHAT_SCHEMA, effort, trace: run, label: problems.length ? 'advisor-chat-retry' : 'advisor-chat',
     });
     let result = await ask([]);
     let report = asReport(result.data);
@@ -147,7 +159,11 @@ export async function askAdvisor({ store, claude, text, today, catalog, dictiona
       report = stripDashes(report);
       problems = checkReport(report, checks);
     }
-    const reply = { id: randomUUID(), created_at: now().toISOString(), role: 'claude', text: report.sections[0].body,
+    // Suggestions are kept with the reply's text, the statement first (code's wording, never the model's).
+    const suggestions = renderSuggestions(report.supplementSuggestions);
+    const reply = { id: randomUUID(), created_at: now().toISOString(), role: 'claude', text: suggestions ? `${report.sections[0].body}
+
+${suggestions}` : report.sections[0].body,
       physician: JSON.stringify(report.physicianDiscussion), weights: null, model: result.model, warnings: problems.length ? JSON.stringify(problems) : null };
     insert.run(reply);
     run.finish('ok', { attempts, warnings: problems.length, model: result.model });

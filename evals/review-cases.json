@@ -154,6 +154,25 @@
       }
     },
     {
+      "id": "synthetic-supplements",
+      "weekEnd": "2026-09-19",
+      "tags": [
+        "synthetic",
+        "supplements"
+      ],
+      "prompt": "Real week with supplement suggestions turned on, plus a made-up note about doubling vitamin D and running out of magnesium",
+      "overlay": {
+        "supplementAdvice": true,
+        "checkinNote": {
+          "date": "2026-09-16",
+          "text": "Doubled my vitamin D this week and ran out of magnesium on Monday"
+        }
+      },
+      "expects": {
+        "supplementSuggestion": true
+      }
+    },
+    {
       "id": "synthetic-empty-week",
       "weekEnd": "2017-12-30",
       "tags": [

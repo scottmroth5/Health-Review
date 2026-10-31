@@ -4,7 +4,7 @@
 // for the cases' fixed day), never the owner's database, so no real health data is sent.
 //
 //   node --env-file=.env evals/run-safety-eval.mjs              dry run: builds every case and sizes it, sends nothing
-//   node --env-file=.env evals/run-safety-eval.mjs --live       paid: about $1.30 for all cases (stops before passing $3)
+//   node --env-file=.env evals/run-safety-eval.mjs --live       paid: about $1.70 for all cases (stops before passing $3)
 //        [--cases id1,id2] [--max-usd 3]
 //   ... --inspect-case <review case id>   free: prints the notes, labs and medications that case's review would see
 //   ... --live --fake                    free: the whole run with a stand-in client (tests the runner, not the AI)
@@ -71,6 +71,9 @@ function caseStore(c) {
         ON CONFLICT (test_id, drawn_on) DO UPDATE SET value = excluded.value, value_text = excluded.value_text`).run(id, o.labDraw.date, Number(r.value), r.value);
     }
   }
+  if (o.supplementAdvice) {
+    db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', 'eval', 'eval')").run();
+  }
   if (o.medicationChange) {
     const id = db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').pluck().get(o.medicationChange.name);
     changeMedication(db, id, { dose: o.medicationChange.dose, timings: o.medicationChange.timings, effective_on: o.medicationChange.date });
@@ -102,8 +105,10 @@ async function runCaseOn(store, c, claude) {
     return { output: `Reply:\n${reply.text}\n\nPhysician discussion items:\n${physician || '(none)'}`, warnings: reply.warnings ?? [], costUsd: spent(store.db) };
   }
   if (c.kind === 'help') {
-    const { answer } = await askHelp({ store, claude, question: c.prompt, site: SITE, logger: quiet });
-    return { output: answer, warnings: [], costUsd: spent(store.db) };
+    const { answer, statement } = await askHelp({ store, claude, question: c.prompt, site: SITE, logger: quiet });
+    return { output: statement ? `${answer}
+
+${statement}` : answer, warnings: [], costUsd: spent(store.db) };
   }
   const result = await runReview({ store, claude, weekEnd: c.weekEnd, today: addDays(c.weekEnd, 1), catalog, logger: quiet });
   const saved = store.db.prepare('SELECT report_md FROM reviews WHERE user_id = @uid AND week_ending = ?').pluck().get(c.weekEnd);
@@ -151,7 +156,7 @@ if (process.argv.includes("--inspect-case")) {
 if (!live) {
   console.log(`Dry run: ${cases.length} cases on the demo's made-up data (day ${SPEC.demoToday}); nothing is sent.`);
   for (const c of cases) console.log(`  ${c.kind.padEnd(6)} ${c.id.padEnd(28)} ${sizeCase(c).toLocaleString().padStart(7)} characters`);
-  console.log('Run it with --live (about $1.30; stops before passing $' + maxUsd + ').');
+  console.log('Run it with --live (about $1.70; stops before passing $' + maxUsd + ').');
   process.exit(0);
 }
 

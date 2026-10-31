@@ -12,7 +12,8 @@ Health specific logic stays in this repo; never add it to agent-core.
                     instructions.js (fixed CONTRACT + owner prompt sections, output schema, rendering), validate.js
                     (dashes, number grounding, physician routing), claude.js (agent-core client with refusal fallbacks),
                     review.js (one call, one retry on failed checks, saved to reviews), suggest-exercises.js (the
-                    optional exercise-name assist), advisor-chat.js (the Next program chat)
+                    optional exercise-name assist), advisor-chat.js (the Next program chat), supplements.js (opt-in
+                    supplement suggestions: statement, rules, upper limits), emergency.js (EMERGENCY_LINE)
 /metrics            deterministic metric calculations: stats.js (windows, rounding, pearson), one module per report
                     area (recovery, cardio, strength, drinking, checkins), index.js computeWeek, load.js (SQL),
                     dictionary.js (exercise dictionary loader), blocks.js (program block detection), catalog.js (MAPS
@@ -22,7 +23,8 @@ Health specific logic stays in this repo; never add it to agent-core.
                     the only code touching raw source rows; normalize.js (dictionary onto the Workout Log) and
                     program-blocks.js (blocks, sessions, review operations)
 /config             exercise-dictionary.json: canonical exercises and name variants (names only; see README.md);
-                    substitutions.json: home equipment, what fills a cable or machine slot, and the avoid list
+                    substitutions.json: home equipment, what fills a cable or machine slot, and the avoid list;
+                    supplement-limits.json: adult tolerable upper intake levels (NIH ODS) checked on supplement suggestions
 /db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides; the data folder
                     is DATA_DIR when set, tools/paths.js dataPath, which the container mounts at /app/data).
                     Users (multi-user, phase 1 of 6, plan 2026-10-24): users.js (OWNER_ID, the owner as user 1 and admin;
@@ -128,7 +130,7 @@ npm run evals                     free: metric fixtures, then a summary of saved
 npm run evals -- --regrade v1     free: re-apply the current checks to a variant's saved drafts
 npm run evals -- --live [--variant v2] [--cases a,b]   paid: run the review contract eval (about $0.35 per case)
 npm run evals:safety              the AI safety check (evals/safety-cases.json, evals/run-safety-eval.mjs) on the demo's made-up
-                                  data: a dry run by default; -- --live is paid (about $1.30, stops at --max-usd, default 3);
+                                  data: a dry run by default; -- --live is paid (about $1.70, stops at --max-usd, default 3);
                                   -- --live --fake runs it free with a stand-in client; results in data/evals/safety
 npm run review                    sync, then write the weekly review for the week ending last Saturday (-- --week YYYY-MM-DD,
                                   -- --dry-run to build and size the prompt without calling Claude, -- --no-sync,
@@ -343,8 +345,8 @@ refusal fallbacks on via the beta endpoint). The system prompt is CONTRACT in ag
 prompt sections; the report format sections in those prompts were written for v1 raw data, and CONTRACT tells the model the
 summary replaces them. Format (UX roadmap phase 4, 2026-10-29): the output schema adds highlights (1 to 3, the week's
 biggest changes, each naming its comparison) and nextSteps (up to 3, optional, never medications, labs or symptoms),
-rendered first as "This week at a glance" and "Next steps" (Home shows the first), then the owner's sections, then the
-physician list. Each recovery metric and check-in scale carries trend (metrics/recovery.js trend: up or down when the week's
+rendered first as "This week at a glance" and "Next steps" (Home shows the first), then Supplement suggestions (only with
+the setting on, below), then the owner's sections, then the physician list. Each recovery metric and check-in scale carries trend (metrics/recovery.js trend: up or down when the week's
 mean moved at least half the baseline's daily standard deviation, else steady; null under 14 baseline days, 7 baseline
 check-ins or 3 in the week), and CONTRACT allows improved or declined only for up or down. checkReport's opening option
 (the review, not the chat) checks the counts; dashes, grounding and routing cover the opening too. Older saved reviews keep
@@ -392,7 +394,8 @@ the demo's made-up data with two made-up medications added; a grader model (clau
 no questions from the reply alone. First run: 16/18, $1.31. The lab miss was the case's question (above range wording in the
 physician list is allowed); the supplement miss (a note's dose change repeated outside the physician list, no advice)
 waits on the owner's call. v12 (phase 4: highlights, next steps, trends, trimmed
-prompt sections) 13/13 first drafts clean, 13/13 final, about 2,200 words a report.
+prompt sections) 13/13 first drafts clean, 13/13 final, about 2,200 words a report. v15 (opt-in supplement suggestions,
+the synthetic-supplements case, written dates exempt from grounding) 14/14 first drafts clean, 14/14 final.
 
 ## UI and API
 Access (server/auth.js, server/session.js, server/security.js; ported from Job-Agent, test/auth.test.js):
@@ -617,8 +620,12 @@ log its text.
 The Next program chat (agent/advisor-chat.js, POST /api/advisor/chat) sends computed training facts only: the Advisor
 ranking at the owner's current weights (scores, reasons, flags), lift statuses, the current program and week, equipment
 and paused exercises, plus the owner's typed note and the last 10 messages of the thread (owner's choice, 2026-10-07).
-Never program focus text, raw logs, medications, labs or genetics. Replies get the review's checks (dashes, grounded
-numbers, medication and symptom wording only in the physician list; one retry, then warnings). The thread lives in
+Never program focus text, raw logs, medications, labs or genetics (with supplement suggestions on, see the hard rules:
+supplementFacts adds supplements, medication names and the latest labs). Replies get the review's checks (dashes, grounded
+numbers, medication and symptom wording only in the physician list; one retry, then warnings). A note describing something
+that could be urgent (chest pain, fainting, trouble breathing) ends the reply with EMERGENCY_LINE (agent/emergency.js)
+word for word ("For immediate medical emergency call 911 or your local emergency number."; owner's wording, 2026-10-30);
+Help's answers and the review's physician item for such a note end with it too. The thread lives in
 advisor_notes (migration 013); the advisor-chat run records metadata only. features.chat false turns it off (the demo).
 The exercise-name assist (npm run log:unmapped -- --suggest) sends exercise names only (unmapped names and the
 dictionary's own names), and only after the owner types yes; never weights, dates, set counts or other log data
@@ -634,6 +641,19 @@ put them in fixtures or the image, or send their text anywhere; only computed fa
 owner's machine (as defined above, so the server may hold them in its data folder).
 Metrics are computed in code, never by the model.
 Anything involving medications, abnormal labs, or symptoms is flagged for physician discussion, not turned into a recommendation.
+Supplement suggestions (owner's choice, 2026-10-30; agent/supplements.js) are the one exception, and only for supplements:
+off by default, a user turns them on in Settings after accepting SUPPLEMENT_DISCLAIMER (PUT /api/account/supplement-advice
+{ on, accept }; settings supplement_advice holds the time accepted; a paused account may only turn them off). With them on,
+the review and the chat may recommend adding, changing or stopping a supplement (supplementSuggestions: supplement, action,
+amount, reasons, precautions; at most 3) and Help may give general ones; code adds the statement word for word (the
+review's "Supplement suggestions" section after Next steps, the chat reply, Help's statement field), never the model.
+Reasons may cite the user's data and lab values with range status (never normal or abnormal); precautions name
+interactions with the user's medications, conditions, side effects and the upper limit. Checks in code (validate.js
+checkSuggestions): reasons and precautions given, never one of the user's medications, the amount within
+config/supplement-limits.json's adult upper limit (calcium by age), medication names and symptom words only in the
+precautions; numbers in reasons are grounded, amounts and precautions are not. With them on, the chat's context adds
+supplementFacts (current supplements with amounts, medication names without doses, the latest labs with range status);
+Help still sends no user data. Prescription medications are never recommended, dosed or replaced by a supplement.
 Blood oxygen and breathing disturbances (values and targets) appear in the review only in physicianDiscussion.
 Never output em dashes, en dashes, or double hyphens in generated text.
 Back up before every database change (owner's rule, 2026-10-24): a migration never runs on a database file without a

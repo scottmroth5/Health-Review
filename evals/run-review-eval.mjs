@@ -91,6 +91,10 @@ function caseStore(input) {
         .run(id, o.labDraw.date, Number(r.value), r.value);
     }
   }
+  // Supplement suggestions turned on (Settings), as the owner may.
+  if (o.supplementAdvice) {
+    db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', 'eval', 'eval') ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value").run();
+  }
   if (o.medicationChange) {
     const med = db.prepare(`SELECT m.id, p.timings FROM medications m JOIN medication_periods p ON p.medication_id = m.id AND p.user_id = m.user_id
       WHERE m.user_id = @uid AND m.kind = 'medication' AND p.stopped_on IS NULL AND p.started_on < ? ORDER BY m.name LIMIT 1`).get(o.medicationChange.date);

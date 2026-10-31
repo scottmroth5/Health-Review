@@ -287,6 +287,8 @@ fieldset.regimen .opts label:has(input:checked), fieldset.combine-picks .opts la
 .dose .ingredients-line { display: block; font-size: 0.85rem; }
 label.check { display: flex; align-items: center; gap: 8px; }
 label.check input { width: auto; display: inline; margin: 0; }
+.statement { border-left: 3px solid var(--danger); padding: 4px 12px; margin: 8px 0 12px; }
+.statement p { margin: 0 0 8px; }
 .med-card .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
 .med-card .head h3 { margin: 0; font-size: 1rem; }
 .pill { font-size: 0.75rem; border: 1px solid var(--border); color: var(--text-secondary); border-radius: 999px; padding: 1px 8px; }
@@ -533,6 +535,7 @@ body.demo .demo-toggle { color: var(--accent); font-weight: 600; }
 body.read-only form button[type="submit"], body.read-only button.danger, body.read-only #sync-now,
 body.read-only .actions button:not([data-range]):not([data-vview]):not([data-zview]):not([data-zgroup]),
 body.read-only #add-section { display: none !important; }
+body.read-only #supplement-accept-row { display: none !important; }
 
 /* Programs (phase 5): the user's own catalog and its builder */
 .program-more { margin: 10px 0; }

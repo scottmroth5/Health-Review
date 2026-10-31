@@ -22,6 +22,7 @@ const STATE = {
     { id: 'physician', label: 'Physician', kind: 'binary' },
     { id: 'length_ok', label: 'Length', kind: 'binary' },
     { id: 'opening_ok', label: 'Opening', kind: 'binary' },
+    { id: 'supplements_ok', label: 'Supplements', kind: 'binary' },
   ],
   perf_fields: [
     { id: 'cost_usd', label: 'Cost', unit: '$' },
@@ -30,7 +31,7 @@ const STATE = {
     { id: 'words', label: 'Words' },
   ],
   // The harness gate covers the runner plus everything that shapes the review.
-  harness_paths: ['evals/review-cases.json', 'evals/grade-review.js', 'agent/review.js', 'agent/instructions.js', 'agent/validate.js', 'agent/summary.js', 'agent/claude.js'],
+  harness_paths: ['evals/review-cases.json', 'evals/grade-review.js', 'agent/review.js', 'agent/instructions.js', 'agent/validate.js', 'agent/summary.js', 'agent/claude.js', 'agent/supplements.js'],
 };
 
 function ensureState() {
