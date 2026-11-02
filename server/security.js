@@ -19,12 +19,27 @@ export const CONTENT_SECURITY_POLICY = [
 ].join('; ');
 
 /**
- * Adds security headers to every response; a route that set its own keeps it.
- * @param {{ https?: boolean }} opts  https adds Strict-Transport-Security
+ * The demo's analytics settings, checked: { host: an https origin, token: a PostHog project token (phc_...) }, or null
+ * when either is missing or malformed (so a bad value turns analytics off rather than widening the CSP).
  */
-export function registerSecurityHeaders(app, { https = false } = {}) {
+export function analyticsConfig(analytics) {
+  const token = String(analytics?.token ?? '').trim();
+  if (!/^phc_[A-Za-z0-9]{10,100}$/.test(token)) return null;
+  let url;
+  try { url = new URL(String(analytics?.host ?? '')); } catch { return null; }
+  if (url.protocol !== 'https:' || url.username || url.password) return null;
+  return { host: url.origin, token };
+}
+
+/**
+ * Adds security headers to every response; a route that set its own keeps it.
+ * @param {{ https?: boolean, connectExtra?: string|null }} opts  https adds Strict-Transport-Security; connectExtra is
+ *   one more origin the page may send to (the demo's analytics host, server/public/analytics.js); scripts stay 'self'
+ */
+export function registerSecurityHeaders(app, { https = false, connectExtra = null } = {}) {
+  const csp = connectExtra ? CONTENT_SECURITY_POLICY.replace("connect-src 'self'", `connect-src 'self' ${connectExtra}`) : CONTENT_SECURITY_POLICY;
   const headers = {
-    'content-security-policy': CONTENT_SECURITY_POLICY,
+    'content-security-policy': csp,
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
     'referrer-policy': 'same-origin',

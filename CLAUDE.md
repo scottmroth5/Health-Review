@@ -3,7 +3,7 @@
 ## Purpose
 Weekly health review agent built on the shared agent-core package.
 agent-core comes from the public Agent-Core repo as a git dependency pinned to a version tag
-("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.2.2"). Upgrade with npm install "github:scottmroth5/Agent-Core#semver:^<x.y.z>" (a caret on 0.x never crosses a minor version, so npm update will not); test unreleased changes with npm link ../Agent-Core.
+("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.2.3"). Upgrade with npm install "github:scottmroth5/Agent-Core#semver:^<x.y.z>" (a caret on 0.x never crosses a minor version, so npm update will not); test unreleased changes with npm link ../Agent-Core.
 Health specific logic stays in this repo; never add it to agent-core.
 
 
@@ -46,6 +46,12 @@ Health specific logic stays in this repo; never add it to agent-core.
                     test/icons.test.js checks sizes and that the head and manifest name files that exist).
                     Demo mode (Home page checkbox, or ?demo=1 / ?demo=0; saved per browser, server/public/demo.js) hides
                     drinking and CBD on screen only: the Drinks box, the alcohol chart, and drinking or CBD lines in reviews
+                    Demo analytics (PostHog guide step 6, 2026-11-02; server/public/analytics.js): the public demo only, when
+                    DEMO_ANALYTICS_TOKEN (phc_) is set (DEMO_ANALYTICS_HOST, default https://us.i.posthog.com; read only in
+                    server/index.js's demo branch, and buildApp honors it only in AUTH_MODE=demo); /api/status analytics and
+                    that one origin added to connect-src. No SDK: one POST per event built field by field, events demo_opened,
+                    section_viewed (section: a VIEWS name), sample_review_opened (which: latest or earlier); app
+                    health_review_demo, a random id per page load, no person profiles, URL, referrer, cookie or storage
 /evals              fixtures/metrics (metric regression), fixtures/v1 (v1 golden outputs, see its README), and the review
                     contract eval: review-cases.json (real weeks by date only, synthetic overlays), grade-review.js
                     (shared grading), run-review-eval.mjs (runner from the claude-api skill scaffold)

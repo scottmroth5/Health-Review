@@ -43,6 +43,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 
 - Health Review answers only in the United States (the public demo, which holds made-up data only, is open everywhere): the server looks up the country of the address a request comes from (IP to Country Lite by DB-IP, https://db-ip.com, CC BY 4.0) and keeps no record of it.
 - In a database on a server in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
+- The public demo (not the app) counts anonymous visits with PostHog (https://posthog.com): that the demo was opened, which screens were opened, and whether a sample review was opened. Nothing typed or shown on screen is sent, no cookie is set, and each page load gets a new random id, so visits are not linked; PostHog sees the network address of the request, as any website does. The app you sign in to sends nothing to PostHog.
 - The server's disk is encrypted by Amazon with keys Amazon manages. The operator accepts this for now; a later move will use encryption keys the operator controls.
 - Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS. Seven nightly, three weekly and one monthly backup are kept, so a backup ages out within about two months.
 

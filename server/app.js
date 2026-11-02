@@ -6,7 +6,7 @@ import swagger from '@fastify/swagger';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { registerAuth } from './auth.js';
-import { registerSecurityHeaders, registerRateLimits, errorReply, DEMO_REQUEST_LIMIT } from './security.js';
+import { registerSecurityHeaders, registerRateLimits, errorReply, DEMO_REQUEST_LIMIT, analyticsConfig } from './security.js';
 import * as q from './queries.js';
 import { TIMINGS } from '../metrics/medications.js';
 import { VIEWS } from '../metrics/volume.js';
@@ -129,7 +129,9 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  *   prompt or report text), so docker compose logs shows what ran
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null, geo = {}, supportEmail = null }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null, geo = {}, supportEmail = null, analytics = null }) {
+  // Demo analytics (server/public/analytics.js): only in the demo, with an https host and a PostHog project token.
+  const demoAnalytics = authMode === 'demo' ? analyticsConfig(analytics) : null;
   // The published support address (SUPPORT_EMAIL), never written in the repo; null shows "the administrator".
   const support = supportEmailFrom(supportEmail);
   const supportLine = support ? `\nQuestions or problems: ${support}\n` : '';
@@ -172,7 +174,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
   // Security headers always; rate limits once the server can be reached from outside (sign-in, refused requests, and every
   // request in the public demo); then the sign-in check (server/auth.js).
-  registerSecurityHeaders(app, { https: String(auth.settings?.publicUrl ?? '').startsWith('https://') });
+  registerSecurityHeaders(app, { https: String(auth.settings?.publicUrl ?? '').startsWith('https://'), connectExtra: demoAnalytics?.host });
   // A ceiling on every route per address (@fastify/rate-limit): far above normal use (a screen makes about 15 requests),
   // it stops floods and scripted abuse. The deploy check is exempt. Tighter limits for sign-in, refused requests, ingest
   // posts and the demo follow (server/security.js).
@@ -289,6 +291,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }),
       // The demo's "Request access" link to the main app (REQUEST_ACCESS_URL; none when unset).
       ...(authMode === 'demo' && requestAccessUrl ? { requestAccessUrl } : {}),
+      // The demo's anonymous visit counts (DEMO_ANALYTICS_TOKEN; none when unset, and never outside the demo).
+      ...(demoAnalytics ? { analytics: demoAnalytics } : {}),
       // The published support address, for Help and the demo's Request access card.
       supportEmail: support };
   });

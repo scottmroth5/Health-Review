@@ -76,6 +76,8 @@ if (demo) {
     clock: () => zonedInstant(builtFor, 12, 0),
     store, services: {}, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, instance: 'demo', features: { chat: false }, geo, supportEmail: process.env.SUPPORT_EMAIL,
     requestAccessUrl: process.env.REQUEST_ACCESS_URL || null,
+    // Anonymous visit counts (server/public/analytics.js), read only here, never by the main instance.
+    analytics: { token: process.env.DEMO_ANALYTICS_TOKEN, host: process.env.DEMO_ANALYTICS_HOST || 'https://us.i.posthog.com' },
     catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')),
   });
 } else {

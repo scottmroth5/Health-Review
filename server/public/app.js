@@ -2,6 +2,7 @@ import { lineChart, columnChart } from './charts.js';
 import { DEMO_KEY, demoFromLocation, redactReview, isDrinkingChart } from './demo.js';
 import { GOALS, LAYOUT_ITEMS, arranged, tileOrder, goalWeights } from './goals.js';
 import { upperTops, zone2Default, zoneOrderProblem } from './zone-defaults.js';
+import { SECTIONS, startAnalytics, track } from './analytics.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -55,7 +56,7 @@ function setupDemo() {
 }
 
 // ---------------- routing ----------------
-const VIEWS = ['home', 'today', 'training', 'programs', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity', 'settings', 'users', 'help'];
+const VIEWS = SECTIONS; // the demo's analytics may name only these (analytics.js)
 const VIEW_TITLES = { home: 'Home', today: 'Daily Check-in', training: 'Training', programs: 'Programs', health: 'Health', meds: 'Meds', labs: 'Labs', reviews: 'Reviews', prompt: 'Prompt', activity: 'Activity', settings: 'Settings', users: 'Users', help: 'Help' };
 let currentView = null;
 function route() {
@@ -67,6 +68,7 @@ function route() {
   if (view === 'reviews' && currentView === 'reviews' && reviewsView.list) return renderReviews();
   const moved = currentView !== view;
   currentView = view;
+  if (moved) track('section_viewed', { section: view });
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
   // The phone header shows "‹ Home" and the section's name away from Home (app.css, body[data-view]).
   document.body.dataset.view = view;
@@ -2926,6 +2928,7 @@ function renderReviews() {
   const asked = location.hash.split('/')[1];
   const r = reviews.find((x) => x.week_ending === asked) ?? reviews[0];
   const latest = r === reviews[0];
+  if (reviewsView.shown !== r) { reviewsView.shown = r; track('sample_review_opened', { which: latest ? 'latest' : 'earlier' }); }
 
   const items = reviews.map((x, i) => {
     const current = x === r;
@@ -3358,5 +3361,9 @@ $$('[data-range]').forEach((b) => b.addEventListener('click', () => {
   loadHistory();
 }));
 setupDemo();
+// The public demo's anonymous visit counts (analytics.js): on only when the server sends a config; events from the first
+// screen wait for it.
+track('demo_opened');
+api('GET', '/api/status').then((s) => startAnalytics(s.analytics)).catch(() => startAnalytics());
 window.addEventListener('hashchange', route);
 route();

@@ -51,6 +51,9 @@ services:
       # the app above stays US-only.
       # The published support address, from the server's .env (the demo has no env file of its own).
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+      # Anonymous visit counts (PostHog, server/public/analytics.js): the demo only; unset sends nothing.
+      DEMO_ANALYTICS_TOKEN: ${DEMO_ANALYTICS_TOKEN:-}
+      DEMO_ANALYTICS_HOST: ${DEMO_ANALYTICS_HOST:-}
       DATA_DIR: /app/data
       HOST: 0.0.0.0
       PORT: "5188"
