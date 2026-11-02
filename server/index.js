@@ -26,7 +26,7 @@ import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from 
 import { runReview } from '../agent/review.js';
 import { assertSafeBinding, authSettings } from './auth.js';
 import { createAiAccess } from './ai-access.js';
-import { geoAllowFromEnv, loadCountryLookup } from './geo.js';
+import { geoAllowFromEnv, loadGeoReader } from './geo.js';
 
 const demo = process.env.HEALTH_INSTANCE === 'demo';
 const host = process.env.HOST ?? '127.0.0.1';
@@ -43,9 +43,11 @@ const trustProxy = (() => {
   return /^\d+$/.test(v) ? Number(v) : v;
 })();
 const auth = { settings };
-// US-only access (GEO_ALLOW, server/geo.js): the country database ships in the image; without it nothing is blocked.
+// US-only access (GEO_ALLOW, server/geo.js): the location database ships in the image; without it nothing is blocked.
+// The signed-in app also uses it for the usage totals' approximate locations; the demo never loads it (it is large).
 const geoAllow = geoAllowFromEnv();
-const geo = { allow: geoAllow, lookup: geoAllow.length ? await loadCountryLookup().catch(() => null) : null };
+const geoReader = geoAllow.length || (!demo && authMode === 'google') ? await loadGeoReader().catch(() => null) : null;
+const geo = { allow: geoAllow, lookup: geoAllow.length ? geoReader?.country ?? null : null };
 if (geoAllow.length) console.log(geo.lookup ? `[geo] only ${geoAllow.join(', ')} allowed` : '[geo] the country database is missing: nothing is blocked');
 
 const quiet = { info() {}, warn() {}, error() {} };
@@ -203,6 +205,8 @@ if (demo) {
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
   app = await buildApp({
     store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer, geo, supportEmail: process.env.SUPPORT_EMAIL, personalSite: process.env.PERSONAL_SITE || null,
+    // Usage totals (server/usage-totals.js): places from the local database; the source hosts from .env, never the repo.
+    usage: { place: geoReader?.place ?? null, siteHost: process.env.SOURCE_SITE_HOST || process.env.PERSONAL_SITE, demoHost: process.env.SOURCE_DEMO_HOST || process.env.DEMO_SITE_ADDRESS },
     schedule: () => scheduler.status(),
   });
 }

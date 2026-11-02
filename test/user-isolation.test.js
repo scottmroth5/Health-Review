@@ -93,14 +93,21 @@ test('isolation: no write route sent by B changes any of A\'s rows', async () =>
   store.close();
 });
 
-test('isolation: the weekly usage totals are the administrator\'s only, and carry counts, never who or what', async () => {
+test('isolation: the usage totals are the administrator\'s only, and carry counts, never who or what', async () => {
   const { store, app, asA, asB } = await setup();
   assert.equal((await app.inject({ url: '/api/admin/usage', headers: { cookie: asB } })).statusCode, 403);
+  for (const weeks of [3, 53]) assert.equal((await app.inject({ url: `/api/admin/usage?weeks=${weeks}`, headers: { cookie: asA } })).statusCode, 400);
   const res = await app.inject({ url: '/api/admin/usage?weeks=4', headers: { cookie: asA } });
   assert.equal(res.statusCode, 200);
-  assert.equal(res.json().length, 4);
-  const text = res.body;
-  for (const leak of ['a@example.com', 'b@example.com', OWNER_ID, B, 'user_id']) assert.ok(!text.includes(leak), leak);
+  assert.deepEqual(Object.keys(res.json()).sort(), ['arrivals', 'visits', 'weeks']);
+  assert.equal(res.json().weeks.length, 4);
+  for (const leak of ['a@example.com', 'b@example.com', OWNER_ID, B, 'user_id']) assert.ok(!res.body.includes(leak), leak);
   await app.close();
   store.close();
+  // The demo has no administrator: refused.
+  const demoStore = openHealthStore(':memory:');
+  const demo = await buildApp({ store: demoStore, authMode: 'demo', instance: 'demo', features: { chat: false } });
+  assert.equal((await demo.inject('/api/admin/usage')).statusCode, 403);
+  await demo.close();
+  demoStore.close();
 });

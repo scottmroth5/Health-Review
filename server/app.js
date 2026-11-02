@@ -33,11 +33,12 @@ import { createRateLimiter } from './security.js';
 import { parseHealthJson } from '../ingest/health-json.js';
 import { parseWorkoutJson } from '../ingest/parsers.js';
 import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
-import { isTimeZone, localStamp, ownerTz, withTimeZone } from '../tools/time.js';
+import { DEFAULT_TZ, isTimeZone, localDate as zonedDate, localStamp, ownerTz, withTimeZone } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
 import { HEALTH_CONSENT_VERSION, OWNER_ID, clearIngestToken, getUser, newIngestToken, recordHealthConsent, setClaudeKey, setGoogleToken, setUserFeeds, startUserRun, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
-import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus, usageByWeek } from './admin-queries.js';
+import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus, usageByWeek, usageTotals } from './admin-queries.js';
+import { createUsageTotals, hostnameOrNull } from './usage-totals.js';
 import { GOALS as GOAL_LABELS, GOAL_KEYS, LAYOUT_ITEMS, TILES, cleanGoals } from './public/goals.js';
 import { MAX_ANSWER_CHARS, SECTION_KINDS, builderSpec, claudeDraft, templateDraft } from '../agent/prompt-draft.js';
 import { askHelp, MAX_QUESTION_CHARS } from '../agent/help.js';
@@ -129,7 +130,7 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  *   prompt or report text), so docker compose logs shows what ran
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null, geo = {}, supportEmail = null, analytics = null, personalSite = null }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null, geo = {}, supportEmail = null, analytics = null, personalSite = null, usage = null }) {
   // Demo analytics (server/public/analytics.js): only in the demo, with an https host and a PostHog project token.
   const demoAnalytics = authMode === 'demo' ? analyticsConfig({ ...analytics, site: personalSite }) : null;
   // The published support address (SUPPORT_EMAIL), never written in the repo; null shows "the administrator".
@@ -233,6 +234,25 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     recordHealthConsent(store.db, uid, clock());
     log.info('[users] health data consent given');
   };
+  // Usage totals (server/usage-totals.js): the signed-in app only, never the demo or local mode. A signed-in browser
+  // visit (the auth hook marked it; the app page or an API call, not files) counts once per account per owner day by
+  // device and location; an arrival on the app page or the sign-in page counts by source. Only counts are kept, and a
+  // failure here never touches the response.
+  const counter = authMode === 'google' ? createUsageTotals({
+    db: store.db, place: usage?.place ?? null, tz: process.env.OWNER_TZ || DEFAULT_TZ, now: clock,
+    siteHost: hostnameOrNull(usage?.siteHost), demoHost: hostnameOrNull(usage?.demoHost),
+    appHost: (() => { try { return new URL(auth.settings.publicUrl).hostname.toLowerCase(); } catch { return null; } })(),
+  }) : null;
+  if (counter) {
+    app.addHook('onResponse', async (req, reply) => {
+      try {
+        const [path, query = ''] = req.url.split('?');
+        if (req.browserSession && reply.statusCode < 400 && (path === '/' || path.startsWith('/api/'))) counter.visit(req, req.uid);
+        const signInPage = path === '/auth/login' && new URLSearchParams(query).get('go') !== '1';
+        if (req.method === 'GET' && reply.statusCode === 200 && (path === '/' || signInPage)) counter.arrival(req);
+      } catch { /* counting never affects a request */ }
+    });
+  }
   registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
     sheetsExchange: auth.sheetsExchange, connectSheets, createSheet, recordConsent, deleteAccount });
   // The privacy policy and terms, readable before signing in.
@@ -1406,12 +1426,28 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const isAdmin = (req) => authMode !== 'demo' && (req.role === 'admin' || (authMode === 'none' && uidOf(req) === OWNER_ID));
   const adminOnly = async (req, reply) => { if (!isAdmin(req)) return reply.code(403).send({ error: 'Administrators only' }); };
   // Weekly usage totals across all users (counts only: no user, entry date, value or text), the Users screen's card.
+  // The response schema lists every field (additionalProperties false), so nothing else can be sent.
+  const count = { type: 'integer' };
+  const strict = (properties) => ({ type: 'object', additionalProperties: false, required: Object.keys(properties), properties });
+  const valueCounts = { type: 'array', items: strict({ value: { type: 'string' }, count }) };
+  const usageSchema = strict({
+    weeks: { type: 'array', items: strict({
+      weekEnding: { type: 'string' }, activeUsers: count, reviews: strict({ completed: count, failed: count, skipped: count }),
+      checkins: count, liftingDays: count, syncs: strict({ completed: count, failed: count }), spendUsd: { type: 'number' }, feedback: count,
+    }) },
+    visits: strict({ device: valueCounts, location: strict({ countries: valueCounts, states: valueCounts, cities: valueCounts }) }),
+    arrivals: valueCounts,
+  });
   app.get('/api/admin/usage', {
     onRequest: adminOnly,
-    schema: { summary: 'Weekly totals across users: reviews completed, failed and skipped; check-ins; lifting days; syncs completed and failed (counts only)',
-      querystring: { type: 'object', additionalProperties: false, properties: { weeks: { type: 'integer', minimum: 1, maximum: 52, default: 12 } } },
-      response: { 200: { type: 'array', items: anyObject } } },
-  }, async (req) => usageByWeek(store.db, { weeks: req.query.weeks, now: clock() }));
+    schema: { summary: 'Usage totals across users (counts only): weekly activity, and for the same period visits by device and location and arrivals by source',
+      querystring: { type: 'object', additionalProperties: false, properties: { weeks: { type: 'integer', minimum: 4, maximum: 52, default: 12 } } },
+      response: { 200: usageSchema } },
+  }, async (req) => {
+    const weeks = usageByWeek(store.db, { weeks: req.query.weeks, now: clock() });
+    const today = zonedDate(clock(), process.env.OWNER_TZ || DEFAULT_TZ);
+    return { weeks, ...usageTotals(store.db, { from: addDays(weeks.at(-1).weekEnding, -6), to: today }) };
+  });
   app.get('/api/admin/users', { onRequest: adminOnly, schema: { summary: 'Every user (account facts only, never keys or health data), pending first', response: { 200: { type: 'array', items: anyObject } } } },
     async () => listUsers(store.db, { now: clock() }));
   const userIdParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64 } } };

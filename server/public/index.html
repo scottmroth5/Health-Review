@@ -616,9 +616,17 @@
         <div id="admin-feedback"></div>
       </div>
       <div class="card" id="admin-usage-card">
-        <h2>Usage by week</h2>
-        <p class="muted small">Totals across all users for weeks ending Saturday: counts only, never who or what.</p>
+        <div class="training-head">
+          <h2>Usage</h2>
+          <div class="filters" role="group" aria-label="Usage period">
+            <button type="button" data-uweeks="4">4 weeks</button>
+            <button type="button" data-uweeks="12">12 weeks</button>
+            <button type="button" data-uweeks="52">52 weeks</button>
+          </div>
+        </div>
+        <p class="muted small">Totals across all users, weeks ending Saturday: counts only, never who or what. Kept on this server; nothing is sent anywhere.</p>
         <div id="admin-usage"></div>
+        <p class="muted small">Location data: IP to City Lite by DB-IP (<a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a>), CC BY 4.0.</p>
       </div>
     </section>
 

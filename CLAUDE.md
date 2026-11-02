@@ -477,11 +477,25 @@ in (owner's choice). The admin Users screen shows setup N of 5 from the same set
 Apple Health data gets no data checks (dataCheckWarnings), computeWeek leaves dataQuality out when the week and baseline
 hold no Apple Health day, and reviewStatus applies the Apple Health gate only with Apple Health days in the window; a
 week with no data of any kind is skipped as no_data (never due, never sent).
-Usage counters (2026-11-03): GET /api/admin/usage?weeks= (adminOnly; server/admin-queries.js usageByWeek) totals reviews
-(runs 'review': ok completed, error failed, skipped), check-ins (checkins by date), lifting days (log_sessions by date)
-and syncs (runs 'sync': ok, error) across all users per week ending Saturday in OWNER_TZ, newest first, to today; counts
-only, no user, entry date, value or text, and nothing logged. The Users screen's Usage by week card shows it; no third
-party.
+Usage dashboard (2026-11-02; the Users screen's Usage card, admins only, never the demo; no third party, nothing
+logged): GET /api/admin/usage?weeks=4..52 (default 12; strict response schema, additionalProperties false) returns weeks
+(server/admin-queries.js usageByWeek, per week ending Saturday in OWNER_TZ, newest first, to today: activeUsers = distinct
+users with their own activity, a check-in, a lifting day, a completed review or an accepted ingest post, never scheduled
+syncs or skipped reviews; reviews completed, failed, skipped; check-ins; lifting days; syncs completed, failed; spendUsd
+from runs.cost_usd of every run; feedback), and for the same period usageTotals: visits by device and by location
+(countries, states, top 15 cities) and arrivals by source (google_signin_return left out). Usage totals (server/usage-totals.js,
+migration 032 usage_totals: day, dimension device|location|source, value, count; app-wide, deliberately not in USER_TABLES,
+so not exported or deleted with an account; backed up with the database): google mode only. A visit is a signed-in
+browser request that passed every gate (auth.js sets req.browserSession) to / or /api/* with status under 400, once per
+account per owner day (an in-memory set, never written; a restart may count twice): +1 device (deviceOf: phone, tablet,
+computer from the user agent and Sec-CH-UA-Mobile) and +1 location ("City, State, Country" from the local DB-IP City
+Lite database, server/geo.js loadGeoReader place; unknown when the lookup fails or the address is private). An arrival is
+a GET 200 of / or the sign-in page (/auth/login without go=1), Sec-Fetch-Dest document when sent, never same-origin or
+from the app's own host: sourceOf gives linkedin, github, site, demo, google_signin_return, other or direct (utm_source
+if exactly linkedin, github, site or demo, else the Referer host; the demo host is checked before the site, which it is
+usually a subdomain of). SOURCE_SITE_HOST and SOURCE_DEMO_HOST (server .env, bare hostnames, never in the repo) fall back
+to PERSONAL_SITE and DEMO_SITE_ADDRESS. No IP, user agent, referrer, URL, query value or user id is kept, and no row
+links one dimension to another (test/usage-totals.test.js). PRIVACY.md's Usage totals section is the owner's wording.
 Users, phase 6 (2026-10-24), account controls and help: GET /api/account/export (server/admin-queries.js exportUserData:
 the account row without claude_key_enc, ingest_token_hash or google_refresh_enc, plus every row of theirs in every table
 with a user_id column, found from the schema, and their run_calls); POST /api/account/pause and /resume (settings row
@@ -527,7 +541,8 @@ and emails to users. Never write the address in the repo.
 Security (2026-10-25): US-only access for the app (server/geo.js, GEO_ALLOW=US in deploy/compose.yml; the demo, made-up data
 only, has none and is open worldwide, owner's choice 2026-10-27): an onRequest
 hook answers 403 with a short page outside the allowed countries, by req.ip (Caddy's forwarded address) in DB-IP's IP to
-Country Lite (CC BY 4.0) read with maxmind; /api/ingest/* and /api/health always pass, as do private and loopback
+City Lite (CC BY 4.0; the Country Lite file when the city download fails; about 130 MB in memory, loaded by the main app
+only, never the demo) read with maxmind, which also gives the usage totals' locations (the check itself keeps no record); /api/ingest/* and /api/health always pass, as do private and loopback
 addresses; unset GEO_ALLOW blocks nothing; without the database (downloaded in the Dockerfile's geo stage, GEO_STAMP
 forcing a fresh download per build) it fails open and the admin is emailed. Weekly: Dependabot (npm, Actions, Docker;
 patch-level updates auto-merge once CI passes, dependabot-automerge.yml), the scheduled rebuild in deploy.yml

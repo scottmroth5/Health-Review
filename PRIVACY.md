@@ -43,10 +43,14 @@ Health Review is a personal project run by its owner (the operator). It is not a
 
 ## Where data is kept
 
-- Health Review answers only in the United States (the public demo, which holds made-up data only, is open everywhere): the server looks up the country of the address a request comes from (IP to Country Lite by DB-IP, https://db-ip.com, CC BY 4.0) and keeps no record of it.
+- Health Review answers only in the United States (the public demo, which holds made-up data only, is open everywhere): the server looks up the country of the address a request comes from (IP to City Lite by DB-IP, https://db-ip.com, CC BY 4.0). It keeps no record of that check; the only location it keeps is in the daily totals described under Usage totals.
 - In a database on a server in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
 - The server's disk is encrypted by Amazon with keys Amazon manages. The operator accepts this for now; a later move will use encryption keys the operator controls.
 - Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS to the operator's Google Drive. Seven nightly, three weekly and one monthly backup are kept, so a backup ages out within about two months.
+
+## Usage totals
+
+The app keeps totals to show how it is used. Once a day, the first time you use the app in a browser, the server adds one to totals of visits by approximate location (city, state, and country) and by device type (phone, tablet, or computer). It works out your location from your IP address on the server, without an outside service. It also counts how people arrive at the app, using a general category: LinkedIn, GitHub, the operator's website, the demo, other, or direct. It does not keep your IP address, browser details, or the address you came from, and these totals are not linked to your account, so they remain if you delete it. Because few people use the app, a city total could still suggest who a visit came from. Only the operator sees these totals.
 
 ## The operator's own data
 
@@ -60,7 +64,7 @@ The demo holds made-up data only. It counts visits with PostHog (https://posthog
 
 - **Export:** Settings, **Export my data** downloads everything stored for you as one file (never your encrypted key or tokens).
 - **Pause:** Settings, **Pause my account** stops new data and AI until you resume; your data stays. The operator can pause your account too, and then only the operator can resume it.
-- **Delete:** Settings, **Delete my account** removes your account and everything stored for you at once, after you type your email to confirm. Copies in the encrypted backups age out within about two months. You can also ask the operator to delete it.
+- **Delete:** Settings, **Delete my account** removes your account and everything stored for you at once, after you type your email to confirm. Copies in the encrypted backups age out within about two months. The usage totals, which are not linked to your account, remain. You can also ask the operator to delete it.
 - Remove your Claude key or disconnect Google Sheets at any time in Settings, and revoke the app's Google access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 - **Consumer health data:** see the [Consumer Health Data Privacy Policy](/consumer-health-data) for your rights, including withdrawing consent.
 

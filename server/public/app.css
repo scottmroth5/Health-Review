@@ -210,6 +210,19 @@ label [data-zone-default] { display: block; margin-top: 2px; }
 .zone-legend .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .swatch.z1 { background: var(--zone-1); } .swatch.z2 { background: var(--zone-2); } .swatch.z3 { background: var(--zone-3); }
 .swatch.z4 { background: var(--zone-4); } .swatch.z5 { background: var(--zone-5); } .swatch.znd { background: var(--zone-none); }
+/* The Usage card (Users screen): done, failed and skipped segments, and plain bar lists for device, location and source. */
+.chart .bar.seg.u-ok { fill: var(--good); } .chart .bar.seg.u-fail { fill: var(--danger); } .chart .bar.seg.u-skip { fill: var(--zone-none); }
+.swatch.u-ok { background: var(--good); } .swatch.u-fail { background: var(--danger); } .swatch.u-skip { background: var(--zone-none); }
+.usage-charts { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 720px) { .usage-charts { grid-template-columns: 1fr 1fr; } }
+.usage-charts h3, .usage-bars h3 { margin: 8px 0 2px; font-size: 0.95rem; }
+.usage-charts .chart { min-height: 140px; }
+.bar-list { list-style: none; margin: 4px 0; padding: 0; }
+.bar-list li { display: grid; grid-template-columns: minmax(0, 11rem) 1fr 3rem; gap: 8px; align-items: center; font-size: 0.88rem; padding: 2px 0; }
+.bar-list .bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-list .bar-track { height: 10px; border-radius: 4px; background: var(--grid); overflow: hidden; }
+.bar-list .bar-fill { display: block; height: 100%; border-radius: 4px; background: var(--series-1); }
+.bar-list .bar-count { text-align: right; font-variant-numeric: tabular-nums; }
 .zones-card table td, .zones-card table th { text-align: right; padding: 2px 6px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
 .zones-card table td:first-child, .zones-card table th:first-child { text-align: left; }
 .zones-card table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }

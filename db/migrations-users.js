@@ -210,7 +210,8 @@ const TABLES = [
 ];
 
 /** Every table that carries user_id (test/user-scope.test.js checks each query on them names user_id): the ones 025
- * rebuilt, and the user tables later migrations made with user_id from the start. */
+ * rebuilt, and the user tables later migrations made with user_id from the start. App-wide tables with no user data
+ * (usage_totals, migration 032) are deliberately not here: they are no one's to export or delete. */
 export const USER_TABLES = [...TABLES.map(([name]) => name), 'user_programs', 'feedback'];
 
 export const USER_MIGRATIONS = [

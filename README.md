@@ -528,7 +528,7 @@ written that afternoon. If it is still skipped at Tuesday's catch-up you get an 
 with their token). The public demo holds made-up data only and is open worldwide. Every push runs npm audit, a static security check, CodeQL and tests; every image is scanned
 with Trivy before it is published. Weekly, Dependabot proposes updates (patch-level ones merge on their own once CI
 passes), the image is rebuilt with the newest base and country data and deployed, and OWASP ZAP scans the demo.
-Country data: IP to Country Lite by DB-IP (https://db-ip.com), CC BY 4.0.
+Location data: IP to City Lite by DB-IP (https://db-ip.com), CC BY 4.0.
 
 **Goals and your own layout.** In Settings each user picks a primary goal (strength, cardio fitness, lose weight / body
 composition, endurance or general health) and an optional second one: Home, Training and Health put that information

@@ -241,34 +241,45 @@ test("revoking the owner's key: works beside the user's own key and for a reject
   store.close();
 });
 
-test('usage by week: totals across users for weeks ending Saturday in the owner\'s zone, newest first, counts only', () => {
+test('usage by week: two users across a Saturday night in the owner\'s zone; active users, spend and feedback; counts only', () => {
   const store = openHealthStore(':memory:');
   const db = store.db;
   db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
-  const run = db.prepare('INSERT INTO runs (name, status, started_at, user_id) VALUES (?, ?, ?, ?)');
-  run.run('review', 'ok', '2026-11-01T03:30:00Z', OWNER_ID); // Saturday 11:30 pm in New York: the week ending Oct 31
-  run.run('review', 'error', '2026-11-02T13:00:00Z', 'lee');
-  run.run('review', 'skipped', '2026-11-03T13:00:00Z', 'lee');
-  run.run('review', 'running', '2026-11-03T14:00:00Z', OWNER_ID); // still running: not counted
-  run.run('sync', 'ok', '2026-10-27T11:00:00Z', OWNER_ID);
-  run.run('sync', 'ok', '2026-11-02T11:00:00Z', 'lee');
-  run.run('sync', 'error', '2026-11-03T11:00:00Z', OWNER_ID);
-  run.run('sync', 'ok', '2026-10-01T11:00:00Z', OWNER_ID); // before the window
-  run.run('backup', 'ok', '2026-11-02T04:00:00Z', OWNER_ID); // not a counted kind
+  const run = db.prepare('INSERT INTO runs (name, status, started_at, user_id, cost_usd) VALUES (?, ?, ?, ?, ?)');
+  run.run('review', 'ok', '2026-11-01T03:30:00Z', OWNER_ID, 0.41); // Saturday 11:30 pm in New York: the week ending Oct 31
+  run.run('review', 'error', '2026-11-02T13:00:00Z', 'lee', 0.05);
+  run.run('review', 'skipped', '2026-11-03T13:00:00Z', 'lee', null); // scheduled and skipped: not activity
+  run.run('review', 'running', '2026-11-03T14:00:00Z', OWNER_ID, null);
+  run.run('sync', 'ok', '2026-10-27T11:00:00Z', OWNER_ID, null);
+  run.run('sync', 'ok', '2026-11-02T11:00:00Z', 'lee', null); // a scheduled sync: not activity
+  run.run('sync', 'error', '2026-11-03T11:00:00Z', OWNER_ID, null);
+  run.run('sync', 'ok', '2026-10-01T11:00:00Z', OWNER_ID, null); // before the window
+  run.run('advisor-chat', 'ok', '2026-11-02T15:00:00Z', 'lee', 0.026); // spend of any kind counts
   const checkin = db.prepare("INSERT INTO checkins (user_id, date, cadence, source, updated_at) VALUES (?, ?, 'daily', 'ui', 'x')");
   checkin.run(OWNER_ID, '2026-10-30');
   checkin.run(OWNER_ID, '2026-11-02');
-  checkin.run('lee', '2026-11-02');
   checkin.run('lee', '2026-11-05'); // after today: not counted
   const session = db.prepare("INSERT INTO log_sessions (id, user_id, date, assignment, source, updated_at) VALUES (?, ?, ?, 'unassigned', 'detected', 'x')");
   session.run('s1', OWNER_ID, '2026-10-26');
-  session.run('s2', 'lee', '2026-11-01'); // a Sunday: the week ending Nov 7
+  session.run('s2', OWNER_ID, '2026-11-01'); // a Sunday: the week ending Nov 7
+  const post = db.prepare("INSERT INTO ingest_log (id, user_id, received_at, route, result) VALUES (?, ?, ?, 'health', ?)");
+  post.run('p1', 'lee', '2026-11-01T03:00:00Z', 'ok'); // Saturday night in New York: Lee was active the week ending Oct 31
+  post.run('p2', 'lee', '2026-11-02T03:00:00Z', 'error'); // a refused post is not activity
+  const feedback = db.prepare("INSERT INTO feedback (id, user_id, kind, subject, body, created_at) VALUES (?, ?, 'bug', 'made-up', 'made-up', ?)");
+  feedback.run('f1', 'lee', '2026-11-01T02:00:00Z');
+  feedback.run('f2', 'lee', '2026-11-02T12:00:00Z');
   const weeks = usageByWeek(db, { weeks: 2, now: new Date('2026-11-03T16:00:00Z'), tz: 'America/New_York' });
   assert.deepEqual(weeks, [
-    { weekEnding: '2026-11-07', reviews: { completed: 0, failed: 1, skipped: 1 }, checkins: 2, liftingDays: 1, syncs: { completed: 1, failed: 1 } },
-    { weekEnding: '2026-10-31', reviews: { completed: 1, failed: 0, skipped: 0 }, checkins: 1, liftingDays: 1, syncs: { completed: 1, failed: 0 } },
+    { weekEnding: '2026-11-07', activeUsers: 1, reviews: { completed: 0, failed: 1, skipped: 1 }, checkins: 1, liftingDays: 1,
+      syncs: { completed: 1, failed: 1 }, spendUsd: 0.08, feedback: 1 },
+    { weekEnding: '2026-10-31', activeUsers: 2, reviews: { completed: 1, failed: 0, skipped: 0 }, checkins: 1, liftingDays: 1,
+      syncs: { completed: 1, failed: 0 }, spendUsd: 0.41, feedback: 1 },
   ]);
   // In UTC the 11:30 pm review falls on Sunday, so it counts in the next week: the owner's zone decides.
   assert.equal(usageByWeek(db, { weeks: 2, now: new Date('2026-11-03T16:00:00Z'), tz: 'UTC' })[0].reviews.completed, 1);
+  // Only the listed fields, and nothing that names a user.
+  const keys = ['activeUsers', 'checkins', 'feedback', 'liftingDays', 'reviews', 'spendUsd', 'syncs', 'weekEnding'];
+  for (const w of weeks) assert.deepEqual(Object.keys(w).sort(), keys);
+  assert.ok(!/lee|example\.com|made-up|0000/.test(JSON.stringify(weeks)));
   store.close();
 });

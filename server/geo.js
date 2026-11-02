@@ -1,14 +1,17 @@
 // US-only access (owner's choice, 2026-10-25): requests from outside the allowed countries get a short 403 page, for the
 // app and the demo. Health Auto Export posts (/api/ingest/*, token protected) and the deploy check (/api/health) are
 // always let through, so the owner's phone keeps posting while abroad, as are private and loopback addresses (inside the
-// server). The country comes from DB-IP's free IP to Country Lite database (CC BY 4.0, https://db-ip.com), downloaded
-// into the image at build time (Dockerfile) and refreshed by the weekly rebuild. GEO_ALLOW (comma separated country
-// codes) turns it on; unset, nothing is blocked (local runs, tests). Without the database it fails open and says so.
+// server). The country comes from DB-IP's free IP to City Lite database (CC BY 4.0, https://db-ip.com; the Country Lite
+// file when the city download failed), downloaded into the image at build time (Dockerfile) and refreshed by the weekly
+// rebuild. The same file gives the usage totals' approximate locations (server/usage-totals.js). GEO_ALLOW (comma
+// separated country codes) turns the check on; unset, nothing is blocked (local runs, tests). Without the database it
+// fails open and says so.
 import { existsSync } from 'node:fs';
 import { isIP } from 'node:net';
 import maxmind from 'maxmind';
 
-export const GEO_DB_PATH = process.env.GEO_DB || '/app/geo/country.mmdb';
+// The city database, else the country one (both MaxMind format; the city file holds countries too).
+export const GEO_DB_PATHS = process.env.GEO_DB ? [process.env.GEO_DB] : ['/app/geo/city.mmdb', '/app/geo/country.mmdb'];
 const ALWAYS_OPEN = [/^\/api\/ingest\//, /^\/api\/health(\?|$)/];
 
 /** The allowed country codes from GEO_ALLOW ("US", "US,CA"); empty when unset. */
@@ -26,11 +29,21 @@ export function isPrivateAddress(ip) {
   return false;
 }
 
-/** A country lookup from the database file: ip -> 'US' | null. Null when there is no file. */
-export async function loadCountryLookup(path = GEO_DB_PATH) {
-  if (!existsSync(path)) return null;
+/**
+ * The local database, or null when there is no file: country(ip) -> 'US' | null, and place(ip) -> { city, state,
+ * country } in English (empty with the country file). Nothing is sent anywhere.
+ */
+export async function loadGeoReader(paths = GEO_DB_PATHS) {
+  const path = paths.find((p) => existsSync(p));
+  if (!path) return null;
   const reader = await maxmind.open(path);
-  return (ip) => reader.get(ip)?.country?.iso_code ?? null;
+  return {
+    country: (ip) => reader.get(ip)?.country?.iso_code ?? null,
+    place: (ip) => {
+      const r = reader.get(ip);
+      return { city: r?.city?.names?.en ?? null, state: r?.subdivisions?.[0]?.names?.en ?? null, country: r?.country?.names?.en ?? null };
+    },
+  };
 }
 
 /**

@@ -1268,14 +1268,84 @@ function excelBox(wl) {
 }
 
 /** Users (administrators): pending requests first; each user's status, feeds, AI and counts, with the account switches. */
-/** The Users screen's weekly totals (GET /api/admin/usage): counts only. */
-async function loadAdminUsage() {
-  const weeks = await api('GET', '/api/admin/usage?weeks=12');
-  const head = ['Week ending', 'Reviews done', 'Reviews failed', 'Reviews skipped', 'Check-ins', 'Lifting days', 'Syncs done', 'Syncs failed'];
-  const rows = weeks.map((w) => h('tr', {}, h('td', {}, niceDate(w.weekEnding)),
-    ...[w.reviews.completed, w.reviews.failed, w.reviews.skipped, w.checkins, w.liftingDays, w.syncs.completed, w.syncs.failed].map((n) => h('td', {}, String(n)))));
-  fill($('#admin-usage'), h('div', { class: 'table-scroll' }, h('table', {}, h('thead', {}, h('tr', {}, head.map((t) => h('th', { scope: 'col' }, t)))), h('tbody', {}, rows))));
+// ---------------- Users screen: the Usage card (GET /api/admin/usage; admins only, counts only) ----------------
+const usageView = { weeks: 12 };
+const SOURCE_LABELS = { linkedin: 'LinkedIn', github: 'GitHub', site: "Operator's website", demo: 'Demo', other: 'Other', direct: 'Direct' };
+const DEVICE_LABELS = { phone: 'Phone', tablet: 'Tablet', computer: 'Computer' };
+
+/** A table in a collapsed details: the screen reader (and copyable) version of a chart. */
+function usageTable(summary, head, rows) {
+  return h('details', {}, h('summary', {}, summary), h('div', { class: 'table-scroll' }, h('table', {},
+    h('caption', { class: 'sr-only' }, summary),
+    h('thead', {}, h('tr', {}, head.map((t) => h('th', { scope: 'col' }, t)))),
+    h('tbody', {}, rows.map((r) => h('tr', {}, r.map((c, i) => (i === 0 ? h('th', { scope: 'row' }, c) : h('td', {}, String(c))))))))));
 }
+
+/** A plain horizontal bar list (value, bar, count), largest first, with its table. */
+function usageBars(title, items, label = (v) => v) {
+  const max = Math.max(1, ...items.map((i) => i.count));
+  return h('div', { class: 'usage-bars' }, h('h3', {}, title),
+    items.length ? h('ul', { class: 'bar-list', 'aria-hidden': 'true' }, items.map((i) => h('li', {},
+      h('span', { class: 'bar-label', title: label(i.value) }, label(i.value)),
+      h('span', { class: 'bar-track' }, h('span', { class: 'bar-fill', style: `width: ${Math.round((i.count / max) * 100)}%` })),
+      h('span', { class: 'bar-count' }, String(i.count))))) : h('p', { class: 'muted small' }, 'None yet.'),
+    items.length ? usageTable(`${title}: table`, ['', 'Count'], items.map((i) => [label(i.value), i.count])) : null);
+}
+
+async function loadAdminUsage(weeks = usageView.weeks) {
+  usageView.weeks = weeks;
+  $$('[data-uweeks]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.uweeks) === weeks)));
+  const u = await api('GET', `/api/admin/usage?weeks=${weeks}`);
+  const box = $('#admin-usage');
+  const oldestFirst = [...u.weeks].reverse();
+  // The latest full week: the newest one that ended before today (this week is still running).
+  const today = state.today ?? new Date().toISOString().slice(0, 10);
+  const full = u.weeks.find((w) => w.weekEnding < today) ?? u.weeks[0];
+  const tileOf = (label, value) => h('div', { class: 'tile' }, h('div', { class: 'tile-label' }, label), h('div', { class: 'tile-value' }, String(value)));
+  const money = (v) => `$${v.toFixed(2)}`;
+  const charts = [
+    ['Active users', (w) => w.activeUsers, null],
+    ['Reviews', (w) => w.reviews.completed + w.reviews.failed + w.reviews.skipped, (w) => [{ value: w.reviews.completed, cls: 'u-ok' }, { value: w.reviews.failed, cls: 'u-fail' }, { value: w.reviews.skipped, cls: 'u-skip' }]],
+    ['Check-ins', (w) => w.checkins, null],
+    ['Lifting days', (w) => w.liftingDays, null],
+    ['Syncs', (w) => w.syncs.completed + w.syncs.failed, (w) => [{ value: w.syncs.completed, cls: 'u-ok' }, { value: w.syncs.failed, cls: 'u-fail' }]],
+    ['Claude API spend', (w) => w.spendUsd, null, money],
+    ['Feedback received', (w) => w.feedback, null],
+  ];
+  const chartBoxes = charts.map(() => h('div', { class: 'chart' }));
+  // Under each stacked chart, its own key.
+  const key = (skipped) => h('ul', { class: 'zone-legend' },
+    h('li', {}, h('span', { class: 'swatch u-ok', 'aria-hidden': 'true' }), 'Done'),
+    h('li', {}, h('span', { class: 'swatch u-fail', 'aria-hidden': 'true' }), 'Failed'),
+    skipped ? h('li', {}, h('span', { class: 'swatch u-skip', 'aria-hidden': 'true' }), 'Skipped') : null);
+  const weekRows = oldestFirst.map((w) => [niceDate(w.weekEnding), w.activeUsers, w.reviews.completed, w.reviews.failed, w.reviews.skipped,
+    w.checkins, w.liftingDays, w.syncs.completed, w.syncs.failed, money(w.spendUsd), w.feedback]);
+  const loc = u.visits.location;
+  fill(box,
+    h('h3', { class: 'sub' }, `Week ending ${niceDate(full.weekEnding)}`),
+    h('div', { class: 'tiles' }, tileOf('Active users', full.activeUsers), tileOf('Reviews completed', full.reviews.completed),
+      tileOf('Check-ins', full.checkins), tileOf('Lifting days', full.liftingDays)),
+    h('div', { class: 'usage-charts' }, charts.map(([title], i) => h('div', {}, h('h3', {}, title), chartBoxes[i],
+      title === 'Reviews' ? key(true) : title === 'Syncs' ? key(false) : null))),
+    usageTable('Every weekly total: table', ['Week ending', 'Active users', 'Reviews done', 'Reviews failed', 'Reviews skipped', 'Check-ins', 'Lifting days', 'Syncs done', 'Syncs failed', 'Claude API spend', 'Feedback'], weekRows),
+    h('h3', { class: 'sub' }, `Visits and arrivals, last ${weeks} weeks`),
+    h('p', { class: 'muted small' }, 'A visit is one signed-in account on one day. Each total stands alone: devices, places and sources are never linked.'),
+    usageBars('Visits by device', u.visits.device, (v) => DEVICE_LABELS[v] ?? v),
+    usageBars('Visits by country', loc.countries),
+    usageBars('Visits by state', loc.states),
+    usageBars('Top cities', loc.cities),
+    usageBars('Arrivals by source', u.arrivals, (v) => SOURCE_LABELS[v] ?? v));
+  const from = addDays(oldestFirst[0].weekEnding, -6);
+  const to = oldestFirst.at(-1).weekEnding;
+  charts.forEach(([title, valueOf, segmentsOf, format = String], i) => {
+    const points = oldestFirst.map((w) => ({ date: addDays(w.weekEnding, -6), value: valueOf(w), label: `Week ending ${niceDate(w.weekEnding)}`,
+      ...(segmentsOf ? { segments: segmentsOf(w) } : {}) }));
+    // Nothing in the whole period: a line instead of an empty axis.
+    if (points.every((p) => !p.value)) { fill(chartBoxes[i], h('p', { class: 'muted small' }, 'None in this period.')); return; }
+    columnChart(chartBoxes[i], points, { from, to, format, label: title, bucketDays: 7 });
+  });
+}
+$$('[data-uweeks]').forEach((b) => b.addEventListener('click', () => loadAdminUsage(Number(b.dataset.uweeks)).catch((err) => { $('#admin-usage').textContent = err.message; })));
 
 async function loadUsers() {
   loadAdminFeedback().catch((err) => { $('#admin-feedback').textContent = err.message; });

@@ -156,11 +156,15 @@ export function deleteUserData(db, uid) {
 }
 
 /**
- * Usage across all users by week (the Users screen's card; no third party): for each week ending Saturday in the owner's
- * time zone, newest first, the reviews completed, failed and skipped, check-ins saved, lifting days logged, and syncs
- * completed and failed. Totals only: never a user, an entry's date, a value or any text. Runs count in the week they
- * started (UTC times read as the owner's dates); check-ins and lifting days in the week of their day. The current week
- * runs to today.
+ * Usage across all users by week (the admin's Usage card; no third party): for each week ending Saturday in the owner's
+ * time zone, newest first (the current week runs to today):
+ * - activeUsers: distinct users with their own activity: a check-in, a lifting day, a completed review or an accepted
+ *   Health Auto Export post (scheduled syncs and skipped reviews run for everyone, so they do not count). User ids are
+ *   only counted here; the number is all that is returned.
+ * - reviews completed, failed and skipped; check-ins; lifting days; syncs completed and failed (runs 'review', 'sync')
+ * - spendUsd: the Claude API cost of every run started that week (runs.cost_usd), rounded to cents
+ * - feedback: items received
+ * Totals only: never a user, an entry's date, a value or any text. UTC times are read as the owner's dates.
  */
 export function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env.OWNER_TZ || DEFAULT_TZ } = {}) {
   const raw = db.unscoped ?? db;
@@ -170,22 +174,75 @@ export function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env
   const ends = Array.from({ length: weeks }, (_, i) => addDays(thisEnd, -7 * i));
   const from = addDays(ends[ends.length - 1], -6);
   const rows = new Map(ends.map((weekEnding) => [weekEnding, {
-    weekEnding, reviews: { completed: 0, failed: 0, skipped: 0 }, checkins: 0, liftingDays: 0, syncs: { completed: 0, failed: 0 },
+    weekEnding, activeUsers: 0, reviews: { completed: 0, failed: 0, skipped: 0 }, checkins: 0, liftingDays: 0,
+    syncs: { completed: 0, failed: 0 }, spendUsd: 0, feedback: 0,
   }]));
-  const weekOf = (date) => (date >= from && date <= today ? rows.get(addDays(date, 6 - dayOfWeek(date))) : null);
-  // A day of slack before the first week: started_at is UTC, and the owner's day can begin a few hours later or earlier.
-  const runs = raw.prepare(`SELECT name, status, started_at FROM runs
-    WHERE name IN ('review', 'sync') AND status IN ('ok', 'error', 'skipped') AND started_at >= ?`).all(`${addDays(from, -1)}T00:00:00Z`);
-  for (const r of runs) {
-    const w = weekOf(localDate(new Date(r.started_at), tz));
-    if (!w) continue;
-    if (r.name === 'review') w.reviews[{ ok: 'completed', error: 'failed', skipped: 'skipped' }[r.status]] += 1;
-    else if (r.status !== 'skipped') w.syncs[r.status === 'ok' ? 'completed' : 'failed'] += 1;
+  const active = new Map(ends.map((e) => [e, new Set()]));
+  const weekOf = (date) => (date >= from && date <= today ? addDays(date, 6 - dayOfWeek(date)) : null);
+  const ownerDay = (iso) => localDate(new Date(iso), tz);
+  // A day of slack before the first week: UTC times, and the owner's day can begin a few hours later or earlier.
+  const since = `${addDays(from, -1)}T00:00:00Z`;
+  for (const r of raw.prepare('SELECT name, status, started_at, cost_usd, user_id FROM runs WHERE started_at >= ?').all(since)) {
+    const week = weekOf(ownerDay(r.started_at));
+    if (!week) continue;
+    const w = rows.get(week);
+    w.spendUsd += Number(r.cost_usd) || 0;
+    if (r.name === 'review' && ['ok', 'error', 'skipped'].includes(r.status)) {
+      w.reviews[{ ok: 'completed', error: 'failed', skipped: 'skipped' }[r.status]] += 1;
+      if (r.status === 'ok' && r.user_id) active.get(week).add(r.user_id);
+    } else if (r.name === 'sync' && (r.status === 'ok' || r.status === 'error')) {
+      w.syncs[r.status === 'ok' ? 'completed' : 'failed'] += 1;
+    }
   }
-  const byDay = (table) => raw.prepare(`SELECT date, COUNT(*) AS n FROM ${table} WHERE date BETWEEN ? AND ? GROUP BY date`).all(from, today);
-  for (const { date, n } of byDay('checkins')) { const w = weekOf(date); if (w) w.checkins += n; }
-  for (const { date, n } of byDay('log_sessions')) { const w = weekOf(date); if (w) w.liftingDays += n; }
+  for (const table of ['checkins', 'log_sessions']) {
+    for (const { date, user_id: uid } of raw.prepare(`SELECT date, user_id FROM ${table} WHERE date BETWEEN ? AND ?`).all(from, today)) {
+      const week = weekOf(date);
+      if (!week) continue;
+      rows.get(week)[table === 'checkins' ? 'checkins' : 'liftingDays'] += 1;
+      active.get(week).add(uid);
+    }
+  }
+  for (const { received_at: at, user_id: uid } of raw.prepare("SELECT received_at, user_id FROM ingest_log WHERE result = 'ok' AND received_at >= ?").all(since)) {
+    const week = weekOf(ownerDay(at));
+    if (week) active.get(week).add(uid);
+  }
+  for (const { created_at: at } of raw.prepare('SELECT created_at FROM feedback WHERE created_at >= ?').all(since)) {
+    const week = weekOf(ownerDay(at));
+    if (week) rows.get(week).feedback += 1;
+  }
+  for (const [week, w] of rows) {
+    w.activeUsers = active.get(week).size;
+    w.spendUsd = Math.round(w.spendUsd * 100) / 100;
+  }
   return [...rows.values()];
+}
+
+/**
+ * The usage totals (usage_totals, server/usage-totals.js) summed over owner days from..to: visits by device and by
+ * location (rolled up to countries and states, with the top cities), and arrivals by source. A return from Google's
+ * sign-in is left out of arrivals: it is kept only so that coming back from signing in never counts as a real source.
+ * Counts only, largest first.
+ */
+export function usageTotals(db, { from, to, topCities = 15 }) {
+  const raw = db.unscoped ?? db;
+  const sum = (dimension) => raw.prepare(`SELECT value, SUM(count) AS count FROM usage_totals
+    WHERE dimension = ? AND day BETWEEN ? AND ? GROUP BY value ORDER BY count DESC, value`).all(dimension, from, to);
+  const ranked = (map) => [...map].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  const countries = new Map();
+  const states = new Map();
+  const cities = [];
+  for (const { value, count } of sum('location')) {
+    const parts = value.split(', ');
+    const country = parts.length === 3 ? parts[2] : 'Unknown';
+    countries.set(country, (countries.get(country) ?? 0) + count);
+    const state = parts.length === 3 ? `${parts[1]}, ${parts[2]}` : 'Unknown';
+    states.set(state, (states.get(state) ?? 0) + count);
+    cities.push({ value: parts.length === 3 ? value : 'Unknown', count });
+  }
+  return {
+    visits: { device: sum('device'), location: { countries: ranked(countries), states: ranked(states), cities: cities.slice(0, topCities) } },
+    arrivals: sum('source').filter((r) => r.value !== 'google_signin_return'),
+  };
 }
 
 /** Feedback from every user for the administrator, newest first, with who sent it. */

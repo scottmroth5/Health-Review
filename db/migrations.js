@@ -512,4 +512,20 @@ export const MIGRATIONS = [
   },
   // 024 users and 025 user_id on every user table (multi-user, phase 1).
   ...USER_MIGRATIONS,
+  {
+    // App-wide usage totals (the admin's Usage card; server/usage-totals.js): one count per day, dimension and value,
+    // such as ('2026-11-02', 'device', 'phone'). Not a user table and deliberately not in USER_TABLES: it has no user_id
+    // and holds no user data (no user, IP address, user agent, referrer or URL, and no row links one dimension to
+    // another), so it is not part of an account's export or deletion. It is backed up with the rest of the database.
+    id: '032-usage-totals',
+    up: `
+      CREATE TABLE usage_totals (
+        day TEXT NOT NULL,
+        dimension TEXT NOT NULL CHECK (dimension IN ('device', 'location', 'source')),
+        value TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, dimension, value)
+      );
+    `,
+  },
 ];

@@ -193,6 +193,8 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     req.uid = user.id;
     req.role = user.role;
     req.userName = typeof session.name === 'string' ? session.name : null;
+    // A signed-in browser request that passed every gate: the usage totals may count it as a visit (server/usage-totals.js).
+    req.browserSession = true;
   });
 
   app.get('/auth/login', { schema: { hide: true } }, async (req, reply) => {
