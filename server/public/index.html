@@ -470,14 +470,20 @@
       </div>
       <form id="settings" class="card">
         <h2>Heart rate zones</h2>
-        <p class="muted small">Your Zone 2 heart rate range. Zone 1 is below it, and Zones 3 to 5 split the rest up to your estimated
-          maximum from your birth year. Cardio minutes count in a zone by each minute's heart rate; workouts without minute detail
-          count as a whole session by their average.</p>
+        <p class="muted small">Set where each zone ends. Each zone starts one bpm above the one before, so there are no gaps:
+          Zone 1 is below Zone 2 and Zone 5 is above Zone 4. Leave Zone 3 or Zone 4 blank to use the default for your age
+          (Zones 3 to 5 split the span from Zone 2's top to your estimated maximum, 208 - 0.7 x age). Cardio minutes count in
+          a zone by each minute's heart rate.</p>
+        <p class="muted small" id="zone-age"></p>
         <div class="grid2">
-          <label>Zone 2 low (bpm) <input type="number" name="zone2_low_bpm" min="40" max="220" step="1" inputmode="numeric"></label>
-          <label>Zone 2 high (bpm) <input type="number" name="zone2_high_bpm" min="40" max="220" step="1" inputmode="numeric"></label>
+          <label>Zone 2 low (bpm) <input type="number" name="zone2_low_bpm" min="40" max="220" step="1" inputmode="numeric"><span class="muted small" data-zone-default="zone2_low_bpm"></span></label>
+          <label>Zone 2 high (bpm) <input type="number" name="zone2_high_bpm" min="40" max="220" step="1" inputmode="numeric"><span class="muted small" data-zone-default="zone2_high_bpm"></span></label>
+          <label>Zone 3 high (bpm) <input type="number" name="zone3_high_bpm" min="40" max="220" step="1" inputmode="numeric"><span class="muted small" data-zone-default="zone3_high_bpm"></span></label>
+          <label>Zone 4 high (bpm) <input type="number" name="zone4_high_bpm" min="40" max="220" step="1" inputmode="numeric"><span class="muted small" data-zone-default="zone4_high_bpm"></span></label>
         </div>
+        <ul class="zone-ladder small" id="zone-ladder" aria-live="polite"></ul>
         <div class="actions">
+          <button type="button" class="ghost" id="zone-use-defaults">Use age defaults</button>
           <button type="submit">Save zones</button>
           <span class="status" role="status"></span>
         </div>

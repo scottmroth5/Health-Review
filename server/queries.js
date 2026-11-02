@@ -306,7 +306,7 @@ export function reviewStatus(db, today, now = new Date()) {
 
 // ---- settings ----
 
-export const SETTING_KEYS = ['zone2_low_bpm', 'zone2_high_bpm'];
+export const SETTING_KEYS = ['zone2_low_bpm', 'zone2_high_bpm', 'zone3_high_bpm', 'zone4_high_bpm'];
 
 export function getSettings(db) {
   const rows = db.prepare(`SELECT key, value FROM settings WHERE user_id = @uid AND key IN (${SETTING_KEYS.map(() => '?').join(', ')})`).all(...SETTING_KEYS);
@@ -353,14 +353,14 @@ export function vo2max(db, view, today) {
 export const CARDIO_ZONE_VIEWS = { '30d': { days: 30, weeks: 5, group: 'day' }, '90d': { days: 90, weeks: 13, group: 'day' }, '1y': { days: 365, weeks: 52, group: 'week' } };
 export const CARDIO_ZONE_GROUPS = ['day', 'week', 'month'];
 
-/** Cardio minutes by heart rate zone for one range and grouping, with the zone bounds (null without a Zone 2 range or birth year). */
+/** Cardio minutes by heart rate zone for one range and grouping, with the zone bounds (null without a Zone 2 range, or a birth year for an unset top). */
 export function cardioZoneView(db, view, today, group = CARDIO_ZONE_VIEWS[view].group) {
   const v = CARDIO_ZONE_VIEWS[view];
   const buckets = zoneBuckets(today, group === 'day' ? { days: v.days } : group === 'week' ? { weeks: v.weeks } : { monthsOver: v.days });
   const from = buckets[0].from;
   const to = buckets.at(-1).to;
-  const { zone2 } = loadMetricSettings(db);
-  const bounds = zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, birthYear: loadProfile(db, today).birthYear, year: Number(today.slice(0, 4)) });
+  const { zone2, zones } = loadMetricSettings(db);
+  const bounds = zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, ...zones, birthYear: loadProfile(db, today).birthYear, year: Number(today.slice(0, 4)) });
   const sessions = db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
     .all(from, `${addDays(to, 1)}`);
   const samples = db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${addDays(to, 1)}`);

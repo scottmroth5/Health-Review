@@ -1,6 +1,7 @@
 import { lineChart, columnChart } from './charts.js';
 import { DEMO_KEY, demoFromLocation, redactReview, isDrinkingChart } from './demo.js';
 import { GOALS, LAYOUT_ITEMS, arranged, tileOrder, goalWeights } from './goals.js';
+import { upperTops, zone2Default, zoneOrderProblem } from './zone-defaults.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -1569,7 +1570,7 @@ function initProfileForm() {
       });
       setStatus(status, 'Saved', 'ok');
       getTargets(true);
-      await Promise.all([loadProfileForm(), loadVo2(), loadHistory()]);
+      await Promise.all([loadProfileForm(), loadVo2(), loadHistory(), loadSettings()]);
     } catch (err) {
       setStatus(status, err.message, 'error');
     }
@@ -2338,8 +2339,8 @@ async function loadZones(view = zonesViewChoice(), group = zonesGroupChoice()) {
     ? `${minutesText(total)} of cardio in this range${r.bounds && total > noDetail ? `, ${minutesText(perZone[1])} of it in Zone 2` : ''}. Walks, elliptical, HIIT and other cardio; strength workouts are left out.`
     : 'No cardio workouts in this range.';
   $('#zones-note').textContent = !r.bounds
-    ? 'Zones need your Zone 2 range (Settings, on the Prompt tab) and your birth year (Your profile, below).'
-    : `Zone 2 is your saved range; Zones 3 to 5 split the span up to ${r.bounds.maxHr} bpm, an estimate from your age (208 - 0.7 x age). Each minute counts in the zone of its average heart rate.${noDetail ? ' Gray is workout time with no minute-by-minute heart rate (before the JSON export, or gaps in the watch reading).' : ''}`;
+    ? 'Zones need your Zone 2 range (Settings, Heart rate zones) and your birth year (Your profile), or every zone set in Settings.'
+    : `${r.bounds.custom.zone3 && r.bounds.custom.zone4 ? 'These are your saved zones.' : r.bounds.custom.zone3 || r.bounds.custom.zone4 ? `Your saved zones; the rest follow your age, up to an estimated ${r.bounds.maxHr} bpm (208 - 0.7 x age).` : `Zone 2 is your saved range; Zones 3 to 5 split the span up to ${r.bounds.maxHr} bpm, an estimate from your age (208 - 0.7 x age).`} Each minute counts in the zone of its average heart rate.${noDetail ? ' Gray is workout time with no minute-by-minute heart rate (before the JSON export, or gaps in the watch reading).' : ''}`;
 
   // Table: one row per day or week with minutes per zone.
   const head = ['', ...[1, 2, 3, 4, 5].map((n) => `Zone ${n}`), 'No detail', 'Total'];
@@ -3048,20 +3049,66 @@ function sectionCard(section) {
   return card;
 }
 
+// Heart rate zones (Settings): the tops of Zones 2 to 4, with the age default beside each and the whole ladder below.
+const ZONE_KEYS = ['zone2_low_bpm', 'zone2_high_bpm', 'zone3_high_bpm', 'zone4_high_bpm'];
+let zoneMaxHr = null;
+
+/** The entered values, with the age defaults filled in for the tops left blank (as the server computes the zones). */
+function zoneView(form) {
+  const v = Object.fromEntries(ZONE_KEYS.map((k) => [k, numberOrNull(form.elements[k])]));
+  const z2 = zone2Default(zoneMaxHr);
+  const zone2High = v.zone2_high_bpm ?? z2?.high ?? null;
+  const defaults = {
+    zone2_low_bpm: z2?.low ?? null,
+    zone2_high_bpm: z2?.high ?? null,
+    zone3_high_bpm: zone2High && zoneMaxHr ? upperTops({ maxHr: zoneMaxHr, zone2High }).zone3High : null,
+    zone4_high_bpm: zone2High && zoneMaxHr ? upperTops({ maxHr: zoneMaxHr, zone2High, zone3High: v.zone3_high_bpm }).zone4High : null,
+  };
+  const problem = zoneOrderProblem({ zone2Low: v.zone2_low_bpm, zone2High: v.zone2_high_bpm, zone3High: v.zone3_high_bpm, zone4High: v.zone4_high_bpm });
+  let tops = null;
+  if (!problem && v.zone2_low_bpm && v.zone2_high_bpm) {
+    const t = upperTops({ maxHr: zoneMaxHr, zone2High: v.zone2_high_bpm, zone3High: v.zone3_high_bpm, zone4High: v.zone4_high_bpm });
+    if (t) tops = [v.zone2_low_bpm - 1, v.zone2_high_bpm, t.zone3High, t.zone4High];
+  }
+  return { v, defaults, problem, tops };
+}
+
+function renderZoneForm(form) {
+  const { defaults, problem, tops } = zoneView(form);
+  for (const k of ZONE_KEYS) {
+    const d = defaults[k];
+    form.elements[k].placeholder = d ?? '';
+    $(`[data-zone-default="${k}"]`, form).textContent = d ? `Default for your age: ${d}` : '';
+  }
+  // Zone 1 up to Zone 2's low end, each next zone from one above the last top, Zone 5 open ended: no gaps.
+  fill($('#zone-ladder'), ...(tops
+    ? [`Zone 1: under ${tops[0] + 1} bpm`, ...[1, 2, 3].map((i) => `Zone ${i + 1}: ${tops[i - 1] + 1} to ${tops[i]} bpm`), `Zone 5: ${tops[3] + 1} bpm and up`]
+      .map((t) => h('li', {}, t))
+    : []));
+  setStatus($('.status', form), problem ?? (tops ? '' : 'Zone 2 is not set yet'), problem ? 'error' : undefined);
+  return problem;
+}
+
 async function loadSettings() {
   const s = await api('GET', '/api/settings');
   const form = $('#settings');
-  for (const k of ['zone2_low_bpm', 'zone2_high_bpm']) form.elements[k].value = s[k] ?? '';
-  setStatus($('.status', form), s.zone2_low_bpm && s.zone2_high_bpm ? '' : 'Zone 2 is not set yet');
+  for (const k of ZONE_KEYS) form.elements[k].value = s[k] ?? '';
+  zoneMaxHr = s.defaults?.maxHr ?? null;
+  $('#zone-age').textContent = s.defaults
+    ? `Age ${s.defaults.age}: estimated maximum ${s.defaults.maxHr} bpm.`
+    : 'Add your birth year (Your profile) to see the defaults for your age.';
+  $('#zone-use-defaults').hidden = !s.defaults;
+  renderZoneForm(form);
 }
 
 async function saveSettings(evt) {
   evt.preventDefault();
   const form = evt.currentTarget;
-  const body = {};
-  for (const k of ['zone2_low_bpm', 'zone2_high_bpm']) body[k] = numberOrNull(form.elements[k]);
+  if (renderZoneForm(form)) return;
+  const body = Object.fromEntries(ZONE_KEYS.map((k) => [k, numberOrNull(form.elements[k])]));
   try {
     await api('PUT', '/api/settings', body);
+    renderZoneForm(form);
     setStatus($('.status', form), 'Saved', 'ok');
   } catch (err) {
     setStatus($('.status', form), err.message, 'error');
@@ -3103,6 +3150,19 @@ function initPrompt() {
   });
   $('#preview-prompt').addEventListener('click', showPreview);
   $('#settings').addEventListener('submit', saveSettings);
+  $('#settings').addEventListener('input', () => renderZoneForm($('#settings')));
+  // Use age defaults: Zone 2 at 60% to 70% of the estimated maximum, Zones 3 and 4 blank so they follow the age split.
+  $('#zone-use-defaults').addEventListener('click', () => {
+    const form = $('#settings');
+    const z2 = zone2Default(zoneMaxHr);
+    if (!z2) return;
+    form.elements.zone2_low_bpm.value = z2.low;
+    form.elements.zone2_high_bpm.value = z2.high;
+    form.elements.zone3_high_bpm.value = '';
+    form.elements.zone4_high_bpm.value = '';
+    renderZoneForm(form);
+    setStatus($('.status', form), 'Age defaults filled in: Save zones to keep them');
+  });
 }
 
 // ---------------- activity ----------------

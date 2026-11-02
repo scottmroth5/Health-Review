@@ -68,6 +68,7 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
     if (fx.kind === 'zones') {
       const bounds = zoneBounds(fx.bounds.input);
       assert.deepEqual(bounds, fx.bounds.expected);
+      for (const c of fx.boundsCases) assert.deepEqual(zoneBounds(c.input), c.expected, c.note);
       for (const [bpm, zone] of fx.zoneOf) assert.equal(zoneOf(bpm, bounds), zone, `zoneOf(${bpm})`);
       const samples = fx.sampleRuns.flatMap((r) => Array.from({ length: r.count }, () => ({ type: r.type, start: r.start, avg_bpm: r.bpm })));
       const run = (buckets, b = bounds) => cardioZones({ sessions: fx.sessions, samples, bounds: b, buckets });

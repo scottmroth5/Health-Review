@@ -157,6 +157,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .status { font-size: 0.85rem; color: var(--text-secondary); }
 .status.error { color: var(--danger); }
 .status.ok { color: var(--good); }
+.zone-ladder { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--text-secondary); }
+label [data-zone-default] { display: block; margin-top: 2px; }
 
 .dayline { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .dayline label { margin: 0; }

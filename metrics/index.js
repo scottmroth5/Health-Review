@@ -16,9 +16,10 @@ import { blockAdherence, weekAdherence } from './adherence.js';
 
 /**
  * @param {{ daily_metrics: object[], workout_sessions: object[], strength_sets: object[], drinking_days: object[], checkins: object[] }} data
- * @param {{ weekEnd: string, zone2?: { low: number, high: number } | null }} options
+ * @param {{ weekEnd: string, zone2?: { low: number, high: number } | null, zones?: { zone3High: number|null, zone4High: number|null } }} options
+ *   zones: the saved tops of Zones 3 and 4 (null takes the age default)
  */
-export function computeWeek(data, { weekEnd, zone2 = null }) {
+export function computeWeek(data, { weekEnd, zone2 = null, zones = {} }) {
   const w = windows(weekEnd);
   return {
     weekEnd,
@@ -33,7 +34,7 @@ export function computeWeek(data, { weekEnd, zone2 = null }) {
     cardio: cardio(data.workout_sessions, weekEnd, { zone2 }),
     heartRateZones: weekZones({
       sessions: data.workout_sessions, samples: data.workout_hr_samples ?? [], weekEnd,
-      bounds: zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, birthYear: data.birth_year, year: Number(weekEnd.slice(0, 4)) }),
+      bounds: zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, ...zones, birthYear: data.birth_year, year: Number(weekEnd.slice(0, 4)) }),
     }),
     strength: strength(data.strength_sets, weekEnd),
     trainingVolume: volumeTrend(data.strength_sets, weekEnd),

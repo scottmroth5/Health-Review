@@ -273,12 +273,13 @@ export function loadMedications(db) {
   };
 }
 
-/** Personal settings the metrics use. Zone 2 is null until both ends are set. */
+/** Personal settings the metrics use. Zone 2 is null until both ends are set; an unset Zone 3 or 4 top is null (age default). */
 export function loadMetricSettings(db) {
   const get = (key) => db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').get(key)?.value;
   const low = Number(get('zone2_low_bpm'));
   const high = Number(get('zone2_high_bpm'));
-  return { zone2: low > 0 && high > low ? { low, high } : null };
+  const top = (key) => Number(get(key)) || null;
+  return { zone2: low > 0 && high > low ? { low, high } : null, zones: { zone3High: top('zone3_high_bpm'), zone4High: top('zone4_high_bpm') } };
 }
 
 // ---- Health tab targets (metrics/targets.js) ----

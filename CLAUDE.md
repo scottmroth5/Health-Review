@@ -310,13 +310,17 @@ then the fill rule), changed (same movement pattern), then skipped and added; on
 GET /api/program/adherence?block= (loadAdherenceInput, loadConfirmedBlocks in metrics/load.js) feeds the Training tab's
 card. The weekly summary's programAdherence (weekAdherence) carries the review week's counts, sets logged against called
 for, and the names of exercises the owner logged instead or on top; never the catalog's own exercise names (MAPS rule).
-Heart rate zones (metrics/zones.js, pure; fixture evals/fixtures/metrics/zones.json): Zone 2 is the saved range (settings
-zone2_low_bpm and zone2_high_bpm), Zone 1 below it, Zones 3 to 5 split evenly from its top to 208 - 0.7 x age (profile
-birth year; above it is Zone 5). Each per-minute sample counts one minute in the zone of its Avg; cardio workout minutes
+Heart rate zones (metrics/zones.js, pure; fixture evals/fixtures/metrics/zones.json): each zone is saved by its top (settings
+zone2_low_bpm, zone2_high_bpm, zone3_high_bpm, zone4_high_bpm; 2026-10-31), Zone 1 below Zone 2 and each later zone from one
+above the last top, so there are never gaps; PUT /api/settings refuses tops that do not rise. An unset Zone 3 or 4 top takes
+its age default (server/public/zone-defaults.js, shared with the Settings card: Zones 3 to 5 split evenly from Zone 2's top to
+208 - 0.7 x age, profile birth year; only Zone 3 set, Zone 4 tops halfway to that maximum; only Zone 4 set, Zone 3 tops
+halfway between); with both set no birth year is needed. GET /api/settings carries defaults (age, maximum, Zone 2 at 60% to
+70% of it, the Zone 3 and 4 tops), shown beside each field with a Use age defaults button. Each per-minute sample counts one minute in the zone of its Avg; cardio workout minutes
 with no sample (gaps, workouts before the JSON export) are noDetail, never guessed from the average; strength is left out
 (cardio.js sessionKind). GET /api/cardio-zones?view=30d|90d|1y&group=day|week|month (Sunday-to-Saturday weeks; calendar months overlapping the range, the current one to today; the card's Days / Weeks / Months switch is saved per browser) feeds the Health tab's
 "Cardio minutes by heart rate zone" card (stacked columnChart segments in distinct hues: sky blue, green, purple, yellow, red, gray for no detail; owner's choice 2026-10-24); bounds are null
-without a Zone 2 range or birth year. The weekly summary carries heartRateZones (weekZones: the week and the 28-day baseline's weekly average per zone, noDetail apart, the bounds; absent without bounds or cardio); CONTRACT says report as given, noDetail is unknown and never Zone 1, and its Zone 2 minutes beat cardio.zone2 (whole sessions by average).
+without a Zone 2 range, or without a birth year while a Zone 3 or 4 top is unset. The weekly summary carries heartRateZones (weekZones: the week and the 28-day baseline's weekly average per zone, noDetail apart, the bounds; absent without bounds or cardio); CONTRACT says report as given, noDetail is unknown and never Zone 1, and its Zone 2 minutes beat cardio.zone2 (whole sessions by average).
 VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and
@@ -395,7 +399,8 @@ no questions from the reply alone. First run: 16/18, $1.31. The lab miss was the
 physician list is allowed); the supplement miss (a note's dose change repeated outside the physician list, no advice)
 waits on the owner's call. v12 (phase 4: highlights, next steps, trends, trimmed
 prompt sections) 13/13 first drafts clean, 13/13 final, about 2,200 words a report. v15 (opt-in supplement suggestions,
-the synthetic-supplements case, written dates exempt from grounding) 14/14 first drafts clean, 14/14 final.
+the synthetic-supplements case, written dates exempt from grounding) 14/14 first drafts clean, 14/14 final; v16 (heart
+rate zones wording in CONTRACT) 14/14 and 14/14.
 
 ## UI and API
 Access (server/auth.js, server/session.js, server/security.js; ported from Job-Agent, test/auth.test.js):

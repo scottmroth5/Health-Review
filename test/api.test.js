@@ -169,13 +169,26 @@ test('sync: runs the injected sync, reports counts only, and refuses to overlap'
   await done();
 });
 
-test('settings: Zone 2 range saves, validates order and bounds, and clears with null', async () => {
+test('settings: heart rate zone tops save in rising order (no gaps), clear with null and show the age defaults', async () => {
   const { app, done } = await setup();
-  assert.deepEqual((await app.inject('/api/settings')).json(), { zone2_low_bpm: null, zone2_high_bpm: null });
-  assert.deepEqual((await put(app, '/api/settings', { zone2_low_bpm: 110, zone2_high_bpm: 125 })).json(), { zone2_low_bpm: 110, zone2_high_bpm: 125 });
-  assert.match((await put(app, '/api/settings', { zone2_low_bpm: 130 })).json().error, /below the high end/);
+  const none = { zone2_low_bpm: null, zone2_high_bpm: null, zone3_high_bpm: null, zone4_high_bpm: null };
+  assert.deepEqual((await app.inject('/api/settings')).json(), { ...none, defaults: null });
+  assert.deepEqual((await put(app, '/api/settings', { zone2_low_bpm: 110, zone2_high_bpm: 125 })).json(), { ...none, zone2_low_bpm: 110, zone2_high_bpm: 125, defaults: null });
+  assert.match((await put(app, '/api/settings', { zone2_low_bpm: 130 })).json().error, /Zone 2's top must be above Zone 2's low end/);
   assert.equal((await put(app, '/api/settings', { zone2_high_bpm: 300 })).statusCode, 400);
-  assert.deepEqual((await put(app, '/api/settings', { zone2_low_bpm: null })).json(), { zone2_low_bpm: null, zone2_high_bpm: 125 });
+  // Zones 3 and 4: each top above the one before, so the zones never overlap or leave a gap; null goes back to the default.
+  assert.match((await put(app, '/api/settings', { zone3_high_bpm: 125 })).json().error, /Zone 3's top must be above Zone 2's top/);
+  assert.match((await put(app, '/api/settings', { zone3_high_bpm: 150, zone4_high_bpm: 150 })).json().error, /Zone 4's top must be above Zone 3's top/);
+  assert.match((await put(app, '/api/settings', { zone4_high_bpm: 126 })).json().error, /at least 2 above/);
+  assert.equal((await put(app, '/api/settings', { zone3_high_bpm: 145, zone4_high_bpm: 160 })).json().zone4_high_bpm, 160);
+  assert.match((await put(app, '/api/settings', { zone2_high_bpm: 150 })).json().error, /Zone 3's top must be above Zone 2's top/);
+  assert.deepEqual((await put(app, '/api/settings', { zone3_high_bpm: null, zone4_high_bpm: null })).json(), { ...none, zone2_low_bpm: 110, zone2_high_bpm: 125, defaults: null });
+  // With a birth year, the age defaults: maximum 208 - 0.7 x age, Zone 2 at 60% to 70% of it, Zones 3 and 4 split from the saved Zone 2 top.
+  await put(app, '/api/profile', { birth_year: TODAY.getUTCFullYear() - 50 });
+  const d = (await app.inject('/api/settings')).json().defaults;
+  assert.deepEqual(d, { age: 50, maxHr: 173, zone2_low_bpm: 104, zone2_high_bpm: 121, zone3_high_bpm: 141, zone4_high_bpm: 157 });
+  await put(app, '/api/profile', { birth_year: null });
+  assert.deepEqual((await put(app, '/api/settings', { zone2_low_bpm: null })).json(), { ...none, zone2_high_bpm: 125, defaults: null });
   await done();
 });
 

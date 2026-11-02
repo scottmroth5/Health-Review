@@ -42,6 +42,7 @@ import { GOALS as GOAL_LABELS, GOAL_KEYS, LAYOUT_ITEMS, TILES, cleanGoals } from
 import { MAX_ANSWER_CHARS, SECTION_KINDS, builderSpec, claudeDraft, templateDraft } from '../agent/prompt-draft.js';
 import { askHelp, MAX_QUESTION_CHARS } from '../agent/help.js';
 import { SUPPLEMENT_DISCLAIMER, supplementAdviceSince } from '../agent/supplements.js';
+import { maxHrFor, upperTops, zone2Default, zoneOrderProblem } from './public/zone-defaults.js';
 import { SESSION_COOKIE, cookie } from './session.js';
 import { OWNER_KEY_CAP, clearCapNotice, spentThisMonth } from './ai-access.js';
 import { createMailer } from '../tools/mail.js';
@@ -1508,21 +1509,35 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     return loadProfile(db, today);
   });
 
-  app.get('/api/settings', { schema: { summary: 'Personal settings used by the metrics', response: { 200: anyObject } } },
-    async () => q.getSettings(db));
+  // The heart rate zone tops with the age defaults beside them (null without a birth year): Zone 2 at 60% to 70% of the
+  // estimated maximum, and Zones 3 and 4 split from the saved Zone 2 top (or that default).
+  const settingsView = (s) => {
+    const today = q.localDate(clock());
+    const { birthYear, age } = loadProfile(db, today);
+    const maxHr = maxHrFor(birthYear, Number(today.slice(0, 4)));
+    if (!maxHr) return { ...s, defaults: null };
+    const z2 = zone2Default(maxHr);
+    const zone2High = s.zone2_high_bpm ?? z2.high;
+    const own = upperTops({ maxHr, zone2High });
+    const z4 = upperTops({ maxHr, zone2High, zone3High: s.zone3_high_bpm });
+    return { ...s, defaults: { age, maxHr, zone2_low_bpm: z2.low, zone2_high_bpm: z2.high, zone3_high_bpm: own.zone3High, zone4_high_bpm: z4.zone4High } };
+  };
+
+  app.get('/api/settings', { schema: { summary: 'Personal settings used by the metrics, with the age defaults of the heart rate zones', response: { 200: anyObject } } },
+    async () => settingsView(q.getSettings(db)));
 
   app.put('/api/settings', {
     schema: {
-      summary: 'Update personal settings (null clears one)',
-      body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { zone2_low_bpm: bpm, zone2_high_bpm: bpm } },
+      summary: 'Update personal settings (null clears one; a cleared Zone 3 or 4 top takes its age default)',
+      body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { zone2_low_bpm: bpm, zone2_high_bpm: bpm, zone3_high_bpm: bpm, zone4_high_bpm: bpm } },
       response: { 200: anyObject },
     },
   }, async (req) => {
+    // Each zone's top above the one before, so every zone holds at least one bpm and none overlap (no gaps by design).
     const next = { ...q.getSettings(db), ...req.body };
-    if (next.zone2_low_bpm != null && next.zone2_high_bpm != null && next.zone2_low_bpm >= next.zone2_high_bpm) {
-      throw badRequest('The Zone 2 low end must be below the high end');
-    }
-    return q.saveSettings(db, req.body);
+    const problem = zoneOrderProblem({ zone2Low: next.zone2_low_bpm, zone2High: next.zone2_high_bpm, zone3High: next.zone3_high_bpm, zone4High: next.zone4_high_bpm });
+    if (problem) throw badRequest(problem);
+    return settingsView(q.saveSettings(db, req.body));
   });
 
   // ---- prompt sections ----

@@ -15,7 +15,27 @@
   "bounds": { "input": { "zone2Low": 110, "zone2High": 125, "birthYear": 1970, "year": 2026 },
     "expected": { "maxHr": 169, "zones": [
       { "zone": 1, "low": null, "high": 109 }, { "zone": 2, "low": 110, "high": 125 }, { "zone": 3, "low": 126, "high": 140 },
-      { "zone": 4, "low": 141, "high": 154 }, { "zone": 5, "low": 155, "high": null } ] } },
+      { "zone": 4, "low": 141, "high": 154 }, { "zone": 5, "low": 155, "high": null } ], "custom": { "zone3": false, "zone4": false } } },
+  "boundsCases": [
+    { "note": "Both tops set (Zone 3 to 145, Zone 4 to 160): no birth year needed, so maxHr is null. Zone 3 is 126 to 145, Zone 4 146 to 160, Zone 5 161 and up.",
+      "input": { "zone2Low": 110, "zone2High": 125, "zone3High": 145, "zone4High": 160, "birthYear": null, "year": 2026 },
+      "expected": { "maxHr": null, "custom": { "zone3": true, "zone4": true }, "zones": [
+        { "zone": 1, "low": null, "high": 109 }, { "zone": 2, "low": 110, "high": 125 }, { "zone": 3, "low": 126, "high": 145 },
+        { "zone": 4, "low": 146, "high": 160 }, { "zone": 5, "low": 161, "high": null } ] } },
+    { "note": "Only Zone 3 set to 145, born 1970 (maximum 169): Zone 4 tops halfway from 145 to 169, round(157) = 157. Zone 4 146 to 157, Zone 5 158 and up.",
+      "input": { "zone2Low": 110, "zone2High": 125, "zone3High": 145, "zone4High": null, "birthYear": 1970, "year": 2026 },
+      "expected": { "maxHr": 169, "custom": { "zone3": true, "zone4": false }, "zones": [
+        { "zone": 1, "low": null, "high": 109 }, { "zone": 2, "low": 110, "high": 125 }, { "zone": 3, "low": 126, "high": 145 },
+        { "zone": 4, "low": 146, "high": 157 }, { "zone": 5, "low": 158, "high": null } ] } },
+    { "note": "Only Zone 4 set to 160: Zone 3 tops halfway between 125 and 160, round(142.5) = 143. Zone 3 126 to 143, Zone 4 144 to 160, Zone 5 161 and up.",
+      "input": { "zone2Low": 110, "zone2High": 125, "zone3High": null, "zone4High": 160, "birthYear": 1970, "year": 2026 },
+      "expected": { "maxHr": 169, "custom": { "zone3": false, "zone4": true }, "zones": [
+        { "zone": 1, "low": null, "high": 109 }, { "zone": 2, "low": 110, "high": 125 }, { "zone": 3, "low": 126, "high": 143 },
+        { "zone": 4, "low": 144, "high": 160 }, { "zone": 5, "low": 161, "high": null } ] } },
+    { "note": "Only Zone 3 set and no birth year: Zone 4's default needs the maximum, so there are no zones.",
+      "input": { "zone2Low": 110, "zone2High": 125, "zone3High": 145, "zone4High": null, "birthYear": null, "year": 2026 },
+      "expected": null }
+  ],
   "zoneOf": [[109.9, 1], [110, 2], [125, 2], [125.5, 3], [140, 3], [141, 4], [154, 4], [154.5, 5], [200, 5]],
   "sessions": [
     { "type": "Elliptical", "start": "2026-03-02T10:00:00", "end": "2026-03-02T10:20:00", "duration_sec": 1200 },

@@ -1,26 +1,31 @@
-// Cardio minutes by heart rate zone (pure). Zones come from the owner's saved Zone 2 range (settings zone2_low_bpm and
-// zone2_high_bpm): Zone 1 is below it, and Zones 3 to 5 split the span from its top to an age-based maximum heart rate
-// (208 - 0.7 x age; birth year from the profile) evenly; above the maximum is Zone 5. Time in zone comes from Health
-// Auto Export's per-minute heart rate (workout_hr_samples): each sample counts one minute in the zone of its average.
+// Cardio minutes by heart rate zone (pure). Zones come from the owner's saved tops (settings zone2_low_bpm, zone2_high_bpm,
+// zone3_high_bpm, zone4_high_bpm): Zone 1 is below Zone 2, each later zone starts one above the zone before, so there is
+// never a gap, and Zone 5 is above Zone 4's top. Unset tops of Zones 3 and 4 take their age defaults
+// (server/public/zone-defaults.js: Zones 3 to 5 split the span from Zone 2's top to 208 - 0.7 x age, birth year from the
+// profile). Time in zone comes from Health Auto Export's per-minute heart rate (workout_hr_samples): each sample counts
+// one minute in the zone of its average.
 // Workout minutes with no sample (gaps, or workouts from before the JSON export) are "no heart rate detail", never
 // guessed from the workout's average.
 import { addDays, windows } from './stats.js';
 import { sessionKind, minutesOf } from './cardio.js';
+import { maxHrFor, upperTops } from '../server/public/zone-defaults.js';
 
 /**
- * @param {{ zone2Low?: number|null, zone2High?: number|null, birthYear?: number|null, year: number }} p
- * @returns {{ maxHr: number, zones: Array<{ zone: number, low: number|null, high: number|null }> } | null}
- *   null without a Zone 2 range or a birth year
+ * @param {{ zone2Low?: number|null, zone2High?: number|null, zone3High?: number|null, zone4High?: number|null,
+ *   birthYear?: number|null, year: number }} p
+ * @returns {{ maxHr: number|null, custom: { zone3: boolean, zone4: boolean },
+ *   zones: Array<{ zone: number, low: number|null, high: number|null }> } | null}
+ *   null without a Zone 2 range, or without a birth year when Zone 3's or Zone 4's top is not set
  */
-export function zoneBounds({ zone2Low, zone2High, birthYear, year }) {
-  if (!(zone2Low > 0) || !(zone2High >= zone2Low) || !(birthYear > 1900)) return null;
-  const maxHr = Math.round(208 - 0.7 * (year - birthYear));
-  const top = Math.max(maxHr, zone2High + 3); // always room for Zones 3 to 5
-  const step = (top - zone2High) / 3;
-  const t3 = Math.round(zone2High + step);
-  const t4 = Math.round(zone2High + 2 * step);
+export function zoneBounds({ zone2Low, zone2High, zone3High = null, zone4High = null, birthYear, year }) {
+  if (!(zone2Low > 0) || !(zone2High >= zone2Low)) return null;
+  const maxHr = maxHrFor(birthYear, year);
+  const tops = upperTops({ maxHr, zone2High, zone3High: zone3High || null, zone4High: zone4High || null });
+  if (!tops) return null;
+  const { zone3High: t3, zone4High: t4 } = tops;
   return {
     maxHr,
+    custom: { zone3: Boolean(zone3High), zone4: Boolean(zone4High) },
     zones: [
       { zone: 1, low: null, high: zone2Low - 1 },
       { zone: 2, low: zone2Low, high: zone2High },
