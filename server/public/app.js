@@ -27,7 +27,23 @@ function setStatus(node, message, kind = '') {
   node.className = `status ${kind}`;
 }
 
-const state = { today: null, day: null, range: 30, demo: false, readOnly: false };
+const state = { today: null, day: null, range: 30, demo: false, readOnly: false, prefsLocal: false };
+
+// Per-browser choices (chart views, the Training view, the Next program weights): localStorage in the app, but only in
+// memory in the read-only public demo, so the demo stores nothing in the browser (PRIVACY.md). Until /api/status says
+// which (prefsLocal), a choice is kept in memory; reading old saved choices stores nothing.
+const memoryPrefs = new Map();
+const prefs = {
+  getItem(key) {
+    if (memoryPrefs.has(key)) return memoryPrefs.get(key);
+    if (state.readOnly) return null;
+    return localStorage.getItem(key);
+  },
+  setItem(key, value) {
+    if (state.readOnly || !state.prefsLocal) { memoryPrefs.set(key, String(value)); return; }
+    localStorage.setItem(key, value);
+  },
+};
 
 // ---------------- demo mode ----------------
 // Hides drinking and CBD on screen for showing the app to others (see demo.js). Saved in this browser only.
@@ -1252,8 +1268,18 @@ function excelBox(wl) {
 }
 
 /** Users (administrators): pending requests first; each user's status, feeds, AI and counts, with the account switches. */
+/** The Users screen's weekly totals (GET /api/admin/usage): counts only. */
+async function loadAdminUsage() {
+  const weeks = await api('GET', '/api/admin/usage?weeks=12');
+  const head = ['Week ending', 'Reviews done', 'Reviews failed', 'Reviews skipped', 'Check-ins', 'Lifting days', 'Syncs done', 'Syncs failed'];
+  const rows = weeks.map((w) => h('tr', {}, h('td', {}, niceDate(w.weekEnding)),
+    ...[w.reviews.completed, w.reviews.failed, w.reviews.skipped, w.checkins, w.liftingDays, w.syncs.completed, w.syncs.failed].map((n) => h('td', {}, String(n)))));
+  fill($('#admin-usage'), h('div', { class: 'table-scroll' }, h('table', {}, h('thead', {}, h('tr', {}, head.map((t) => h('th', { scope: 'col' }, t)))), h('tbody', {}, rows))));
+}
+
 async function loadUsers() {
   loadAdminFeedback().catch((err) => { $('#admin-feedback').textContent = err.message; });
+  loadAdminUsage().catch((err) => { $('#admin-usage').textContent = err.message; });
   const users = await api('GET', '/api/admin/users');
   const say = (text) => { $('#users-status').textContent = text; };
   const done = (u, what) => { say(`${u.email}: ${what}.`); loadUsers(); loadAccount(); };
@@ -2209,7 +2235,7 @@ const PREVIOUS_LABEL = { week: 'previous 7 days', month: 'previous 30 days', '3m
 const lbs = (v) => `${Math.round(v).toLocaleString()} lbs`;
 
 function trainingViewChoice() {
-  try { return localStorage.getItem(TRAINING_VIEW_KEY) || 'month'; } catch { return 'month'; }
+  try { return prefs.getItem(TRAINING_VIEW_KEY) || 'month'; } catch { return 'month'; }
 }
 
 /** "Week ending Sep 26, 2026" / "Sep 2026" / null (daily bars use the date itself). */
@@ -2250,14 +2276,14 @@ const vo2 = (v) => `${v.toFixed(1)}${VO2_UNIT}`;
 const signed = (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
 
 function vo2ViewChoice() {
-  try { return localStorage.getItem(VO2_VIEW_KEY) || '1y'; } catch { return '1y'; }
+  try { return prefs.getItem(VO2_VIEW_KEY) || '1y'; } catch { return '1y'; }
 }
 
 const vo2Tile = (label, value, note) => h('div', { class: 'tile' }, h('div', { class: 'tile-label' }, label),
   h('div', { class: 'tile-value' }, value), note ? h('div', { class: 'tile-delta' }, note) : null);
 
 async function loadVo2(view = vo2ViewChoice()) {
-  try { localStorage.setItem(VO2_VIEW_KEY, view); } catch { /* storage unavailable: still works, just not remembered */ }
+  try { prefs.setItem(VO2_VIEW_KEY, view); } catch { /* storage unavailable: still works, just not remembered */ }
   $$('[data-vview]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.vview === view)));
   const [r, targetBody] = await Promise.all([api('GET', `/api/vo2max?view=${view}`), getTargets()]);
   const vo2Target = targetsByMetric(targetBody).get('vo2max');
@@ -2289,11 +2315,11 @@ async function loadVo2(view = vo2ViewChoice()) {
 const ZONES_VIEW_KEY = 'hr.zonesView';
 const ZONES_GROUP_KEY = 'hr.zonesGroup';
 function zonesViewChoice() {
-  try { return localStorage.getItem(ZONES_VIEW_KEY) || '30d'; } catch { return '30d'; }
+  try { return prefs.getItem(ZONES_VIEW_KEY) || '30d'; } catch { return '30d'; }
 }
 /** The saved Days / Weeks / Months choice, or '' for the range's default (days for 30 and 90 days, weeks for a year). */
 function zonesGroupChoice() {
-  try { return localStorage.getItem(ZONES_GROUP_KEY) || ''; } catch { return ''; }
+  try { return prefs.getItem(ZONES_GROUP_KEY) || ''; } catch { return ''; }
 }
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** A zones bucket's name: the day, "Week ending Oct 24, 2026" or "Oct 2026". */
@@ -2305,8 +2331,8 @@ const minutesText = (n) => `${n.toLocaleString()} min`;
 
 async function loadZones(view = zonesViewChoice(), group = zonesGroupChoice()) {
   try {
-    localStorage.setItem(ZONES_VIEW_KEY, view);
-    if (group) localStorage.setItem(ZONES_GROUP_KEY, group);
+    prefs.setItem(ZONES_VIEW_KEY, view);
+    if (group) prefs.setItem(ZONES_GROUP_KEY, group);
   } catch { /* storage unavailable: still works, just not remembered */ }
   $$('[data-zview]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.zview === view)));
   const r = await api('GET', `/api/cardio-zones?view=${view}${group ? `&group=${group}` : ''}`);
@@ -2534,7 +2560,7 @@ const EQUAL = { strength: 1, joint: 1, time: 1, vo2: 1 };
 
 function advisorWeights() {
   try {
-    const saved = JSON.parse(localStorage.getItem(ADVISOR_KEY) ?? 'null');
+    const saved = JSON.parse(prefs.getItem(ADVISOR_KEY) ?? 'null');
     if (saved && Object.keys(EQUAL).every((g) => [0, 1, 2, 3].includes(saved[g]))) return saved;
   } catch { /* storage unavailable or bad value: the goals' weights */ }
   return state.goals?.primary ? goalWeights(state.goals) : { ...EQUAL };
@@ -2542,7 +2568,7 @@ function advisorWeights() {
 
 function renderAdvisorWeights(weights) {
   const set = (next) => {
-    try { localStorage.setItem(ADVISOR_KEY, JSON.stringify(next)); } catch { /* not remembered, still works */ }
+    try { prefs.setItem(ADVISOR_KEY, JSON.stringify(next)); } catch { /* not remembered, still works */ }
     loadAdvisor().catch((err) => { $('#advisor-body').textContent = `Could not load this (${err.message}).`; });
   };
   const rows = Object.keys(EQUAL).map((g) => h('div', { class: 'weight-row' },
@@ -2732,7 +2758,7 @@ async function loadProgram() {
 }
 
 async function loadTraining(view = trainingViewChoice()) {
-  try { localStorage.setItem(TRAINING_VIEW_KEY, view); } catch { /* storage unavailable: still works, just not remembered */ }
+  try { prefs.setItem(TRAINING_VIEW_KEY, view); } catch { /* storage unavailable: still works, just not remembered */ }
   $$('[data-tview]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tview === view)));
   const t = await api('GET', `/api/training?view=${view}`);
   const prev = t.previous?.totals ?? null;
@@ -3364,6 +3390,6 @@ setupDemo();
 // The public demo's anonymous visit counts (analytics.js): on only when the server sends a config; events from the first
 // screen wait for it.
 track('demo_opened');
-api('GET', '/api/status').then((s) => startAnalytics(s.analytics)).catch(() => startAnalytics());
+api('GET', '/api/status').then((s) => { state.prefsLocal = !s.readOnly; startAnalytics(s.analytics); }).catch(() => startAnalytics());
 window.addEventListener('hashchange', route);
 route();

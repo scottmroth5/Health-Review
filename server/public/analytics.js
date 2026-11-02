@@ -1,7 +1,8 @@
 // Demo analytics (the public demo only; PostHog guide step 6, 2026-11-02). No SDK: each event is one POST to PostHog's
 // capture endpoint, built here field by field, so nothing leaves the browser that is not listed below. No URL, referrer,
 // cookie or storage; a random id per page load and no person profiles. The server turns it on only in AUTH_MODE=demo
-// with DEMO_ANALYTICS_TOKEN set (/api/status analytics); otherwise start is never called and track does nothing.
+// with DEMO_ANALYTICS_TOKEN set (/api/status analytics); otherwise start is never called and track does nothing. A
+// browser sending Global Privacy Control (navigator.globalPrivacyControl) gets nothing sent and nothing queued.
 
 export const APP = 'health_review_demo';
 export const SECTIONS = ['home', 'today', 'training', 'programs', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity', 'settings', 'users', 'help'];
@@ -30,33 +31,49 @@ export function analyticsEvent(name, props = {}, { token, distinctId }) {
   return { api_key: token, event: name, distinct_id: distinctId, properties };
 }
 
-let config = null;
-let off = false;
-// Events from before the config arrives (the first screen renders while /api/status loads), at most a few; dropped
-// unsent when analytics is off.
-const early = [];
-
-/** Turns sending on with { host, token } from /api/status and sends the queued events; anything else turns it off. */
-export function startAnalytics({ host, token } = {}) {
-  if (config || off) return;
-  const queued = early.splice(0);
-  if (!host || !token) { off = true; return; }
-  config = { url: `${host}/i/v0/e/`, token, distinctId: crypto.randomUUID() };
-  for (const [name, props] of queued) track(name, props);
+/**
+ * A tracker: nothing goes out until start gets a config from the server, events from before then wait (a few at most),
+ * and with Global Privacy Control on, or no config, nothing is ever sent or kept.
+ * @param {{ nav?: object, send?: (url: string, body: object) => void, randomId?: () => string }} [deps]
+ */
+export function createTracker({ nav = globalThis.navigator, send = post, randomId = () => crypto.randomUUID() } = {}) {
+  let config = null;
+  let off = nav?.globalPrivacyControl === true;
+  // Events from before the config arrives (the first screen renders while /api/status loads); dropped when off.
+  const early = [];
+  const track = (name, props) => {
+    if (off) return;
+    if (!config) {
+      if (early.length < 10) early.push([name, props]);
+      return;
+    }
+    try {
+      const body = analyticsEvent(name, props, config);
+      if (body) send(config.url, body);
+    } catch { /* analytics never breaks the page */ }
+  };
+  return {
+    /** Turns sending on with { host, token } from /api/status and sends the queued events; anything else turns it off. */
+    start({ host, token } = {}) {
+      if (config || off) { early.length = 0; return; }
+      const queued = early.splice(0);
+      if (!host || !token) { off = true; return; }
+      config = { url: `${host}/i/v0/e/`, token, distinctId: randomId() };
+      for (const [name, props] of queued) track(name, props);
+    },
+    /** Sends one event; never throws, and a blocked request is ignored. */
+    track,
+  };
 }
 
-/** Sends one event; never throws, and a blocked request is ignored. */
-export function track(name, props) {
-  if (!config) {
-    if (!off && early.length < 10) early.push([name, props]);
-    return;
-  }
-  try {
-    const body = analyticsEvent(name, props, config);
-    if (!body) return;
-    fetch(config.url, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-      credentials: 'omit', referrerPolicy: 'no-referrer', keepalive: true,
-    }).catch(() => {});
-  } catch { /* analytics never breaks the page */ }
+function post(url, body) {
+  fetch(url, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    credentials: 'omit', referrerPolicy: 'no-referrer', keepalive: true,
+  }).catch(() => {});
 }
+
+// The page's one tracker.
+const tracker = createTracker();
+export const startAnalytics = (config) => tracker.start(config);
+export const track = (name, props) => tracker.track(name, props);

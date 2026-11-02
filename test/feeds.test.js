@@ -21,6 +21,7 @@ async function setup() {
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
   store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'pending', 'x')").run();
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const keyBox = boxKey('test-user-key-secret-long-enough-32+');
   let email;
   let nonce;
@@ -31,7 +32,7 @@ async function setup() {
   const cookies = (res) => [res.headers['set-cookie']].flat().filter(Boolean).map((c) => c.split(';')[0]).join('; ');
   const signIn = async (as) => {
     email = as;
-    const login = await app.inject('/auth/login');
+    const login = await app.inject('/auth/login?go=1');
     const url = new URL(login.headers.location);
     nonce = url.searchParams.get('nonce');
     const res = await app.inject({ url: `/auth/google/callback?state=${url.searchParams.get('state')}&code=c`, headers: { cookie: cookies(login) } });
@@ -105,6 +106,7 @@ test('google sheets: consent stores a sealed refresh token; the sheet is checked
 test("sync: another user's sync reads only their sheet and writes only their rows; without one it reads nothing", async () => {
   const store = openHealthStore(':memory:');
   store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const asked = [];
   const source = {
     has: (s) => s === 'workout_log',

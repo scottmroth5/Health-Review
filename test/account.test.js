@@ -24,6 +24,7 @@ async function setup({ claude = null, access = {} } = {}) {
   store.db.prepare(`INSERT INTO users (id, email, name, role, status, created_at, claude_key_enc, google_refresh_enc) VALUES
     ('lee', 'lee@example.com', 'Lee', 'user', 'approved', 'x', 'sealed-made-up-key', 'sealed-made-up-refresh'),
     ('kim', 'kim@example.com', 'Kim', 'user', 'approved', 'x', NULL, NULL)`).run();
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const mail = [];
   const services = {
     sync: async () => ({ counts: {}, warnings: [] }),
@@ -38,7 +39,7 @@ async function setup({ claude = null, access = {} } = {}) {
   const cookies = (res) => [res.headers['set-cookie']].flat().filter(Boolean).map((c) => c.split(';')[0]).join('; ');
   const signIn = async (as) => {
     email = as;
-    const login = await app.inject('/auth/login');
+    const login = await app.inject('/auth/login?go=1');
     const url = new URL(login.headers.location);
     nonce = url.searchParams.get('nonce');
     const res = await app.inject({ url: `/auth/google/callback?state=${url.searchParams.get('state')}&code=c`, headers: { cookie: cookies(login) } });

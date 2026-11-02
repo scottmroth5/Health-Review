@@ -7,7 +7,7 @@ import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { authSettings, CALLBACK_PATH } from '../server/auth.js';
 import { boxKey, open } from '../tools/secret-box.js';
-import { userByEmail } from '../db/users.js';
+import { HEALTH_CONSENT_VERSION, userByEmail } from '../db/users.js';
 
 const SITE = 'http://localhost:5188';
 // Made-up key shapes, built here so no key-shaped string sits in the code (the personal-data check looks for those).
@@ -28,7 +28,7 @@ async function setup({ services = {} } = {}) {
   const cookies = (res) => [res.headers['set-cookie']].flat().filter(Boolean).map((c) => c.split(';')[0]).join('; ');
   const signIn = async (as) => {
     email = as;
-    const login = await app.inject('/auth/login');
+    const login = await app.inject('/auth/login?go=1');
     nonce = new URL(login.headers.location).searchParams.get('nonce');
     const state = new URL(login.headers.location).searchParams.get('state');
     const res = await app.inject({ url: `${CALLBACK_PATH}?state=${state}&code=c`, headers: { cookie: cookies(login) } });
@@ -48,17 +48,27 @@ test('registration: request access, wait, get approved by the admin with emails 
   const page = await kim.get('/auth/register');
   assert.match(page.body, /Request access/);
   assert.match(page.body, /No AI is used/);
-  // The form: refused without agreeing, then a pending user and one email to the admin.
+  // The separate health data consent: its own unticked, required box, the text word for word, linked to the policy.
+  assert.match(page.body, /<input type="checkbox" name="healthConsent" required>/);
+  assert.match(page.body, /I consent to Health Review collecting and using the health information I provide/);
+  assert.ok(page.body.includes('<a href="/consumer-health-data" target="_blank">See the Consumer Health Data Privacy Policy.</a>'));
+  assert.doesNotMatch(page.body, /name="healthConsent"[^>]*checked/);
+  // The form: refused without agreeing, and the terms box alone is not enough; then a pending user with the consent
+  // recorded, and one email to the admin.
   const post = (body) => kim.form('/auth/register', body);
   assert.equal((await post('')).headers.location, '/auth/register');
+  assert.equal((await post('agree=on')).headers.location, '/auth/register', 'the terms alone are not consent');
+  assert.equal((await post('healthConsent=on')).headers.location, '/auth/register');
   assert.equal(userByEmail(store.db, 'kim@example.com'), null);
-  assert.equal((await post('agree=on')).headers.location, '/auth/waiting');
+  assert.equal((await post('agree=on&healthConsent=on')).headers.location, '/auth/waiting');
   assert.equal(userByEmail(store.db, 'kim@example.com').status, 'pending');
+  assert.equal(userByEmail(store.db, 'kim@example.com').health_consent_version, HEALTH_CONSENT_VERSION);
+  assert.ok(userByEmail(store.db, 'kim@example.com').health_consent_at);
   assert.equal(mail.length, 1);
   assert.equal(mail[0].to, 'owner@example.com');
   assert.match(mail[0].text, /kim@example\.com/);
   assert.equal((await kim.get('/')).headers.location, '/auth/waiting');
-  await post('agree=on');
+  await post('agree=on&healthConsent=on');
   assert.equal(mail.length, 1, 'registering again sends nothing more');
 
   // Only the admin may list and approve.
@@ -87,6 +97,7 @@ test('claude key: checked, sealed per user, never returned; no key means no AI; 
   const services = { claude: () => ({}), hasAi: (uid) => uid === '00000000-0000-4000-8000-000000000001' || Boolean(store.db.prepare('SELECT claude_key_enc FROM users WHERE id = ?').pluck().get(uid)), review: async () => ({}) };
   const { app, store, keyBox, signIn, as } = await setup({ services });
   store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const lee = as(await signIn('lee@example.com'));
   assert.equal((await lee.get('/api/account')).json().claudeKey, null);
   assert.equal((await lee.get('/api/advisor/chat')).json().needsKey, true);

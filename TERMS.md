@@ -16,6 +16,7 @@ Health Review is a personal project run by its owner, shared with a few people b
 
 ## Your account
 
+- You must be 18 or older to use this app.
 - Access is approved by hand and can be paused or ended at any time.
 - You can export your data, pause your account, or delete your account and all of your data at any time in Settings. Encrypted backups keep a copy until they age out, within about two months.
 - Add only programs and files you own or have the right to use.

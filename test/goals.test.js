@@ -39,6 +39,7 @@ async function setup() {
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
   store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   let email;
   let nonce;
   const app = await buildApp({ store, authMode: 'google', mailer: { send: async () => true }, log: { info() {}, warn() {}, error() {} },
@@ -46,7 +47,7 @@ async function setup() {
   const cookies = (res) => [res.headers['set-cookie']].flat().filter(Boolean).map((c) => c.split(';')[0]).join('; ');
   const signIn = async (as) => {
     email = as;
-    const login = await app.inject('/auth/login');
+    const login = await app.inject('/auth/login?go=1');
     const url = new URL(login.headers.location);
     nonce = url.searchParams.get('nonce');
     const res = await app.inject({ url: `/auth/google/callback?state=${url.searchParams.get('state')}&code=c`, headers: { cookie: cookies(login) } });
@@ -93,6 +94,7 @@ test('arranged: a saved order wins over the goals; unknown names dropped, newer 
 test('saving a tab layout: known items only, per area, null resets; other users untouched', async () => {
   const { store, signIn } = await setup();
   store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const lee = await signIn('lee@example.com');
   assert.equal((await lee.send('PUT', '/api/account/layout', { area: 'training', order: ['advisor-card', 'bogus'] })).statusCode, 400);
   assert.equal((await lee.send('PUT', '/api/account/layout', { area: 'kitchen', order: [] })).statusCode, 400);

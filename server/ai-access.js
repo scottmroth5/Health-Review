@@ -24,6 +24,7 @@ export function aiAccess(user, { spent = 0 } = {}) {
   if (!user) return none('no_key');
   if (user.id === OWNER_ID) return { source: 'owner', reason: null, capReached: false };
   if (user.status !== 'approved') return none('paused');
+  if (user.role !== 'admin' && !user.health_consent_at) return none('consent');
   if (user.claude_key_enc) return { source: 'own', reason: null, capReached: false };
   if (!user.uses_owner_key || !(user.owner_key_cap_usd > 0)) return none('no_key');
   if (spent >= user.owner_key_cap_usd) return none('cap', true);

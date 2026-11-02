@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { analyticsConfig, CONTENT_SECURITY_POLICY } from '../server/security.js';
-import { analyticsEvent, APP, SECTIONS } from '../server/public/analytics.js';
+import { analyticsEvent, createTracker, APP, SECTIONS } from '../server/public/analytics.js';
 
 const ids = { token: 'phc_TestToken1234567890', distinctId: '00000000-0000-4000-8000-000000000000' };
 const CONFIG = { token: ids.token, host: 'https://us.i.posthog.com' };
@@ -73,5 +73,39 @@ test('no analytics outside the demo, or with a bad config', async () => {
     const { body, csp } = await statusFor(opts);
     assert.equal(body.analytics, undefined);
     assert.equal(csp, CONTENT_SECURITY_POLICY);
+  }
+});
+
+test('the tracker: events wait for the config, then go out; no config turns it off for good', () => {
+  const sent = [];
+  const t = createTracker({ nav: {}, send: (url, body) => sent.push({ url, body }), randomId: () => ids.distinctId });
+  t.track('demo_opened');
+  t.track('section_viewed', { section: 'home' });
+  assert.equal(sent.length, 0, 'nothing before the config');
+  t.start(CONFIG);
+  t.track('sample_review_opened', { which: 'latest' });
+  assert.deepEqual(sent.map((x) => x.body.event), ['demo_opened', 'section_viewed', 'sample_review_opened']);
+  assert.equal(sent[0].url, 'https://us.i.posthog.com/i/v0/e/');
+  const off = createTracker({ nav: {}, send: () => assert.fail('sent without a config') });
+  off.track('demo_opened');
+  off.start(undefined);
+  off.track('demo_opened');
+});
+
+test('Global Privacy Control: nothing is sent and nothing is queued, even with a config', () => {
+  const sent = [];
+  const t = createTracker({ nav: { globalPrivacyControl: true }, send: (url, body) => sent.push(body), randomId: () => ids.distinctId });
+  t.track('demo_opened');
+  t.track('section_viewed', { section: 'home' });
+  t.start(CONFIG);
+  t.track('sample_review_opened', { which: 'latest' });
+  assert.deepEqual(sent, []);
+  // Only true counts: a browser without the signal (undefined or false) is tracked as before.
+  for (const gpc of [undefined, false]) {
+    const out = [];
+    const u = createTracker({ nav: { globalPrivacyControl: gpc }, send: (url, body) => out.push(body), randomId: () => ids.distinctId });
+    u.start(CONFIG);
+    u.track('demo_opened');
+    assert.equal(out.length, 1);
   }
 });

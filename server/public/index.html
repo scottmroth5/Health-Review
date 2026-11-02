@@ -43,7 +43,7 @@
     </nav>
   </header>
 
-  <p id="instance-banner" class="instance-banner" role="note" hidden><span class="long">Demo instance: everything here is made-up sample data. Sync, reviews and the Claude chat are off.</span><span class="short">Demo: made-up data, sync and reviews off.</span> <a id="request-access" class="banner-cta" data-request-link hidden><span class="long">Get Health Review with your own data &rarr;</span><span class="short">Get your own &rarr;</span></a></p>
+  <p id="instance-banner" class="instance-banner" role="note" hidden><span class="long">Demo instance: everything here is made-up sample data. Sync, reviews and the Claude chat are off.</span><span class="short">Demo: made-up data, sync and reviews off.</span> <a class="banner-link" href="/privacy" target="_blank">Privacy</a> <a class="banner-link" href="/consumer-health-data" target="_blank">Consumer health data</a> <a id="request-access" class="banner-cta" data-request-link hidden><span class="long">Get Health Review with your own data &rarr;</span><span class="short">Get your own &rarr;</span></a></p>
 
   <main>
     <!-- Home: a tile per section; Demo mode and the account live here only -->
@@ -51,7 +51,7 @@
       <div class="card request-card" data-request-card="home" hidden>
         <h2>Use Health Review with your own data</h2>
         <p>This demo shows made-up data. The real Health Review turns <strong>your</strong> Apple Health data, workouts and daily check-ins into charts, tracks your goals and training programs, and can write you a weekly review with AI if you add your own Claude key.</p>
-        <p class="small">It's free and by invitation, for people in the United States: sign in with Google, say what you'll use, and you'll get an email when you're approved, usually within a day. Your data is private to you.</p>
+        <p class="small">It's free, for people in the United States. Anyone can request access, and the owner approves each request by hand: sign in with Google, say what you'll use, and you'll get an email when you're approved, usually within a day. Your data is private to you.</p>
         <p><a class="button request-big" data-request-link>Request access to Health Review</a></p>
         <p class="muted small" data-request-contact></p>
       </div>
@@ -512,7 +512,7 @@
         <p id="settings-account" class="small"></p>
         <div id="account-controls"></div>
         <p class="status" id="account-status" role="status"></p>
-        <p class="muted small"><a href="/privacy" target="_blank">Privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
+        <p class="muted small"><a href="/privacy" target="_blank">Privacy policy</a>, <a href="/consumer-health-data" target="_blank">Consumer health data privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
       </div>
     </section>
 
@@ -560,7 +560,7 @@
       <div class="card request-card" data-request-card="help" hidden>
         <h2>Use Health Review with your own data</h2>
         <p>This demo shows made-up data. The real Health Review turns <strong>your</strong> Apple Health data, workouts and daily check-ins into charts, tracks your goals and training programs, and can write you a weekly review with AI if you add your own Claude key.</p>
-        <p class="small">It's free and by invitation, for people in the United States: sign in with Google, say what you'll use, and you'll get an email when you're approved, usually within a day. Your data is private to you.</p>
+        <p class="small">It's free, for people in the United States. Anyone can request access, and the owner approves each request by hand: sign in with Google, say what you'll use, and you'll get an email when you're approved, usually within a day. Your data is private to you.</p>
         <p><a class="button request-big" data-request-link>Request access to Health Review</a></p>
         <p class="muted small" data-request-contact></p>
       </div>
@@ -576,7 +576,7 @@
           <li><a href="/guides/claude-key" target="_blank">Your Claude API key</a></li>
         </ul>
         <p class="small" id="help-contact" hidden></p>
-        <p class="muted small"><a href="/privacy" target="_blank">Privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
+        <p class="muted small"><a href="/privacy" target="_blank">Privacy policy</a>, <a href="/consumer-health-data" target="_blank">Consumer health data privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>
       </div>
       <div class="card">
         <h2>Ask</h2>
@@ -614,6 +614,11 @@
       <div class="card" id="admin-feedback-card">
         <h2>Feedback <span class="muted small" id="admin-feedback-count"></span></h2>
         <div id="admin-feedback"></div>
+      </div>
+      <div class="card" id="admin-usage-card">
+        <h2>Usage by week</h2>
+        <p class="muted small">Totals across all users for weeks ending Saturday: counts only, never who or what.</p>
+        <div id="admin-usage"></div>
       </div>
     </section>
 

@@ -323,4 +323,13 @@ export const USER_MIGRATIONS = [
     id: '030-clear-automatic-skips',
     up: "DELETE FROM medication_doses WHERE taken = 0 AND updated_at < '2026-10-29T21:11:10Z'",
   },
+  {
+    // The separate health data consent (Request access, or the one-time step at sign-in for users approved before it):
+    // when it was given (UTC ISO) and which version of the consent text. NULL until given; the owner is never asked.
+    id: '031-health-consent',
+    up: `
+      ALTER TABLE users ADD COLUMN health_consent_at TEXT;
+      ALTER TABLE users ADD COLUMN health_consent_version TEXT;
+    `,
+  },
 ];

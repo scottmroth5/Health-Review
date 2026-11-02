@@ -100,6 +100,7 @@ test('/api/home and PUT /api/account/setup: a new user sees the checklist; skipp
   const store = openHealthStore(':memory:');
   const KIM = '00000000-0000-4000-8000-0000000000c3';
   store.db.prepare("INSERT INTO users (id, email, role, status, created_at, feeds) VALUES (?, 'kim@example.com', 'user', 'approved', 'x', '{\"manual\":true}')").run(KIM);
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const app = await buildApp({ store, authMode: 'google', auth: { settings }, clock: () => new Date(`${TODAY}T16:00:00Z`), services: { hasAi: () => false } });
   const kim = { cookie: `hr_session=${sign({ email: 'kim@example.com', exp: Date.now() + 3_600_000, v: 1 }, sessionKey(secret))}`, origin: SITE };
 

@@ -51,7 +51,11 @@ Health specific logic stays in this repo; never add it to agent-core.
                     server/index.js's demo branch, and buildApp honors it only in AUTH_MODE=demo); /api/status analytics and
                     that one origin added to connect-src. No SDK: one POST per event built field by field, events demo_opened,
                     section_viewed (section: a VIEWS name), sample_review_opened (which: latest or earlier); app
-                    health_review_demo, a random id per page load, no person profiles, URL, referrer, cookie or storage
+                    health_review_demo, a random id per page load, no person profiles, URL, referrer, cookie or storage.
+                    Global Privacy Control (navigator.globalPrivacyControl true) sends and queues nothing (createTracker,
+                    test/analytics.test.js). The read-only demo stores nothing in the browser: per-browser choices (chart
+                    views, Training view, Next program weights) go through app.js prefs, in memory when readOnly (PRIVACY.md
+                    says so). The demo banner links Privacy and Consumer health data
 /evals              fixtures/metrics (metric regression), fixtures/v1 (v1 golden outputs, see its README), and the review
                     contract eval: review-cases.json (real weeks by date only, synthetic overlays), grade-review.js
                     (shared grading), run-review-eval.mjs (runner from the claude-api skill scaffold)
@@ -414,9 +418,18 @@ AUTH_MODE=none (local default) binds to 127.0.0.1 only and rejects requests whos
 rebinding). AUTH_MODE=google: Google sign-in with GOOGLE_WEB_CLIENT_ID and GOOGLE_WEB_CLIENT_SECRET, callback
 /auth/google/callback built from PUBLIC_URL (redirect URI PUBLIC_URL + that path). Registration (phase 2): any verified
 Google account gets a session; the users row is looked up on every request: none goes to /auth/register (Request access,
-terms checkbox; POST creates a pending user and emails the admin), pending to /auth/waiting, rejected to
+terms checkbox and the separate health data consent checkbox, both required; POST creates a pending user with
+health_consent_at and health_consent_version, and emails the admin), pending to /auth/waiting, rejected to
 /auth/not-approved; approved and paused get in (req.uid, req.role). AUTH_ALLOWED_EMAILS's first address is the owner
-(user 1, admin; syncOwnerEmail). /privacy and /terms (PRIVACY.md, TERMS.md through server/pages.js) are open. hr_session cookie signed with SESSION_SECRET (30 days, HttpOnly, SameSite=Lax, Secure on https), same-origin
+(user 1, admin; syncOwnerEmail). /auth/login is a sign-in page (the three policy links, Continue with Google to
+/auth/login?go=1, which does the Google redirect). Health data consent (PostHog guide section 7, 2026-11-03; migration
+031 users.health_consent_at and health_consent_version, HEALTH_CONSENT_VERSION in db/users.js; text in auth.js
+healthConsentHtml, word for word from the owner's brief): an approved or paused user other than the owner with none is
+sent to /auth/consent (Agree, or Delete my account with the typed email; the API answers 403 consentRequired except GET
+/api/account/export); until then their ingest token is refused, aiAccess gives reason consent, and activeUserIds skips
+them (test/consent.test.js). Never in the demo or local mode. /privacy, /terms and /consumer-health-data (PRIVACY.md,
+TERMS.md, CONSUMER-HEALTH-DATA.md through server/pages.js) are open; the policy text is the owner's, so change a sentence
+only with the owner, and keep each true of the code. hr_session cookie signed with SESSION_SECRET (30 days, HttpOnly, SameSite=Lax, Secure on https), same-origin
 required on writes, TRUST_PROXY set behind Caddy; sign-in asks for openid email profile, and the session carries the
 Google first name (given_name, else name; 60 characters, never logged) for the header's "(name)", which GET /api/me
 returns; open without a session: /auth/*, GET /api/health (status and version, the deploy check), /api/ingest/* (its own
@@ -459,6 +472,11 @@ in (owner's choice). The admin Users screen shows setup N of 5 from the same set
 Apple Health data gets no data checks (dataCheckWarnings), computeWeek leaves dataQuality out when the week and baseline
 hold no Apple Health day, and reviewStatus applies the Apple Health gate only with Apple Health days in the window; a
 week with no data of any kind is skipped as no_data (never due, never sent).
+Usage counters (2026-11-03): GET /api/admin/usage?weeks= (adminOnly; server/admin-queries.js usageByWeek) totals reviews
+(runs 'review': ok completed, error failed, skipped), check-ins (checkins by date), lifting days (log_sessions by date)
+and syncs (runs 'sync': ok, error) across all users per week ending Saturday in OWNER_TZ, newest first, to today; counts
+only, no user, entry date, value or text, and nothing logged. The Users screen's Usage by week card shows it; no third
+party.
 Users, phase 6 (2026-10-24), account controls and help: GET /api/account/export (server/admin-queries.js exportUserData:
 the account row without claude_key_enc, ingest_token_hash or google_refresh_enc, plus every row of theirs in every table
 with a user_id column, found from the schema, and their run_calls); POST /api/account/pause and /resume (settings row

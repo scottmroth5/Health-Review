@@ -9,7 +9,7 @@ import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { OWNER_ID, getUser } from '../db/users.js';
-import { activeUserIds } from '../server/admin-queries.js';
+import { activeUserIds, usageByWeek } from '../server/admin-queries.js';
 import { aiAccess, createAiAccess, monthStartIso, spentThisMonth } from '../server/ai-access.js';
 import { loadDemoCatalog } from '../demo/generate.js';
 
@@ -24,6 +24,7 @@ async function setup() {
   store.db.prepare(`INSERT INTO users (id, email, name, role, status, created_at) VALUES
     ('lee', 'lee@example.com', 'Lee', 'user', 'approved', '2026-10-01T00:00:00Z'),
     ('kim', 'kim@example.com', 'Kim', 'user', 'pending', '2026-10-02T00:00:00Z')`).run();
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const mail = [];
   const mailer = { configured: true, send: async (m) => { mail.push(m); return true; } };
   const ai = createAiAccess({ db: store.db, mailer, adminEmail: () => 'owner@example.com', appUrl: () => SITE, clock: () => NOW, log: { info() {} } });
@@ -36,7 +37,7 @@ async function setup() {
   const cookies = (res) => [res.headers['set-cookie']].flat().filter(Boolean).map((c) => c.split(';')[0]).join('; ');
   const signIn = async (as) => {
     email = as;
-    const login = await app.inject('/auth/login');
+    const login = await app.inject('/auth/login?go=1');
     const url = new URL(login.headers.location);
     nonce = url.searchParams.get('nonce');
     const res = await app.inject({ url: `/auth/google/callback?state=${url.searchParams.get('state')}&code=c`, headers: { cookie: cookies(login) } });
@@ -48,7 +49,7 @@ async function setup() {
 }
 
 test('aiAccess: the owner, a user\'s own key first, the owner\'s key under its cap, and none', () => {
-  const user = (over) => ({ id: 'u', status: 'approved', claude_key_enc: null, uses_owner_key: 0, owner_key_cap_usd: null, ...over });
+  const user = (over) => ({ id: 'u', role: 'user', status: 'approved', health_consent_at: 'x', claude_key_enc: null, uses_owner_key: 0, owner_key_cap_usd: null, ...over });
   assert.deepEqual(aiAccess({ id: OWNER_ID, status: 'approved' }), { source: 'owner', reason: null, capReached: false });
   assert.equal(aiAccess(user({ claude_key_enc: 'sealed' })).source, 'own');
   assert.equal(aiAccess(user({ claude_key_enc: 'sealed', uses_owner_key: 1, owner_key_cap_usd: 5 }), { spent: 9 }).source, 'own', 'their own key always first');
@@ -57,6 +58,7 @@ test('aiAccess: the owner, a user\'s own key first, the owner\'s key under its c
   assert.equal(aiAccess(user({ uses_owner_key: 1, owner_key_cap_usd: null })).reason, 'no_key', 'no cap, no allowance');
   assert.equal(aiAccess(user({})).reason, 'no_key');
   assert.equal(aiAccess(user({ status: 'paused', claude_key_enc: 'sealed' })).reason, 'paused');
+  assert.equal(aiAccess(user({ health_consent_at: null, claude_key_enc: 'sealed' })).reason, 'consent', 'no AI before the health data consent');
   assert.equal(aiAccess(null).source, null);
 });
 
@@ -65,6 +67,7 @@ test('spend counts this month in the owner\'s time zone', () => {
   assert.equal(monthStartIso(new Date('2026-11-01T02:00:00Z')), '2026-10-01T04:00:00.000Z', 'still October in New York');
   const store = openHealthStore(':memory:');
   store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const add = (at, cost, uid = 'lee') => store.db.prepare("INSERT INTO runs (name, status, started_at, cost_usd, user_id) VALUES ('review', 'ok', ?, ?, ?)").run(at, cost, uid);
   add('2026-10-01T03:59:00Z', 7); // September 30 in New York
   add('2026-10-01T04:00:00Z', 1.25);
@@ -235,5 +238,37 @@ test("revoking the owner's key: works beside the user's own key and for a reject
   assert.equal(getUser(store.db, 'lee').uses_owner_key, 0);
   assert.equal((await key('lee', { on: true, cap: 5, confirmEmail: 'lee@example.com' })).statusCode, 409);
   await app.close();
+  store.close();
+});
+
+test('usage by week: totals across users for weeks ending Saturday in the owner\'s zone, newest first, counts only', () => {
+  const store = openHealthStore(':memory:');
+  const db = store.db;
+  db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  const run = db.prepare('INSERT INTO runs (name, status, started_at, user_id) VALUES (?, ?, ?, ?)');
+  run.run('review', 'ok', '2026-11-01T03:30:00Z', OWNER_ID); // Saturday 11:30 pm in New York: the week ending Oct 31
+  run.run('review', 'error', '2026-11-02T13:00:00Z', 'lee');
+  run.run('review', 'skipped', '2026-11-03T13:00:00Z', 'lee');
+  run.run('review', 'running', '2026-11-03T14:00:00Z', OWNER_ID); // still running: not counted
+  run.run('sync', 'ok', '2026-10-27T11:00:00Z', OWNER_ID);
+  run.run('sync', 'ok', '2026-11-02T11:00:00Z', 'lee');
+  run.run('sync', 'error', '2026-11-03T11:00:00Z', OWNER_ID);
+  run.run('sync', 'ok', '2026-10-01T11:00:00Z', OWNER_ID); // before the window
+  run.run('backup', 'ok', '2026-11-02T04:00:00Z', OWNER_ID); // not a counted kind
+  const checkin = db.prepare("INSERT INTO checkins (user_id, date, cadence, source, updated_at) VALUES (?, ?, 'daily', 'ui', 'x')");
+  checkin.run(OWNER_ID, '2026-10-30');
+  checkin.run(OWNER_ID, '2026-11-02');
+  checkin.run('lee', '2026-11-02');
+  checkin.run('lee', '2026-11-05'); // after today: not counted
+  const session = db.prepare("INSERT INTO log_sessions (id, user_id, date, assignment, source, updated_at) VALUES (?, ?, ?, 'unassigned', 'detected', 'x')");
+  session.run('s1', OWNER_ID, '2026-10-26');
+  session.run('s2', 'lee', '2026-11-01'); // a Sunday: the week ending Nov 7
+  const weeks = usageByWeek(db, { weeks: 2, now: new Date('2026-11-03T16:00:00Z'), tz: 'America/New_York' });
+  assert.deepEqual(weeks, [
+    { weekEnding: '2026-11-07', reviews: { completed: 0, failed: 1, skipped: 1 }, checkins: 2, liftingDays: 1, syncs: { completed: 1, failed: 1 } },
+    { weekEnding: '2026-10-31', reviews: { completed: 1, failed: 0, skipped: 0 }, checkins: 1, liftingDays: 1, syncs: { completed: 1, failed: 0 } },
+  ]);
+  // In UTC the 11:30 pm review falls on Sunday, so it counts in the next week: the owner's zone decides.
+  assert.equal(usageByWeek(db, { weeks: 2, now: new Date('2026-11-03T16:00:00Z'), tz: 'UTC' })[0].reviews.completed, 1);
   store.close();
 });

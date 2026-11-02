@@ -30,7 +30,7 @@ async function setup({ claims = {}, exchangeError = null, now } = {}) {
   const app = await buildApp({ store, authMode: 'google', auth: { settings, exchange, now: now ?? (() => clock.t) } });
   const cookiesFrom = (res) => [res.headers['set-cookie']].flat().filter(Boolean).map((c) => c.split(';')[0]).join('; ');
   const startLogin = async (next = '/') => {
-    const res = await app.inject(`/auth/login?next=${encodeURIComponent(next)}`);
+    const res = await app.inject(`/auth/login?go=1&next=${encodeURIComponent(next)}`);
     const url = new URL(res.headers.location);
     currentNonce = url.searchParams.get('nonce');
     return { res, url, loginCookie: cookiesFrom(res), state: url.searchParams.get('state') };
@@ -129,6 +129,7 @@ test('a session expires after its days; rejecting a user locks them out at once;
   // A second, approved user is locked out the moment the admin rejects them (the users row is read on every request).
   const sam = await setup({ claims: { email: 'sam@example.com' } });
   sam.store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('sam', 'sam@example.com', 'user', 'approved', 'x')").run();
+  sam.store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const samSession = (await sam.signIn()).session;
   const samStatus = () => sam.app.inject({ url: '/api/status', headers: { cookie: samSession } }).then((r) => r.statusCode);
   assert.equal(await samStatus(), 200);

@@ -33,6 +33,7 @@ async function setup({ claude } = {}) {
   const store = openHealthStore(':memory:');
   store.db.prepare(`INSERT INTO users (id, email, role, status, created_at, maps_shared) VALUES
     ('lee', 'lee@example.com', 'user', 'approved', 'x', 0), ('kim', 'kim@example.com', 'user', 'approved', 'x', 1)`).run();
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const access = { lee: { source: 'own', reason: null }, kim: { source: null, reason: 'no_key' } };
   const services = { claude: () => claude, aiAccess: (uid) => access[uid] ?? { source: 'owner', reason: null } };
   let email;
@@ -42,7 +43,7 @@ async function setup({ claude } = {}) {
   const cookies = (res) => [res.headers['set-cookie']].flat().filter(Boolean).map((c) => c.split(';')[0]).join('; ');
   const signIn = async (as) => {
     email = as;
-    const login = await app.inject('/auth/login');
+    const login = await app.inject('/auth/login?go=1');
     const url = new URL(login.headers.location);
     nonce = url.searchParams.get('nonce');
     const res = await app.inject({ url: `/auth/google/callback?state=${url.searchParams.get('state')}&code=c`, headers: { cookie: cookies(login) } });

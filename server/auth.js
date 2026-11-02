@@ -4,12 +4,15 @@
 //   AUTH_MODE=google  "Sign in with Google" (multi-user, phase 2): anyone may sign in and request access; only approved
 //                     users (the users table, checked on every request) reach the app. AUTH_ALLOWED_EMAILS's first address
 //                     is the owner (user 1, admin). Every page and API route needs the signed session cookie except
-//                     /auth/*, /privacy, /terms, /api/health (the deploy check) and /api/ingest/* (their own token).
+//                     /auth/*, /privacy, /terms, /consumer-health-data, /api/health (the deploy check) and /api/ingest/*
+//                     (their own token). An approved user other than the owner who has not given the health data
+//                     consent sees only /auth/consent (agree, or delete the account) and may export their data.
 //   AUTH_MODE=demo    The public, read-only demo over made-up data: no login, and every request that would change
 //                     data is refused. The demo instance (server/index.js) starts without Claude, Google or a sync.
 import { createHash, randomBytes } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { SESSION_COOKIE, LOGIN_COOKIE, sessionKey, sign, verify, parseCookies, cookie } from './session.js';
+import { needsHealthConsent } from '../db/users.js';
 
 export const LOOPBACK = ['127.0.0.1', '::1', 'localhost'];
 export const MODES = ['none', 'google', 'demo'];
@@ -25,7 +28,7 @@ export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const SHEETS_COOKIE = 'hr_sheets';
 // The app icons, favicon and manifest are open too: iOS fetches them for Add to Home Screen without the session cookie, and
 // browsers ask for /favicon.ico on the sign-in and policy pages (code-only files).
-const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png|apple-touch-icon\.png|favicon\.ico)$/, /^\/(privacy|terms)$/, /^\/guides(\/[a-z-]+)?$/];
+const OPEN_PATHS = [/^\/auth\//, /^\/api\/health$/, /^\/api\/ingest\//, /^\/(manifest\.webmanifest|icon-\d+\.png|apple-touch-icon\.png|favicon\.ico)$/, /^\/(privacy|terms|consumer-health-data)$/, /^\/guides(\/[a-z-]+)?$/];
 const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 export const DEMO_REFUSAL = 'This is a read-only demo with made-up data, so changes are turned off.';
 
@@ -105,6 +108,19 @@ const page = (title, body) =>
   '<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;background:#f4f3f0;color:#1d1d1b}' +
   '@media (prefers-color-scheme: dark){body{background:#121211;color:#e8e7e3}a{color:#6da7ec}}main{max-width:420px;padding:24px}</style></head>' +
   `<body><main><h1 style="font-size:20px">${escapeHtml(title)}</h1>${body}</main></body></html>`;
+/** The policy links on the sign-in pages: each policy its own link. */
+const POLICY_LINKS = '<p style="font-size:14px"><a href="/privacy" target="_blank">Privacy policy</a>, <a href="/consumer-health-data" target="_blank">Consumer health data privacy policy</a> and <a href="/terms" target="_blank">terms</a>.</p>';
+
+/**
+ * The health data consent, word for word (Request access and the one-time step), as HTML: the support address as a mailto
+ * link (or "the administrator"), and the last sentence linking to the Consumer Health Data Privacy Policy.
+ */
+export function healthConsentHtml(supportEmail) {
+  const support = supportEmail ? `<a href="mailto:${escapeHtml(supportEmail)}">${escapeHtml(supportEmail)}</a>` : 'the administrator';
+  return 'I consent to Health Review collecting and using the health information I provide (such as Apple Health data, check-ins, medications, supplements, lab results, workouts and my notes) to show it back to me, compute my metrics and, if I turn on AI, write my reviews and answers. It is stored on Amazon Web Services, sent to Anthropic only when AI is on for me, and never sold. ' +
+    `I can withdraw consent at any time by deleting my account in Settings or emailing ${support}. <a href="/consumer-health-data" target="_blank">See the Consumer Health Data Privacy Policy.</a>`;
+}
+
 /** Only same-site paths are allowed as the place to return to after signing in. */
 const safeNext = (next) => (typeof next === 'string' && /^\/(?!\/)/.test(next) && !next.startsWith('/auth/') ? next : '/');
 
@@ -117,7 +133,8 @@ const safeNext = (next) => (typeof next === 'string' && /^\/(?!\/)/.test(next) &
  *   tells the admin (google mode)
  */
 export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now(), findUser = () => null, registerUser = async () => {},
-  sheetsExchange, connectSheets = async () => {}, createSheet = async () => { throw new Error('Creating sheets is not available'); }, supportEmail = null } = {}) {
+  sheetsExchange, connectSheets = async () => {}, createSheet = async () => { throw new Error('Creating sheets is not available'); }, supportEmail = null,
+  recordConsent = async () => {}, deleteAccount = async () => {} } = {}) {
   // The published support address on the sign-in pages (escaped; null leaves the line out).
   const contact = supportEmail ? `<p>Questions: <a href="mailto:${escapeHtml(supportEmail)}">${escapeHtml(supportEmail)}</a></p>` : '';
   app.get('/api/me', {
@@ -167,6 +184,11 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
       if (path.startsWith('/api/')) return reply.code(403).send({ error: user ? 'This account is not approved yet.' : 'Request access first.' });
       return reply.redirect(where);
     }
+    // No health data consent yet (users approved before it): only the consent step, and exporting their data first.
+    if (needsHealthConsent(user) && !(req.method === 'GET' && path === '/api/account/export')) {
+      if (path.startsWith('/api/')) return reply.code(403).send({ error: 'Agree to the health data consent first.', consentRequired: true });
+      return reply.redirect('/auth/consent');
+    }
     req.user = session.email;
     req.uid = user.id;
     req.role = user.role;
@@ -174,6 +196,15 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
   });
 
   app.get('/auth/login', { schema: { hide: true } }, async (req, reply) => {
+    // The sign-in page (with the policy links); "Continue with Google" comes back with go=1 for Google's sign-in.
+    if (req.query?.go !== '1') {
+      const next = safeNext(req.query?.next);
+      const go = `/auth/login?go=1${next === '/' ? '' : `&next=${encodeURIComponent(next)}`}`;
+      return reply.type('text/html').send(page('Sign in to Health Review', `
+        <p>Health Review turns your Apple Health data, workouts and daily check-ins into charts and a weekly review. Anyone can request access, and the owner approves each request by hand.</p>
+        <p><a href="${escapeHtml(go)}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#2a78d6;color:#fff;text-decoration:none">Continue with Google</a></p>
+        ${POLICY_LINKS}${contact}`));
+    }
     const state = b64url(randomBytes(24));
     const nonce = b64url(randomBytes(24));
     const codeVerifier = b64url(randomBytes(32));
@@ -272,7 +303,7 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     const there = statusPage(findUser(session.email));
     if (there) return reply.redirect(there);
     return reply.type('text/html').send(page('Request access to Health Review', `
-      <p>You're asking to use <strong>Health Review with your own data</strong>. It's a private app shared by invitation, and the owner approves each request.</p>
+      <p>You're asking to use <strong>Health Review with your own data</strong>. It's a private app. Anyone can request access, and the owner approves each request by hand.</p>
       <p>Health Review turns your Apple Health data, workouts and daily check-ins into charts, tracks your goals and training programs, and can write a weekly review with AI. It's free; AI uses your own Claude key, only if you add one.</p>
       <p>Signed in as <strong>${escapeHtml(session.email)}</strong>.</p>
       <p><strong>No AI is used</strong> until you add your own Claude API key in Settings; everything else works without one.</p>
@@ -283,19 +314,68 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
         <label><input type="checkbox" name="workoutLog"> A Workout Log in Google Sheets</label><br>
         <label><input type="checkbox" name="manual" checked> Check-ins, drinks, meds and labs entered in the app</label></p>
         <p><label><input type="checkbox" name="agree" required> I agree to the <a href="/terms" target="_blank">terms</a> and the <a href="/privacy" target="_blank">privacy policy</a>.</label></p>
+        <p><label><input type="checkbox" name="healthConsent" required> ${healthConsentHtml(supportEmail)}</label></p>
         <p><button type="submit">Request access</button></p>
-      </form>${signOut}`));
+      </form>${POLICY_LINKS}${signOut}`));
   });
   app.post('/auth/register', { schema: { hide: true } }, async (req, reply) => {
     if (req.headers.origin !== origin) return reply.code(403).send({ error: 'Requests that change data must come from this site.' });
     const session = sessionOf(req);
     if (!session) return reply.redirect('/auth/login');
     if (!findUser(session.email)) {
-      if (req.body?.agree !== 'on') return reply.redirect('/auth/register');
+      // Both boxes: the terms and privacy policy, and the separate health data consent (the terms alone are not consent).
+      if (req.body?.agree !== 'on' || req.body?.healthConsent !== 'on') return reply.redirect('/auth/register');
       const feeds = Object.fromEntries(['appleHealth', 'workoutLog', 'manual'].map((f) => [f, req.body?.[f] === 'on']));
-      await registerUser({ email: session.email, name: typeof session.name === 'string' ? session.name : null, feeds });
+      await registerUser({ email: session.email, name: typeof session.name === 'string' ? session.name : null, feeds, healthConsent: true });
     }
     return reply.redirect(statusPage(findUser(session.email)) ?? '/');
+  });
+  // The one-time health data consent for users approved before it: agree, or delete the account (typed email), with a
+  // link to export their data first. Anyone else goes where they belong.
+  const consentPage = (email, error = '') => page('Your consent to use your health data', `
+      <p>Health Review now asks for your separate consent before it keeps using your health data.</p>
+      ${error ? `<p role="alert"><strong>${escapeHtml(error)}</strong></p>` : ''}
+      <form method="post" action="/auth/consent">
+        <input type="hidden" name="action" value="agree">
+        <p><label><input type="checkbox" name="healthConsent" required> ${healthConsentHtml(supportEmail)}</label></p>
+        <p><button type="submit">Agree</button></p>
+      </form>
+      <h2 style="font-size:17px">Or delete my account</h2>
+      <p>This deletes your account and everything stored for you at once. You can <a href="/api/account/export">download your data</a> first.</p>
+      <form method="post" action="/auth/consent">
+        <input type="hidden" name="action" value="delete">
+        <p><label>Type your email (${escapeHtml(email)}) to confirm<br><input name="confirmEmail" type="email" autocomplete="off" required></label></p>
+        <p><button type="submit">Delete my account</button></p>
+      </form>${POLICY_LINKS}${contact}${signOut}`);
+  // Who the consent step is for: a signed-in, approved or paused user who has not given it.
+  const consentUser = (req) => {
+    const session = sessionOf(req);
+    const user = session ? findUser(session.email) : null;
+    return { session, user, ok: Boolean(user) && !['pending', 'rejected'].includes(user.status) && needsHealthConsent(user) };
+  };
+  app.get('/auth/consent', { schema: { hide: true } }, async (req, reply) => {
+    const { session, user, ok } = consentUser(req);
+    if (!session) return reply.redirect('/auth/login');
+    if (!ok) return reply.redirect(statusPage(user) ?? '/auth/register');
+    return reply.type('text/html').send(consentPage(session.email));
+  });
+  app.post('/auth/consent', { schema: { hide: true } }, async (req, reply) => {
+    if (req.headers.origin !== origin) return reply.code(403).send({ error: 'Requests that change data must come from this site.' });
+    const { session, user, ok } = consentUser(req);
+    if (!session) return reply.redirect('/auth/login');
+    if (!ok) return reply.redirect(statusPage(user) ?? '/auth/register');
+    if (req.body?.action === 'agree') {
+      if (req.body?.healthConsent !== 'on') return reply.type('text/html').send(consentPage(session.email, 'Tick the box to agree.'));
+      await recordConsent(user.id);
+      return reply.redirect('/');
+    }
+    if (req.body?.action === 'delete') {
+      if (String(req.body?.confirmEmail ?? '').trim().toLowerCase() !== user.email) return reply.type('text/html').send(consentPage(session.email, 'Type your email exactly to confirm.'));
+      await deleteAccount(user.id);
+      reply.header('Set-Cookie', cookie(SESSION_COOKIE, '', { maxAge: 0, secure }));
+      return reply.type('text/html').send(page('Your account was deleted', `<p>Your account and everything stored for you were deleted. Copies in encrypted backups age out within about two months.</p>${contact}`));
+    }
+    return reply.redirect('/auth/consent');
   });
   app.get('/auth/waiting', { schema: { hide: true } }, async (req, reply) => {
     const email = sessionOf(req)?.email;

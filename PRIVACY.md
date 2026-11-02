@@ -1,6 +1,8 @@
 # Privacy Policy
 
-Health Review is a personal project run by its owner (the operator), shared with a few people by invitation. It is not a commercial service.
+Last updated: November 3, 2026
+
+Health Review is a personal project run by its owner (the operator). It is not a commercial service. People can request access, and the operator approves each request by hand. You must be 18 or older to use it.
 
 ## Signing in
 
@@ -21,7 +23,7 @@ Health Review is a personal project run by its owner (the operator), shared with
 
 - **You** see only your own data. Every part of the app is limited to the signed-in user.
 - **The operator** runs the server and can access the data stored on it, including yours. The app's administration screens show account details (name, email, status, whether a key is set), which feeds you set up (yes or no), when data last arrived, your AI spend this month and counts of your stored days and reviews; never your key, tokens or sheet links.
-- **The services that run the app, and nobody else.** Your data is never sold or used for advertising. Besides you and the operator, it is handled only by: Amazon Web Services (the server it is stored on), Anthropic (only when AI is on for you; see AI below) and Google (sign-in, and a Workout Log sheet you connect).
+- **The services that run the app, and nobody else.** Your data is never sold or used for advertising. Besides you and the operator, it is handled only by: Amazon Web Services (the server it is stored on), Anthropic (only when AI is on for you; see AI below), and Google (sign-in, a Workout Log sheet you connect, encrypted backups in the operator's Google Drive, and account and feedback emails sent through Gmail).
 
 ## Your data feeds
 
@@ -43,13 +45,16 @@ Health Review is a personal project run by its owner (the operator), shared with
 
 - Health Review answers only in the United States (the public demo, which holds made-up data only, is open everywhere): the server looks up the country of the address a request comes from (IP to Country Lite by DB-IP, https://db-ip.com, CC BY 4.0) and keeps no record of it.
 - In a database on a server in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
-- The public demo (not the app) counts anonymous visits with PostHog (https://posthog.com): that the demo was opened, which screens were opened, and whether a sample review was opened. Nothing typed or shown on screen is sent, no cookie is set, and each page load gets a new random id, so visits are not linked; PostHog sees the network address of the request, as any website does. The app you sign in to sends nothing to PostHog.
 - The server's disk is encrypted by Amazon with keys Amazon manages. The operator accepts this for now; a later move will use encryption keys the operator controls.
-- Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS. Seven nightly, three weekly and one monthly backup are kept, so a backup ages out within about two months.
+- Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS to the operator's Google Drive. Seven nightly, three weekly and one monthly backup are kept, so a backup ages out within about two months.
 
 ## The operator's own data
 
 The operator's account also reads the operator's own Google Sheets and Drive files (Sheets and Drive read-only, and Drive access to files the app created for its encrypted backups). Use of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including its Limited Use requirements.
+
+## The public demo
+
+The demo holds made-up data only. It counts visits with PostHog (https://posthog.com), hosted in the United States: that the demo was opened, which screens were opened, and whether a sample review was opened. These counts are used only to understand how the demo is used and improve it. Nothing typed or shown on screen is sent, no cookie is set, nothing is stored in your browser, and each page load gets a new random id, so visits are not linked. PostHog receives your network address with each request, as any website does, may use it to estimate your approximate location, and is set not to store it. If your browser sends Global Privacy Control, the demo sends no counts. A content blocker also stops them, and the demo works the same. To object, or with questions, email {{SUPPORT}}. The app you sign in to sends nothing to PostHog.
 
 ## Your choices
 
@@ -57,10 +62,15 @@ The operator's account also reads the operator's own Google Sheets and Drive fil
 - **Pause:** Settings, **Pause my account** stops new data and AI until you resume; your data stays. The operator can pause your account too, and then only the operator can resume it.
 - **Delete:** Settings, **Delete my account** removes your account and everything stored for you at once, after you type your email to confirm. Copies in the encrypted backups age out within about two months. You can also ask the operator to delete it.
 - Remove your Claude key or disconnect Google Sheets at any time in Settings, and revoke the app's Google access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+- **Consumer health data:** see the [Consumer Health Data Privacy Policy](/consumer-health-data) for your rights, including withdrawing consent.
 
 ## Not medical advice
 
 Nothing in Health Review is medical advice. See the [terms](/terms).
+
+## Changes
+
+If this policy changes in a way that matters, the operator will update the date above and email approved users.
 
 ## Contact
 

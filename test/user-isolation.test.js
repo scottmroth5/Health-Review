@@ -35,6 +35,7 @@ async function setup() {
   const store = openHealthStore(':memory:');
   refreshDemoDatabase(store, { today: TODAY }); // user A (the owner) gets the demo's made-up data
   store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, 'b@example.com', 'user', 'approved', 'x')").run(B);
+  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const app = await buildApp({ store, authMode: 'google', auth: { settings }, clock: () => new Date(`${TODAY}T16:00:00Z`), catalog: loadDemoCatalog() });
   const cookie = (email) => `hr_session=${sign({ email, exp: Date.now() + 3_600_000, v: 1 }, sessionKey(secret))}`;
   return { store, app, asA: cookie('a@example.com'), asB: cookie('b@example.com') };
@@ -88,6 +89,18 @@ test('isolation: no write route sent by B changes any of A\'s rows', async () =>
   }
   assert.equal(snapshot(store.db, OWNER_ID), before, "A's rows are unchanged");
   assert.equal(store.db.prepare("SELECT COUNT(*) FROM users WHERE email = 'b@example.com'").pluck().get(), 0, 'B deleted only themself');
+  await app.close();
+  store.close();
+});
+
+test('isolation: the weekly usage totals are the administrator\'s only, and carry counts, never who or what', async () => {
+  const { store, app, asA, asB } = await setup();
+  assert.equal((await app.inject({ url: '/api/admin/usage', headers: { cookie: asB } })).statusCode, 403);
+  const res = await app.inject({ url: '/api/admin/usage?weeks=4', headers: { cookie: asA } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json().length, 4);
+  const text = res.body;
+  for (const leak of ['a@example.com', 'b@example.com', OWNER_ID, B, 'user_id']) assert.ok(!text.includes(leak), leak);
   await app.close();
   store.close();
 });

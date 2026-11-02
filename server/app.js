@@ -36,8 +36,8 @@ import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
 import { isTimeZone, localStamp, ownerTz, withTimeZone } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDb } from '../db/scope.js';
-import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, startUserRun, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
-import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus } from './admin-queries.js';
+import { HEALTH_CONSENT_VERSION, OWNER_ID, clearIngestToken, getUser, newIngestToken, recordHealthConsent, setClaudeKey, setGoogleToken, setUserFeeds, startUserRun, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
+import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus, usageByWeek } from './admin-queries.js';
 import { GOALS as GOAL_LABELS, GOAL_KEYS, LAYOUT_ITEMS, TILES, cleanGoals } from './public/goals.js';
 import { MAX_ANSWER_CHARS, SECTION_KINDS, builderSpec, claudeDraft, templateDraft } from '../agent/prompt-draft.js';
 import { askHelp, MAX_QUESTION_CHARS } from '../agent/help.js';
@@ -191,9 +191,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const adminEmail = () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email;
   const appUrl = () => auth.settings?.publicUrl || 'http://localhost:5188';
   // A registration: a pending user, and an email to the admin (names and addresses only).
-  const registerUser = async ({ email, name, feeds }) => {
+  const registerUser = async ({ email, name, feeds, healthConsent = false }) => {
     if (userByEmail(store.db, email)) return;
-    createPendingUser(store.db, { id: randomUUID(), email, name });
+    createPendingUser(store.db, { id: randomUUID(), email, name, healthConsentVersion: healthConsent ? HEALTH_CONSENT_VERSION : null });
     if (feeds) setUserFeeds(store.db, userByEmail(store.db, email).id, JSON.stringify(feeds));
     log.info('[users] new registration');
     await mailer.send({ to: adminEmail(), subject: 'New Health Review registration',
@@ -220,11 +220,25 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     upsert.run('workout_log_created', id, clock().toISOString());
     log.info('[users] a Workout Log sheet was created');
   };
+  // Deleting an account (Settings, or the one-time consent step): everything stored for them, and an email to the admin.
+  const deleteAccount = async (uid) => {
+    const u = getUser(store.db, uid);
+    if (!u || u.role === 'admin') return;
+    deleteUserData(store.db, u.id);
+    log.info('[users] a user deleted their account');
+    await mailer.send({ to: adminEmail(), subject: 'Health Review: a user deleted their account',
+      text: `${u.name || u.email} (${u.email}) deleted their Health Review account and its data. Encrypted backups keep a copy until they age out.\n` });
+  };
+  const recordConsent = async (uid) => {
+    recordHealthConsent(store.db, uid, clock());
+    log.info('[users] health data consent given');
+  };
   registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
-    sheetsExchange: auth.sheetsExchange, connectSheets, createSheet });
+    sheetsExchange: auth.sheetsExchange, connectSheets, createSheet, recordConsent, deleteAccount });
   // The privacy policy and terms, readable before signing in.
   app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md', { SUPPORT: support })));
   app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md', { SUPPORT: support })));
+  app.get('/consumer-health-data', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('CONSUMER-HEALTH-DATA.md', { SUPPORT: support })));
   // Setup guides for each data feed (docs/guides), readable before signing in.
   const GUIDES = ['using-the-app', 'health-auto-export', 'workout-log', 'manual-entry', 'programs', 'prompts', 'claude-key'];
   // The demo's guides are its copy of the real ones: a banner says so and links to Request access, and the addresses in
@@ -392,6 +406,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     no_key: 'No AI is used until you add your Claude API key in Settings',
     cap: "This month's AI allowance is used up; add your own Claude API key in Settings to keep going",
     paused: 'Your account is paused by the administrator',
+    consent: 'No AI is used until you agree to the health data consent',
   };
   const noAi = (reply, reason) => reply.code(503).send({ error: NO_AI[reason] ?? NO_AI.no_key, needsKey: true, aiReason: reason ?? 'no_key' });
   const isPaused = (req) => getUser(store.db, uidOf(req))?.status === 'paused';
@@ -1353,10 +1368,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!notOwner(req, reply, 'deleted')) return reply;
     const u = getUser(store.db, uidOf(req));
     if (String(req.body.confirmEmail).trim().toLowerCase() !== u.email) throw badRequest('Type your email exactly to confirm');
-    deleteUserData(store.db, u.id);
-    log.info('[users] a user deleted their account');
-    await mailer.send({ to: adminEmail(), subject: 'Health Review: a user deleted their account',
-      text: `${u.name || u.email} (${u.email}) deleted their Health Review account and its data. Encrypted backups keep a copy until they age out.\n` });
+    await deleteAccount(u.id);
     reply.header('Set-Cookie', cookie(SESSION_COOKIE, '', { maxAge: 0, secure: appUrl().startsWith('https:') }));
     return { deleted: true };
   });
@@ -1392,6 +1404,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // Checked on request, after sign-in and before body validation, so a non-admin learns nothing about these routes.
   const isAdmin = (req) => authMode !== 'demo' && (req.role === 'admin' || (authMode === 'none' && uidOf(req) === OWNER_ID));
   const adminOnly = async (req, reply) => { if (!isAdmin(req)) return reply.code(403).send({ error: 'Administrators only' }); };
+  // Weekly usage totals across all users (counts only: no user, entry date, value or text), the Users screen's card.
+  app.get('/api/admin/usage', {
+    onRequest: adminOnly,
+    schema: { summary: 'Weekly totals across users: reviews completed, failed and skipped; check-ins; lifting days; syncs completed and failed (counts only)',
+      querystring: { type: 'object', additionalProperties: false, properties: { weeks: { type: 'integer', minimum: 1, maximum: 52, default: 12 } } },
+      response: { 200: { type: 'array', items: anyObject } } },
+  }, async (req) => usageByWeek(store.db, { weeks: req.query.weeks, now: clock() }));
   app.get('/api/admin/users', { onRequest: adminOnly, schema: { summary: 'Every user (account facts only, never keys or health data), pending first', response: { 200: { type: 'array', items: anyObject } } } },
     async () => listUsers(store.db, { now: clock() }));
   const userIdParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64 } } };

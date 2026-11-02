@@ -46,10 +46,24 @@ export function newIngestToken(db, uid) {
   return token;
 }
 
-/** The approved user a posted ingest token belongs to, or null. */
+/** The approved user a posted ingest token belongs to, or null (also null until they give the health data consent). */
 export function userByIngestToken(db, token) {
   if (!token) return null;
-  return (db.unscoped ?? db).prepare("SELECT id, status FROM users WHERE ingest_token_hash = ? AND status = 'approved'").get(ingestTokenHash(token)) ?? null;
+  return (db.unscoped ?? db).prepare("SELECT id, status FROM users WHERE ingest_token_hash = ? AND status = 'approved' AND (role = 'admin' OR health_consent_at IS NOT NULL)")
+    .get(ingestTokenHash(token)) ?? null;
+}
+
+// The health data consent (CONSUMER-HEALTH-DATA.md): its version is the date of the consent text; a new version is a
+// new text, which people would have to agree to again.
+export const HEALTH_CONSENT_VERSION = '2026-11-03';
+
+/** Whether a user must still give the health data consent: everyone but the owner (an admin), until they have. */
+export const needsHealthConsent = (user) => Boolean(user) && user.role !== 'admin' && user.id !== OWNER_ID && !user.health_consent_at;
+
+/** Records that a user gave the health data consent, now, at the current version. */
+export function recordHealthConsent(db, uid, now = new Date()) {
+  (db.unscoped ?? db).prepare('UPDATE users SET health_consent_at = ?, health_consent_version = ? WHERE id = ?')
+    .run(now.toISOString(), HEALTH_CONSENT_VERSION, uid);
 }
 
 /** Turns a user's ingest token off. */

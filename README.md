@@ -59,6 +59,12 @@ what is running.
   later move to RDS and EC2 with a key you control in KMS.
 - **Backups:** the nightly backup is still encrypted with your own passphrase before it leaves the server.
 
+**Policies and consent.** [PRIVACY.md](PRIVACY.md), [TERMS.md](TERMS.md) and
+[CONSUMER-HEALTH-DATA.md](CONSUMER-HEALTH-DATA.md) are served at /privacy, /terms and /consumer-health-data (with
+{{SUPPORT}} filled in), linked from the sign-in page, Request access, Settings, Help and the demo banner. Request access
+asks for the terms and a separate health data consent; users approved before the consent see a one-time consent step
+(agree, or delete their account) and get no new data, AI or scheduled jobs until they agree. The owner is never asked.
+
 **Other people (multi-user).** Anyone can sign in with Google and **request access**; you get an email and approve or
 reject them on the **Users** tile (Home). An approved user starts with the default prompt sections and **no AI** until
 they add their own Claude API key in **Settings** (stored encrypted, never shown again, not even to you; they pay

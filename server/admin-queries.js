@@ -6,6 +6,8 @@ import { RUNNING_STALE_MINUTES } from './scheduler.js';
 import { monthStartIso } from './ai-access.js';
 import { USER_TABLES } from '../db/migrations-users.js';
 import { setupSteps } from './setup.js';
+import { DEFAULT_TZ, localDate } from '../tools/time.js';
+import { addDays } from '../metrics/stats.js';
 
 /**
  * When each job last ran and whether one is running now, for any user (a scheduled job runs for every user in turn, so
@@ -78,10 +80,11 @@ export function listUsers(db, { now = new Date() } = {}) {
 }
 
 /** A new pending user from a registration (their Google name and address); returns the row. */
-export function createPendingUser(db, { email, name, id, now = new Date().toISOString() }) {
+export function createPendingUser(db, { email, name, id, now = new Date().toISOString(), healthConsentVersion = null }) {
   const raw = db.unscoped ?? db;
-  raw.prepare("INSERT INTO users (id, email, name, role, status, created_at, terms_accepted_at) VALUES (?, ?, ?, 'user', 'pending', ?, ?)")
-    .run(id, String(email).toLowerCase(), name ?? null, now, now);
+  raw.prepare(`INSERT INTO users (id, email, name, role, status, created_at, terms_accepted_at, health_consent_at, health_consent_version)
+    VALUES (?, ?, ?, 'user', 'pending', ?, ?, ?, ?)`)
+    .run(id, String(email).toLowerCase(), name ?? null, now, now, healthConsentVersion ? now : null, healthConsentVersion);
   return raw.prepare('SELECT * FROM users WHERE id = ?').get(id);
 }
 
@@ -96,7 +99,8 @@ export function setUserStatus(db, id, status, now = new Date().toISOString()) {
 /** Users who get scheduled jobs: approved, not paused. The owner is first. */
 export function activeUserIds(db) {
   const raw = db.unscoped ?? db;
-  return raw.prepare("SELECT id FROM users WHERE status = 'approved' ORDER BY role = 'admin' DESC, created_at").pluck().all();
+  // A user who has not given the health data consent gets no scheduled jobs until they do.
+  return raw.prepare("SELECT id FROM users WHERE status = 'approved' AND (role = 'admin' OR health_consent_at IS NOT NULL) ORDER BY role = 'admin' DESC, created_at").pluck().all();
 }
 
 /** The administrator's Claude key for a user: on with a monthly cap in dollars, or off (cap cleared). Never an admin. */
@@ -149,6 +153,39 @@ export function deleteUserData(db, uid) {
     raw.prepare('DELETE FROM users WHERE id = ?').run(uid);
   })();
   return counts;
+}
+
+/**
+ * Usage across all users by week (the Users screen's card; no third party): for each week ending Saturday in the owner's
+ * time zone, newest first, the reviews completed, failed and skipped, check-ins saved, lifting days logged, and syncs
+ * completed and failed. Totals only: never a user, an entry's date, a value or any text. Runs count in the week they
+ * started (UTC times read as the owner's dates); check-ins and lifting days in the week of their day. The current week
+ * runs to today.
+ */
+export function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env.OWNER_TZ || DEFAULT_TZ } = {}) {
+  const raw = db.unscoped ?? db;
+  const today = localDate(now, tz);
+  const dayOfWeek = (date) => new Date(`${date}T00:00:00Z`).getUTCDay();
+  const thisEnd = addDays(today, 6 - dayOfWeek(today));
+  const ends = Array.from({ length: weeks }, (_, i) => addDays(thisEnd, -7 * i));
+  const from = addDays(ends[ends.length - 1], -6);
+  const rows = new Map(ends.map((weekEnding) => [weekEnding, {
+    weekEnding, reviews: { completed: 0, failed: 0, skipped: 0 }, checkins: 0, liftingDays: 0, syncs: { completed: 0, failed: 0 },
+  }]));
+  const weekOf = (date) => (date >= from && date <= today ? rows.get(addDays(date, 6 - dayOfWeek(date))) : null);
+  // A day of slack before the first week: started_at is UTC, and the owner's day can begin a few hours later or earlier.
+  const runs = raw.prepare(`SELECT name, status, started_at FROM runs
+    WHERE name IN ('review', 'sync') AND status IN ('ok', 'error', 'skipped') AND started_at >= ?`).all(`${addDays(from, -1)}T00:00:00Z`);
+  for (const r of runs) {
+    const w = weekOf(localDate(new Date(r.started_at), tz));
+    if (!w) continue;
+    if (r.name === 'review') w.reviews[{ ok: 'completed', error: 'failed', skipped: 'skipped' }[r.status]] += 1;
+    else if (r.status !== 'skipped') w.syncs[r.status === 'ok' ? 'completed' : 'failed'] += 1;
+  }
+  const byDay = (table) => raw.prepare(`SELECT date, COUNT(*) AS n FROM ${table} WHERE date BETWEEN ? AND ? GROUP BY date`).all(from, today);
+  for (const { date, n } of byDay('checkins')) { const w = weekOf(date); if (w) w.checkins += n; }
+  for (const { date, n } of byDay('log_sessions')) { const w = weekOf(date); if (w) w.liftingDays += n; }
+  return [...rows.values()];
 }
 
 /** Feedback from every user for the administrator, newest first, with who sent it. */
