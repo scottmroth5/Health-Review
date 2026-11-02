@@ -7,9 +7,38 @@
 export const APP = 'health_review_demo';
 export const SECTIONS = ['home', 'today', 'training', 'programs', 'health', 'meds', 'labs', 'reviews', 'prompt', 'activity', 'settings', 'users', 'help'];
 
+// Where a visit came from, in general terms only (trafficSource): never the address itself.
+export const SOURCES = ['linkedin', 'github', 'scottmroth', 'other', 'direct'];
+const UTM_SOURCES = ['linkedin', 'github', 'scottmroth'];
+
+/** Whether a hostname is a domain or one of its subdomains (never a lookalike such as linkedin.com.example.com). */
+const within = (host, domain) => Boolean(domain) && (host === domain || host.endsWith(`.${domain}`));
+
+/**
+ * A visit's source, worked out in the browser: utm_source when it is exactly linkedin, github or scottmroth (any other
+ * value is ignored), else the referrer's hostname: the demo's own host is direct, linkedin.com and lnkd.in (and their
+ * subdomains) linkedin, github.com github, the operator's site (PERSONAL_SITE, from the server; and its subdomains)
+ * scottmroth, any other host other, and no referrer direct. Only the category is ever sent.
+ * @param {{ search?: string, referrer?: string, ownHost?: string, site?: string|null }} p
+ */
+export function trafficSource({ search = '', referrer = '', ownHost = '', site = null } = {}) {
+  let utm = '';
+  try { utm = String(new URLSearchParams(search).get('utm_source') ?? '').trim().toLowerCase(); } catch { /* ignored */ }
+  if (UTM_SOURCES.includes(utm)) return utm;
+  if (!referrer) return 'direct';
+  let host;
+  try { host = new URL(referrer).hostname.toLowerCase().replace(/\.$/, ''); } catch { return 'other'; }
+  if (!host) return 'other';
+  if (host === String(ownHost).toLowerCase()) return 'direct';
+  if (within(host, 'linkedin.com') || within(host, 'lnkd.in')) return 'linkedin';
+  if (host === 'github.com') return 'github';
+  if (within(host, site ? String(site).toLowerCase() : null)) return 'scottmroth';
+  return 'other';
+}
+
 // Each event and the one property it may carry, with its allowed values.
 const EVENTS = {
-  demo_opened: null,
+  demo_opened: ['source', SOURCES],
   section_viewed: ['section', SECTIONS],
   sample_review_opened: ['which', ['latest', 'earlier']],
 };

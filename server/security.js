@@ -18,9 +18,16 @@ export const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join('; ');
 
+/** A bare lowercase hostname (PERSONAL_SITE), or null. */
+export const siteHostname = (value) => {
+  const site = String(value ?? '').trim().toLowerCase();
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(site) && site.length <= 253 ? site : null;
+};
+
 /**
- * The demo's analytics settings, checked: { host: an https origin, token: a PostHog project token (phc_...) }, or null
- * when either is missing or malformed (so a bad value turns analytics off rather than widening the CSP).
+ * The demo's analytics settings, checked: { host: an https origin, token: a PostHog project token (phc_...), site?: the
+ * operator's website hostname for the scottmroth source }, or null when the host or token is missing or malformed (so a
+ * bad value turns analytics off rather than widening the CSP). A bad site is left out on its own.
  */
 export function analyticsConfig(analytics) {
   const token = String(analytics?.token ?? '').trim();
@@ -28,7 +35,8 @@ export function analyticsConfig(analytics) {
   let url;
   try { url = new URL(String(analytics?.host ?? '')); } catch { return null; }
   if (url.protocol !== 'https:' || url.username || url.password) return null;
-  return { host: url.origin, token };
+  const site = siteHostname(analytics?.site);
+  return { host: url.origin, token, ...(site ? { site } : {}) };
 }
 
 /**

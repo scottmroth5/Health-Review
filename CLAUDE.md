@@ -55,7 +55,12 @@ Health specific logic stays in this repo; never add it to agent-core.
                     Global Privacy Control (navigator.globalPrivacyControl true) sends and queues nothing (createTracker,
                     test/analytics.test.js). The read-only demo stores nothing in the browser: per-browser choices (chart
                     views, Training view, Next program weights) go through app.js prefs, in memory when readOnly (PRIVACY.md
-                    says so). The demo banner links Privacy and Consumer health data
+                    says so). The demo banner links Privacy and Consumer health data. demo_opened carries source
+                    (trafficSource, 2026-11-02): utm_source if exactly linkedin, github or scottmroth, else the referrer's
+                    hostname (the demo's own host direct; linkedin.com, lnkd.in and subdomains linkedin; github.com github;
+                    PERSONAL_SITE and subdomains scottmroth; any other host other; none direct); only the category is
+                    sent. PERSONAL_SITE (server .env, a bare hostname; compose passes it to app and demo) never appears in
+                    the repo: /api/status analytics.site, and PRIVACY.md's {{PERSONAL_SITE}} filled at render time
 /evals              fixtures/metrics (metric regression), fixtures/v1 (v1 golden outputs, see its README), and the review
                     contract eval: review-cases.json (real weeks by date only, synthetic overlays), grade-review.js
                     (shared grading), run-review-eval.mjs (runner from the claude-api skill scaffold)

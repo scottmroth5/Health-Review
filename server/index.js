@@ -78,6 +78,8 @@ if (demo) {
     requestAccessUrl: process.env.REQUEST_ACCESS_URL || null,
     // Anonymous visit counts (server/public/analytics.js), read only here, never by the main instance.
     analytics: { token: process.env.DEMO_ANALYTICS_TOKEN, host: process.env.DEMO_ANALYTICS_HOST || 'https://us.i.posthog.com' },
+    // The operator's website (a hostname): the demo's scottmroth source and the privacy policy's wording.
+    personalSite: process.env.PERSONAL_SITE || null,
     catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')),
   });
 } else {
@@ -200,7 +202,7 @@ if (demo) {
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
   app = await buildApp({
-    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer, geo, supportEmail: process.env.SUPPORT_EMAIL,
+    store, services, publicDir: repoPath('server', 'public'), authMode, auth, ingest, trustProxy, evalDir: dataPath('evals', 'review'), mailer, geo, supportEmail: process.env.SUPPORT_EMAIL, personalSite: process.env.PERSONAL_SITE || null,
     schedule: () => scheduler.status(),
   });
 }

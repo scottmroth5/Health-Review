@@ -6,7 +6,7 @@ import swagger from '@fastify/swagger';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { registerAuth } from './auth.js';
-import { registerSecurityHeaders, registerRateLimits, errorReply, DEMO_REQUEST_LIMIT, analyticsConfig } from './security.js';
+import { registerSecurityHeaders, registerRateLimits, errorReply, DEMO_REQUEST_LIMIT, analyticsConfig, siteHostname } from './security.js';
 import * as q from './queries.js';
 import { TIMINGS } from '../metrics/medications.js';
 import { VIEWS } from '../metrics/volume.js';
@@ -129,9 +129,9 @@ const badRequest = (message) => Object.assign(new Error(message), { statusCode: 
  *   prompt or report text), so docker compose logs shows what ran
  * @param {string|null} [ctx.evalDir]  the review eval's results folder, priced into GET /api/spend (main instance only)
  */
-export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null, geo = {}, supportEmail = null, analytics = null }) {
+export async function buildApp({ store, services = {}, publicDir, authMode = 'none', auth = {}, ingest = {}, trustProxy = false, clock = () => new Date(), logger = false, log = console, schedule = () => [], catalog, dictionary, substitutions, features = {}, instance = 'main', evalDir = null, price = costFromUsage, targetConfig, labRanges, mailer = createMailer({ env: {} }), keyCheck = anthropicKeyCheck, keyBox, requestAccessUrl = null, geo = {}, supportEmail = null, analytics = null, personalSite = null }) {
   // Demo analytics (server/public/analytics.js): only in the demo, with an https host and a PostHog project token.
-  const demoAnalytics = authMode === 'demo' ? analyticsConfig(analytics) : null;
+  const demoAnalytics = authMode === 'demo' ? analyticsConfig({ ...analytics, site: personalSite }) : null;
   // The published support address (SUPPORT_EMAIL), never written in the repo; null shows "the administrator".
   const support = supportEmailFrom(supportEmail);
   const supportLine = support ? `\nQuestions or problems: ${support}\n` : '';
@@ -236,7 +236,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
     sheetsExchange: auth.sheetsExchange, connectSheets, createSheet, recordConsent, deleteAccount });
   // The privacy policy and terms, readable before signing in.
-  app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md', { SUPPORT: support })));
+  // {{PERSONAL_SITE}}: the operator's website (PERSONAL_SITE), named only at render time so the repo never holds it.
+  app.get('/privacy', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('PRIVACY.md', { SUPPORT: support, PERSONAL_SITE: siteHostname(personalSite) ?? "the operator's website" })));
   app.get('/terms', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('TERMS.md', { SUPPORT: support })));
   app.get('/consumer-health-data', { schema: { hide: true } }, async (req, reply) => reply.type('text/html').send(policyPage('CONSUMER-HEALTH-DATA.md', { SUPPORT: support })));
   // Setup guides for each data feed (docs/guides), readable before signing in.

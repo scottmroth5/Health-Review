@@ -2,7 +2,7 @@ import { lineChart, columnChart } from './charts.js';
 import { DEMO_KEY, demoFromLocation, redactReview, isDrinkingChart } from './demo.js';
 import { GOALS, LAYOUT_ITEMS, arranged, tileOrder, goalWeights } from './goals.js';
 import { upperTops, zone2Default, zoneOrderProblem } from './zone-defaults.js';
-import { SECTIONS, startAnalytics, track } from './analytics.js';
+import { SECTIONS, startAnalytics, track, trafficSource } from './analytics.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -3388,8 +3388,11 @@ $$('[data-range]').forEach((b) => b.addEventListener('click', () => {
 }));
 setupDemo();
 // The public demo's anonymous visit counts (analytics.js): on only when the server sends a config; events from the first
-// screen wait for it.
-track('demo_opened');
-api('GET', '/api/status').then((s) => { state.prefsLocal = !s.readOnly; startAnalytics(s.analytics); }).catch(() => startAnalytics());
+// screen wait for it. demo_opened carries only a general source category, worked out here (never the address).
+api('GET', '/api/status').then((s) => {
+  state.prefsLocal = !s.readOnly;
+  startAnalytics(s.analytics);
+  track('demo_opened', { source: trafficSource({ search: location.search, referrer: document.referrer, ownHost: location.hostname, site: s.analytics?.site }) });
+}).catch(() => startAnalytics());
 window.addEventListener('hashchange', route);
 route();
