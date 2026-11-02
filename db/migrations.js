@@ -528,4 +528,21 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    // Visits by browser and main version ("Chrome 130") join the usage totals. SQLite cannot change a CHECK, so the table
+    // is rebuilt with its rows. Still app-wide and not in USER_TABLES: no user, IP address, user agent or referrer.
+    id: '033-usage-totals-browser',
+    up: `
+      CREATE TABLE usage_totals_new (
+        day TEXT NOT NULL,
+        dimension TEXT NOT NULL CHECK (dimension IN ('device', 'browser', 'location', 'source')),
+        value TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, dimension, value)
+      );
+      INSERT INTO usage_totals_new (day, dimension, value, count) SELECT day, dimension, value, count FROM usage_totals;
+      DROP TABLE usage_totals;
+      ALTER TABLE usage_totals_new RENAME TO usage_totals;
+    `,
+  },
 ];

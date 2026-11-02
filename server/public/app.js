@@ -1331,6 +1331,7 @@ async function loadAdminUsage(weeks = usageView.weeks) {
     h('h3', { class: 'sub' }, `Visits and arrivals, last ${weeks} weeks`),
     h('p', { class: 'muted small' }, 'A visit is one signed-in account on one day. Each total stands alone: devices, places and sources are never linked.'),
     usageBars('Visits by device', u.visits.device, (v) => DEVICE_LABELS[v] ?? v),
+    usageBars('Visits by browser', u.visits.browser),
     usageBars('Visits by country', loc.countries),
     usageBars('Visits by state', loc.states),
     usageBars('Top cities', loc.cities),

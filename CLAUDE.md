@@ -482,13 +482,14 @@ logged): GET /api/admin/usage?weeks=4..52 (default 12; strict response schema, a
 (server/admin-queries.js usageByWeek, per week ending Saturday in OWNER_TZ, newest first, to today: activeUsers = distinct
 users with their own activity, a check-in, a lifting day, a completed review or an accepted ingest post, never scheduled
 syncs or skipped reviews; reviews completed, failed, skipped; check-ins; lifting days; syncs completed, failed; spendUsd
-from runs.cost_usd of every run; feedback), and for the same period usageTotals: visits by device and by location
+from runs.cost_usd of every run; feedback), and for the same period usageTotals: visits by device, by browser and by location
 (countries, states, top 15 cities) and arrivals by source (google_signin_return left out). Usage totals (server/usage-totals.js,
-migration 032 usage_totals: day, dimension device|location|source, value, count; app-wide, deliberately not in USER_TABLES,
+migrations 032 and 033 usage_totals: day, dimension device|browser|location|source, value, count; app-wide, deliberately not in USER_TABLES,
 so not exported or deleted with an account; backed up with the database): google mode only. A visit is a signed-in
 browser request that passed every gate (auth.js sets req.browserSession) to / or /api/* with status under 400, once per
 account per owner day (an in-memory set, never written; a restart may count twice): +1 device (deviceOf: phone, tablet,
-computer from the user agent and Sec-CH-UA-Mobile) and +1 location ("City, State, Country" from the local DB-IP City
+computer from the user agent and Sec-CH-UA-Mobile), +1 browser (browserOf: Edge, Opera, Samsung Internet, Firefox,
+Chrome or Safari and the main version, "Chrome 130", else Other; migration 033 rebuilt the table to allow it) and +1 location ("City, State, Country" from the local DB-IP City
 Lite database, server/geo.js loadGeoReader place; unknown when the lookup fails or the address is private). An arrival is
 a GET 200 of / or the sign-in page (/auth/login without go=1), Sec-Fetch-Dest document when sent, never same-origin or
 from the app's own host: sourceOf gives linkedin, github, site, demo, google_signin_return, other or direct (utm_source

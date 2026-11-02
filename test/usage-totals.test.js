@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
-import { SOURCES, deviceOf, locationOf, sourceOf, hostnameOrNull } from '../server/usage-totals.js';
+import { SOURCES, browserOf, deviceOf, locationOf, sourceOf, hostnameOrNull } from '../server/usage-totals.js';
+import { MIGRATIONS } from '../db/migrations.js';
 import { USER_TABLES } from '../db/migrations-users.js';
 import { usageTotals } from '../server/admin-queries.js';
 
@@ -33,6 +34,47 @@ test('deviceOf: phone, tablet or computer', () => {
   assert.equal(deviceOf(ANDROID_TABLET), 'tablet');
   assert.equal(deviceOf(DESKTOP, '?0'), 'computer');
   assert.equal(deviceOf(undefined), 'computer');
+});
+
+test('browserOf: the browser and its main version only, most specific first', () => {
+  const cases = [
+    [DESKTOP, 'Chrome 130'],
+    ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.2849.68', 'Edge 130'],
+    ['Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36 EdgA/130.0.2849.65', 'Edge 130'],
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/130.2849.80 Version/18.0 Mobile/15E148 Safari/604.1', 'Edge 130'],
+    ['Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0', 'Firefox 132'],
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/132.0 Mobile/15E148 Safari/605.1.15', 'Firefox 132'],
+    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15', 'Safari 18'],
+    [IPHONE, 'Safari 18'],
+    [IPAD, 'Safari 18'],
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.6723.90 Mobile/15E148 Safari/604.1', 'Chrome 130'],
+    ['Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0.0.0 Mobile Safari/537.36', 'Samsung Internet 27'],
+    ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 OPR/114.0.0.0', 'Opera 114'],
+    [ANDROID_PHONE, 'Chrome 130'],
+    ['', 'Other'],
+    [undefined, 'Other'],
+    ['curl/8.4.0', 'Other'],
+    ['Mozilla/5.0 Chrome/1300000.0 Safari/537.36', 'Chrome'],
+    ['Mozilla/5.0 Chrome/0130.0', 'Chrome 130'],
+  ];
+  for (const [ua, want] of cases) assert.equal(browserOf(ua), want, String(ua));
+  for (const [ua] of cases) assert.match(browserOf(ua), /^(Edge|Opera|Samsung Internet|Firefox|Chrome|Safari)( \d{1,4})?$|^Other$/);
+});
+
+test('migration 033: the usage totals keep their rows and accept browser', () => {
+  // The table as migration 032 made it, with a row, then 033 on top.
+  const store = openHealthStore(':memory:');
+  const db = store.db;
+  db.exec(`DROP TABLE usage_totals;
+    CREATE TABLE usage_totals (day TEXT NOT NULL, dimension TEXT NOT NULL CHECK (dimension IN ('device', 'location', 'source')),
+      value TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, dimension, value));`);
+  db.prepare("INSERT INTO usage_totals (day, dimension, value, count) VALUES ('2026-11-02', 'device', 'phone', 3)").run();
+  assert.throws(() => db.prepare("INSERT INTO usage_totals (day, dimension, value, count) VALUES ('2026-11-02', 'browser', 'Chrome 130', 1)").run());
+  db.exec(MIGRATIONS.find((m) => m.id === '033-usage-totals-browser').up);
+  assert.deepEqual(db.prepare('SELECT day, dimension, value, count FROM usage_totals').all(), [{ day: '2026-11-02', dimension: 'device', value: 'phone', count: 3 }]);
+  db.prepare("INSERT INTO usage_totals (day, dimension, value, count) VALUES ('2026-11-02', 'browser', 'Chrome 130', 1)").run();
+  assert.throws(() => db.prepare("INSERT INTO usage_totals (day, dimension, value, count) VALUES ('2026-11-02', 'email', 'x', 1)").run());
+  store.close();
 });
 
 test('locationOf: City, State, Country from the local database; a failed or private lookup is unknown', () => {
@@ -115,11 +157,13 @@ test('visits: once per account per owner day, by device and location; nothing el
   await lee('/api/status', { 'user-agent': DESKTOP }, '203.0.113.9');
   await lee('/api/home');
   assert.deepEqual(totals('device'), { phone: 1 });
+  assert.deepEqual(totals('browser'), { 'Safari 18': 1 }, 'the later desktop request the same day is not counted');
   assert.deepEqual(totals('location'), { 'Springfield, Ohio, United States': 1 });
   // Another account counts on its own; a failed lookup is unknown.
   const owner = await signIn('owner@example.com');
   await owner('/api/status', { 'user-agent': DESKTOP }, '203.0.113.9');
   assert.deepEqual(totals('device'), { computer: 1, phone: 1 });
+  assert.deepEqual(totals('browser'), { 'Chrome 130': 1, 'Safari 18': 1 });
   assert.deepEqual(totals('location'), { 'Springfield, Ohio, United States': 1, unknown: 1 });
   // A refused request (a pending account) and ingest posts never count.
   const kim = await signIn('kim@example.com');
@@ -194,6 +238,8 @@ test('the period totals: devices, locations rolled up to countries and states wi
   add.run('2026-11-03', 'device', 'phone', 1);
   add.run('2026-11-03', 'device', 'computer', 2);
   add.run('2026-10-01', 'device', 'tablet', 9); // outside the period
+  add.run('2026-11-03', 'browser', 'Safari 18', 2);
+  add.run('2026-11-02', 'browser', 'Chrome 130', 1);
   add.run('2026-11-02', 'location', 'Springfield, Ohio, United States', 2);
   add.run('2026-11-03', 'location', 'Dayton, Ohio, United States', 1);
   add.run('2026-11-03', 'location', 'Austin, Texas, United States', 1);
@@ -202,6 +248,7 @@ test('the period totals: devices, locations rolled up to countries and states wi
   add.run('2026-11-03', 'source', 'google_signin_return', 5);
   const t = usageTotals(store.db, { from: '2026-10-27', to: '2026-11-03' });
   assert.deepEqual(t.visits.device, [{ value: 'phone', count: 4 }, { value: 'computer', count: 2 }]);
+  assert.deepEqual(t.visits.browser, [{ value: 'Safari 18', count: 2 }, { value: 'Chrome 130', count: 1 }]);
   assert.deepEqual(t.visits.location.countries, [{ value: 'United States', count: 4 }, { value: 'Unknown', count: 1 }]);
   assert.deepEqual(t.visits.location.states, [{ value: 'Ohio, United States', count: 3 }, { value: 'Texas, United States', count: 1 }, { value: 'Unknown', count: 1 }]);
   assert.deepEqual(t.visits.location.cities[0], { value: 'Springfield, Ohio, United States', count: 2 });

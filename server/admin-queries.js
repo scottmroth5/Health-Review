@@ -218,7 +218,7 @@ export function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env
 }
 
 /**
- * The usage totals (usage_totals, server/usage-totals.js) summed over owner days from..to: visits by device and by
+ * The usage totals (usage_totals, server/usage-totals.js) summed over owner days from..to: visits by device, by browser and by
  * location (rolled up to countries and states, with the top cities), and arrivals by source. A return from Google's
  * sign-in is left out of arrivals: it is kept only so that coming back from signing in never counts as a real source.
  * Counts only, largest first.
@@ -240,7 +240,7 @@ export function usageTotals(db, { from, to, topCities = 15 }) {
     cities.push({ value: parts.length === 3 ? value : 'Unknown', count });
   }
   return {
-    visits: { device: sum('device'), location: { countries: ranked(countries), states: ranked(states), cities: cities.slice(0, topCities) } },
+    visits: { device: sum('device'), browser: sum('browser'), location: { countries: ranked(countries), states: ranked(states), cities: cities.slice(0, topCities) } },
     arrivals: sum('source').filter((r) => r.value !== 'google_signin_return'),
   };
 }

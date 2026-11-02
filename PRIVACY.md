@@ -50,7 +50,7 @@ Health Review is a personal project run by its owner (the operator). It is not a
 
 ## Usage totals
 
-The app keeps totals to show how it is used. Once a day, the first time you use the app in a browser, the server adds one to totals of visits by approximate location (city, state, and country) and by device type (phone, tablet, or computer). It works out your location from your IP address on the server, without an outside service. It also counts how people arrive at the app, using a general category: LinkedIn, GitHub, the operator's website, the demo, other, or direct. It does not keep your IP address, browser details, or the address you came from, and these totals are not linked to your account, so they remain if you delete it. Because few people use the app, a city total could still suggest who a visit came from. Only the operator sees these totals.
+The app keeps totals to show how it is used. Once a day, the first time you use the app in a browser, the server adds one to totals of visits by approximate location (city, state, and country) and by device type (phone, tablet, or computer) and by browser and its main version (such as Chrome 130 or Safari 18). It works out your location from your IP address on the server, without an outside service. It also counts how people arrive at the app, using a general category: LinkedIn, GitHub, the operator's website, the demo, other, or direct. It does not keep your IP address, the rest of your browser details, or the address you came from, and these totals are not linked to your account, so they remain if you delete it. Because few people use the app, a city total could still suggest who a visit came from. Only the operator sees these totals.
 
 ## The operator's own data
 

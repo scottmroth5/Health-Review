@@ -1435,7 +1435,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       weekEnding: { type: 'string' }, activeUsers: count, reviews: strict({ completed: count, failed: count, skipped: count }),
       checkins: count, liftingDays: count, syncs: strict({ completed: count, failed: count }), spendUsd: { type: 'number' }, feedback: count,
     }) },
-    visits: strict({ device: valueCounts, location: strict({ countries: valueCounts, states: valueCounts, cities: valueCounts }) }),
+    visits: strict({ device: valueCounts, browser: valueCounts, location: strict({ countries: valueCounts, states: valueCounts, cities: valueCounts }) }),
     arrivals: valueCounts,
   });
   app.get('/api/admin/usage', {

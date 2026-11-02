@@ -1,4 +1,5 @@
-// App-wide usage totals for the admin's Usage card (2026-11-02): visits by device type and by approximate location, once
+// App-wide usage totals for the admin's Usage card (2026-11-02): visits by device type, browser and main version, and by
+// approximate location, once
 // per account per day, and arrivals by a general traffic source. Everything is worked out on the server and only a count
 // is kept (usage_totals, migration 032): never a user id, IP address, user agent, referrer, URL or query value, and each
 // row is one dimension, so nothing links a device to a location. No outside service: locations come from the local
@@ -27,6 +28,29 @@ export function deviceOf(userAgent, chMobile) {
   if (String(chMobile ?? '').trim() === '?1' || /\b(iPhone|iPod)\b/.test(ua) || (/\bAndroid\b/.test(ua) && /\bMobile\b/.test(ua))) return 'phone';
   if (/\biPad\b/.test(ua) || /\bAndroid\b/.test(ua) || /\bTablet\b/i.test(ua)) return 'tablet';
   return 'computer';
+}
+
+// Browsers by their user agent marker, most specific first (most user agents also say Chrome or Safari).
+const BROWSERS = [
+  ['Edge', /\b(?:Edg|EdgA|EdgiOS)\/(\d+)/],
+  ['Opera', /\bOPR\/(\d+)/],
+  ['Samsung Internet', /\bSamsungBrowser\/(\d+)/],
+  ['Firefox', /\b(?:Firefox|FxiOS)\/(\d+)/],
+  ['Chrome', /\b(?:CriOS|Chrome)\/(\d+)/],
+  ['Safari', /\bVersion\/(\d+)(?=[.\s]).*\bSafari\//],
+];
+
+/**
+ * The browser and its main version ("Chrome 130", "Safari 18"), the name alone when the version is missing or longer than
+ * 4 digits, or "Other": a fixed name and a short number, never the user agent itself, which is not kept.
+ */
+export function browserOf(userAgent) {
+  const ua = String(userAgent ?? '');
+  for (const [name, re] of BROWSERS) {
+    const m = re.exec(ua);
+    if (m) return m[1].length <= 4 ? `${name} ${Number(m[1])}` : name;
+  }
+  return 'Other';
 }
 
 /**
@@ -90,6 +114,7 @@ export function createUsageTotals({ db, place = null, tz, siteHost = null, demoH
       if (!uid || seen.has(uid)) return;
       seen.add(uid);
       add.run(day, 'device', deviceOf(header(req, 'user-agent'), header(req, 'sec-ch-ua-mobile')));
+      add.run(day, 'browser', browserOf(header(req, 'user-agent')));
       add.run(day, 'location', locationOf(place, req.ip));
     },
     /** A page arrival (the sign-in page or the app page): its source only. Internal navigation is not an arrival. */
