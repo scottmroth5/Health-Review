@@ -10,7 +10,9 @@ import { USER_TABLES } from '../db/migrations-users.js';
 export const FOLDERS = ['server', 'metrics', 'ingest', 'agent', 'jobs', 'tools', 'demo', 'scripts', 'db', 'evals'];
 // Source files the guard reads: JavaScript and TypeScript (v3 moves code to .ts; a guard that skipped it would pass silently).
 export const SOURCE = /\.(m?js|[mc]?ts)$/;
-const EXEMPT = new Set(['db/migrations.js', 'db/migrations-users.js', 'server/admin-queries.js']);
+// scripts/baseline.js reads run durations and row counts across users (counts and milliseconds only, like the admin's
+// usage queries).
+const EXEMPT = new Set(['db/migrations.js', 'db/migrations-users.js', 'server/admin-queries.js', 'scripts/baseline.js']);
 
 /** Every string literal in JavaScript source (template literals whole, with their ${} expressions). */
 export function stringLiterals(src) {
