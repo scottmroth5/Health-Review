@@ -7,7 +7,9 @@ import { join, relative } from 'node:path';
 import { repoPath } from '../tools/paths.js';
 import { USER_TABLES } from '../db/migrations-users.js';
 
-const FOLDERS = ['server', 'metrics', 'ingest', 'agent', 'jobs', 'tools', 'demo', 'scripts', 'db', 'evals'];
+export const FOLDERS = ['server', 'metrics', 'ingest', 'agent', 'jobs', 'tools', 'demo', 'scripts', 'db', 'evals'];
+// Source files the guard reads: JavaScript and TypeScript (v3 moves code to .ts; a guard that skipped it would pass silently).
+export const SOURCE = /\.(m?js|[mc]?ts)$/;
 const EXEMPT = new Set(['db/migrations.js', 'db/migrations-users.js', 'server/admin-queries.js']);
 
 /** Every string literal in JavaScript source (template literals whole, with their ${} expressions). */
@@ -58,8 +60,12 @@ export function stringLiterals(src) {
 const files = (dir) => readdirSync(dir).flatMap((name) => {
   const path = join(dir, name);
   if (name === 'node_modules' || name === 'public' || name === 'fixtures') return [];
-  return statSync(path).isDirectory() ? files(path) : name.endsWith('.js') || name.endsWith('.mjs') ? [path] : [];
+  return statSync(path).isDirectory() ? files(path) : SOURCE.test(name) && !name.endsWith('.d.ts') ? [path] : [];
 });
+
+/** Every file the guard scans, repo-relative with forward slashes. */
+export const scannedFiles = () => FOLDERS.flatMap((folder) => files(repoPath(folder)))
+  .map((path) => relative(repoPath(), path).replace(/\\/g, '/'));
 
 // runs (agent-core's) carries a nullable user_id: each user's run history is theirs too.
 const tableRef = new RegExp(`\\b(FROM|INTO|UPDATE|JOIN)\\s+"?(${[...USER_TABLES, 'runs'].join('|')})\\b`, 'gi');
@@ -68,11 +74,10 @@ const tableRef = new RegExp(`\\b(FROM|INTO|UPDATE|JOIN)\\s+"?(${[...USER_TABLES,
 // names user_id at least as often as it names user tables: "FROM a JOIN b ON b.a_id = a.id" also says b.user_id = a.user_id.
 test('every query on a user table names user_id once per user table (except admin queries and migrations)', () => {
   const misses = [];
-  for (const folder of FOLDERS) {
-    for (const path of files(repoPath(folder))) {
-      const rel = relative(repoPath(), path).replace(/\\/g, '/');
+  for (const rel of scannedFiles()) {
+    {
       if (EXEMPT.has(rel)) continue;
-      for (const lit of stringLiterals(readFileSync(path, 'utf8'))) {
+      for (const lit of stringLiterals(readFileSync(repoPath(rel), 'utf8'))) {
         if (!/\b(SELECT|INSERT|UPDATE|DELETE)\b/.test(lit)) continue;
         const refs = [...lit.matchAll(tableRef)].map((m) => m[2]);
         const scoped = (lit.match(/\buser_id\b/g) ?? []).length;
@@ -81,6 +86,30 @@ test('every query on a user table names user_id once per user table (except admi
     }
   }
   assert.deepEqual(misses, [], `${misses.length} unscoped queries:\n${misses.join('\n')}`);
+});
+
+// The guard only protects what it reads. A floor on the count catches a filter that quietly stops matching (as a .js-only
+// filter would once code moves to .ts), and the walk below catches source in a folder the guard does not list.
+const SCANNED_FLOOR = 105; // 113 on 2026-11-02: raise it as code grows, never lower it to let a change pass
+const OUTSIDE = new Set(['node_modules', '.git', 'data', 'legacy', 'test', 'docs', '.github', '.githooks', 'deploy', 'config']);
+
+test('the user-scope guard still reads all the code (a floor on its file count, TypeScript included)', () => {
+  const scanned = scannedFiles();
+  assert.ok(scanned.length >= SCANNED_FLOOR, `the guard scans ${scanned.length} files, under its floor of ${SCANNED_FLOOR}`);
+  const unscanned = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      const rel = relative(repoPath(), path).replace(/\\/g, '/');
+      if (statSync(path).isDirectory()) {
+        if (dir === repoPath() ? OUTSIDE.has(name) || FOLDERS.includes(name) : name === 'node_modules') continue;
+        walk(path);
+      } else if (SOURCE.test(name) && !name.endsWith('.d.ts') && dir !== repoPath()) unscanned.push(rel);
+    }
+  };
+  walk(repoPath());
+  assert.deepEqual(unscanned, [], 'source in a folder the user-scope guard does not read: add the folder to FOLDERS');
+  assert.ok(SOURCE.test('server/routes.ts') && SOURCE.test('a.mts') && SOURCE.test('a.cts') && SOURCE.test('a.mjs'));
 });
 
 test('the string scanner finds nested template literals whole', () => {

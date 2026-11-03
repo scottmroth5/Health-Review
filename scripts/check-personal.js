@@ -79,11 +79,16 @@ export function termsFile(text) {
   };
 }
 
-/** Paths that must never be committed (the hard rules): data/, .env files, health exports, keys, tokens, backups. */
+/**
+ * Paths that must never be committed (the hard rules): data/, .env files, health exports, keys, tokens, backups, and
+ * Terraform state, plans and variable values (they hold account IDs, addresses and ARNs; *.tfvars.example is fine).
+ */
 export function isForbiddenPath(file) {
   const f = file.replace(/\\/g, '/');
   return f.startsWith('data/') || /(^|\/)\.env(\..*)?$/.test(f) || /\.(csv|xml|pem|hrbk)$/i.test(f)
-    || /(^|\/)(token[^/]*|client_secret[^/]*)\.json$/i.test(f);
+    || /(^|\/)(token[^/]*|client_secret[^/]*)\.json$/i.test(f)
+    || /\.tfstate(\..*)?$/i.test(f) || /(^|\/)\.terraform\//.test(f) || /(^|\/)terraform\.tfstate\.d\//.test(f)
+    || /\.tfplan$/i.test(f) || /\.tfvars(\.json)?$/i.test(f);
 }
 
 function escapeRegex(s) {

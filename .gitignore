@@ -3,3 +3,10 @@ node_modules/
 data/
 *.csv
 *.xml
+# Terraform state, plans and variable values (v3 infra/): never committed
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+.terraform/

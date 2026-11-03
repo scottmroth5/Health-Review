@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { securityProblems } from '../scripts/security-check.js';
+import { securityProblems, files, SOURCE } from '../scripts/security-check.js';
+import { repoPath } from '../tools/paths.js';
 
 test('the code passes the security check', () => {
   assert.deepEqual(securityProblems(), []);
@@ -19,6 +20,24 @@ test('it catches raw HTML in the browser code, stray child processes and request
     const rules = securityProblems(dir).map((p) => p.rule);
     for (const r of ['browser code: innerHTML assignment', 'browser code: a string passed to a timer', 'browser code: new Function',
       'child_process outside the known command-line scripts', 'a redirect straight from the request']) assert.ok(rules.includes(r), r);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the security check still reads all the code, TypeScript included', () => {
+  const FLOOR = 170; // 179 on 2026-11-02: raise it as code grows, never lower it to let a change pass
+  const n = files(repoPath()).length;
+  assert.ok(n >= FLOOR, `the check reads ${n} files, under its floor of ${FLOOR}`);
+  for (const name of ['a.js', 'a.mjs', 'a.ts', 'a.mts', 'a.cts']) assert.ok(SOURCE.test(name), name);
+  const dir = mkdtempSync(join(tmpdir(), 'sec-ts-'));
+  try {
+    mkdirSync(join(dir, 'server', 'public'), { recursive: true });
+    writeFileSync(join(dir, 'server', 'public', 'bad.ts'), 'el.innerHTML = note as string;\n');
+    writeFileSync(join(dir, 'server', 'bad.mts'), "import { exec } from 'node:child_process';\n");
+    const rules = securityProblems(dir).map((p) => p.rule);
+    assert.ok(rules.includes('browser code: innerHTML assignment'));
+    assert.ok(rules.includes('child_process outside the known command-line scripts'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

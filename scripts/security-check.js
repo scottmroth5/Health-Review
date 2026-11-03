@@ -12,12 +12,14 @@ import { fileURLToPath } from 'node:url';
 import { CONTENT_SECURITY_POLICY } from '../server/security.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const files = (dir, out = []) => {
+// JavaScript and TypeScript alike (v3 moves code to .ts; a .js-only filter would stop checking it silently).
+export const SOURCE = /\.(m?js|[mc]?ts)$/;
+export const files = (dir, out = []) => {
   for (const name of readdirSync(dir)) {
     if (['node_modules', '.git', 'data', 'legacy'].includes(name)) continue;
     const p = join(dir, name);
     if (statSync(p).isDirectory()) files(p, out);
-    else if (/\.(m?js)$/.test(name)) out.push(p);
+    else if (SOURCE.test(name) && !name.endsWith('.d.ts')) out.push(p);
   }
   return out;
 };

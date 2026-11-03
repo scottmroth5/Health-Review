@@ -28,6 +28,9 @@ test('forbidden paths: data/, .env files, health exports, keys, tokens and backu
   for (const f of ['data/health.db', 'data/ssh/key', '.env', 'deploy/.env.local', 'export.csv', 'apple/export.xml',
     'key.pem', 'health-2026-10-05.hrbk', 'token.json', 'tools/google/client_secret_123.json']) assert.ok(isForbiddenPath(f), f);
   for (const f of ['server/app.js', 'deploy/cloud.env.example', 'config/health-targets.json', 'evals/fixtures/metrics/zones.json']) assert.ok(!isForbiddenPath(f), f);
+  for (const f of ['infra/terraform.tfstate', 'infra/terraform.tfstate.backup', 'infra/.terraform/providers/x', 'infra/terraform.tfstate.d/prod/s',
+    'infra/prod.tfvars', 'infra/x.auto.tfvars.json', 'infra/plan.tfplan']) assert.ok(isForbiddenPath(f), f);
+  for (const f of ['infra/main.tf', 'infra/variables.tf', 'infra/prod.tfvars.example', 'infra/.terraform.lock.hcl']) assert.ok(!isForbiddenPath(f), f);
 });
 
 test('secret shapes are caught; near misses are not', () => {
