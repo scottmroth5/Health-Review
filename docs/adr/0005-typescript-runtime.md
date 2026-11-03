@@ -1,6 +1,6 @@
 # 0005: Run TypeScript through Node's type stripping; tsc only checks
 
-- **Status:** accepted (Phase 0 spike, 2026-11-02; the image check is still to run, see below)
+- **Status:** accepted (Phase 0 spike, 2026-11-02; image check passed 2026-11-03)
 - **Date:** 2026-11-02
 
 ## Context
@@ -33,9 +33,10 @@ Node 22.18 and later remove TypeScript types natively when they load a `.ts` fil
 ## Consequences
 - **Moving a file is a rename plus type annotations,** with no change to how it runs. The guards already scan `.ts`, `.mts` and `.cts` (Phase 0).
 - **Type stripping isn't type checking,** so CI must keep `npm run typecheck`. A wrong type runs anyway if the check is skipped.
-- **Still open: the image check.** Docker was not running on the development machine during the spike. Before the first `.ts` file ships:
-  - build the real image;
-  - confirm `node -p process.features.typescript` prints `strip`;
-  - confirm a `.ts` module loads under the read-only, non-root, npm-free image.
+- **The image check passed (2026-11-03),** on the production image as deployed (the `v2.0.0` commit):
+  - `process.features.typescript` is `strip` on its Node (v22.23.4);
+  - it runs as uid 1000 with no npm;
+  - under a read-only root, a `.ts` module loads another `.ts` module and the app's own `.js` code;
+  - an enum is refused at load (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`).
 
-  Then add that check to the Dockerfile, so a base image without stripping fails the build.
+  The Dockerfile now checks for stripping in the runtime stage, so a base image without it fails the build.

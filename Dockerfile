@@ -63,6 +63,8 @@ ENV NODE_ENV=production \
     PORT=5188 \
     TZ=America/New_York \
     OWNER_TZ=America/New_York
+# v3 runs .ts files through Node's type stripping with no build step (docs/adr/0005): a base image without it fails here.
+RUN node -e "if (process.features.typescript !== 'strip') { console.error('Node ' + process.version + ' cannot strip TypeScript types'); process.exit(1); }"
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=geo /geo /app/geo
