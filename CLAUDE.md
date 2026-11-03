@@ -78,6 +78,10 @@ Health specific logic stays in this repo; never add it to agent-core.
                     restore-check (the monthly restore test)
 /scripts            command-line entry points
 /test               node:test suites with synthetic fixtures only
+/docs               guides/ (public setup guides, served at /guides), adr/ (decision records: 0000-template.md, one per
+                    decision, "planned" when not built yet), architecture/ (current.md: today's system and trust
+                    boundaries; no addresses or account details). v3 plan (2026-11-02, revision 2): data/handoff/
+                    health-review-v3-plan-2026-11-02.md, one phase at a time with owner gates; Phase 0 done 2026-11-02
 /data               gitignored; local health datastore and exports; google/ holds the OAuth client_secret.json and token.json
 /legacy contains the v1 scripts for reference only. Do not modify or import from them.
 
@@ -86,6 +90,14 @@ npm test                          run unit tests, including metric fixtures (CI 
 npm run check:personal -- --all   personal-data and secrets check of every tracked file (the pre-commit hook checks staged
                                   files; npm install turns the hook on; private terms go in data/private-terms.txt)
 node --test test/google.test.js   run one suite
+npm run typecheck                 tsc, checking only (tsconfig.json: db/ for now, a folder at a time; TypeScript 6.0.x, as
+                                  typescript-eslint supports below 6.1; .ts runs through Node's type stripping, docs/adr/0005)
+npm run lint                      eslint, promise rules only (no-floating-promises, no-misused-promises) with type information
+                                  (tsconfig.lint.json); a deliberate fire-and-forget is `void` with a reason; the browser code
+                                  and the harness-gated review eval runner are left out (eslint.config.js says why)
+node scripts/baseline.js          the v3 baseline, read-only: sizes, row counts per table, run durations by kind (90 days) and
+                                  key query times as the owner; counts and milliseconds only, to data/baseline (on the server:
+                                  docker compose exec app node scripts/baseline.js)
 npm run google:login              one-time Google sign-in (read-only Sheets and Drive, drive.file for backups); saves
                                   data/google/token.json (copied into the server's data/google at cutover)
 npm run google:exports            count Health Auto Export's files in HEALTH_EXPORT_FOLDER_ID and WORKOUT_JSON_FOLDER_ID
@@ -721,5 +733,9 @@ characters), CodeQL (security-extended; an open high or critical alert fails CI 
 .github/codeql-accepted.txt with a reason), and Trivy on the image (fixable high or
 critical stops the publish; accepted exceptions in .trivyignore with a reason).
 Every new tool gets a JSON schema, a handler, and a unit test.
+The guards read TypeScript too: test/user-scope.test.js and scripts/security-check.js scan .js, .mjs, .ts, .mts and .cts,
+with a floor on the files each scans (raise it as code grows, never lower it to let a change pass), and user-scope fails
+on source in a top-level folder it does not list. Before code in a new language lands, give these guards (or an
+equivalent) that language first. check-personal refuses Terraform state, plans and variable values.
 Every metric change requires passing fixture tests.
 Use plan mode for any change touching more than one file.

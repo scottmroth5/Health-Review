@@ -96,6 +96,8 @@ npm install           # also turns on the pre-commit check
 npm start             # http://localhost:5188, AUTH_MODE=none, bound to this computer only
 npm run demo          # the demo on http://localhost:5189
 npm test
+npm run typecheck     # tsc, checking only (db/ for now)
+npm run lint          # promise rules: no floating or misused promises
 ```
 
 The local `.env` leaves `AUTH_MODE`, `APPLE_SOURCE` and the `SCHEDULE_` lines blank or commented out. Its Drive folder
@@ -598,6 +600,8 @@ Health Review is an evolving personal project. Potential areas for continued dev
   healthcare professional.
 - **Keys you control** (after the Lightsail move): RDS plus EC2 with a KMS customer-managed key, which ends the
   temporary AWS-managed-key exception.
+- **v3 architecture:** the decisions are in [docs/adr](docs/adr) and today's system in
+  [docs/architecture/current.md](docs/architecture/current.md).
 
 ## Encrypted backups
 
