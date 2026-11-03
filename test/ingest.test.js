@@ -176,7 +176,7 @@ test('with APPLE_SOURCE=rest the "export stopped" warning counts from the last a
   const s = await server();
   await s.post('health', fixture('health'));
   const status = (at) => buildApp({ store: s.store, ingest: { token: TOKEN, apple: 'rest' }, clock: () => at })
-    .then((app) => app.inject('/api/status').then((r) => { app.close(); return r.json().dataChecks.map((c) => c.kind); }));
+    .then((app) => app.inject('/api/status').then(async (r) => { await app.close(); return r.json().dataChecks.map((c) => c.kind); }));
   assert.ok(!(await status(new Date('2026-03-04T12:00:00Z'))).includes('export_stale'), '22 hours after the post');
   assert.ok((await status(new Date('2026-03-04T18:00:00Z'))).includes('export_stale'), '28 hours after the post');
   await s.done();

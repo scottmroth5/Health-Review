@@ -36,7 +36,9 @@
     "prepare": "node -e \"try{require('fs').existsSync('.git')&&require('child_process').execFileSync('git',['config','core.hooksPath','.githooks'],{stdio:'ignore'})}catch{}\"",
     "backup:test": "node --env-file=.env scripts/backup-verify.js",
     "db:pending": "node scripts/migrations-pending.js",
-    "check:security": "node scripts/security-check.js"
+    "check:security": "node scripts/security-check.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint"
   },
   "keywords": [],
   "author": "",
@@ -53,5 +55,12 @@
     "google-auth-library": "^11.1.0",
     "maxmind": "^5.0.7",
     "nodemailer": "^10.2.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.20.5",
+    "eslint": "^10.13.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2"
   }
 }

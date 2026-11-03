@@ -45,7 +45,8 @@ async function main() {
 
   const result = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Timed out waiting for the Google sign-in (5 minutes).')), TIMEOUT_MS);
-    server.on('request', async (req, res) => {
+    // The handler finishes every request itself (its try/catch rejects the sign-in), so the server need not wait on it.
+    server.on('request', (req, res) => void (async () => {
       const url = new URL(req.url, redirectUri);
       if (url.pathname !== '/') {
         res.writeHead(404).end();
@@ -79,7 +80,7 @@ async function main() {
       } catch (err) {
         finish(500, 'Sign-in failed. See the terminal.', err);
       }
-    });
+    })());
   });
 
   console.log('Opening your browser for Google sign-in. If it does not open, visit:\n');

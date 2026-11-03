@@ -220,5 +220,6 @@ const shutdown = async () => {
   store.close();
   process.exit(0);
 };
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+// Signal handlers cannot wait; shutdown runs to its own process.exit.
+process.on('SIGINT', () => void shutdown());
+process.on('SIGTERM', () => void shutdown());

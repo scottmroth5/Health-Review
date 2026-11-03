@@ -1,0 +1,7 @@
+{
+  "//": "Type information for npm run lint (eslint.config.js) over the whole codebase. allowJs without checkJs: lint reads types, it does not report type errors.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "checkJs": false },
+  "include": ["*.js", "agent/**/*", "db/**/*", "demo/**/*", "evals/**/*", "ingest/**/*", "jobs/**/*", "metrics/**/*", "scripts/**/*", "server/**/*", "test/**/*", "tools/**/*"],
+  "exclude": ["node_modules", "legacy", "data"]
+}

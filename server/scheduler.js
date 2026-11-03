@@ -140,7 +140,7 @@ export function createScheduler({ jobs, runs, now = () => new Date(), tz = owner
     for (const job of state) {
       if (job.next && t >= job.next) {
         job.next = nextRun(job.schedule, t, tz);
-        fire(job, 'scheduled');
+        void fire(job, 'scheduled'); // fire catches and logs its own failures; the tick never waits on a job
       }
     }
   };
@@ -152,7 +152,7 @@ export function createScheduler({ jobs, runs, now = () => new Date(), tz = owner
       for (const job of state) {
         const missed = lastRun(job.schedule, t, tz);
         const ran = runs.lastRanAt(job.name);
-        if (missed && t - missed <= CATCH_UP_HOURS * 3600 * 1000 && (!ran || new Date(ran) < missed)) fire(job, 'missed while the server was off');
+        if (missed && t - missed <= CATCH_UP_HOURS * 3600 * 1000 && (!ran || new Date(ran) < missed)) void fire(job, 'missed while the server was off');
       }
       timer = every(tick, CHECK_EVERY_MS);
       timer?.unref?.();

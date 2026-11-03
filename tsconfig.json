@@ -1,0 +1,19 @@
+{
+  "//": "npm run typecheck: tsc checks types only, it never emits (Node strips the types at run time; docs/adr/0005). Coverage grows one folder at a time.",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["db/**/*.js"]
+}

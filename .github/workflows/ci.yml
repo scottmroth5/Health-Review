@@ -37,6 +37,10 @@ jobs:
       - run: npm test
       - run: npm run check:personal -- --all
       - run: npm run check:security
+      # Types (tsconfig.json: db/ for now, growing a folder at a time) and promise lint (eslint.config.js: no floating
+      # promises), the net for the move to an async database.
+      - run: npm run typecheck
+      - run: npm run lint
 
   codeql:
     name: CodeQL (security)

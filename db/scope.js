@@ -34,7 +34,8 @@ function scopeStatement(stmt, uid) {
 
 /**
  * The database as seen by one user.
- * @param {import('better-sqlite3').Database} db  the shared database (a scoped one is unwrapped first)
+ * @param {import('better-sqlite3').Database & { unscoped?: import('better-sqlite3').Database }} db  the shared database
+ *   (a scoped one, which carries unscoped, is unwrapped first)
  * @param {string} uid  users.id
  */
 export function scopeDb(db, uid) {
