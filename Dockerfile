@@ -43,6 +43,12 @@ RUN echo "location database for build $GEO_STAMP" && mkdir -p /geo \
         rm -f /geo/country.mmdb; \
       done; rm -f /tmp/country.mmdb.gz; \
     fi; true
+# Apple's iCloud Private Relay addresses with the country each stands for (about 12 MB), which Apple publishes for
+# geolocation: DB-IP places relay addresses wrong or nowhere, and without the list visitors with Private Relay on are
+# refused (server/geo.js). If the download fails, the app emails the administrator; the weekly rebuild tries again.
+RUN echo "Private Relay list for build $GEO_STAMP" \
+ && if curl -fsSL --max-time 120 -o /geo/relay.csv "https://mask-api.icloud.com/egress-ip-ranges.csv" && [ -s /geo/relay.csv ]; then \
+      echo "Private Relay list: $(wc -l < /geo/relay.csv) ranges"; else rm -f /geo/relay.csv; fi; true
 
 # Runtime: the same Debian and Node as above, so the native module built there loads here unchanged.
 FROM node:22-bookworm-slim

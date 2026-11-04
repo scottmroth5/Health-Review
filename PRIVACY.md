@@ -43,7 +43,7 @@ Health Review is a personal project run by its owner (the operator). It is not a
 
 ## Where data is kept
 
-- Health Review answers only in the United States (the public demo, which holds made-up data only, is open everywhere): the server looks up the country of the address a request comes from (IP to City Lite by DB-IP, https://db-ip.com, CC BY 4.0). It keeps no record of that check; the only location it keeps is in the daily totals described under Usage totals.
+- Health Review answers only in the United States (the public demo, which holds made-up data only, is open everywhere): the server looks up the country of the address a request comes from (IP to City Lite by DB-IP, https://db-ip.com, CC BY 4.0). For iCloud Private Relay addresses, it uses the country in Apple's published list of relay addresses. It keeps no record of that check; the only location it keeps is in the daily totals described under Usage totals.
 - In a database on a server in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
 - The server's disk is encrypted by Amazon with keys Amazon manages. The operator accepts this for now; a later move will use encryption keys the operator controls.
 - Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS to the operator's Google Drive. Seven nightly, three weekly and one monthly backup are kept, so a backup ages out within about two months.

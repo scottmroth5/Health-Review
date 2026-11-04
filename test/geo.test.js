@@ -1,12 +1,12 @@
 // US-only access (server/geo.js): requests from outside the allowed countries get the 403 page; ingest posts, the deploy
 // check and private addresses always pass; no GEO_ALLOW or no database means nothing is blocked. A fake country lookup;
-// no download, no network.
+// no download, no network. Private Relay ranges are made up, in the documentation blocks.
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
-import { geoAllowFromEnv, geoBlocker, isPrivateAddress } from '../server/geo.js';
+import { countryLookup, geoAllowFromEnv, geoBlocker, isPrivateAddress, parseRelayRanges } from '../server/geo.js';
 
 const COUNTRY = { '8.8.8.8': 'US', '81.2.69.142': 'GB', '203.0.113.9': null };
 const lookup = (ip) => COUNTRY[ip] ?? null;
@@ -26,9 +26,9 @@ test('settings and private addresses', () => {
 // from Caddy on the Docker network with the visitor's address forwarded.
 const TRUST_PROXY = /TRUST_PROXY: (\S+)/.exec(readFileSync(new URL('../deploy/compose.yml', import.meta.url), 'utf8'))[1];
 
-async function appFrom(ip, { allow = ['US'], authMode = 'none' } = {}) {
+async function appFrom(ip, { allow = ['US'], authMode = 'none', look = lookup } = {}) {
   const store = openHealthStore(':memory:');
-  const app = await buildApp({ store, authMode, trustProxy: TRUST_PROXY, geo: { allow, lookup }, ingest: { token: 'made-up-ingest-token-0123456789', apple: 'rest' } });
+  const app = await buildApp({ store, authMode, trustProxy: TRUST_PROXY, geo: { allow, lookup: look }, ingest: { token: 'made-up-ingest-token-0123456789', apple: 'rest' } });
   return (url, opts = {}) => app.inject({ url, remoteAddress: '172.18.0.4', ...opts, headers: { 'x-forwarded-for': ip, ...(opts.headers ?? {}) } });
 }
 
@@ -68,4 +68,43 @@ test('deploy: the app is US-only, and the demo (made-up data only) is open world
   const geo = (block) => block.split('\n').filter((l) => /^\s*GEO_ALLOW:/.test(l)).map((l) => l.trim());
   assert.deepEqual(geo(service('app')), ['GEO_ALLOW: US']);
   assert.deepEqual(geo(service('demo')), []);
+});
+
+// The shape of Apple's list (https://mask-api.icloud.com/egress-ip-ranges.csv): prefix, country, region, city.
+const RELAY_CSV = [
+  '192.0.2.0/28,US,US-NY,New York,',
+  '192.0.2.16/28,US,US-NY,New York,',
+  '192.0.2.64/31,GB,GB-EN,London,',
+  '2001:db8:0:10::/60,US,US-CA,Los Angeles,',
+  '2001:db8:1::/64,DE,DE-BE,Berlin,',
+  'not-an-address/24,US,US-TX,Austin,',
+  '198.51.100.0/24,usa,,,',
+  '198.51.100.0/33,US,,,',
+  '',
+].join('\r\n');
+
+test('Private Relay list: each address gets the country Apple lists, edges included; bad lines are skipped', () => {
+  const relay = parseRelayRanges(RELAY_CSV);
+  assert.equal(relay.size, 5, 'the three bad lines and the blank one are skipped');
+  for (const [ip, cc] of [['192.0.2.0', 'US'], ['192.0.2.15', 'US'], ['192.0.2.31', 'US'], ['192.0.2.32', null], ['192.0.2.64', 'GB'],
+    ['192.0.2.65', 'GB'], ['192.0.2.66', null], ['::ffff:192.0.2.5', 'US'], ['198.51.100.7', null], ['2001:db8:0:10::', 'US'],
+    ['2001:db8:0:1f:ffff:ffff:ffff:ffff', 'US'], ['2001:db8:0:20::1', null], ['2001:DB8:1::abcd', 'DE'], ['2001:db8:1:0:1:2:3:4', 'DE'],
+    ['2001:db8:2::1', null], ['8.8.8.8', null], ['junk', null], [undefined, null]]) {
+    assert.equal(relay.country(ip), cc, String(ip));
+  }
+  assert.equal(parseRelayRanges('').size, 0);
+  assert.equal(parseRelayRanges('').country('192.0.2.1'), null);
+});
+
+test('Private Relay visitors listed in the US get in; relay addresses listed elsewhere are still refused', async () => {
+  const relay = parseRelayRanges(RELAY_CSV);
+  const reader = { country: (ip) => ({ '192.0.2.5': 'GB', '8.8.8.8': 'US', '81.2.69.142': 'GB' })[ip] ?? null };
+  const look = countryLookup(relay, reader);
+  assert.equal(countryLookup(relay, null), null, 'no location database: fails open as before');
+  assert.equal((await (await appFrom('192.0.2.5', { look }))('/api/status')).statusCode, 200, 'the database says GB, Apple says US');
+  assert.equal((await (await appFrom('2001:db8:0:10::9', { look }))('/api/status')).statusCode, 200, 'no country in the database');
+  assert.equal((await (await appFrom('192.0.2.64', { look }))('/api/status')).statusCode, 403, 'a London relay');
+  assert.equal((await (await appFrom('2001:db8:1::5', { look }))('/api/status')).statusCode, 403, 'a Berlin relay');
+  assert.equal((await (await appFrom('8.8.8.8', { look }))('/api/status')).statusCode, 200, 'not a relay: the database decides');
+  assert.equal((await (await appFrom('81.2.69.142', { look }))('/api/status')).statusCode, 403);
 });

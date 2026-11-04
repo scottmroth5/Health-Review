@@ -26,7 +26,7 @@ import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from 
 import { runReview } from '../agent/review.js';
 import { assertSafeBinding, authSettings } from './auth.js';
 import { createAiAccess } from './ai-access.js';
-import { geoAllowFromEnv, loadGeoReader } from './geo.js';
+import { countryLookup, geoAllowFromEnv, loadGeoReader, loadRelayRanges } from './geo.js';
 
 const demo = process.env.HEALTH_INSTANCE === 'demo';
 const host = process.env.HOST ?? '127.0.0.1';
@@ -45,10 +45,12 @@ const trustProxy = (() => {
 const auth = { settings };
 // US-only access (GEO_ALLOW, server/geo.js): the location database ships in the image; without it nothing is blocked.
 // The signed-in app also uses it for the usage totals' approximate locations; the demo never loads it (it is large).
+// Apple's Private Relay list gives relay addresses their country, so visitors with Private Relay on get in.
 const geoAllow = geoAllowFromEnv();
 const geoReader = geoAllow.length || (!demo && authMode === 'google') ? await loadGeoReader().catch(() => null) : null;
-const geo = { allow: geoAllow, lookup: geoAllow.length ? geoReader?.country ?? null : null };
-if (geoAllow.length) console.log(geo.lookup ? `[geo] only ${geoAllow.join(', ')} allowed` : '[geo] the country database is missing: nothing is blocked');
+const relay = geoAllow.length ? await loadRelayRanges().catch(() => null) : null;
+const geo = { allow: geoAllow, lookup: geoAllow.length ? countryLookup(relay, geoReader) : null };
+if (geoAllow.length) console.log(geo.lookup ? `[geo] only ${geoAllow.join(', ')} allowed; Private Relay ranges: ${relay?.size ?? 'none (list missing)'}` : '[geo] the country database is missing: nothing is blocked');
 
 const quiet = { info() {}, warn() {}, error() {} };
 let store;
@@ -197,6 +199,7 @@ if (demo) {
   };
   // A missing country database means the US-only block is off: email the administrator (once a day at most).
   if (geoAllow.length && !geo.lookup) alerts.alert('geo-db', 'US-only blocking is off', 'The country database is missing from the server image, so requests from outside the allowed countries are not blocked. The next image build adds it.').catch(() => {});
+  if (geo.lookup && !relay) alerts.alert('geo-relay', 'Private Relay list missing', "Apple's iCloud Private Relay address list is missing from the server image, so visitors with Private Relay on may be refused. The next image build adds it.").catch(() => {});
   scheduler = createScheduler({
     jobs: schedulesFromEnv().filter((j) => runners[j.name]).map((j) => ({ ...j, run: runners[j.name] })),
     runs: jobRunsLookup(store.db),

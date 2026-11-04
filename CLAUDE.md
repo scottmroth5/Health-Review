@@ -562,7 +562,10 @@ Security (2026-10-25): US-only access for the app (server/geo.js, GEO_ALLOW=US i
 only, has none and is open worldwide, owner's choice 2026-10-27): an onRequest
 hook answers 403 with a short page outside the allowed countries, by req.ip (Caddy's forwarded address) in DB-IP's IP to
 City Lite (CC BY 4.0; the Country Lite file when the city download fails; about 130 MB in memory, loaded by the main app
-only, never the demo) read with maxmind, which also gives the usage totals' locations (the check itself keeps no record); /api/ingest/* and /api/health always pass, as do private and loopback
+only, never the demo) read with maxmind, which also gives the usage totals' locations (the check itself keeps no record);
+iCloud Private Relay addresses take their country from Apple's published list (mask-api.icloud.com egress-ip-ranges.csv,
+/app/geo/relay.csv from the same geo stage; server/geo.js parseRelayRanges and countryLookup, the list first; missing, the
+admin is emailed and relay visitors may be refused; 2026-11-04); /api/ingest/* and /api/health always pass, as do private and loopback
 addresses; unset GEO_ALLOW blocks nothing; without the database (downloaded in the Dockerfile's geo stage, GEO_STAMP
 forcing a fresh download per build) it fails open and the admin is emailed. Weekly: Dependabot (npm, Actions, Docker;
 patch-level updates auto-merge once CI passes, dependabot-automerge.yml), the scheduled rebuild in deploy.yml
