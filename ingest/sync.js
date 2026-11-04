@@ -222,7 +222,7 @@ async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
   const result = { tabsRead: wanted.length, tabsReplaced: 0, exercises: 0, sets: 0, notes: 0 };
 
   const insertExercise = store.db.prepare(`INSERT INTO strength_exercises
-    (user_id, tab_year, row_no, date, workout, prime, exercise, post, comment) VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    (user_id, tab_year, row_no, date, workout, prime, exercise, post, comment) VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`);
   const insertSet = store.db.prepare(`INSERT INTO strength_sets
     (user_id, exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -238,7 +238,7 @@ async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
       store.db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ?').run(Number(tab));
       store.db.prepare('DELETE FROM workout_log_notes WHERE user_id = @uid AND tab_year = ?').run(Number(tab));
       for (const e of records) {
-        const id = insertExercise.run(e.tab_year, e.row_no, e.date, e.workout, e.prime, e.exercise, e.post, e.comment).lastInsertRowid;
+        const id = insertExercise.get(e.tab_year, e.row_no, e.date, e.workout, e.prime, e.exercise, e.post, e.comment).id;
         for (const s of e.sets) {
           insertSet.run(id, s.set_no, s.weight_text, s.weight_lbs, s.per_hand, s.band, s.bodyweight, s.reps_text, s.reps, s.duration_sec, s.distance_yd);
         }
@@ -282,13 +282,13 @@ async function syncLabs({ store, source, warnings, stamp }) {
   let keptFromApp = 0;
   store.tx(() => {
     const findTest = db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?');
-    const insertTest = db.prepare('INSERT INTO lab_tests (user_id, name, panel, position, created_at) VALUES (@uid, ?, ?, ?, ?)');
+    const insertTest = db.prepare('INSERT INTO lab_tests (user_id, name, panel, position, created_at) VALUES (@uid, ?, ?, ?, ?) RETURNING id');
     const updateTest = db.prepare('UPDATE lab_tests SET panel = ?, position = ? WHERE user_id = @uid AND id = ?');
     const ids = new Map();
     for (const t of tests) {
       const found = findTest.get(t.name);
       if (found) updateTest.run(t.panel, t.position, found.id);
-      ids.set(t.name.toLowerCase(), found?.id ?? Number(insertTest.run(t.name, t.panel, t.position, stamp).lastInsertRowid));
+      ids.set(t.name.toLowerCase(), found?.id ?? insertTest.get(t.name, t.panel, t.position, stamp).id);
     }
     db.prepare("DELETE FROM lab_results WHERE user_id = @uid AND source = 'sheet'").run();
     // An app row wins: one added in the app on the same date, or a correction of this sheet result

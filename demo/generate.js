@@ -197,7 +197,7 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
   // ---- Supplements only, with a dose check-off for the last 30 days ----
   const supplements = [['Sample Creatine', '5 g', ['morning']], ['Sample Vitamin D3', '2000 IU', ['morning']], ['Sample Magnesium', '200 mg', ['before_bed']], ['Sample Fish Oil', '2 capsules', ['morning']]];
   for (const [name, dose, timings] of supplements) {
-    const id = db.prepare("INSERT INTO medications (user_id, name, kind, purpose, prescribed, created_at) VALUES (@uid, ?, 'supplement', 'Sample purpose', 0, ?)").run(name, stamp).lastInsertRowid;
+    const id = db.prepare("INSERT INTO medications (user_id, name, kind, purpose, prescribed, created_at) VALUES (@uid, ?, 'supplement', 'Sample purpose', 0, ?) RETURNING id").get(name, stamp).id;
     db.prepare('INSERT INTO medication_periods (user_id, medication_id, dose, timings, started_on, created_at, start_estimated) VALUES (@uid, ?, ?, ?, ?, ?, 1)')
       .run(id, dose, JSON.stringify(timings), addDays(today, -300), stamp);
     for (const d of days.slice(-30)) for (const t of timings) {
@@ -216,7 +216,7 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
   const labs = [['Total Cholesterol', 'Lipid Panel', 'mg/dL', 192, 181], ['LDL Cholesterol', 'Lipid Panel', 'mg/dL', 118, 109], ['HDL Cholesterol', 'Lipid Panel', 'mg/dL', 52, 55],
     ['Triglycerides', 'Lipid Panel', 'mg/dL', 110, 96], ['Glucose', 'Metabolic Panel', 'mg/dL', 92, 90], ['Hemoglobin A1c', 'Metabolic Panel', '%', 5.4, 5.3]];
   labs.forEach(([name, panel, unit, a, b], i) => {
-    const id = db.prepare('INSERT INTO lab_tests (user_id, name, panel, unit, position, created_at) VALUES (@uid, ?, ?, ?, ?, ?)').run(name, panel, unit, i + 1, stamp).lastInsertRowid;
+    const id = db.prepare('INSERT INTO lab_tests (user_id, name, panel, unit, position, created_at) VALUES (@uid, ?, ?, ?, ?, ?) RETURNING id').get(name, panel, unit, i + 1, stamp).id;
     db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?)").run(id, addDays(today, -330), a, String(a), stamp);
     db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?)").run(id, addDays(today, -40), b, String(b), stamp);
   });

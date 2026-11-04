@@ -502,8 +502,8 @@ export function addMedication(db, body) {
           .run({ id, kind: body.kind, purpose: body.purpose?.trim() || null, prescribed: body.prescribed ? 1 : 0, notes: body.notes?.trim() || null });
       }
     } else {
-      id = db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?)')
-        .run(body.name.trim(), body.kind, body.purpose?.trim() || null, body.prescribed ? 1 : 0, body.notes?.trim() || null, now()).lastInsertRowid;
+      id = db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id')
+        .get(body.name.trim(), body.kind, body.purpose?.trim() || null, body.prescribed ? 1 : 0, body.notes?.trim() || null, now()).id;
     }
     insertPeriod(db, id, body);
     return getMedication(db, id);
@@ -643,8 +643,8 @@ export function combineMedications(db, { ids, name, timing, preview = false }) {
 
   return db.transaction(() => {
     for (const m of items) db.prepare('DELETE FROM medications WHERE user_id = @uid AND id = ?').run(m.id);
-    const id = db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?)')
-      .run(plan.name, plan.kind, plan.purpose, plan.prescribed ? 1 : 0, plan.notes, now()).lastInsertRowid;
+    const id = db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id')
+      .get(plan.name, plan.kind, plan.purpose, plan.prescribed ? 1 : 0, plan.notes, now()).id;
     for (const seg of segments) insertPeriod(db, id, { ...seg, timings: [timing] });
     const ins = db.prepare('INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at) VALUES (@uid, ?, ?, ?, ?, ?)');
     for (const [date, d] of days) ins.run(date, id, timing, d.any ? 1 : 0, now());
@@ -716,8 +716,8 @@ export function addLabResult(db, { test_id, name, panel, unit, drawn_on, value }
     if (!id) {
       if (!name?.trim()) throw fail(400, 'Choose a test or enter a new test name');
       id = db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?').get(name.trim())?.id;
-      id ??= Number(db.prepare('INSERT INTO lab_tests (user_id, name, panel, unit, created_at) VALUES (@uid, ?, ?, ?, ?)')
-        .run(name.trim(), panel?.trim() || null, unit?.trim() || null, now()).lastInsertRowid);
+      id ??= db.prepare('INSERT INTO lab_tests (user_id, name, panel, unit, created_at) VALUES (@uid, ?, ?, ?, ?) RETURNING id')
+        .get(name.trim(), panel?.trim() || null, unit?.trim() || null, now()).id;
     } else if (!db.prepare('SELECT 1 FROM lab_tests WHERE user_id = @uid AND id = ?').get(id)) {
       throw fail(404, 'Test not found');
     }
@@ -726,8 +726,8 @@ export function addLabResult(db, { test_id, name, panel, unit, drawn_on, value }
       throw fail(409, existing.source === 'sheet' ? 'That test already has a result from the Google Sheet on that date; change it in the sheet' : 'That test already has a result on that date; edit it instead');
     }
     const v = labValue(value);
-    const rid = db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?)")
-      .run(id, drawn_on, v.value, v.value_text, now()).lastInsertRowid;
+    const rid = db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?) RETURNING id")
+      .get(id, drawn_on, v.value, v.value_text, now()).id;
     return db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(rid);
   })();
 }
@@ -822,8 +822,8 @@ function keepVersion(db, section) {
 }
 
 export function createSection(db, { position, name, text, sensitive = false }) {
-  const id = db.prepare(`INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, ?, ?, ?, ?, ?)`)
-    .run(position, name.trim(), text, sensitive ? 1 : 0, now()).lastInsertRowid;
+  const id = db.prepare(`INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, ?, ?, ?, ?, ?) RETURNING id`)
+    .get(position, name.trim(), text, sensitive ? 1 : 0, now()).id;
   return getSection(db, id);
 }
 

@@ -1,4 +1,8 @@
 // Shared test helpers. Synthetic data only.
+import { scopeStore } from '../db/scope.js';
+import { openHealthStore } from '../db/store.js';
+import { OWNER_ID } from '../db/users.js';
+
 const EPOCH_MS = Date.UTC(1899, 11, 30);
 
 /** Sheets serial for a local wall-clock time: serial('2026-03-02', 3) is 03:00 that day. */
@@ -70,3 +74,15 @@ export function jsonWorkout(name, start, end, { duration, avgHr = null, maxHr = 
 }
 
 export const silentLogger = { info() {}, warn() {}, error() {}, log() {} };
+
+/**
+ * An in-memory health store scoped to one user (the owner unless uid is given, which is added as an approved user):
+ * db and tx (sync), adb and atx (async, db/database.ts), raw, the shared unscoped store, and close.
+ */
+export function memoryStore({ uid = OWNER_ID } = {}) {
+  const shared = openHealthStore(':memory:');
+  if (uid !== OWNER_ID) {
+    shared.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, 'user', 'approved', 'x')").run(uid, `${uid}@example.com`);
+  }
+  return { ...scopeStore(shared, uid), shared, close: () => shared.close() };
+}

@@ -48,7 +48,7 @@ export function ingestWorkbook(db, buf, ctx) {
   });
   const result = { years: tabs.map((s) => Number(s.name)), exercises: 0, sets: 0, notes: 0, warnings: {} };
   const insertExercise = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, prime, exercise, post, comment)
-    VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`);
   const insertSet = db.prepare(`INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const insertNote = db.prepare('INSERT INTO workout_log_notes (user_id, tab_year, row_no, date, text) VALUES (@uid, ?, ?, ?, ?)');
@@ -59,7 +59,7 @@ export function ingestWorkbook(db, buf, ctx) {
       db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ?').run(year);
       db.prepare('DELETE FROM workout_log_notes WHERE user_id = @uid AND tab_year = ?').run(year);
       for (const e of records) {
-        const id = insertExercise.run(e.tab_year, e.row_no, e.date, e.workout, e.prime, e.exercise, e.post, e.comment).lastInsertRowid;
+        const id = insertExercise.get(e.tab_year, e.row_no, e.date, e.workout, e.prime, e.exercise, e.post, e.comment).id;
         for (const s of e.sets) insertSet.run(id, s.set_no, s.weight_text, s.weight_lbs, s.per_hand, s.band, s.bodyweight, s.reps_text, s.reps, s.duration_sec, s.distance_yd);
         result.sets += e.sets.length;
         names.add(e.exercise);

@@ -99,7 +99,7 @@ function repsFor(text, r) {
  */
 export function writeTraining(db, { today, r, catalog }) {
   const runs = layoutRuns(today, r);
-  const insertEx = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, comment) VALUES (@uid, ?, ?, ?, ?, ?, ?)');
+  const insertEx = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, comment) VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id');
   const insertSet = db.prepare(`INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`);
   const liftDays = new Map();
@@ -112,7 +112,7 @@ export function writeTraining(db, { today, r, catalog }) {
 
   const logExercise = (d, workoutName, name, sets, reps, { deload = false, trend = 1, comment = null } = {}) => {
     const logged = SPELLED[name] && r.next() < 0.06 ? SPELLED[name] : name;
-    const id = insertEx.run(Number(d.slice(0, 4)), row++, d, workoutName, logged, comment).lastInsertRowid;
+    const id = insertEx.get(Number(d.slice(0, 4)), row++, d, workoutName, logged, comment).id;
     const setCount = Math.max(1, Number(String(sets).split('-').pop()) - (deload ? 1 : 0));
     for (let s = 1; s <= setCount; s++) {
       const rep = repsFor(reps, r);

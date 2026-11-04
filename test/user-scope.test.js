@@ -92,7 +92,7 @@ test('every query on a user table names user_id once per user table (except admi
 
 // The guard only protects what it reads. A floor on the count catches a filter that quietly stops matching (as a .js-only
 // filter would once code moves to .ts), and the walk below catches source in a folder the guard does not list.
-const SCANNED_FLOOR = 105; // 113 on 2026-11-02: raise it as code grows, never lower it to let a change pass
+const SCANNED_FLOOR = 107; // 115 on 2026-11-03: raise it as code grows, never lower it to let a change pass
 const OUTSIDE = new Set(['node_modules', '.git', 'data', 'legacy', 'test', 'docs', '.github', '.githooks', 'deploy', 'config']);
 
 test('the user-scope guard still reads all the code (a floor on its file count, TypeScript included)', () => {

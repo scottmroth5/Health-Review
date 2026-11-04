@@ -80,12 +80,12 @@ export function saveWorkout(db, date, body, ctx) {
     db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ? AND date = ?').run(APP_TAB_YEAR, date);
     let rowNo = db.prepare('SELECT COALESCE(MAX(row_no), 0) FROM strength_exercises WHERE user_id = @uid AND tab_year = ?').pluck().get(APP_TAB_YEAR);
     const insertExercise = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, comment)
-      VALUES (@uid, ?, ?, ?, ?, ?, ?)`);
+      VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id`);
     const insertSet = db.prepare(`INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
       VALUES (@uid, @exercise_id, @set_no, @weight_text, @weight_lbs, @per_hand, @band, @bodyweight, @reps_text, @reps, @duration_sec, @distance_yd)`);
     for (const ex of w.exercises) {
       rowNo += 1;
-      const id = insertExercise.run(APP_TAB_YEAR, rowNo, date, w.workout, ex.name, ex.comment).lastInsertRowid;
+      const id = insertExercise.get(APP_TAB_YEAR, rowNo, date, w.workout, ex.name, ex.comment).id;
       for (const s of ex.sets) insertSet.run({ exercise_id: id, ...s });
     }
     afterChange(db, w.exercises.map((e) => e.name), { ...ctx, now });

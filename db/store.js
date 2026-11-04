@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
 import { openStore } from '@scottmroth5/agent-core';
 import { dataPath } from '../tools/paths.js';
+import { createSqliteDatabase, guardSyncDatabase } from './database.ts';
 import { MIGRATIONS } from './migrations.js';
 import { scopeStore } from './scope.js';
 import { OWNER_ID, syncOwnerEmail } from './users.js';
@@ -76,7 +77,20 @@ export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_
     }
   }
   syncOwnerEmail(store.db);
-  return store;
+  return withAsyncDatabase(store);
+}
+
+/**
+ * The store with both handles on its one connection (v3 Phase 1, docs/adr/0006): db, the sync better-sqlite3 handle for
+ * code not yet converted, guarded so a statement throws while another request holds an async transaction; adb and atx,
+ * the async interface (db/database.ts); raw, the unguarded handle for agent-core's run tracer and the SQLite-only tools.
+ * adb replaces db once Phase 1B has converted every caller.
+ */
+function withAsyncDatabase(store) {
+  const raw = store.db;
+  const db = guardSyncDatabase(raw);
+  const adb = createSqliteDatabase(raw);
+  return { ...store, raw, db, tx: (fn) => db.transaction(fn)(), adb, atx: adb.tx };
 }
 
 /** Keeps the newest KEEP_MIGRATION_COPIES pre-migration copies in a folder; other files are never touched. */

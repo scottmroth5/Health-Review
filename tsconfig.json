@@ -15,5 +15,5 @@
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["db/**/*.js"]
+  "include": ["db/**/*.js", "db/**/*.ts"]
 }

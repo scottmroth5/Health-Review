@@ -34,6 +34,13 @@ Health specific logic stays in this repo; never add it to agent-core.
                     openHealthStore copies an existing database file before opening it (VACUUM INTO, integrity checked) and
                     keeps the copy as data/backups/pre-migration-<stamp>.db only when a migration ran (newest 5 kept);
                     pendingMigrations runs the migrations on a throwaway temp copy (npm run db:pending: exit 0 none, 10 some)
+                    Async interface (v3 Phase 1, docs/adr/0006): database.ts (the first TypeScript; prepare gives get, all,
+                    run ({ changes } only; inserts use RETURNING id, never lastInsertRowid) and pluck, as promises; tx(async fn),
+                    one at a time behind a lock, nested as a savepoint), scope.js scopeDatabase (the same @uid binding). Until
+                    Phase 1B converts every caller the store has both: db and tx (sync, guarded: a statement throws
+                    TransactionConflictError while another request holds an async transaction) and adb and atx (async); raw is
+                    the unguarded handle (agent-core's run tracer, the SQLite-only tools). Never hold an async transaction across
+                    an external call (Claude, Google). Tests: memoryStore in test/helpers.js (both handles, owner or a second user)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status

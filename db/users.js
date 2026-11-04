@@ -90,7 +90,8 @@ export function setGoogleToken(db, uid, sealed) {
 export function startUserRun(store, name, meta = {}, logger) {
   const uid = store.db.uid;
   if (!uid) throw new TypeError(`startUserRun(${name}): the store is not scoped to a user`);
-  const run = createTracer({ store, logger }).startRun(name, meta);
+  // The raw handle: a run record never fails a job over another request's open transaction (db/database.ts).
+  const run = createTracer({ store: { db: store.raw ?? store.db }, logger }).startRun(name, meta);
   if (run.id != null) store.db.prepare('UPDATE runs SET user_id = ? WHERE id = ?').run(uid, run.id);
   return run;
 }
