@@ -44,11 +44,11 @@ const catalog = loadDemoCatalog();
 const dictionary = loadDictionary();
 const substitutions = JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8'));
 const built = openHealthStore(':memory:');
-built.tx(() => generateDemo(built, { today: SPEC.demoToday }));
+await built.atx(() => generateDemo(built, { today: SPEC.demoToday }));
 {
   const db = scopeDb(built.db, OWNER_ID);
   for (const m of SPEC.setup.medications) addMedication(db, { ...m, purpose: 'Made up for the safety check' });
-  clearChat(db); // each chat case starts a fresh thread
+  await clearChat(db); // each chat case starts a fresh thread
 }
 // The demo already holds sample run records with made-up costs; only runs after them are this check's spending.
 const firstRunId = scopeDb(built.db, OWNER_ID).prepare('SELECT COALESCE(MAX(id), 0) FROM runs WHERE user_id = @uid').pluck().get();
@@ -116,12 +116,12 @@ ${statement}` : answer, warnings: [], costUsd: spent(store.db) };
 }
 
 /** The size of what a case would send (characters), without sending it. */
-function sizeCase(c) {
+async function sizeCase(c) {
   const store = caseStore(c);
   try {
-    if (c.kind === 'chat') return CHAT_CONTRACT.length + JSON.stringify(chatContext(store.db, SPEC.demoToday, { catalog, dictionary, substitutions })).length + c.prompt.length;
+    if (c.kind === 'chat') return CHAT_CONTRACT.length + JSON.stringify(await chatContext(store.db, SPEC.demoToday, { catalog, dictionary, substitutions })).length + c.prompt.length;
     if (c.kind === 'help') return helpText(SITE).length + c.prompt.length;
-    const prep = prepareReview(store.db, { weekEnd: c.weekEnd, today: addDays(c.weekEnd, 1), catalog });
+    const prep = await prepareReview(store.db, { weekEnd: c.weekEnd, today: addDays(c.weekEnd, 1), catalog });
     return prep.system.length + JSON.stringify(prep.summary).length;
   } finally {
     store.close();
@@ -149,13 +149,13 @@ async function grade(c, output, claude) {
 if (process.argv.includes("--inspect-case")) {
   const c = SPEC.cases.find((x) => x.id === arg("--inspect-case"));
   const store = caseStore(c);
-  const s = prepareReview(store.db, { weekEnd: c.weekEnd, today: addDays(c.weekEnd, 1), catalog }).summary;
+  const s = (await prepareReview(store.db, { weekEnd: c.weekEnd, today: addDays(c.weekEnd, 1), catalog })).summary;
   console.log(JSON.stringify({ notes: s.notes, labs: s.labs, medications: s.medications?.current?.map((m) => m.name) }, null, 1).slice(0, 2500));
   process.exit(0);
 }
 if (!live) {
   console.log(`Dry run: ${cases.length} cases on the demo's made-up data (day ${SPEC.demoToday}); nothing is sent.`);
-  for (const c of cases) console.log(`  ${c.kind.padEnd(6)} ${c.id.padEnd(28)} ${sizeCase(c).toLocaleString().padStart(7)} characters`);
+  for (const c of cases) console.log(`  ${c.kind.padEnd(6)} ${c.id.padEnd(28)} ${(await sizeCase(c)).toLocaleString().padStart(7)} characters`);
   console.log('Run it with --live (about $1.70; stops before passing $' + maxUsd + ').');
   process.exit(0);
 }

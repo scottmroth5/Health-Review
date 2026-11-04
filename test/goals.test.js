@@ -13,7 +13,7 @@ import { CONTRACT } from '../agent/instructions.js';
 
 const SITE = 'http://localhost:5188';
 
-test('goal rules: primary first, then secondary, then the rest in their usual order; unknown goals ignored', () => {
+test('goal rules: primary first, then secondary, then the rest in their usual order; unknown goals ignored', async () => {
   const training = ['log-workout-card', 'program-card', 'adherence-card', 'lifts-card', 'training-card', 'advisor-card'];
   assert.deepEqual(orderFor({}, training, 'training'), training, 'no goal: unchanged');
   assert.deepEqual(orderFor({ primary: 'strength' }, training, 'training'), ['log-workout-card', 'program-card', 'lifts-card', 'training-card', 'advisor-card', 'adherence-card']);
@@ -26,7 +26,7 @@ test('goal rules: primary first, then secondary, then the rest in their usual or
   assert.deepEqual(goalWeights({}), { strength: 1, joint: 1, time: 1, vo2: 1 });
 });
 
-test('tile order: the user\'s own (unknown tiles dropped, new ones added at the end), else Daily Check-in then the goals\'', () => {
+test('tile order: the user\'s own (unknown tiles dropped, new ones added at the end), else Daily Check-in then the goals\'', async () => {
   assert.deepEqual(tileOrder(null, {}), TILES);
   assert.deepEqual(tileOrder(null, { primary: 'cardio' }).slice(0, 3), ['today', 'health', 'training']);
   const own = tileOrder(['help', 'nonsense', 'today', 'help'], { primary: 'cardio' });
@@ -75,9 +75,9 @@ test('the review summary and its instructions carry the goals (labels only); non
   const { store } = await setup();
   const db = scopeDb(store.db, 'lee');
   const week = { weekEnd: '2026-03-14', today: '2026-03-16' };
-  assert.equal(prepareReview(db, week).summary.goals, undefined);
+  assert.equal((await prepareReview(db, week)).summary.goals, undefined);
   db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'goal_primary', 'cardio', 'x'), (@uid, 'goal_secondary', 'weight', 'x')").run();
-  assert.deepEqual(prepareReview(db, week).summary.goals, { primary: 'Cardio fitness', secondary: 'Lose weight / body composition' });
+  assert.deepEqual((await prepareReview(db, week)).summary.goals, { primary: 'Cardio fitness', secondary: 'Lose weight / body composition' });
   assert.match(CONTRACT, /"goals" \(present only when the owner set them\)/);
 });
 

@@ -59,10 +59,13 @@ export const CHAT_SCHEMA = {
  * suggestions on, askAdvisor adds supplementContext: supplements, medication names without doses, and the latest labs).
  * @param {{ catalog: object, dictionary: object, substitutions: object, weights?: object }} options
  */
-export function chatContext(db, today, { catalog, dictionary, substitutions = {}, weights }) {
-  const ranked = recommendPrograms({ ...loadAdvisorInput(db, today, catalog), programs: catalog.programs, lookup: dictionary.lookup, substitutions, weights });
-  const program = programForWeek(db, today, catalog);
+export async function chatContext(db, today, { catalog, dictionary, substitutions = {}, weights }) {
+  const ranked = recommendPrograms({ ...(await loadAdvisorInput(db, today, catalog)), programs: catalog.programs, lookup: dictionary.lookup, substitutions, weights });
+  const program = await programForWeek(db, today, catalog);
   const nameOf = (id) => dictionary.exercises.find((e) => e.id === id)?.name ?? id;
+  const sets = await loadPrimarySets(db, today);
+  const phases = await loadSessionPhases(db);
+  const g = await loadGoals(db);
   return {
     advisor: {
       weights: ranked.weights,
@@ -73,15 +76,12 @@ export function chatContext(db, today, { catalog, dictionary, substitutions = {}
       leftOut: ranked.excluded.map((x) => `${x.program} (${x.reason})`),
       addons: ranked.addons.map((r) => ({ program: r.program, total: r.total })),
     },
-    lifts: liftsForReview(loadPrimarySets(db, today), today, { phases: new Map(Object.entries(loadSessionPhases(db))) })
+    lifts: liftsForReview(sets, today, { phases: new Map(Object.entries(phases)) })
       .map((l) => ({ name: l.name, status: l.status, range: l.range, changePct: l.changePct })),
     currentProgram: program ? { program: program.program, phase: program.phase, week: program.week, programWeeks: program.programWeeks } : null,
     equipment: { have: substitutions.equipment?.have ?? [], lack: substitutions.equipment?.lack ?? [] },
     pausedExercises: (substitutions.avoid ?? []).map((a) => nameOf(a.exercise)),
-    ...(() => {
-      const g = loadGoals(db);
-      return g.primary ? { goals: { primary: GOALS[g.primary], secondary: g.secondary ? GOALS[g.secondary] : null } } : {};
-    })(),
+    ...(g.primary ? { goals: { primary: GOALS[g.primary], secondary: g.secondary ? GOALS[g.secondary] : null } } : {}),
   };
 }
 
@@ -89,16 +89,16 @@ const parse = (row) => ({ ...row, physician: row.physician ? JSON.parse(row.phys
   warnings: row.warnings ? JSON.parse(row.warnings) : [] });
 
 /** The thread, oldest first. */
-export function listChat(db) {
-  return db.prepare('SELECT * FROM advisor_notes WHERE user_id = @uid ORDER BY created_at, rowid').all().map(parse);
+export async function listChat(db) {
+  return (await db.prepare('SELECT * FROM advisor_notes WHERE user_id = @uid ORDER BY created_at, rowid').all()).map(parse);
 }
 
-export function deleteChatNote(db, id) {
-  return db.prepare('DELETE FROM advisor_notes WHERE user_id = @uid AND id = ?').run(id).changes;
+export async function deleteChatNote(db, id) {
+  return (await db.prepare('DELETE FROM advisor_notes WHERE user_id = @uid AND id = ?').run(id)).changes;
 }
 
-export function clearChat(db) {
-  return db.prepare('DELETE FROM advisor_notes WHERE user_id = @uid').run().changes;
+export async function clearChat(db) {
+  return (await db.prepare('DELETE FROM advisor_notes WHERE user_id = @uid').run()).changes;
 }
 
 const promptFor = (context, thread, note, problems) => [
@@ -118,22 +118,22 @@ const promptFor = (context, thread, note, problems) => [
 export async function askAdvisor({ store, claude, text, today, catalog, dictionary, substitutions, weights, model = DEFAULT_REVIEW_MODEL,
   effort = CHAT_EFFORT, logger = console, now = () => new Date() }) {
   const { db } = store;
-  const earlier = listChat(db).slice(-THREAD_TURNS).map((n) => ({ from: n.role, text: n.text }));
-  const context = chatContext(db, today, { catalog, dictionary, substitutions, weights });
+  const earlier = (await listChat(db)).slice(-THREAD_TURNS).map((n) => ({ from: n.role, text: n.text }));
+  const context = await chatContext(db, today, { catalog, dictionary, substitutions, weights });
   // Supplement suggestions (Settings, off by default): their facts, rules, schema field and checks only when on.
-  const supplements = Boolean(supplementAdviceSince(db));
-  if (supplements) context.supplementFacts = supplementContext(db, today);
+  const supplements = Boolean(await supplementAdviceSince(db));
+  if (supplements) context.supplementFacts = await supplementContext(db, today);
   const insert = db.prepare(`INSERT INTO advisor_notes (user_id, id, created_at, role, text, physician, weights, model, warnings)
     VALUES (@uid, @id, @created_at, @role, @text, @physician, @weights, @model, @warnings)`);
   const note = { id: randomUUID(), created_at: now().toISOString(), role: 'owner', text, physician: null, weights: JSON.stringify(context.advisor.weights), model: null, warnings: null };
-  insert.run(note);
+  await insert.run(note);
 
   const checks = {
     allowed: allowedNumbers({ context, earlier, text }, CHAT_CONTRACT),
-    medicationNames: medicationNames(db),
-    labNames: db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(),
+    medicationNames: await medicationNames(db),
+    labNames: await db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(),
     maxWords: MAX_WORDS,
-    supplements: supplements ? { age: loadProfile(db, today).age } : null,
+    supplements: supplements ? { age: (await loadProfile(db, today)).age } : null,
   };
   const asReport = (d) => ({ sections: [{ title: 'Reply', body: d.reply }], physicianDiscussion: d.physicianDiscussion,
     ...(supplements ? { supplementSuggestions: d.supplementSuggestions ?? [] } : {}) });
@@ -165,7 +165,7 @@ ${SUPPLEMENT_RULES}` : CHAT_CONTRACT,
 
 ${suggestions}` : report.sections[0].body,
       physician: JSON.stringify(report.physicianDiscussion), weights: null, model: result.model, warnings: problems.length ? JSON.stringify(problems) : null };
-    insert.run(reply);
+    await insert.run(reply);
     run.finish('ok', { attempts, warnings: problems.length, model: result.model });
     return { note: parse(note), reply: parse(reply) };
   } catch (err) {

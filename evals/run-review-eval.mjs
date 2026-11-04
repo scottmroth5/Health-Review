@@ -116,7 +116,7 @@ async function runCase(input, ctx) {
   const store = caseStore(input);
   try {
     const today = addDays(input.weekEnd, 1);
-    const prep = prepareReview(store.db, { weekEnd: input.weekEnd, today });
+    const prep = await prepareReview(store.db, { weekEnd: input.weekEnd, today });
     const sdk = new Anthropic({ maxRetries: 3, timeout: 20 * 60 * 1000 });
     const calls = [];
     // Records every call on either endpoint (fallbacks go through the beta one).

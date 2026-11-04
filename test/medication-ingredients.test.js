@@ -61,7 +61,7 @@ test('medicationNames: medication names plus their ingredients, never supplement
   await add(app, { name: 'Pill', kind: 'medication', timings: ['daily'], started_on: '2026-01-05', ingredients: [{ name: 'Alpha', dose: '5 mg' }, { name: 'Beta' }] });
   await add(app, { name: 'Gamma', kind: 'medication', timings: ['daily'], started_on: '2026-01-05', dose: '1 mg' });
   await add(app, { name: 'Blend', kind: 'supplement', timings: ['daily'], started_on: '2026-01-05', ingredients: [{ name: 'Delta' }] });
-  assert.deepEqual(medicationNames(db).sort(), ['Alpha', 'Beta', 'Gamma', 'Pill']);
+  assert.deepEqual((await medicationNames(db)).sort(), ['Alpha', 'Beta', 'Gamma', 'Pill']);
   await done();
 });
 

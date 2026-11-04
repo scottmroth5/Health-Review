@@ -21,13 +21,13 @@ const RUNS = 5;
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };
 const p95 = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.ceil(s.length * 0.95) - 1)] : null; };
 
-/** Median milliseconds of fn over RUNS calls (one untimed warm-up first); the result is discarded. */
-function timeIt(fn) {
-  fn();
+/** Median milliseconds of fn (sync or async) over RUNS calls (one untimed warm-up first); the result is discarded. */
+async function timeIt(fn) {
+  await fn();
   const ms = [];
   for (let i = 0; i < RUNS; i += 1) {
     const t = performance.now();
-    fn();
+    await fn();
     ms.push(performance.now() - t);
   }
   return Math.round(median(ms) * 10) / 10;
@@ -37,34 +37,39 @@ function timeIt(fn) {
  * The baseline for a database (read-only). Across users for sizes and run durations, as the owner for query timings.
  * @param {import('better-sqlite3').Database} db  the raw database, opened read-only
  */
-export function baseline(db, { now = new Date(), fileBytes = null } = {}) {
+export async function baseline(db, { now = new Date(), fileBytes = null } = {}) {
   const today = localDate(now);
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all();
   const rowCounts = Object.fromEntries(tables.map((t) => [t, db.prepare(`SELECT COUNT(*) FROM "${t.replaceAll('"', '""')}"`).pluck().get()]));
 
-  // Run durations by kind over 90 days, every user (metadata only: name, status and duration).
+  // Run durations by kind over 90 days, every user (metadata only: name, status and duration). A skipped run (the review's
+  // data gate, a user with no AI) is counted apart and left out of the durations; failed is any other status but ok.
   const since = new Date(now.getTime() - 90 * 86400000).toISOString();
   const byName = new Map();
   for (const r of db.prepare("SELECT name, status, duration_ms FROM runs WHERE started_at >= ? AND duration_ms IS NOT NULL").all(since)) {
-    const k = byName.get(r.name) ?? { ms: [], failed: 0 };
-    k.ms.push(r.duration_ms);
-    if (r.status !== 'ok') k.failed += 1;
+    const k = byName.get(r.name) ?? { ms: [], failed: 0, skipped: 0 };
+    if (r.status === 'skipped') {
+      k.skipped += 1;
+    } else {
+      k.ms.push(r.duration_ms);
+      if (r.status !== 'ok') k.failed += 1;
+    }
     byName.set(r.name, k);
   }
   const runs = Object.fromEntries([...byName].sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, k]) => [name, { count: k.ms.length, failed: k.failed, medianMs: median(k.ms), p95Ms: p95(k.ms) }]));
+    .map(([name, k]) => [name, { count: k.ms.length + k.skipped, failed: k.failed, skipped: k.skipped, medianMs: median(k.ms), p95Ms: p95(k.ms) }]));
 
   // The functions behind the busiest screens and the weekly review, as the owner.
   const owner = scopeDb(db, OWNER_ID);
   const weekEnd = lastWeekEnd(today);
   const queriesMs = {
-    'history 90d (Health tab)': timeIt(() => history(owner, addDays(today, -89), today)),
-    'trainingDashboard month': timeIt(() => trainingDashboard(owner, 'month', today)),
-    'trainingDashboard year': timeIt(() => trainingDashboard(owner, 'year', today)),
-    'vo2max 1y': timeIt(() => vo2max(owner, '1y', today)),
-    'cardioZoneView 90d': timeIt(() => cardioZoneView(owner, '90d', today)),
-    'reviewStatus': timeIt(() => reviewStatus(owner, today, now)),
-    'computeWeek last week': timeIt(() => computeWeek(loadWeekData(owner, weekEnd), { weekEnd, ...loadMetricSettings(owner) })),
+    'history 90d (Health tab)': await timeIt(() => history(owner, addDays(today, -89), today)),
+    'trainingDashboard month': await timeIt(() => trainingDashboard(owner, 'month', today)),
+    'trainingDashboard year': await timeIt(() => trainingDashboard(owner, 'year', today)),
+    'vo2max 1y': await timeIt(() => vo2max(owner, '1y', today)),
+    'cardioZoneView 90d': await timeIt(() => cardioZoneView(owner, '90d', today)),
+    'reviewStatus': await timeIt(() => reviewStatus(owner, today, now)),
+    'computeWeek last week': await timeIt(async () => computeWeek(await loadWeekData(owner, weekEnd), { weekEnd, ...(await loadMetricSettings(owner)) })),
   };
 
   const pragma = (name) => db.pragma(name, { simple: true });
@@ -83,7 +88,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const path = process.env.HEALTH_DB_PATH || DEFAULT_DB_PATH;
   const db = new Database(path, { readonly: true, fileMustExist: true });
   try {
-    const result = baseline(db, { fileBytes: statSync(path).size });
+    const result = await baseline(db, { fileBytes: statSync(path).size });
     const dir = dataPath('baseline');
     mkdirSync(dir, { recursive: true });
     const file = join(dir, `baseline-${result.takenAt.replace(':', '')}.json`);

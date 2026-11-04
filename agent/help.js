@@ -42,7 +42,7 @@ const HELP_SCHEMA = {
  */
 export async function askHelp({ store, claude, question, site, model = HELP_MODEL, logger }) {
   // Supplement suggestions (Settings, off by default): general recommendations only, as Help never sees the user's data.
-  const supplements = Boolean(supplementAdviceSince(store.db));
+  const supplements = Boolean(await supplementAdviceSince(store.db));
   const run = startUserRun(store, 'help-ask', { model, questionChars: question.length, supplements }, logger);
   try {
     const result = await claude.send({ model, maxTokens: MAX_TOKENS, system: SYSTEM(helpText(site), supplements), prompt: question, trace: run, label: 'help-ask',

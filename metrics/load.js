@@ -1,6 +1,9 @@
 // Reads what computeWeek needs from the database: about 120 days up to the week's end (90 days of
 // medication changes plus their 28-day before windows), plus the following morning for
 // next-morning recovery after the last day of the week.
+// Async (v3 Phase 1B, docs/adr/0006): each loader awaits every statement, so it runs on the sync handle or the async
+// one. loadStrengthSets, loadUserPrograms, programMatchers and userCatalog stay sync until ingest converts: they run
+// inside ingest's sync transactions.
 import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { addDays } from './stats.js';
@@ -25,11 +28,11 @@ export const loadSubstitutions = (path = SUBSTITUTIONS_PATH) => JSON.parse(readF
  * data/maps/programs.json when present), exercise dictionary and substitutions (default to config/)
  */
 // The confirmed program block the week ends in, with phase and finish from its logged workout names.
-export function programForWeek(db, weekEnd, catalog) {
-  const block = db.prepare(`SELECT program, start_date, status FROM program_blocks WHERE user_id = @uid AND source = 'confirmed'
+export async function programForWeek(db, weekEnd, catalog) {
+  const block = await db.prepare(`SELECT program, start_date, status FROM program_blocks WHERE user_id = @uid AND source = 'confirmed'
     AND start_date <= ? AND COALESCE(end_date, ?) >= ? ORDER BY start_date DESC LIMIT 1`).get(weekEnd, weekEnd, addDays(weekEnd, -6));
   if (!block) return null;
-  const rows = db.prepare('SELECT date, workout FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ?').all(block.start_date, weekEnd);
+  const rows = await db.prepare('SELECT date, workout FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ?').all(block.start_date, weekEnd);
   return programAt(block, catalog, weekEnd, rows);
 }
 
@@ -52,49 +55,49 @@ export function userCatalog(db, shared = loadCatalog()) {
   return own.length ? mergeCatalogs(own, shared) : shared ?? null;
 }
 
-export function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions } = {}) {
+export async function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions } = {}) {
   const from = addDays(weekEnd, -125);
   const cat = catalog === undefined ? userCatalog(db) : catalog;
-  const program = programForWeek(db, weekEnd, cat);
+  const program = await programForWeek(db, weekEnd, cat);
   // The Program Advisor's input, only when the review should carry the ranking (near the end of a block or between).
   const advisorInput = cat && advisorDue(program, weekEnd)
-    ? { ...loadAdvisorInput(db, weekEnd, cat), programs: cat.programs, lookup: (dictionary ?? loadDictionary()).lookup,
+    ? { ...(await loadAdvisorInput(db, weekEnd, cat)), programs: cat.programs, lookup: (dictionary ?? loadDictionary()).lookup,
       substitutions: substitutions ?? loadSubstitutions() }
     : null;
   // Called for vs logged for the week (metrics/adherence.js): the confirmed block the week ends in, when its program is in
   // the catalog. computeWeek reduces it to counts and the owner's logged names.
-  const block = cat ? db.prepare(`SELECT id, program FROM program_blocks WHERE user_id = @uid AND source = 'confirmed' AND start_date <= ?
+  const block = cat ? await db.prepare(`SELECT id, program FROM program_blocks WHERE user_id = @uid AND source = 'confirmed' AND start_date <= ?
     AND COALESCE(end_date, ?) >= ? ORDER BY start_date DESC LIMIT 1`).get(weekEnd, weekEnd, addDays(weekEnd, -6)) : null;
   const adherenceInput = block && cat.find(block.program)
-    ? { program: cat.find(block.program), programName: block.program, days: loadAdherenceInput(db, block.id, weekEnd),
+    ? { program: cat.find(block.program), programName: block.program, days: await loadAdherenceInput(db, block.id, weekEnd),
       lookup: (dictionary ?? loadDictionary()).lookup, substitutions: substitutions ?? loadSubstitutions() }
     : null;
   const nextMorning = addDays(weekEnd, 1);
   return {
-    daily_metrics: db.prepare('SELECT * FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(from, nextMorning),
-    workout_sessions: db.prepare('SELECT * FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
+    daily_metrics: await db.prepare('SELECT * FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(from, nextMorning),
+    workout_sessions: await db.prepare('SELECT * FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
       .all(from, `${nextMorning}`),
     // Per-minute heart rate for those workouts (heart rate zones, metrics/zones.js), and the birth year the zones need.
-    workout_hr_samples: db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${nextMorning}`),
-    birth_year: loadProfile(db, weekEnd).birthYear,
+    workout_hr_samples: await db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${nextMorning}`),
+    birth_year: (await loadProfile(db, weekEnd)).birthYear,
     // About 13 months, for the 12-month volume trend (the 28-day strength metrics filter their own window).
     strength_sets: loadStrengthSets(db, addDays(weekEnd, -400), weekEnd),
-    drinking_days: db.prepare('SELECT * FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(from, weekEnd),
-    checkins: db.prepare('SELECT * FROM checkins WHERE user_id = @uid AND date <= ? ORDER BY date').all(weekEnd),
-    ...loadMedications(db),
-    lab_tests: db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid').all(),
+    drinking_days: await db.prepare('SELECT * FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(from, weekEnd),
+    checkins: await db.prepare('SELECT * FROM checkins WHERE user_id = @uid AND date <= ? ORDER BY date').all(weekEnd),
+    ...(await loadMedications(db)),
+    lab_tests: await db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid').all(),
     lab_ranges: loadLabRanges(),
-    lab_results: db.prepare('SELECT test_id, drawn_on, value, value_text FROM lab_results WHERE user_id = @uid AND drawn_on <= ?').all(weekEnd),
-    medication_doses: db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses WHERE user_id = @uid AND date BETWEEN ? AND ?')
+    lab_results: await db.prepare('SELECT test_id, drawn_on, value, value_text FROM lab_results WHERE user_id = @uid AND drawn_on <= ?').all(weekEnd),
+    medication_doses: await db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses WHERE user_id = @uid AND date BETWEEN ? AND ?')
       .all(addDays(weekEnd, -6), weekEnd),
     // The confirmed program block the week ends in, with its phase and week from the catalog.
     program,
     advisor_input: advisorInput,
     // Health targets as of the week's end (owner-set, or suggested from the 90 days to it).
-    targets: loadTargets(db, weekEnd, loadTargetConfig()),
+    targets: await loadTargets(db, weekEnd, loadTargetConfig()),
     adherence_input: adherenceInput,
-    primary_sets: loadPrimarySets(db, weekEnd),
-    session_phases: loadSessionPhases(db),
+    primary_sets: await loadPrimarySets(db, weekEnd),
+    session_phases: await loadSessionPhases(db),
   };
 }
 
@@ -103,13 +106,13 @@ export function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }
  * comments and text typed in its date column. Sent to the review by the owner's choice (life context
  * and symptoms); device data never takes this path.
  */
-export function loadWeekNotes(db, weekEnd) {
+export async function loadWeekNotes(db, weekEnd) {
   const from = addDays(weekEnd, -6);
   const rows = [
-    ...db.prepare("SELECT date, 'check-in' AS source, notes AS text FROM checkins WHERE user_id = @uid AND date BETWEEN ? AND ? AND notes IS NOT NULL").all(from, weekEnd),
-    ...db.prepare("SELECT date, 'drinking' AS source, notes AS text FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? AND notes IS NOT NULL").all(from, weekEnd),
-    ...db.prepare("SELECT date, 'workout: ' || exercise AS source, comment AS text FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ? AND comment IS NOT NULL").all(from, weekEnd),
-    ...db.prepare("SELECT date, 'workout log' AS source, text FROM workout_log_notes WHERE user_id = @uid AND date BETWEEN ? AND ?").all(from, weekEnd),
+    ...await db.prepare("SELECT date, 'check-in' AS source, notes AS text FROM checkins WHERE user_id = @uid AND date BETWEEN ? AND ? AND notes IS NOT NULL").all(from, weekEnd),
+    ...await db.prepare("SELECT date, 'drinking' AS source, notes AS text FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? AND notes IS NOT NULL").all(from, weekEnd),
+    ...await db.prepare("SELECT date, 'workout: ' || exercise AS source, comment AS text FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ? AND comment IS NOT NULL").all(from, weekEnd),
+    ...await db.prepare("SELECT date, 'workout log' AS source, text FROM workout_log_notes WHERE user_id = @uid AND date BETWEEN ? AND ?").all(from, weekEnd),
   ];
   return rows.filter((r) => r.text?.trim()).sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source));
 }
@@ -139,16 +142,16 @@ export function loadStrengthSets(db, from, to) {
 }
 
 /** Every primary-lift set up to a date (records need the full history), with the dictionary name. */
-export function loadPrimarySets(db, to) {
-  return db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, e.is_primary, s.set_no, s.weight_lbs, s.per_hand,
+export async function loadPrimarySets(db, to) {
+  return (await db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, e.is_primary, s.set_no, s.weight_lbs, s.per_hand,
       s.band, s.bodyweight, s.reps, s.reps_text, s.duration_sec, s.distance_yd
     FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
-    WHERE e.user_id = @uid AND e.is_primary = 1 AND e.date <= ? ORDER BY e.date, e.row_no, s.set_no`).all(to)
+    WHERE e.user_id = @uid AND e.is_primary = 1 AND e.date <= ? ORDER BY e.date, e.row_no, s.set_no`).all(to))
     .map((s) => ({ ...s, canonical_name: canonicalName(s.canonical_id) }));
 }
 
 /** Confirmed program blocks, newest first, for the Called for vs logged picker. */
-export function loadConfirmedBlocks(db) {
+export async function loadConfirmedBlocks(db) {
   return db.prepare(`SELECT id, program, start_date, end_date, status FROM program_blocks
     WHERE user_id = @uid AND source = 'confirmed' ORDER BY start_date DESC`).all();
 }
@@ -157,17 +160,18 @@ export function loadConfirmedBlocks(db) {
  * A block's lifting days up to today for metrics/adherence.js: week, phase, the day's Workout name (its first named
  * row), and each exercise with its performed sets and their reps (planned rows with no reps, time or distance count 0).
  */
-export function loadAdherenceInput(db, blockId, today) {
-  const days = db.prepare(`SELECT date, week, phase FROM log_sessions
+export async function loadAdherenceInput(db, blockId, today) {
+  const days = await db.prepare(`SELECT date, week, phase FROM log_sessions
     WHERE user_id = @uid AND block_id = ? AND assignment = 'block' AND date <= ? ORDER BY date`).all(blockId, today);
   const rows = db.prepare(`SELECT e.id, e.row_no, e.workout, e.exercise, e.canonical_id, e.implement, e.movement_pattern,
       s.reps, s.reps_text, s.duration_sec, s.distance_yd
     FROM strength_exercises e LEFT JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
     WHERE e.user_id = @uid AND e.date = ? ORDER BY e.row_no, s.set_no`);
-  return days.map((d) => {
+  const out = [];
+  for (const d of days) {
     const byExercise = new Map();
     let workout = null;
-    for (const r of rows.all(d.date)) {
+    for (const r of await rows.all(d.date)) {
       workout ??= r.workout?.trim() || null;
       if (!r.exercise) continue;
       const key = r.canonical_id ?? r.exercise.trim().toLowerCase();
@@ -181,13 +185,14 @@ export function loadAdherenceInput(db, blockId, today) {
         if (r.reps != null) e.reps.push(r.reps);
       }
     }
-    return { ...d, workout, exercises: [...byExercise.values()] };
-  });
+    out.push({ ...d, workout, exercises: [...byExercise.values()] });
+  }
+  return out;
 }
 
 /** The stored phase of each session (log_sessions), as { date: phase }. */
-export function loadSessionPhases(db) {
-  return Object.fromEntries(db.prepare('SELECT date, phase FROM log_sessions WHERE user_id = @uid AND phase IS NOT NULL').all().map((r) => [r.date, r.phase]));
+export async function loadSessionPhases(db) {
+  return Object.fromEntries((await db.prepare('SELECT date, phase FROM log_sessions WHERE user_id = @uid AND phase IS NOT NULL').all()).map((r) => [r.date, r.phase]));
 }
 
 /**
@@ -196,26 +201,26 @@ export function loadSessionPhases(db) {
  * Apple Watch strength and HIIT minutes per lifting day by program, the lifts' current status, and the program run
  * last (the in-progress confirmed block, else the latest one started).
  */
-export function loadAdvisorInput(db, asOf, catalog) {
-  const blocks = db.prepare(`SELECT b.program, b.start_date, b.end_date, b.status, (SELECT MAX(date) FROM log_sessions WHERE user_id = b.user_id AND block_id = b.id) AS last
-    FROM program_blocks b WHERE b.user_id = @uid AND b.source = 'confirmed' AND b.start_date <= ? ORDER BY b.start_date`).all(asOf)
-    .map((b) => {
-      const at = b.status === 'in_progress' ? asOf : (b.last ?? b.start_date);
-      const rows = db.prepare('SELECT date, workout FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ?').all(b.start_date, at);
-      const p = programProgress(b, rows, catalog, at);
-      return { program: b.program, start_date: b.start_date, end_date: b.end_date, status: b.status,
-        percent: p.week && p.programWeeks ? Math.min(100, Math.round((p.week / p.programWeeks) * 100)) : null };
-    });
-  const sets = loadPrimarySets(db, asOf);
+export async function loadAdvisorInput(db, asOf, catalog) {
+  const blocks = [];
+  const rows = db.prepare('SELECT date, workout FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ?');
+  for (const b of await db.prepare(`SELECT b.program, b.start_date, b.end_date, b.status, (SELECT MAX(date) FROM log_sessions WHERE user_id = b.user_id AND block_id = b.id) AS last
+    FROM program_blocks b WHERE b.user_id = @uid AND b.source = 'confirmed' AND b.start_date <= ? ORDER BY b.start_date`).all(asOf)) {
+    const at = b.status === 'in_progress' ? asOf : (b.last ?? b.start_date);
+    const p = programProgress(b, await rows.all(b.start_date, at), catalog, at);
+    blocks.push({ program: b.program, start_date: b.start_date, end_date: b.end_date, status: b.status,
+      percent: p.week && p.programWeeks ? Math.min(100, Math.round((p.week / p.programWeeks) * 100)) : null });
+  }
+  const sets = await loadPrimarySets(db, asOf);
   return {
     blocks,
     sets,
-    vo2: db.prepare('SELECT date, vo2max AS value FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date').all(asOf),
-    watchMinutes: db.prepare(`SELECT ls.program, w.minutes FROM log_sessions ls
+    vo2: await db.prepare('SELECT date, vo2max AS value FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date').all(asOf),
+    watchMinutes: await db.prepare(`SELECT ls.program, w.minutes FROM log_sessions ls
       JOIN (SELECT substr(start, 1, 10) AS day, SUM(duration_sec) / 60.0 AS minutes FROM workout_sessions
         WHERE user_id = @uid AND (type LIKE '%Strength%' OR type LIKE '%High Intensity%') AND duration_sec IS NOT NULL GROUP BY day) w ON w.day = ls.date
       WHERE ls.user_id = @uid AND ls.program IS NOT NULL AND ls.date <= ?`).all(asOf),
-    lifts: liftProgress(sets, asOf, { phases: new Map(Object.entries(loadSessionPhases(db))) }),
+    lifts: liftProgress(sets, asOf, { phases: new Map(Object.entries(await loadSessionPhases(db))) }),
     lastProgram: (blocks.filter((b) => b.status === 'in_progress').at(-1) ?? blocks.at(-1))?.program ?? null,
     asOf,
   };
@@ -226,28 +231,28 @@ export function loadAdvisorInput(db, asOf, catalog) {
  * last looked for one. lookedAt and workoutsLookedAt: a sync passes its own time (or null without that folder);
  * otherwise the latest ok sync that read that folder. With apple 'rest' (the server), the newest is the last accepted
  * ingest post of that kind (ingest_log) and it is judged against now, since posts arrive on their own. */
-export function loadDataCheckInput(db, today, { lookedAt, workoutsLookedAt, apple = 'drive', now = new Date() } = {}) {
-  const newest = (kinds, key, given) => {
-    const file = db.prepare(`SELECT MAX(modified_time) AS at FROM drive_exports WHERE user_id = @uid AND kind IN (${kinds.map(() => '?').join(', ')})`).get(...kinds);
+export async function loadDataCheckInput(db, today, { lookedAt, workoutsLookedAt, apple = 'drive', now = new Date() } = {}) {
+  const newest = async (kinds, key, given) => {
+    const file = await db.prepare(`SELECT MAX(modified_time) AS at FROM drive_exports WHERE user_id = @uid AND kind IN (${kinds.map(() => '?').join(', ')})`).get(...kinds);
     if (file?.at) file.local = localStamp(file.at); // the owner's zone, not SQLite's host 'localtime'
     const looked = given !== undefined ? given
-      : db.prepare(`SELECT started_at FROM runs WHERE user_id = @uid AND name = 'sync' AND status = 'ok' AND summary LIKE ?
+      : await db.prepare(`SELECT started_at FROM runs WHERE user_id = @uid AND name = 'sync' AND status = 'ok' AND summary LIKE ?
         ORDER BY id DESC LIMIT 1`).pluck().get(`%"${key}"%`) ?? null;
     return file?.at && looked ? { lastFileAt: file.at, lastFileLocal: file.local, lookedAt: looked } : null;
   };
-  const lastPost = (route) => {
-    const at = db.prepare("SELECT MAX(received_at) FROM ingest_log WHERE user_id = @uid AND route = ? AND result = 'ok'").pluck().get(route);
+  const lastPost = async (route) => {
+    const at = await db.prepare("SELECT MAX(received_at) FROM ingest_log WHERE user_id = @uid AND route = ? AND result = 'ok'").pluck().get(route);
     return at ? { lastFileAt: at, lastFileLocal: localStamp(at), lookedAt: now.toISOString() } : null;
   };
   return {
-    exports: apple === 'rest' ? lastPost('health') : newest(['health', 'health_json'], 'health_exports', lookedAt),
-    workoutExports: apple === 'rest' ? lastPost('workouts') : newest(['workouts'], 'workout_exports', workoutsLookedAt),
-    daily: db.prepare(`SELECT date, steps, resting_hr, sleep_total_hr, exercise_min, exported_through FROM daily_metrics
+    exports: apple === 'rest' ? await lastPost('health') : await newest(['health', 'health_json'], 'health_exports', lookedAt),
+    workoutExports: apple === 'rest' ? await lastPost('workouts') : await newest(['workouts'], 'workout_exports', workoutsLookedAt),
+    daily: await db.prepare(`SELECT date, steps, resting_hr, sleep_total_hr, exercise_min, exported_through FROM daily_metrics
       WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`).all(addDays(today, -45), today),
-    sessions: db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? ORDER BY start').all(addDays(today, -30)),
-    liftingDays: db.prepare(`SELECT DISTINCT e.date FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
+    sessions: await db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? ORDER BY start').all(addDays(today, -30)),
+    liftingDays: (await db.prepare(`SELECT DISTINCT e.date FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
       WHERE e.user_id = @uid AND e.date BETWEEN ? AND ? AND (s.reps IS NOT NULL OR s.duration_sec IS NOT NULL OR s.distance_yd IS NOT NULL OR COALESCE(s.reps_text, '') <> '')`)
-      .all(addDays(today, -14), today).map((r) => r.date),
+      .all(addDays(today, -14), today)).map((r) => r.date),
     today,
   };
 }
@@ -256,39 +261,39 @@ export function loadDataCheckInput(db, today, { lookedAt, workoutsLookedAt, appl
  * Names that mark a sentence as medication talk for the review's routing check: every medication's name and the names
  * of its ingredients in any period (an ingredient named alone is caught, not only the full name of the pill).
  */
-export function medicationNames(db) {
-  const meds = db.prepare("SELECT id, name FROM medications WHERE user_id = @uid AND kind = 'medication'").all();
-  const ingredients = db.prepare(`SELECT p.ingredients FROM medication_periods p JOIN medications m ON m.id = p.medication_id AND m.user_id = p.user_id
-    WHERE p.user_id = @uid AND m.kind = 'medication' AND p.ingredients IS NOT NULL`).pluck().all()
+export async function medicationNames(db) {
+  const meds = await db.prepare("SELECT id, name FROM medications WHERE user_id = @uid AND kind = 'medication'").all();
+  const ingredients = (await db.prepare(`SELECT p.ingredients FROM medication_periods p JOIN medications m ON m.id = p.medication_id AND m.user_id = p.user_id
+    WHERE p.user_id = @uid AND m.kind = 'medication' AND p.ingredients IS NOT NULL`).pluck().all())
     .flatMap((json) => JSON.parse(json).map((i) => i.name));
   const seen = new Set();
   return [...meds.map((m) => m.name), ...ingredients].filter((n) => !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
 }
 
 /** All medications and their periods (small tables, read whole). */
-export function loadMedications(db) {
+export async function loadMedications(db) {
   return {
-    medications: db.prepare('SELECT id, name, kind, purpose, prescribed, notes FROM medications WHERE user_id = @uid ORDER BY name').all(),
-    medication_periods: db.prepare('SELECT * FROM medication_periods WHERE user_id = @uid ORDER BY medication_id, started_on, id').all(),
+    medications: await db.prepare('SELECT id, name, kind, purpose, prescribed, notes FROM medications WHERE user_id = @uid ORDER BY name').all(),
+    medication_periods: await db.prepare('SELECT * FROM medication_periods WHERE user_id = @uid ORDER BY medication_id, started_on, id').all(),
   };
 }
 
 /** Personal settings the metrics use. Zone 2 is null until both ends are set; an unset Zone 3 or 4 top is null (age default). */
-export function loadMetricSettings(db) {
-  const get = (key) => db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').get(key)?.value;
-  const low = Number(get('zone2_low_bpm'));
-  const high = Number(get('zone2_high_bpm'));
-  const top = (key) => Number(get(key)) || null;
-  return { zone2: low > 0 && high > low ? { low, high } : null, zones: { zone3High: top('zone3_high_bpm'), zone4High: top('zone4_high_bpm') } };
+export async function loadMetricSettings(db) {
+  const get = async (key) => (await db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').get(key))?.value;
+  const low = Number(await get('zone2_low_bpm'));
+  const high = Number(await get('zone2_high_bpm'));
+  const top = async (key) => Number(await get(key)) || null;
+  return { zone2: low > 0 && high > low ? { low, high } : null, zones: { zone3High: await top('zone3_high_bpm'), zone4High: await top('zone4_high_bpm') } };
 }
 
 // ---- Health tab targets (metrics/targets.js) ----
 
 /** The owner's profile for age-based targets (settings: birth_year, sex, height_in), with age on today. */
 export const PROFILE_KEYS = ['birth_year', 'sex', 'height_in'];
-export function loadProfile(db, today) {
-  const rows = Object.fromEntries(db.prepare(`SELECT key, value FROM settings WHERE user_id = @uid AND key IN (${PROFILE_KEYS.map(() => '?').join(', ')})`)
-    .all(...PROFILE_KEYS).map((r) => [r.key, r.value]));
+export async function loadProfile(db, today) {
+  const rows = Object.fromEntries((await db.prepare(`SELECT key, value FROM settings WHERE user_id = @uid AND key IN (${PROFILE_KEYS.map(() => '?').join(', ')})`)
+    .all(...PROFILE_KEYS)).map((r) => [r.key, r.value]));
   const birthYear = rows.birth_year ? Number(rows.birth_year) : null;
   return {
     birthYear,
@@ -306,15 +311,15 @@ const TARGET_CHECKIN = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'viscer
  * Each target metric's current value: the average of its days in the 90 days to today (alcohol per logged drinking
  * day), and VO2 max's latest reading. Null when there is none.
  */
-export function targetCurrents(db, today) {
+export async function targetCurrents(db, today) {
   const from = addDays(today, -89);
   const avg = (table, col) => db.prepare(`SELECT AVG(${col}) FROM ${table} WHERE user_id = @uid AND date BETWEEN ? AND ? AND ${col} IS NOT NULL`).pluck().get(from, today);
   const out = {};
-  for (const c of TARGET_DAILY) out[c] = avg('daily_metrics', c);
-  for (const c of TARGET_CHECKIN) out[c] = avg('checkins', c);
-  out.alcohol = db.prepare(`SELECT AVG(COALESCE(beers, 0) + COALESCE(wine, 0) + COALESCE(bourbon, 0) + COALESCE(other, 0)) FROM drinking_days
+  for (const c of TARGET_DAILY) out[c] = await avg('daily_metrics', c);
+  for (const c of TARGET_CHECKIN) out[c] = await avg('checkins', c);
+  out.alcohol = await db.prepare(`SELECT AVG(COALESCE(beers, 0) + COALESCE(wine, 0) + COALESCE(bourbon, 0) + COALESCE(other, 0)) FROM drinking_days
     WHERE user_id = @uid AND date BETWEEN ? AND ?`).pluck().get(from, today);
-  out.vo2max = db.prepare('SELECT vo2max FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date DESC LIMIT 1').pluck().get(today) ?? null;
+  out.vo2max = await db.prepare('SELECT vo2max FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date DESC LIMIT 1').pluck().get(today) ?? null;
   return out;
 }
 
@@ -322,10 +327,10 @@ export function targetCurrents(db, today) {
  * Every target metric: its suggestion (suggestTarget) and the target in effect, the owner's where set (health_targets).
  * @returns {Array<object>} config order; setBy 'owner' or 'suggested'
  */
-export function loadTargets(db, today, config) {
-  const profile = loadProfile(db, today);
-  const currents = targetCurrents(db, today);
-  const owned = new Map(db.prepare('SELECT metric, target FROM health_targets WHERE user_id = @uid').all().map((r) => [r.metric, r.target]));
+export async function loadTargets(db, today, config) {
+  const profile = await loadProfile(db, today);
+  const currents = await targetCurrents(db, today);
+  const owned = new Map((await db.prepare('SELECT metric, target FROM health_targets WHERE user_id = @uid').all()).map((r) => [r.metric, r.target]));
   return Object.entries(config.metrics).map(([metric, def]) => {
     const s = suggestTarget({ metric, current: currents[metric] ?? null, profile, config });
     const mine = owned.get(metric);
@@ -337,7 +342,7 @@ export function loadTargets(db, today, config) {
 }
 
 /** The user's training goals (settings goal_primary and goal_secondary), checked; { primary: null } when unset. */
-export function loadGoals(db) {
+export async function loadGoals(db) {
   const get = db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck();
-  return cleanGoals({ primary: get.get('goal_primary') ?? null, secondary: get.get('goal_secondary') ?? null });
+  return cleanGoals({ primary: await get.get('goal_primary') ?? null, secondary: await get.get('goal_secondary') ?? null });
 }

@@ -90,7 +90,7 @@ export async function runSync({ store, source, backfill = false, now = new Date(
       counts.weekly_checkin = await importOnce({ store, source, key: 'weekly_checkin', parse: parseWeeklyCheckins, write: upsertCheckins(store.db, stamp), warnings });
     }
     // Data checks (stale or missing Apple Health days, an export automation that stopped, partial days, workouts not exported, impossible values).
-    const checks = dataChecks(loadDataCheckInput(store.db, localDay(now), { apple, now, lookedAt: apple === 'drive' && exportFolders.health ? stamp : null, workoutsLookedAt: apple === 'drive' && exportFolders.workouts ? stamp : null }));
+    const checks = dataChecks(await loadDataCheckInput(store.db, localDay(now), { apple, now, lookedAt: apple === 'drive' && exportFolders.health ? stamp : null, workoutsLookedAt: apple === 'drive' && exportFolders.workouts ? stamp : null }));
     for (const c of checks) warnings.push({ source: 'data_check', kind: c.kind, detail: c.message, severity: c.severity });
     counts.data_checks = { warn: checks.filter((c) => c.severity === 'warn').length, info: checks.filter((c) => c.severity === 'info').length };
     const typos = typoCount(store.db, dictionary);

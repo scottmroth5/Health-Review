@@ -138,11 +138,11 @@ export function lastSync(db) {
 }
 
 /** Data check warnings as of today (info findings, such as a lifting day without a watch workout, stay in the sync log). */
-export function dataCheckWarnings(db, today, { apple = 'drive', now = new Date() } = {}) {
+export async function dataCheckWarnings(db, today, { apple = 'drive', now = new Date() } = {}) {
   // The checks are about Apple Health data; someone who has never had any (entering by hand) has nothing stale or missing.
   const hasApple = db.prepare('SELECT 1 FROM daily_metrics WHERE user_id = @uid LIMIT 1').get() || db.prepare('SELECT 1 FROM workout_sessions WHERE user_id = @uid LIMIT 1').get();
   const warnings = hasApple
-    ? dataChecks(loadDataCheckInput(db, today, { apple, now })).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }))
+    ? dataChecks(await loadDataCheckInput(db, today, { apple, now })).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }))
     : [];
   // The backup restore test (jobs/restore-check.js): its last run failing stays a warning until a later one passes.
   const test = db.prepare("SELECT status, started_at, summary FROM runs WHERE user_id = @uid AND name = 'restore-test' AND status IN ('ok', 'error') ORDER BY id DESC LIMIT 1").get();
@@ -161,14 +161,14 @@ export function dataCheckWarnings(db, today, { apple = 'drive', now = new Date()
  * Called for vs logged for one confirmed block (default: in progress, else the latest started), with the confirmed
  * blocks whose program is in the catalog for the picker. { available: false } without a catalog; null for an unknown block.
  */
-export function programAdherence(db, today, { catalog, dictionary, substitutions, blockId }) {
+export async function programAdherence(db, today, { catalog, dictionary, substitutions, blockId }) {
   if (!catalog) return { available: false };
-  const blocks = loadConfirmedBlocks(db).filter((b) => catalog.find(b.program));
+  const blocks = (await loadConfirmedBlocks(db)).filter((b) => catalog.find(b.program));
   const block = blockId ? blocks.find((b) => b.id === blockId) : blocks.find((b) => b.status === 'in_progress') ?? blocks[0];
   if (blockId && !block) return null;
   const list = blocks.map(({ id, program, start_date, end_date, status }) => ({ id, program, start_date, end_date, status }));
   if (!block) return { available: true, blocks: list, block: null };
-  const result = blockAdherence({ days: loadAdherenceInput(db, block.id, today), program: catalog.find(block.program), lookup: dictionary.lookup, substitutions });
+  const result = blockAdherence({ days: await loadAdherenceInput(db, block.id, today), program: catalog.find(block.program), lookup: dictionary.lookup, substitutions });
   return { available: true, blocks: list, block: list.find((b) => b.id === block.id), ...result };
 }
 
@@ -336,8 +336,8 @@ export function trainingDashboard(db, view, today) {
 }
 
 /** Plateau status of every primary lift as of today, with 26 weeks of trend points (Training tab). */
-export function lifts(db, today) {
-  return liftProgress(loadPrimarySets(db, today), today, { phases: new Map(Object.entries(loadSessionPhases(db))) });
+export async function lifts(db, today) {
+  return liftProgress(await loadPrimarySets(db, today), today, { phases: new Map(Object.entries(await loadSessionPhases(db))) });
 }
 
 /** The VO2 max card for one view. Reads every reading: the tiles (best on record, change vs a year ago) need them all. */
@@ -354,13 +354,13 @@ export const CARDIO_ZONE_VIEWS = { '30d': { days: 30, weeks: 5, group: 'day' }, 
 export const CARDIO_ZONE_GROUPS = ['day', 'week', 'month'];
 
 /** Cardio minutes by heart rate zone for one range and grouping, with the zone bounds (null without a Zone 2 range, or a birth year for an unset top). */
-export function cardioZoneView(db, view, today, group = CARDIO_ZONE_VIEWS[view].group) {
+export async function cardioZoneView(db, view, today, group = CARDIO_ZONE_VIEWS[view].group) {
   const v = CARDIO_ZONE_VIEWS[view];
   const buckets = zoneBuckets(today, group === 'day' ? { days: v.days } : group === 'week' ? { weeks: v.weeks } : { monthsOver: v.days });
   const from = buckets[0].from;
   const to = buckets.at(-1).to;
-  const { zone2, zones } = loadMetricSettings(db);
-  const bounds = zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, ...zones, birthYear: loadProfile(db, today).birthYear, year: Number(today.slice(0, 4)) });
+  const { zone2, zones } = await loadMetricSettings(db);
+  const bounds = zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, ...zones, birthYear: (await loadProfile(db, today)).birthYear, year: Number(today.slice(0, 4)) });
   const sessions = db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
     .all(from, `${addDays(to, 1)}`);
   const samples = db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${addDays(to, 1)}`);
@@ -368,11 +368,11 @@ export function cardioZoneView(db, view, today, group = CARDIO_ZONE_VIEWS[view].
 }
 
 /** The Program Advisor's ranking as of today (Training tab); available false without the MAPS catalog. */
-export function advisor(db, today, { catalog, dictionary, substitutions, weights }) {
+export async function advisor(db, today, { catalog, dictionary, substitutions, weights }) {
   if (!catalog) return { available: false };
   return {
     available: true,
-    ...recommendPrograms({ ...loadAdvisorInput(db, today, catalog), programs: catalog.programs, lookup: dictionary.lookup, substitutions, weights }),
+    ...recommendPrograms({ ...(await loadAdvisorInput(db, today, catalog)), programs: catalog.programs, lookup: dictionary.lookup, substitutions, weights }),
   };
 }
 
@@ -664,8 +664,8 @@ export function medicationCheckoffs(db, today, weeks = 12) {
 }
 
 /** Every start, change and stop with its before and after averages, newest first. */
-export function medicationImpact(db, today) {
-  const { medications, medication_periods: periods } = loadMedications(db);
+export async function medicationImpact(db, today) {
+  const { medications, medication_periods: periods } = await loadMedications(db);
   const events = medicationEvents(medications, periods).filter((e) => e.date <= today);
   if (!events.length) return [];
   const from = addDays(events[0].date, -28);

@@ -154,7 +154,7 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
   });
 }
 
-test('rounding is half away from zero and never returns -0', () => {
+test('rounding is half away from zero and never returns -0', async () => {
   assert.equal(round(2.5), 3);
   assert.equal(round(-2.5), -3);
   assert.equal(round(6.875, 1), 6.9);
@@ -162,14 +162,14 @@ test('rounding is half away from zero and never returns -0', () => {
   assert.equal(round(null), null);
 });
 
-test('mean and sd skip missing values; sd needs two values', () => {
+test('mean and sd skip missing values; sd needs two values', async () => {
   assert.equal(mean([1, null, 3]), 2);
   assert.equal(mean([]), null);
   assert.equal(sd([5]), null);
   assert.equal(round(sd([48, 52, 48, 52]), 3), 2.309);
 });
 
-test('pearson needs enough pairs and variation on both sides', () => {
+test('pearson needs enough pairs and variation on both sides', async () => {
   const up = Array.from({ length: 10 }, (_, i) => [i, 2 * i + 1]);
   assert.equal(round(pearson(up), 6), 1);
   assert.equal(round(pearson(up.map(([a, b]) => [a, -b])), 6), -1);
@@ -177,21 +177,21 @@ test('pearson needs enough pairs and variation on both sides', () => {
   assert.equal(pearson(up.map(([a]) => [a, 5])), null);
 });
 
-test('the review week ends on the most recent Saturday before today', () => {
+test('the review week ends on the most recent Saturday before today', async () => {
   assert.equal(lastWeekEnd('2026-03-08'), '2026-03-07'); // Sunday
   assert.equal(lastWeekEnd('2026-03-09'), '2026-03-07'); // Monday
   assert.equal(lastWeekEnd('2026-03-07'), '2026-02-28'); // Saturday: that week is not over
   assert.deepEqual(windows('2026-03-07').baseline, { from: '2026-02-01', to: '2026-02-28' });
 });
 
-test('session kinds: strength and core, mobility, everything else is cardio', () => {
+test('session kinds: strength and core, mobility, everything else is cardio', async () => {
   assert.equal(sessionKind('Traditional Strength Training'), 'strength');
   assert.equal(sessionKind('Functional Strength Training'), 'strength');
   assert.equal(sessionKind('Yoga'), 'mobility');
   for (const t of ['Outdoor Walk', 'Elliptical', 'High Intensity Interval Training', 'Hiking', 'Cross Training']) assert.equal(sessionKind(t), 'cardio');
 });
 
-test('medication events: start, change on the same day as a stop, stop, and a later restart', () => {
+test('medication events: start, change on the same day as a stop, stop, and a later restart', async () => {
   const meds = [{ id: 1, name: 'Creatine', kind: 'supplement' }];
   const p = (id, dose, started_on, stopped_on = null) => ({ id, medication_id: 1, dose, timings: '["daily"]', started_on, stopped_on, stop_reason: null });
   const events = medicationEvents(meds, [p(3, '5 g', '2026-05-01'), p(1, '3 g', '2026-01-01', '2026-02-01'), p(2, '5 g', '2026-02-01', '2026-03-01')]);
@@ -203,7 +203,7 @@ test('medication events: start, change on the same day as a stop, stop, and a la
   ]);
 });
 
-test('medication events: an estimated start is not an event, but a later change is', () => {
+test('medication events: an estimated start is not an event, but a later change is', async () => {
   const meds = [{ id: 1, name: 'Fish oil', kind: 'supplement' }];
   const periods = [
     { id: 1, medication_id: 1, dose: '1 g', timings: '["morning"]', started_on: '2026-01-01', stopped_on: '2026-04-01', start_estimated: 1 },
@@ -212,17 +212,17 @@ test('medication events: an estimated start is not an event, but a later change 
   assert.deepEqual(medicationEvents(meds, periods).map((e) => [e.date, e.type]), [['2026-04-01', 'change']]);
 });
 
-test('without a Zone 2 range, Zone 2 is reported as unset rather than zero', () => {
+test('without a Zone 2 range, Zone 2 is reported as unset rather than zero', async () => {
   const r = computeWeek(EMPTY, { weekEnd: '2026-03-07' });
   assert.deepEqual(r.cardio.zone2, { range: null, sessions: null, minutes: null, belowSessions: null, aboveSessions: null });
 });
 
-test('from the database: settings, joined strength sets, and planned sets left out', () => {
+test('from the database: settings, joined strength sets, and planned sets left out', async () => {
   const store = openOwnerStore(':memory:');
   const { db } = store;
-  assert.equal(loadMetricSettings(db).zone2, null);
+  assert.equal((await loadMetricSettings(db)).zone2, null);
   saveSettings(db, { zone2_low_bpm: 110, zone2_high_bpm: 125 });
-  assert.deepEqual(loadMetricSettings(db).zone2, { low: 110, high: 125 });
+  assert.deepEqual((await loadMetricSettings(db)).zone2, { low: 110, high: 125 });
 
   const ex = db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2026, ?, ?, ?)");
   const set = db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, per_hand, reps, reps_text) VALUES (@uid, ?, 1, ?, ?, ?, ?)');
@@ -231,10 +231,10 @@ test('from the database: settings, joined strength sets, and planned sets left o
   set.run(ex.run(4, '2026-03-09', 'Squat').lastInsertRowid, 185, 0, 5, '5'); // after the week
   db.prepare("INSERT INTO daily_metrics (user_id, date, hrv_ms, updated_at) VALUES (@uid, '2026-03-02', 50, 'x'), (@uid, '2026-03-08', 60, 'x')").run();
 
-  const data = loadWeekData(db, '2026-03-07');
+  const data = await loadWeekData(db, '2026-03-07');
   assert.equal(data.strength_sets.length, 2, 'rows after the week are not loaded');
   assert.equal(data.daily_metrics.length, 2, 'the morning after the week is loaded for next-morning recovery');
-  const result = computeWeek(data, { weekEnd: '2026-03-07', ...loadMetricSettings(db) });
+  const result = computeWeek(data, { weekEnd: '2026-03-07', ...(await loadMetricSettings(db)) });
   assert.deepEqual([result.strength.week.sets, result.strength.week.volumeLbs], [1, 525]);
   assert.equal(result.recovery.hrv_ms.mean, 50, 'the morning after the week is not part of the week');
   store.close();
@@ -270,7 +270,7 @@ test('programs: unnamed days take the program from up to 7 days before; Trigger 
   });
 });
 
-test('programs: each dashboard bar lists its programs by days, and the days with none', () => {
+test('programs: each dashboard bar lists its programs by days, and the days with none', async () => {
   const S = (date, workout) => ({ date, exercise: 'Squat', workout, set_no: 1, weight_lbs: 100, per_hand: 0, reps: 5 });
   const v = trainingView([S('2026-03-02', 'Symmetry Foundation 1'), S('2026-03-03', null), S('2026-03-05', 'In between programs'), S('2026-02-01', null)], 'month', '2026-03-07');
   const week = v.buckets.filter((b) => b.programs.length || b.noProgramDays);
@@ -283,7 +283,7 @@ test('programs: each dashboard bar lists its programs by days, and the days with
   assert.deepEqual(year.buckets.at(-1).programs, [{ name: 'MAPS Symmetry', days: 2 }, { name: 'Between programs', days: 1 }]);
 });
 
-test('exercise names: unmapped names group by spelling, plural, hyphen, typo and word-order variants', () => {
+test('exercise names: unmapped names group by spelling, plural, hyphen, typo and word-order variants', async () => {
   const key = (exercise) => exerciseKey({ exercise });
   const same = (...names) => assert.equal(new Set(names.map(key)).size, 1, names.join(' / '));
   const differ = (a, b) => assert.notEqual(key(a), key(b), `${a} vs ${b}`);
@@ -298,7 +298,7 @@ test('exercise names: unmapped names group by spelling, plural, hyphen, typo and
   differ('Bench Press', 'Barbell Bench'); // word-level merges come only from the dictionary
 });
 
-test('exercise names: normalized sets group by canonical exercise and show its dictionary name', () => {
+test('exercise names: normalized sets group by canonical exercise and show its dictionary name', async () => {
   const row = (exercise, canonical_id, canonical_name, date = '2026-03-01') => ({ exercise, canonical_id, canonical_name, date });
   assert.equal(exerciseKey(row('Bench Press', 'barbell-bench-press', 'Barbell Bench Press')), exerciseKey(row('Barbell Bench', 'barbell-bench-press', 'Barbell Bench Press')));
   assert.equal(exerciseName([row('Bench Press', 'barbell-bench-press', 'Barbell Bench Press')]), 'Barbell Bench Press');
@@ -308,7 +308,7 @@ test('exercise names: normalized sets group by canonical exercise and show its d
   assert.equal(exerciseName(rows.slice(0, 2).concat(rows.slice(3))), 'Pull ups', 'a tie goes to the latest');
 });
 
-test('exercise names: volume and strength merge one canonical exercise and never combine barbell with dumbbell', () => {
+test('exercise names: volume and strength merge one canonical exercise and never combine barbell with dumbbell', async () => {
   const S = (date, exercise, canonical_id, canonical_name, weight, reps) => ({ date, exercise, canonical_id, canonical_name, set_no: 1, weight_lbs: weight, per_hand: 0, reps });
   const sets = [
     S('2026-03-02', 'Bench Press', 'barbell-bench-press', 'Barbell Bench Press', 100, 5),
@@ -325,7 +325,7 @@ test('exercise names: volume and strength merge one canonical exercise and never
     [['Barbell Bench Press', 2], ['Barbell Deadlift', 1], ['Dumbbell Bench Press', 1], ['Pull-ups', 1]]);
 });
 
-test('VO2 max: readings for short views; weekly and monthly averages for long ones; empty buckets left out', () => {
+test('VO2 max: readings for short views; weekly and monthly averages for long ones; empty buckets left out', async () => {
   const R = (date, vo2max) => ({ date, vo2max });
   const rows = [
     R('2025-03-01', 40), R('2025-06-02', 42), R('2025-06-30', 44),
@@ -356,7 +356,7 @@ test('VO2 max: readings for short views; weekly and monthly averages for long on
   assert.equal(vo2maxReport(rows, '5y', today).range.from, '2021-03-01');
 });
 
-test('VO2 max: latest, changes vs the nearest earlier reading within 30 days, and best on record', () => {
+test('VO2 max: latest, changes vs the nearest earlier reading within 30 days, and best on record', async () => {
   const R = (date, vo2max) => ({ date, vo2max });
   const today = '2026-03-21';
   const r = vo2maxReport([R('2025-03-01', 40), R('2025-12-10', 44), R('2026-03-20', 47), R('2026-03-30', 60)], '1y', today);

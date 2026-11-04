@@ -29,17 +29,17 @@ const userMessage = (summary, problems = []) =>
   ].filter(Boolean).join('\n');
 
 /** Builds everything the call needs without calling anything (used by --dry-run and tests). */
-export function prepareReview(db, { weekEnd, today, catalog }) {
-  const settings = loadMetricSettings(db);
+export async function prepareReview(db, { weekEnd, today, catalog }) {
+  const settings = await loadMetricSettings(db);
   // catalog: the user's program catalog (null: none); left out, the owner's MAPS catalog file is read.
-  const week = computeWeek(loadWeekData(db, weekEnd, catalog === undefined ? {} : { catalog }), { weekEnd, ...settings });
-  const summary = buildSummary(week, loadWeekNotes(db, weekEnd), { today });
+  const week = computeWeek(await loadWeekData(db, weekEnd, catalog === undefined ? {} : { catalog }), { weekEnd, ...settings });
+  const summary = buildSummary(week, await loadWeekNotes(db, weekEnd), { today });
   // The owner's training goals (Settings), as labels only: the review opens with them.
-  const goals = loadGoals(db);
+  const goals = await loadGoals(db);
   if (goals.primary) summary.goals = { primary: GOALS[goals.primary], secondary: goals.secondary ? GOALS[goals.secondary] : null };
-  const sections = db.prepare('SELECT position, name, text, sensitive FROM prompt_sections WHERE user_id = @uid ORDER BY position, name').all();
+  const sections = await db.prepare('SELECT position, name, text, sensitive FROM prompt_sections WHERE user_id = @uid ORDER BY position, name').all();
   // Supplement suggestions (Settings, off by default): their rules, the schema field and the checks, only when on.
-  const supplements = Boolean(supplementAdviceSince(db));
+  const supplements = Boolean(await supplementAdviceSince(db));
   const { system, sensitiveSent } = buildSystem(sections, today, { supplements });
   return {
     summary,
@@ -51,11 +51,11 @@ export function prepareReview(db, { weekEnd, today, catalog }) {
     checks: {
       opening: true, // highlights and next steps
       allowed: allowedNumbers(summary, system),
-      medicationNames: medicationNames(db),
+      medicationNames: await medicationNames(db),
       // Blood oxygen and breathing disturbances are checked like lab values: a number next to them only in physicianDiscussion.
-      labNames: [...db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(), ...NIGHT_BREATHING_NAMES],
+      labNames: [...await db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(), ...NIGHT_BREATHING_NAMES],
       // The age decides calcium's upper limit band.
-      supplements: supplements ? { age: loadProfile(db, today).age } : null,
+      supplements: supplements ? { age: (await loadProfile(db, today)).age } : null,
     },
   };
 }
@@ -72,7 +72,7 @@ export function prepareReview(db, { weekEnd, today, catalog }) {
  */
 export async function runReview({ store, claude, weekEnd, today, catalog, model = DEFAULT_REVIEW_MODEL, effort = DEFAULT_REVIEW_EFFORT, logger = console }) {
   const { db } = store;
-  const prep = prepareReview(db, { weekEnd, today, catalog });
+  const prep = await prepareReview(db, { weekEnd, today, catalog });
   const run = startUserRun(store, 'review', { weekEnd, model, effort, sensitiveSections: prep.sensitiveSent, supplements: prep.supplements }, logger);
 
   try {
@@ -104,7 +104,7 @@ export async function runReview({ store, claude, weekEnd, today, catalog, model 
     }
 
     const reportMd = renderReport(report);
-    db.prepare(`INSERT INTO reviews (user_id, week_ending, summary_json, report_md, run_id, created_at, model, warnings, sensitive_sections)
+    await db.prepare(`INSERT INTO reviews (user_id, week_ending, summary_json, report_md, run_id, created_at, model, warnings, sensitive_sections)
       VALUES (@uid, @week, @summary, @report, @run, @created, @model, @warnings, @sensitive)
       ON CONFLICT (user_id, week_ending) DO UPDATE SET summary_json = excluded.summary_json, report_md = excluded.report_md,
         run_id = excluded.run_id, created_at = excluded.created_at, model = excluded.model, warnings = excluded.warnings,

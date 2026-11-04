@@ -42,7 +42,8 @@ What the code actually uses:
 - **Supporting `iterate`, `raw` and `expand`:** nothing uses them, and each is one more behavior the PostgreSQL adapter would have to match.
 
 ## Consequences
-- **Code converts a module at a time:** make the function async, await each statement, and use `adb`/`atx`. `npm run lint`'s no-floating-promises rule catches a missed await.
+- **Code converts a module at a time:** make the function async and await each statement. `npm run lint`'s no-floating-promises and no-misused-promises rules catch most missed awaits; a property read on a promise (`f().x`) gets past them, so each slice also checks every call site by name.
+- **A converted function runs on either handle** (refined in Phase 1B, 2026-11-04), because `await` on a plain value works. Callers keep passing the sync `db` until everything under an entry point is converted, and then that entry point switches to `adb`/`atx`. A slice therefore never has to convert its callers' own queries. On the sync handle a converted function's awaits are microtasks only, so no request runs in between, the same atomicity as before. A loader that runs inside a synchronous transaction stays sync until that caller converts.
 - **A read followed by a write is no longer atomic** once each statement is awaited. Phase 1B audits those sequences and puts the ones that need it in `atx`, with concurrency tests.
 - **The lock serializes transactions, not plain reads.** A long transaction delays every other statement on the connection, so transactions stay short.
 - **Tests use `memoryStore` in `test/helpers.js`,** which gives both handles, scoped to the owner or to a second user.

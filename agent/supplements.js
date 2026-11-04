@@ -21,23 +21,23 @@ export const SUPPLEMENT_DISCLAIMER = '**These are recommendations only, not medi
 export const ACTIONS = ['add', 'change', 'stop'];
 
 /** When the user accepted the statement and turned suggestions on (ISO text), or null: off. */
-export function supplementAdviceSince(db) {
-  return db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'supplement_advice'").pluck().get() ?? null;
+export async function supplementAdviceSince(db) {
+  return await db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'supplement_advice'").pluck().get() ?? null;
 }
 
 /**
  * What the chat adds when the setting is on (owner's choice, 2026-10-30): current supplements with their amounts,
  * medication names without doses (for interaction precautions), and the latest labs with range status (a reason).
  */
-export function supplementContext(db, today) {
-  const { medications, medication_periods: periods } = loadMedications(db);
+export async function supplementContext(db, today) {
+  const { medications, medication_periods: periods } = await loadMedications(db);
   const current = medicationsWeek(medications, periods, [], [], today).current.filter((m) => m.kind === 'supplement')
     .map((m) => ({ name: m.name, dose: m.dose, ingredients: m.ingredients, timings: m.timings, since: m.since, purpose: m.purpose }));
-  const tests = db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid').all();
-  const results = db.prepare('SELECT test_id, drawn_on, value, value_text FROM lab_results WHERE user_id = @uid AND drawn_on <= ?').all(today);
+  const tests = await db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid').all();
+  const results = await db.prepare('SELECT test_id, drawn_on, value, value_text FROM lab_results WHERE user_id = @uid AND drawn_on <= ?').all(today);
   const labs = labsSummary(tests, results, today, loadLabRanges()).results
     .map((r) => ({ test: r.test, unit: r.unit, latest: r.latest, range: r.range ?? null, rangeStatus: r.rangeStatus ?? null }));
-  return { supplements: current, medicationNames: medicationNames(db), labs };
+  return { supplements: current, medicationNames: await medicationNames(db), labs };
 }
 
 const SUGGESTION = {

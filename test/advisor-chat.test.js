@@ -33,9 +33,9 @@ function seeded() {
 const response = (r) => ({ id: 'msg_test', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(r) }], usage: { input_tokens: 800, output_tokens: 300 } });
 const fakeClaude = (drafts, prompts = []) => createReviewClaude({ client: fakeClaudeClient(async (p) => { prompts.push(p); return response(drafts[Math.min(prompts.length, drafts.length) - 1]); }) });
 
-test('chat context: computed training facts only; no medications, labs or blueprint focus text', () => {
+test('chat context: computed training facts only; no medications, labs or blueprint focus text', async () => {
   const store = seeded();
-  const ctx = chatContext(store.db, '2026-03-09', { catalog, dictionary, substitutions, weights: { strength: 3 } });
+  const ctx = await chatContext(store.db, '2026-03-09', { catalog, dictionary, substitutions, weights: { strength: 3 } });
   const text = JSON.stringify(ctx);
   assert.deepEqual(ctx.advisor.ranking.map((r) => r.program), ['MAPS Powerlift', 'HIIT']); // strength 3x: (3 + 0.2 + 1) / 6 = 0.7 vs 2.5 / 6
   assert.deepEqual(ctx.advisor.weights, { strength: 3, joint: 1, time: 1, vo2: 1 });
@@ -101,13 +101,13 @@ test('chat API: thread, send, delete and clear; off without a client or when the
   store.close();
 });
 
-test('chat: the emergency line in a reply passes the checks (911 is grounded by the contract, no symptom wording)', () => {
+test('chat: the emergency line in a reply passes the checks (911 is grounded by the contract, no symptom wording)', async () => {
   assert.ok(CHAT_CONTRACT.includes(EMERGENCY_LINE));
   const report = { sections: [{ title: 'Reply', body: `Hold off on heavy work for now. ${EMERGENCY_LINE}` }], physicianDiscussion: [] };
   assert.deepEqual(checkReport(report, { allowed: allowedNumbers({}, CHAT_CONTRACT) }), []);
 });
 
-test('review contract: the emergency line is word for word, and its 911 is grounded for the review', () => {
+test('review contract: the emergency line is word for word, and its 911 is grounded for the review', async () => {
   assert.ok(CONTRACT.includes(`"${EMERGENCY_LINE}"`));
   const report = { sections: [{ title: 'Training', body: 'Two lifting days.' }], physicianDiscussion: [{ topic: 'Chest pain', detail: `Discuss the chest pain on the bike with a physician. ${EMERGENCY_LINE}` }] };
   assert.deepEqual(checkReport(report, { allowed: allowedNumbers({}, CONTRACT) }), []);

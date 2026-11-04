@@ -16,7 +16,7 @@ import { computeWeek } from '../metrics/index.js';
 const TODAY = '2026-10-21'; // a Wednesday
 const step = (r, id) => r.steps.find((s) => s.id === id);
 
-test('setupSteps: a new user has everything to do, and nothing is required to use the app', () => {
+test('setupSteps: a new user has everything to do, and nothing is required to use the app', async () => {
   const r = setupSteps({ chosen: { manual: true } }, { today: TODAY });
   assert.deepEqual(r.steps.map((s) => s.id), ['goals', 'profile', 'data', 'ai', 'firstResult']);
   assert.equal(r.doneCount, 0);
@@ -25,7 +25,7 @@ test('setupSteps: a new user has everything to do, and nothing is required to us
   assert.equal(step(r, 'firstResult').needsAi, true);
 });
 
-test('setupSteps: entering by hand completes the data and first result steps on its own', () => {
+test('setupSteps: entering by hand completes the data and first result steps on its own', async () => {
   const r = setupSteps({ chosen: { manual: true }, ai: true, manual: { checkins: 3 }, firstDataDate: '2026-10-19' }, { today: TODAY });
   assert.equal(step(r, 'data').done, true);
   assert.equal(step(r, 'firstResult').done, true);
@@ -34,7 +34,7 @@ test('setupSteps: entering by hand completes the data and first result steps on 
   assert.equal(step(r, 'data').ways.appleHealth.ready, false, 'Apple Health is simply not set up, never a problem');
 });
 
-test('setupSteps: Apple Health waits for the first post, then says what arrived', () => {
+test('setupSteps: Apple Health waits for the first post, then says what arrived', async () => {
   const waiting = setupSteps({ chosen: { appleHealth: true }, apple: { token: true, days: 0 } }, { today: TODAY });
   assert.equal(step(waiting, 'data').done, true, 'a token is a way set up');
   assert.equal(step(waiting, 'data').ways.appleHealth.received, false);
@@ -44,7 +44,7 @@ test('setupSteps: Apple Health waits for the first post, then says what arrived'
   assert.equal(step(received, 'firstResult').done, true);
 });
 
-test('setupSteps: a Workout Log sheet reports lifting days, and a failed sync in plain words', () => {
+test('setupSteps: a Workout Log sheet reports lifting days, and a failed sync in plain words', async () => {
   const r = setupSteps({ chosen: { workoutLog: true }, sheet: { connected: true, sheetSet: true, liftingDays: 38, tabsRead: 2 } }, { today: TODAY });
   assert.equal(step(r, 'data').ways.workoutLog.liftingDays, 38);
   assert.equal(step(r, 'firstResult').link, '#training');
@@ -54,7 +54,7 @@ test('setupSteps: a Workout Log sheet reports lifting days, and a failed sync in
   assert.doesNotMatch(sheetProblem('Tab "Secret plan 2026" broke'), /Secret plan/, 'never the error text itself');
 });
 
-test('setupSteps: skipped steps and a hidden list count as settled', () => {
+test('setupSteps: skipped steps and a hidden list count as settled', async () => {
   const skipped = setupSteps({ goalsSet: true, profileSet: true, ai: true, manual: { checkins: 1 }, dismissed: ['ai'] }, { today: TODAY });
   assert.equal(skipped.complete, true);
   const partly = setupSteps({ goalsSet: true, dismissed: ['profile'] }, { today: TODAY });
@@ -64,16 +64,16 @@ test('setupSteps: skipped steps and a hidden list count as settled', () => {
   assert.equal(step(setupSteps({ goalsSet: true, dismissed: ['goals'] }, { today: TODAY }), 'goals').dismissed, false, 'a done step is never shown as skipped');
 });
 
-test('nextReviewDay: the coming Sunday, or today on a Sunday', () => {
+test('nextReviewDay: the coming Sunday, or today on a Sunday', async () => {
   assert.equal(nextReviewDay('2026-10-21'), '2026-10-25');
   assert.equal(nextReviewDay('2026-10-25'), '2026-10-25');
   assert.equal(nextReviewDay('2026-10-24'), '2026-10-25');
 });
 
-test('hand entry only: no Apple Health warnings, the review runs on check-ins, and an empty week is never sent', () => {
+test('hand entry only: no Apple Health warnings, the review runs on check-ins, and an empty week is never sent', async () => {
   const store = openOwnerStore(':memory:');
   const db = store.db;
-  assert.deepEqual(dataCheckWarnings(db, TODAY, { apple: 'rest', now: new Date(`${TODAY}T12:00:00Z`) }), []);
+  assert.deepEqual(await dataCheckWarnings(db, TODAY, { apple: 'rest', now: new Date(`${TODAY}T12:00:00Z`) }), []);
   const none = reviewStatus(db, TODAY, new Date(`${TODAY}T12:00:00Z`));
   assert.equal(none.reason, 'no_data');
   assert.equal(none.overdue, false, 'nothing to review is never due');
@@ -85,7 +85,7 @@ test('hand entry only: no Apple Health warnings, the review runs on check-ins, a
   store.close();
 });
 
-test('computeWeek: no dataQuality without any Apple Health day, so the review does not call every day missing', () => {
+test('computeWeek: no dataQuality without any Apple Health day, so the review does not call every day missing', async () => {
   const empty = { daily_metrics: [], workout_sessions: [], strength_sets: [], drinking_days: [], checkins: [{ date: '2026-10-14', readiness: 7 }] };
   assert.equal(computeWeek(empty, { weekEnd: '2026-10-17' }).dataQuality, null);
   const some = { ...empty, daily_metrics: [{ date: '2026-10-12', steps: 9000 }] };

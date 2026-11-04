@@ -7,9 +7,9 @@ export const DEFAULT_PROMPT_SECTIONS = [
 ];
 
 /** Gives a user the default sections when they have none (approval, or a user who deleted them all keeps none). */
-export function addDefaultPromptSections(db, now = new Date().toISOString()) {
-  if (db.prepare('SELECT COUNT(*) FROM prompt_sections WHERE user_id = @uid').pluck().get()) return 0;
+export async function addDefaultPromptSections(db, now = new Date().toISOString()) {
+  if (await db.prepare('SELECT COUNT(*) FROM prompt_sections WHERE user_id = @uid').pluck().get()) return 0;
   const insert = db.prepare('INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, ?, ?, ?, 0, ?)');
-  DEFAULT_PROMPT_SECTIONS.forEach(([name, text], i) => insert.run(i + 1, name, text, now));
+  for (const [i, [name, text]] of DEFAULT_PROMPT_SECTIONS.entries()) await insert.run(i + 1, name, text, now);
   return DEFAULT_PROMPT_SECTIONS.length;
 }

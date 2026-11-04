@@ -30,11 +30,11 @@ function fingerprint(path) {
   return out;
 }
 
-test('demo data: the same seed and day give the same data; every exercise maps; supplements only; two years of MAPS runs, one in progress', () => {
+test('demo data: the same seed and day give the same data; every exercise maps; supplements only; two years of MAPS runs, one in progress', async () => {
   const started = Date.now();
-  buildDemoDatabase({ path: join(dir, 'a.db'), today: TODAY });
+  await buildDemoDatabase({ path: join(dir, 'a.db'), today: TODAY });
   console.log(`# demo build: ${Date.now() - started} ms`);
-  buildDemoDatabase({ path: join(dir, 'b.db'), today: TODAY });
+  await buildDemoDatabase({ path: join(dir, 'b.db'), today: TODAY });
   const a = fingerprint(join(dir, 'a.db'));
   assert.deepEqual(fingerprint(join(dir, 'b.db')), a);
   assert.ok(a.days > 700 && a.sets > 3000, 'two years of data');
@@ -91,20 +91,20 @@ test('demo instance: reports itself, refuses sync and chat, shows only its own r
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('demo database: builds with no arguments (the demo container starts with an empty data folder)', () => {
+test('demo database: builds with no arguments (the demo container starts with an empty data folder)', async () => {
   const path = join(dir, 'defaults.db');
-  const counts = buildDemoDatabase({ path });
+  const counts = await buildDemoDatabase({ path });
   assert.ok(counts.days > 700, 'about two years of made-up days, ending today');
 });
 
-test('demo refresh: made again in place equals a fresh build, and moves forward with the day', () => {
+test('demo refresh: made again in place equals a fresh build, and moves forward with the day', async () => {
   const own = mkdtempSync(join(tmpdir(), 'health-demo-refresh-'));
   try {
-    buildDemoDatabase({ path: join(own, 'fresh.db'), today: '2026-10-08' });
-    buildDemoDatabase({ path: join(own, 'old.db'), today: TODAY });
+    await buildDemoDatabase({ path: join(own, 'fresh.db'), today: '2026-10-08' });
+    await buildDemoDatabase({ path: join(own, 'old.db'), today: TODAY });
     const store = openOwnerStore(join(own, 'old.db'));
     assert.equal(demoBuiltFor(store), TODAY);
-    refreshDemoDatabase(store, { today: '2026-10-08' });
+    await refreshDemoDatabase(store, { today: '2026-10-08' });
     assert.equal(demoBuiltFor(store), '2026-10-08');
     const one = (sql) => store.db.prepare(sql).pluck().get();
     assert.equal(one('SELECT MAX(date) FROM daily_metrics'), '2026-10-07', 'Apple Health days run through yesterday');
@@ -122,7 +122,7 @@ test('demo clock: pinned to the build day, the demo shows that day as today and 
   const own = mkdtempSync(join(tmpdir(), 'health-demo-clock-'));
   const store = openOwnerStore(join(own, 'd.db'));
   try {
-    refreshDemoDatabase(store, { today: TODAY });
+    await refreshDemoDatabase(store, { today: TODAY });
     const app = await buildApp({ store, clock: () => zonedInstant(demoBuiltFor(store), 12, 0), instance: 'demo', authMode: 'demo',
       features: { chat: false }, catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')) });
     const status = (await app.inject('/api/status')).json();

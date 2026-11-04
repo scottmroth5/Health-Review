@@ -33,7 +33,7 @@ async function setup() {
     AUTH_ALLOWED_EMAILS: 'a@example.com, b@example.com', SESSION_SECRET: secret,
   });
   const store = openHealthStore(':memory:');
-  refreshDemoDatabase(store, { today: TODAY }); // user A (the owner) gets the demo's made-up data
+  await refreshDemoDatabase(store, { today: TODAY }); // user A (the owner) gets the demo's made-up data
   store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, 'b@example.com', 'user', 'approved', 'x')").run(B);
   store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const app = await buildApp({ store, authMode: 'google', auth: { settings }, clock: () => new Date(`${TODAY}T16:00:00Z`), catalog: loadDemoCatalog() });

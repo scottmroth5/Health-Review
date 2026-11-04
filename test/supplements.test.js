@@ -17,7 +17,7 @@ const SITE = 'http://localhost:5188';
 const vitD = (amount, extra = {}) => ({ supplement: 'Vitamin D3', action: 'change', amount, reasons: 'Your note says you doubled it.',
   precautions: 'The adult upper limit is 4,000 IU a day. Check interactions with Sample Statin with your pharmacist.', ...extra });
 
-test('supplement limits: the config is well formed, with a source for every entry and no duplicate names', () => {
+test('supplement limits: the config is well formed, with a source for every entry and no duplicate names', async () => {
   const config = JSON.parse(readFileSync(new URL('../config/supplement-limits.json', import.meta.url), 'utf8'));
   const names = config.supplements.flatMap((s) => [s.name, ...s.aliases].map((n) => n.toLowerCase()));
   assert.equal(new Set(names).size, names.length);
@@ -28,7 +28,7 @@ test('supplement limits: the config is well formed, with a source for every entr
   }
 });
 
-test('amounts and upper limits: parsed with units, compared across mg and mcg, IU only against IU; calcium by age', () => {
+test('amounts and upper limits: parsed with units, compared across mg and mcg, IU only against IU; calcium by age', async () => {
   assert.deepEqual(parseAmount('2,000 IU a day'), { amount: 2000, unit: 'IU' });
   assert.deepEqual(parseAmount('5 g a day'), { amount: 5000, unit: 'mg' });
   assert.equal(parseAmount('one capsule'), null);
@@ -46,7 +46,7 @@ test('amounts and upper limits: parsed with units, compared across mg and mcg, I
   assert.ok(overLimit(calcium, { age: null }), 'an unknown age takes the lowest limit');
 });
 
-test('suggestion checks: reasons and precautions given, never a medication, within the limit, medications and symptoms only in precautions', () => {
+test('suggestion checks: reasons and precautions given, never a medication, within the limit, medications and symptoms only in precautions', async () => {
   const o = { medicationNames: ['Sample Statin'], age: 50 };
   assert.deepEqual(checkSuggestions([vitD('2,000 IU a day')], o), []);
   const problems = checkSuggestions([
@@ -62,7 +62,7 @@ test('suggestion checks: reasons and precautions given, never a medication, with
   assert.match(checkSuggestions([1, 2, 3, 4].map(() => vitD('')), o)[0], /too many supplement suggestions: 4/);
 });
 
-test('checkReport: suggestions checked only when on; numbers in reasons grounded, amounts and precautions exempt; dashes found', () => {
+test('checkReport: suggestions checked only when on; numbers in reasons grounded, amounts and precautions exempt; dashes found', async () => {
   const report = { highlights: ['Quiet week.'], nextSteps: [], sections: [{ title: 'Training', body: 'Two lifting days.' }], physicianDiscussion: [],
     supplementSuggestions: [vitD('3,000 IU a day', { reasons: 'Vitamin D was 24 at the last draw (below range).' })] };
   const allowed = allowedNumbers({ labs: [{ value: 24 }] });
@@ -74,7 +74,7 @@ test('checkReport: suggestions checked only when on; numbers in reasons grounded
   assert.ok(checkReport(dashed, { allowed, supplements: {} }).some((p) => /dash in supplement suggestion/.test(p)));
 });
 
-test('the review: rules, schema field and statement only when the setting is on; the statement comes first and includes the 911 line', () => {
+test('the review: rules, schema field and statement only when the setting is on; the statement comes first and includes the 911 line', async () => {
   assert.ok(!buildSystem([], '2026-10-31').system.includes(SUPPLEMENT_RULES));
   assert.ok(buildSystem([], '2026-10-31', { supplements: true }).system.endsWith(SUPPLEMENT_RULES));
   assert.equal(reportSchema(), REPORT_SCHEMA);
@@ -92,11 +92,11 @@ test('the review: rules, schema field and statement only when the setting is on;
 
   const store = openOwnerStore(':memory:');
   const week = { weekEnd: '2026-09-26', today: '2026-09-27' };
-  const off = prepareReview(store.db, week);
+  const off = await prepareReview(store.db, week);
   assert.equal(off.schema, REPORT_SCHEMA);
   assert.equal(off.checks.supplements, null);
   store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', '2026-10-31T12:00:00.000Z', 'x')").run();
-  const on = prepareReview(store.db, week);
+  const on = await prepareReview(store.db, week);
   assert.ok(on.system.includes(SUPPLEMENT_RULES));
   assert.ok(on.schema.properties.supplementSuggestions);
   assert.deepEqual(on.checks.supplements, { age: null });

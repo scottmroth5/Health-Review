@@ -55,8 +55,11 @@ const to5 = (x) => Math.round(x / 5) * 5;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 const dow = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
 
-/** Writes the made-up data into an empty store. */
-export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = loadDemoCatalog(), dictionary = loadDictionary() }) {
+/**
+ * Writes the made-up data into an empty store. Async for the metric loaders (metrics/load.js); its own statements stay sync,
+ * so it runs inside the caller's async transaction (store.atx) without giving a request a turn in between.
+ */
+export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = loadDemoCatalog(), dictionary = loadDictionary() }) {
   // The demo's made-up data all belongs to user 1 (OWNER_ID), the only user in a demo database.
   const db = scopeDb(store.db, OWNER_ID);
   const r = random(seed);
@@ -250,21 +253,21 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
 
   // ---- Weekly reviews: the last 26 weeks, each written in code from that week's real summary (demo/reviews.js) ----
   const substitutions = JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8'));
-  const settings = loadMetricSettings(db);
+  const settings = await loadMetricSettings(db);
   const lastSaturday = addDays(today, -((dow(today) + 1) % 7 || 7));
   const insertReview = db.prepare(`INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at, model, warnings, sensitive_sections)
     VALUES (@uid, ?, ?, ?, ?, 'sample', '[]', '[]')`);
   for (let k = 25; k >= 0; k--) {
     const weekEnd = addDays(lastSaturday, -7 * k);
     const written = `${addDays(weekEnd, 1)}T13:02:00.000Z`;
-    const week = computeWeek(loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }), { weekEnd, ...settings });
-    const summary = buildSummary(week, loadWeekNotes(db, weekEnd), { today: addDays(weekEnd, 1) });
+    const week = computeWeek(await loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }), { weekEnd, ...settings });
+    const summary = buildSummary(week, await loadWeekNotes(db, weekEnd), { today: addDays(weekEnd, 1) });
     insertReview.run(weekEnd, JSON.stringify(summary), renderReport(writeDemoReview(summary)), written);
     insertRun.run('review', JSON.stringify({ weekEnd, model: 'sample' }), `${addDays(weekEnd, 1)}T12:00:00.000Z`, written, 122000, 1, 0.34, '{"attempts":1,"warnings":0}');
   }
 
   // ---- The Next program chat: a short made-up thread about the Advisor's actual ranking (the chat is off in the demo) ----
-  const ranked = recommendPrograms({ ...loadAdvisorInput(db, today, catalog), programs: catalog.programs, lookup: dictionary.lookup, substitutions }).ranking.map((x) => x.program);
+  const ranked = recommendPrograms({ ...(await loadAdvisorInput(db, today, catalog)), programs: catalog.programs, lookup: dictionary.lookup, substitutions }).ranking.map((x) => x.program);
   const [top1, top2, top3] = [ranked[0] ?? 'the top program', ranked[1] ?? 'the second', ranked[2] ?? 'the third'];
   const insertNote = db.prepare('INSERT INTO advisor_notes (user_id, id, created_at, role, text, physician, weights, model, warnings) VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, NULL)');
   const thread = [
@@ -288,12 +291,12 @@ export function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = load
 }
 
 /** Builds a fresh demo database file (replacing any old one). */
-export function buildDemoDatabase({ path = DEMO_DB_PATH, today = ownerDate(), seed = DEFAULT_SEED } = {}) {
+export async function buildDemoDatabase({ path = DEMO_DB_PATH, today = ownerDate(), seed = DEFAULT_SEED } = {}) {
   mkdirSync(dirname(path), { recursive: true });
   for (const suffix of ['', '-wal', '-shm']) if (existsSync(path + suffix)) rmSync(path + suffix);
   const store = openHealthStore(path);
   try {
-    return store.tx ? store.tx(() => generateDemo(store, { today, seed })) : generateDemo(store, { today, seed });
+    return await store.atx(() => generateDemo(store, { today, seed }));
   } finally {
     store.close();
   }
@@ -304,10 +307,10 @@ export function buildDemoDatabase({ path = DEMO_DB_PATH, today = ownerDate(), se
  * the migrations seed no rows), then generateDemo, all in one transaction, so a request never sees half-built data
  * and the result equals a fresh build. The demo server runs this when the owner's date moves on.
  */
-export function refreshDemoDatabase(store, { today = ownerDate(), seed = DEFAULT_SEED } = {}) {
+export async function refreshDemoDatabase(store, { today = ownerDate(), seed = DEFAULT_SEED } = {}) {
   const { db } = store;
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migrations', 'users')").pluck().all();
-  return store.tx(() => {
+  return store.atx(async () => {
     db.pragma('defer_foreign_keys = ON');
     for (const t of tables) db.prepare(`DELETE FROM "${t}"`).run();
     if (db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'sqlite_sequence'").get()) db.prepare('DELETE FROM sqlite_sequence').run();
@@ -329,6 +332,6 @@ const localToday = () => ownerDate(); // the owner's date (OWNER_TZ), whatever t
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };
   const path = arg('--out') ?? DEMO_DB_PATH;
-  const counts = buildDemoDatabase({ path, today: arg('--today') ?? localToday(), seed: Number(arg('--seed') ?? DEFAULT_SEED) });
+  const counts = await buildDemoDatabase({ path, today: arg('--today') ?? localToday(), seed: Number(arg('--seed') ?? DEFAULT_SEED) });
   console.log(`Demo database written to ${path}: ${counts.days} health days, ${counts.sets} sets, ${counts.blocks} program blocks.`);
 }

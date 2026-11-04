@@ -323,7 +323,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.get('/api/status', { schema: { summary: 'Today, the last sync, and data check warnings as of today (stale or missing Apple Health days, partial days, impossible values)', response: { 200: anyObject } } }, async () => {
     const today = q.localDate(clock());
-    return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }),
+    return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: await q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }),
       // The demo's "Request access" link to the main app (REQUEST_ACCESS_URL; none when unset).
       ...(authMode === 'demo' && requestAccessUrl ? { requestAccessUrl } : {}),
       // The demo's anonymous visit counts (DEMO_ANALYTICS_TOKEN; none when unset, and never outside the demo).
@@ -406,7 +406,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req, reply) => {
-    const result = q.programAdherence(db, q.localDate(clock()), {
+    const result = await q.programAdherence(db, q.localDate(clock()), {
       catalog: programCatalog(req), dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), blockId: req.query.block,
     });
     if (result === null) return reply.code(404).send({ error: 'No such confirmed block' });
@@ -434,7 +434,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const chatOn = (req) => features.chat !== false && typeof services.claude === 'function' && aiOn(req);
   const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, needsKey: { type: 'boolean' }, aiReason: { type: ['string', 'null'] }, notes: { type: 'array', items: anyObject } } } };
   app.get('/api/advisor/chat', { schema: { summary: 'The Next program chat thread, oldest first, and whether the chat is on', response: chatThread } },
-    async (req) => { const reason = aiReason(req); return { enabled: chatOn(req), needsKey: reason !== null, aiReason: reason, notes: listChat(db) }; });
+    async (req) => { const reason = aiReason(req); return { enabled: chatOn(req), needsKey: reason !== null, aiReason: reason, notes: await listChat(db) }; });
   const chatting = new Set();
   app.post('/api/advisor/chat', {
     schema: {
@@ -469,9 +469,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
   app.delete('/api/advisor/chat/:id', {
     schema: { summary: 'Delete one note or reply from the thread', params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } }, response: { 200: anyObject } },
-  }, async (req, reply) => (deleteChatNote(db, req.params.id) ? { deleted: 1 } : reply.code(404).send({ error: 'Not found' })));
+  }, async (req, reply) => ((await deleteChatNote(db, req.params.id)) ? { deleted: 1 } : reply.code(404).send({ error: 'Not found' })));
   app.delete('/api/advisor/chat', { schema: { summary: 'Clear the whole thread', response: { 200: anyObject } } },
-    async () => ({ deleted: clearChat(db) }));
+    async () => ({ deleted: await clearChat(db) }));
 
   // ---- a user's own programs (multi-user, phase 5; ingest/user-programs.js): built here, imported as JSON, or drafted
   // by Claude from a PDF (never stored). The shared catalog (the owner's MAPS) shows by name only, never its contents.
@@ -1006,7 +1006,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     schema: { summary: 'Each Health tab metric: current (90-day average or latest), suggested target, the target in effect (yours or suggested), healthy level, reason and source', response: { 200: anyObject } },
   }, async () => {
     const today = q.localDate(clock());
-    return { profile: loadProfile(db, today), targets: loadTargets(db, today, targetsConfig()) };
+    return { profile: await loadProfile(db, today), targets: await loadTargets(db, today, targetsConfig()) };
   });
   app.put('/api/targets/:metric', {
     schema: {
@@ -1019,15 +1019,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const metric = knownMetric(req.params.metric);
     db.prepare(`INSERT INTO health_targets (user_id, metric, target, updated_at) VALUES (@uid, ?, ?, ?)
       ON CONFLICT (user_id, metric) DO UPDATE SET target = excluded.target, updated_at = excluded.updated_at`).run(metric, req.body.target, new Date().toISOString());
-    return loadTargets(db, q.localDate(clock()), targetsConfig()).find((t) => t.metric === metric);
+    return (await loadTargets(db, q.localDate(clock()), targetsConfig())).find((t) => t.metric === metric);
   });
   app.delete('/api/targets/:metric', { schema: { summary: 'Go back to the suggested target', params: metricParams, response: { 200: anyObject } } }, async (req) => {
     const metric = knownMetric(req.params.metric);
     db.prepare('DELETE FROM health_targets WHERE user_id = @uid AND metric = ?').run(metric);
-    return loadTargets(db, q.localDate(clock()), targetsConfig()).find((t) => t.metric === metric);
+    return (await loadTargets(db, q.localDate(clock()), targetsConfig())).find((t) => t.metric === metric);
   });
   // ---- account: the signed-in user's own settings (multi-user, phase 2) ----
-  const accountView = (req) => {
+  const accountView = async (req) => {
     const uid = uidOf(req);
     const u = getUser(store.db, uid);
     const access = aiAccessOf(req);
@@ -1040,7 +1040,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       // The zone this account runs in: its own (Settings), else the server default; the owner's is always the default.
       timeZone: { zone: ownerTz(), own: Boolean(timeZoneOf(store.db, uid)), fromServer: uid === OWNER_ID },
       // Training goals (Settings) and the Home tile order the user arranged (null: the goals' default).
-      goals: loadGoals(db),
+      goals: await loadGoals(db),
       tileOrder: (() => { try { return JSON.parse(db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'tile_order'").pluck().get() ?? 'null'); } catch { return null; } })(),
       layouts: Object.fromEntries(Object.keys(LAYOUT_ITEMS).map((area) => {
         try { return [area, JSON.parse(db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck().get(`layout_${area}`) ?? 'null')]; } catch { return [area, null]; }
@@ -1048,7 +1048,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       // Home's setup checklist was hidden (Settings brings it back).
       setupHidden: Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'setup_hidden'").get()),
       // Supplement suggestions (off by default): when the statement was accepted, and the statement itself.
-      supplementAdvice: { since: supplementAdviceSince(db), statement: SUPPLEMENT_DISCLAIMER },
+      supplementAdvice: { since: await supplementAdviceSince(db), statement: SUPPLEMENT_DISCLAIMER },
       pausedBySelf: u?.status === 'paused' && Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
       // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
       ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
@@ -1114,7 +1114,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!years.length) return reply.code(400).send({ error: 'That sheet has no year tabs (a tab named like 2026); see the Workout Log guide' });
     db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'workout_log_sheet_id', ?, ?)
       ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(id, new Date().toISOString());
-    return { ...accountView(req), yearTabs: years };
+    return { ...(await accountView(req)), yearTabs: years };
   });
   app.delete('/api/account/google', { schema: { summary: 'Disconnect Google Sheets: forgets your permission and your sheet', response: { 200: anyObject } } }, async (req) => {
     setGoogleToken(store.db, uidOf(req), null);
@@ -1160,7 +1160,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
         program: program ? { program: program.program, phase: program.phase ?? null, week: program.week ?? null, programWeeks: program.programWeeks ?? null } : null,
         latestReview: reviewOpening(),
         feeds: feedRows,
-        dataIssues: q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }).length,
+        dataIssues: (await q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() })).length,
       },
     };
   });
@@ -1314,7 +1314,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const recent = (draftTimes.get(uid) ?? []).filter((t) => t > hourAgo);
     if (recent.length >= 20) return reply.code(429).send({ error: 'At most 20 drafts an hour; try again later' });
     draftTimes.set(uid, [...recent, clock().getTime()]);
-    const g = loadGoals(db);
+    const g = await loadGoals(db);
     try {
       return await claudeDraft({ store: userStore(), claude: services.claude(uid), kind: req.body.kind, answers: req.body.answers,
         goals: [g.primary, g.secondary].filter(Boolean).map((k) => GOAL_LABELS[k]), logger: { info() {}, warn() {}, error() {} } });
@@ -1377,7 +1377,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.post('/api/account/resume', { schema: { summary: 'Resume your account after pausing it yourself (a pause by the administrator stays)', response: { 200: anyObject } } },
     async (req, reply) => {
       if (!notOwner(req, reply, 'resumed')) return reply;
-      if (!accountView(req).pausedBySelf) return reply.code(409).send({ error: 'Only the administrator can resume this account' });
+      if (!(await accountView(req)).pausedBySelf) return reply.code(409).send({ error: 'Only the administrator can resume this account' });
       setSelfPaused(uidOf(req), false);
       setUserStatus(store.db, uidOf(req), 'approved');
       return accountView(req);
@@ -1454,7 +1454,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.post('/api/admin/users/:id/approve', { onRequest: adminOnly, schema: { summary: 'Approve a user: they get in, start from the default prompt sections, and get an email', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
     const u = setUserStatus(store.db, req.params.id, 'approved');
     if (!u) return reply.code(404).send({ error: 'No such user' });
-    addDefaultPromptSections(scopeDb(store.db, u.id));
+    await addDefaultPromptSections(scopeDb(store.db, u.id));
     await mailer.send({ to: u.email, subject: "You're in: Health Review",
       text: `Your Health Review account is approved.\n\nOpen ${appUrl()} and sign in with this Google account. To use the AI weekly review and chat, add your own Claude API key in Settings (see https://docs.claude.com/en/api/getting-started). Everything else works without one.\n${supportLine}` });
     return adminUser(u.id);
@@ -1571,9 +1571,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   // The heart rate zone tops with the age defaults beside them (null without a birth year): Zone 2 at 60% to 70% of the
   // estimated maximum, and Zones 3 and 4 split from the saved Zone 2 top (or that default).
-  const settingsView = (s) => {
+  const settingsView = async (s) => {
     const today = q.localDate(clock());
-    const { birthYear, age } = loadProfile(db, today);
+    const { birthYear, age } = await loadProfile(db, today);
     const maxHr = maxHrFor(birthYear, Number(today.slice(0, 4)));
     if (!maxHr) return { ...s, defaults: null };
     const z2 = zone2Default(maxHr);

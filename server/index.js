@@ -61,21 +61,22 @@ if (demo) {
   // catalog and substitutions, its own log folder, and no Google sync, review or chat. Never opens data/health.db.
   const { DEMO_DB_PATH, buildDemoDatabase, refreshDemoDatabase, demoBuiltFor, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } = await import('../demo/generate.js');
   const { readFileSync, existsSync } = await import('node:fs');
-  if (!existsSync(DEMO_DB_PATH)) buildDemoDatabase();
+  if (!existsSync(DEMO_DB_PATH)) await buildDemoDatabase();
   store = openHealthStore(DEMO_DB_PATH);
   // The data always runs through yesterday: made again in place when the owner's date moves on (checked on start and
   // every 10 minutes). The demo's clock stays at noon on the day its data was made for, so a late refresh never shows
   // "data stopped".
   let builtFor = demoBuiltFor(store);
-  const refresh = () => {
+  const refresh = async () => {
     const today = ownerDate();
     if (builtFor === today) return;
-    refreshDemoDatabase(store, { today });
+    await refreshDemoDatabase(store, { today });
     builtFor = today;
     console.log(`[demo] data refreshed for ${today}`);
   };
-  refresh();
-  setInterval(() => { try { refresh(); } catch (err) { console.error(`[demo] refresh failed: ${err.name}: ${err.message}`); } }, 10 * 60 * 1000).unref();
+  await refresh();
+  // The timer does not wait for the refresh: a failure is logged and the next tick tries again.
+  setInterval(() => { void refresh().catch((err) => console.error(`[demo] refresh failed: ${err.name}: ${err.message}`)); }, 10 * 60 * 1000).unref();
   app = await buildApp({
     clock: () => zonedInstant(builtFor, 12, 0),
     store, services: {}, publicDir: repoPath('server', 'public'), authMode, auth, trustProxy, instance: 'demo', features: { chat: false }, geo, supportEmail: process.env.SUPPORT_EMAIL,

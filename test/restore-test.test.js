@@ -104,15 +104,15 @@ test('restore test job: records a run with counts only; a failure is a Today war
   const run = () => store.db.prepare("SELECT status, summary FROM runs WHERE name = 'restore-test' ORDER BY id DESC LIMIT 1").get();
   assert.equal(run().status, 'ok');
   assert.deepEqual(Object.keys(JSON.parse(run().summary)).sort(), ['differences', 'file', 'problems', 'rowsBackup', 'rowsLive', 'tables']);
-  assert.ok(!dataCheckWarnings(store.db, '2026-03-13').some((w) => w.kind === 'restore_test_failed'));
+  assert.ok(!(await dataCheckWarnings(store.db, '2026-03-13')).some((w) => w.kind === 'restore_test_failed'));
 
   await assert.rejects(restoreTestJob({ store, drive, passphrase: 'a different long passphrase' }));
   assert.equal(run().status, 'error');
-  const warning = dataCheckWarnings(store.db, '2026-03-13').find((w) => w.kind === 'restore_test_failed');
+  const warning = (await dataCheckWarnings(store.db, '2026-03-13')).find((w) => w.kind === 'restore_test_failed');
   assert.match(warning.message, /^The last backup restore test failed \(\d{4}-\d{2}-\d{2}\): .*npm run backup:test/);
 
   await restoreTestJob({ store, drive, passphrase: PASS });
-  assert.ok(!dataCheckWarnings(store.db, '2026-03-13').some((w) => w.kind === 'restore_test_failed'), 'a passing test clears it');
+  assert.ok(!(await dataCheckWarnings(store.db, '2026-03-13')).some((w) => w.kind === 'restore_test_failed'), 'a passing test clears it');
   await assert.rejects(restoreTestJob({ store, drive: { ...fakeDrive() }, passphrase: PASS }), /No backups found/);
   store.close();
 });

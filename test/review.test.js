@@ -39,7 +39,7 @@ test('opening: 1 to 3 highlights and at most 3 next steps, checked like the sect
     + '## Recovery Signals\nHeld steady.\n\n## Discuss with your physician\n- **Sleep**: ask\n');
   assert.doesNotMatch(renderReport({ ...r, nextSteps: [] }), /Next steps/, 'no empty heading');
 });
-test('dashes: em, en and double hyphen are found anywhere and stripped as a last resort', () => {
+test('dashes: em, en and double hyphen are found anywhere and stripped as a last resort', async () => {
   const r = report([['Weekly Wins', 'Good week — HRV up'], ['Watch Outs', 'Zones 2–3 and -- here']], [{ topic: 'A', detail: 'ok' }]);
   assert.equal(findDashes(r).length, 2);
   const fixed = stripDashes(r);
@@ -48,7 +48,7 @@ test('dashes: em, en and double hyphen are found anywhere and stripped as a last
   assert.deepEqual(findDashes(report([['Ranges', 'Zone 2 is 127-137 bpm']])), [], 'a single hyphen is fine');
 });
 
-test('grounding: numbers must come from the summary or instructions; dates, negatives, commas and units handled', () => {
+test('grounding: numbers must come from the summary or instructions; dates, negatives, commas and units handled', async () => {
   const summary = { weekEnd: '2026-09-26', hrv: { mean: 48, change: -3.5 }, steps: 8123, sleep: 7.3 };
   const allowed = allowedNumbers(summary, 'Zone 2 is 127-137 bpm. He is 51.');
   const r = report([['Recovery Signals', 'HRV averaged 48 ms, down 3.5 from baseline, on Sep 26. Steps 8,123. Slept 7.3h. Zone 2 is 127 to 137. CoQ10 and A1C are names.']]);
@@ -57,7 +57,7 @@ test('grounding: numbers must come from the summary or instructions; dates, nega
   assert.deepEqual(ungroundedNumbers(bad, allowed), ['52', '8.3', '25']);
 });
 
-test('routing: medication names, lab values and symptoms only in physician discussion', () => {
+test('routing: medication names, lab values and symptoms only in physician discussion', async () => {
   const names = { medicationNames: ['Sample Statin'], labNames: ['ALT', 'Glucose'] };
   const r = report(
     [
@@ -85,7 +85,7 @@ test('routing: blood oxygen and breathing disturbance values only in physician d
   assert.ok(problems.every((p) => p.includes('"Recovery"')), 'the name without a value, and values in physician discussion, pass');
 });
 
-test('routing: a lab name with range wording is interpretation, only in physician discussion', () => {
+test('routing: a lab name with range wording is interpretation, only in physician discussion', async () => {
   const names = { medicationNames: [], labNames: ['LDL', 'ALT', 'HDL', 'Glucose'] };
   const r = report(
     [
@@ -99,7 +99,7 @@ test('routing: a lab name with range wording is interpretation, only in physicia
   ]);
 });
 
-test('summary: nightBreathing is passed to the review only when there is data', () => {
+test('summary: nightBreathing is passed to the review only when there is data', async () => {
   const base = computeWeek({ daily_metrics: [], workout_sessions: [], strength_sets: [], drinking_days: [], checkins: [] }, { weekEnd: '2026-09-26' });
   assert.equal(buildSummary(base, [], { today: '2026-09-27' }).nightBreathing, undefined);
   const withData = computeWeek({ daily_metrics: [{ date: '2026-09-24', spo2_pct: 95 }], workout_sessions: [], strength_sets: [], drinking_days: [], checkins: [] }, { weekEnd: '2026-09-26' });
@@ -113,7 +113,7 @@ test('summary: health targets reach the review (metrics with data only; a band m
   for (let d = '2026-07-01'; d <= '2026-09-26'; d = addDays(d, 1)) add.run(d);
   for (const [k, v] of [['birth_year', '1975'], ['sex', 'male']]) store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run(k, v);
   store.db.prepare("INSERT INTO health_targets (user_id, metric, target, updated_at) VALUES (@uid, 'resting_hr', 58, 'x')").run(); // no resting HR data: left out
-  const s = buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  const s = buildSummary(computeWeek(await loadWeekData(store.db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
   assert.deepEqual(s.targets, [
     { metric: 'Steps', target: 7500, setBy: 'suggested', current90d: 6500, basis: 'norm', healthyLow: 8000 },
     // A band metric carries the usual range (90-day average 97.1, plus or minus 0.5), never a target.
@@ -124,7 +124,7 @@ test('summary: health targets reach the review (metrics with data only; a band m
   store.close();
 });
 
-test('grounding: calendar dates and numbers marked as targets are exempt; ratios are not', () => {
+test('grounding: calendar dates and numbers marked as targets are exempt; ratios are not', async () => {
   const allowed = allowedNumbers({ easy: 90 }, '');
   const r = report([['Cardiovascular Snapshot', 'Phase III starts 8/31 (or 8/31/2026). Trim easy intervals from 90 to target 75 sec; target of 130 bpm or higher; keep 20/120.']]);
   assert.deepEqual(ungroundedNumbers(r, allowed), ['20', '120']);
@@ -142,7 +142,7 @@ test('length: reports over the limit fail the check (with a margin over the 2,00
 });
 
 // ---- instructions ----
-test('system prompt: fixed contract first, then the owner sections with sensitive ones included and named', () => {
+test('system prompt: fixed contract first, then the owner sections with sensitive ones included and named', async () => {
   const sections = [
     { position: 1, name: 'profile', text: 'Today is {{TODAY}}.', sensitive: 0 },
     { position: 2, name: 'medical', text: 'Medical context.', sensitive: 1 },
@@ -153,12 +153,12 @@ test('system prompt: fixed contract first, then the owner sections with sensitiv
   assert.deepEqual(sensitiveSent, ['medical']);
 });
 
-test('rendered report: sections as headings, physician items as a final list', () => {
+test('rendered report: sections as headings, physician items as a final list', async () => {
   const md = renderReport({ ...report([['Weekly Wins', '- Slept well']], [{ topic: 'Lab follow-up', detail: 'Ask about it.' }]), highlights: [] });
   assert.equal(md, '## Weekly Wins\n- Slept well\n\n## Discuss with your physician\n- **Lab follow-up**: Ask about it.\n');
 });
 
-test('summary: strength keeps only this week\'s exercises; empty metrics dropped; notes and context included', () => {
+test('summary: strength keeps only this week\'s exercises; empty metrics dropped; notes and context included', async () => {
   const week = computeWeek({ daily_metrics: [{ date: '2026-09-25', hrv_ms: 50 }], workout_sessions: [], strength_sets: [
     { date: '2026-09-02', exercise: 'Old Lift', set_no: 1, weight_lbs: 100, per_hand: 0, reps: 5 },
     { date: '2026-09-24', exercise: 'Squat', set_no: 1, weight_lbs: 150, per_hand: 0, reps: 5 },
@@ -258,16 +258,16 @@ test('review: a truncated response fails the run instead of saving half a report
   store.close();
 });
 
-test('dry run preparation needs no client and names the sensitive sections it would send', () => {
+test('dry run preparation needs no client and names the sensitive sections it would send', async () => {
   const store = seededStore();
-  const prep = prepareReview(store.db, { weekEnd: '2026-09-26', today: '2026-09-27' });
+  const prep = await prepareReview(store.db, { weekEnd: '2026-09-26', today: '2026-09-27' });
   assert.deepEqual(prep.sensitiveSent, ['genetics']);
   assert.deepEqual(prep.checks.medicationNames, ['Sample Statin']);
   assert.ok(prep.checks.allowed.has(48));
   store.close();
 });
 
-test('summary: the weekly review gets 12 weeks and 12 months of training volume, all grounded', () => {
+test('summary: the weekly review gets 12 weeks and 12 months of training volume, all grounded', async () => {
   const week = computeWeek({ daily_metrics: [], workout_sessions: [], drinking_days: [], checkins: [], strength_sets: [
     { date: '2026-09-24', exercise: 'Squat', set_no: 1, weight_lbs: 150, per_hand: 0, reps: 5 },
     { date: '2026-05-04', exercise: 'Squat', set_no: 1, weight_lbs: 140, per_hand: 0, reps: 5 },
@@ -293,13 +293,13 @@ test('summary: the current program block, its logged phase and finish reach the 
   const ex = store.db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, ?, ?, ?, ?)');
   ex.run(2, '2026-08-03', 'Symmetry Foundation - Phase 1', 'Squat');
   ex.run(3, '2026-09-14', 'Symmetry Foundation - Phase 2', 'Squat'); // Phase 1 took 6 weeks of a planned 5
-  const s = buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  const s = buildSummary(computeWeek(await loadWeekData(store.db, '2026-09-26', { catalog }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
   assert.deepEqual(s.program, { program: 'MAPS Symmetry', status: 'in_progress', phase: 'Phase 2', phaseStarted: '2026-09-14', phaseWeek: 2,
     phaseWeeks: 6, week: 7, programWeeks: 11, earliestFinish: '2026-10-25', paceFinish: '2026-11-02', pastProgramEnd: false,
     deloadWeek: true, failureWeek: false, estimatedFromCalendar: false });
   const allowed = allowedNumbers(s, '');
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'You are in week 7 of 11 of MAPS Symmetry, Phase 2, week 2 of 6.']]), allowed), []);
-  assert.equal(buildSummary(computeWeek(loadWeekData(store.db, '2026-07-25', { catalog }), { weekEnd: '2026-07-25' }), [], { today: '2026-07-26' }).program, null,
+  assert.equal(buildSummary(computeWeek(await loadWeekData(store.db, '2026-07-25', { catalog }), { weekEnd: '2026-07-25' }), [], { today: '2026-07-26' }).program, null,
     'no block covers that week');
   store.close();
 });
@@ -326,14 +326,14 @@ test('summary: called for vs logged reaches the review as counts and logged name
     VALUES (@uid, 2026, 1, '2026-09-22', 'Symmetry Foundation 1 - Phase 1', 'Z Press', 'z-press', 'barbell', 'vertical press')`).run();
   for (let i = 1; i <= 3; i++) store.db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps) VALUES (@uid, ?, ?, 95, 5)').run(lastInsertRowid, i);
 
-  const week = (cat) => buildSummary(computeWeek(loadWeekData(store.db, '2026-09-26', { catalog: cat, dictionary, substitutions: { swaps: [] } }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
-  const s = week(catalog);
+  const week = async (cat) => buildSummary(computeWeek(await loadWeekData(store.db, '2026-09-26', { catalog: cat, dictionary, substitutions: { swaps: [] } }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  const s = await week(catalog);
   assert.deepEqual(s.programAdherence, { program: 'MAPS Symmetry', days: 1, matched: 1, focus: 0, notMatched: 0,
     counts: { as_called: 0, swapped: 0, changed: 1, skipped: 1, added: 0 }, setsLogged: 3, setsCalled: { min: 6, max: 6 },
     doneInstead: [{ name: 'Z Press', times: 1 }], added: [] });
   assert.ok(!/"(Press|Row)"/.test(JSON.stringify(s.programAdherence)), 'no called-for name is sent');
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'One lifting day followed the program: 3 sets logged of 6 called for, 1 skipped, Z Press done instead.']]), allowedNumbers(s, '')), []);
-  assert.equal(week(null).programAdherence, undefined, 'no catalog, no adherence');
+  assert.equal((await week(null)).programAdherence, undefined, 'no catalog, no adherence');
   store.close();
 });
 
@@ -356,11 +356,11 @@ test('summary: the Program Advisor ranking reaches the review only within 21 day
   store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
   store.db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, 2, '2026-08-03', 'Symmetry - Phase 1', 'Squat')").run();
-  const week = (weekEnd) => buildSummary(computeWeek(loadWeekData(store.db, weekEnd, { catalog, dictionary, substitutions: { avoid: [] } }), { weekEnd }), [], { today: weekEnd });
+  const week = async (weekEnd) => buildSummary(computeWeek(await loadWeekData(store.db, weekEnd, { catalog, dictionary, substitutions: { avoid: [] } }), { weekEnd }), [], { today: weekEnd });
 
   // Earliest finish 2026-10-18 (11 weeks from Aug 3): 22 days after Sep 26, 15 after Oct 3.
-  assert.equal(week('2026-09-26').advisor, undefined);
-  const s = week('2026-10-03');
+  assert.equal((await week('2026-09-26')).advisor, undefined);
+  const s = await week('2026-10-03');
   assert.deepEqual(s.advisor.leftOut, ['MAPS Symmetry (run last)']);
   assert.deepEqual(s.advisor.weights, { strength: 1, joint: 1, time: 1, vo2: 1 });
   assert.deepEqual(s.advisor.top.map((t) => [t.program, t.total]), [['HIIT', 0.31], ['MAPS Powerlift', 0.28]]);
@@ -381,7 +381,7 @@ test('summary: the Program Advisor ranking reaches the review only within 21 day
   store.close();
 });
 
-test('summary: dataQuality lists the missing and partial days of the week (dates only), and is left out when there are none', () => {
+test('summary: dataQuality lists the missing and partial days of the week (dates only), and is left out when there are none', async () => {
   const daily = [];
   for (let i = 0; i < 40; i++) {
     const date = new Date(Date.UTC(2026, 1, 1 + i)).toISOString().slice(0, 10); // Feb 1 to Mar 12
@@ -407,7 +407,7 @@ test('summary: lift plateau statuses reach the review grounded; lifts not traine
   for (const d of ['2026-07-25', '2026-08-08']) add(d, 'barbell-deadlift', 'Barbell Deadlift', 300);
   for (const d of ['2026-08-22', '2026-09-05', '2026-09-12', '2026-09-19']) add(d, 'barbell-deadlift', 'Barbell Deadlift', 280);
   add('2026-01-10', 'military-press', 'Military Press', 95);
-  const s = buildSummary(computeWeek(loadWeekData(db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  const s = buildSummary(computeWeek(await loadWeekData(db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
   assert.deepEqual(s.lifts.map((l) => [l.id, l.status, l.changePct]), [['barbell-deadlift', 'regressing', -6.6]]);
   assert.equal(s.lifts[0].trend, undefined, 'no trend points in the review');
   const allowed = allowedNumbers(s, '');
@@ -415,18 +415,18 @@ test('summary: lift plateau statuses reach the review grounded; lifts not traine
   store.close();
 });
 
-test('summary: heartRateZones from per-minute heart rate, only with a Zone 2 range and a birth year', () => {
+test('summary: heartRateZones from per-minute heart rate, only with a Zone 2 range and a birth year', async () => {
   const store = seededStore();
   const { db } = store;
   db.prepare("INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, avg_hr, updated_at) VALUES (@uid, 'Elliptical', '2026-09-22T10:00:00', '2026-09-22T10:05:00', 300, 118, 'x')").run();
   const ins = db.prepare("INSERT INTO workout_hr_samples (user_id, type, start, t, avg_bpm) VALUES (@uid, 'Elliptical', '2026-09-22T10:00:00', ?, ?)");
   [105, 115, 120, 130].forEach((bpm, i) => ins.run(`2026-09-22T10:0${i}`, bpm));
-  const zones = () => prepareReview(db, { weekEnd: '2026-09-26', today: '2026-09-27' }).summary.heartRateZones;
-  assert.equal(zones(), undefined, 'no Zone 2 range yet');
+  const zones = async () => (await prepareReview(db, { weekEnd: '2026-09-26', today: '2026-09-27' })).summary.heartRateZones;
+  assert.equal(await zones(), undefined, 'no Zone 2 range yet');
   for (const [k, v] of [['zone2_low_bpm', '110'], ['zone2_high_bpm', '125'], ['birth_year', '1970']]) {
     db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run(k, v);
   }
-  const z = zones();
+  const z = await zones();
   assert.deepEqual(z.week, { minutes: [1, 2, 1, 0, 0], noDetail: 1, total: 5 });
   assert.equal(z.maxHr, 169);
   assert.equal(z.zones[1].low, 110);
