@@ -35,7 +35,7 @@ async function main() {
   const store = openOwnerStore();
   try {
     if (flag('--dry-run')) {
-      const gate = reviewStatus(store.db, weekArg >= 0 ? addDays(weekEnd, 1) : today);
+      const gate = await reviewStatus(store.adb, weekArg >= 0 ? addDays(weekEnd, 1) : today);
       console.log(gate.ready ? 'Data gate: Apple Health data is complete for the week.' : `Data gate: ${gapsText(gate.missingDays, gate.partialDays)} (a scheduled run would skip).`);
       const prep = await prepareReview(store.db, { weekEnd, today });
       console.log(`Week ending ${weekEnd} (dry run, nothing sent)`);

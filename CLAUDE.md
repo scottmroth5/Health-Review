@@ -41,8 +41,9 @@ Health specific logic stays in this repo; never add it to agent-core.
                     TransactionConflictError while another request holds an async transaction) and adb and atx (async); raw is
                     the unguarded handle (agent-core's run tracer, the SQLite-only tools). Never hold an async transaction across
                     an external call (Claude, Google). Converted code awaits every statement, so it runs on either handle
-                    (callers pass db until their entry point flips to adb); converted so far: metrics/load.js, agent/ and
-                    ingest/. A function that opens a transaction takes adb (db.tx; better-sqlite3 refuses an async body),
+                    (callers pass db until their entry point flips to adb); converted so far: metrics/load.js, agent/,
+                    ingest/ and jobs/ (the review job and reviewStatus on adb; backup and the restore test stay on the
+                    sync handle until 1G, startUserRun until 1D). A function that opens a transaction takes adb (db.tx; better-sqlite3 refuses an async body),
                     so its callers pass adb already: the routes (app.js scopes adb per request beside db), the sync,
                     the program and log scripts and the demo build (one atx). A transaction awaits only statements, so on
                     SQLite it ends before another request can run (test/database.test.ts) Tests: memoryStore in test/helpers.js (both handles, owner or a second user)

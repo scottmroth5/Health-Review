@@ -10,6 +10,8 @@ import { createReviewClaude } from '../agent/claude.js';
 import { runReview, prepareReview } from '../agent/review.js';
 import { computeWeek } from '../metrics/index.js';
 import { fakeClaudeClient, silentLogger } from './helpers.js';
+import { weeklyReview } from '../jobs/review.js';
+import { OWNER_ID } from '../db/users.js';
 
 // A report in the review's shape; the opening holds one plain highlight unless a test sets its own.
 const report = (sections, physicianDiscussion = []) => ({
@@ -256,6 +258,30 @@ test('review: a truncated response fails the run instead of saving half a report
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM reviews').get().n, 0);
   assert.deepEqual(JSON.parse(store.db.prepare("SELECT summary FROM runs WHERE name = 'review'").get().summary), { weekEnd: '2026-09-26', error: 'ClaudeTruncatedError' });
   store.close();
+});
+
+test('weeklyReview: the job writes the review on the async handle, and its run belongs to the user', async () => {
+  const store = seededStore();
+  const draft = report([['Weekly Wins', 'HRV averaged 49 ms over 2 days.']]);
+  const fake = fakeClaudeClient(async () => response(draft));
+  const key = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'test-key';
+  try {
+    // The seeded week has missing Apple Health days, so the gate skips it unless forced.
+    const skipped = await weeklyReview({ store, claude: () => createReviewClaude({ client: fake }), weekEnd: '2026-09-26', today: '2026-09-27' });
+    assert.equal(skipped.status, 'skipped');
+    const r = await weeklyReview({ store, claude: () => createReviewClaude({ client: fake }), weekEnd: '2026-09-26', today: '2026-09-27', force: true });
+    assert.equal(r.status, 'written');
+    assert.deepEqual(r.result.warnings, []);
+    assert.equal(store.db.prepare('SELECT week_ending FROM reviews').pluck().get(), '2026-09-26');
+    assert.deepEqual(store.raw.prepare("SELECT user_id, status FROM runs WHERE name = 'review' ORDER BY id").all(),
+      [{ user_id: OWNER_ID, status: 'skipped' }, { user_id: OWNER_ID, status: 'ok' }]);
+    const again = await weeklyReview({ store, claude: () => { throw new Error('no call expected'); }, weekEnd: '2026-09-26', today: '2026-09-27', scheduled: true });
+    assert.equal(again.status, 'exists');
+  } finally {
+    if (key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = key;
+    store.close();
+  }
 });
 
 test('dry run preparation needs no client and names the sensitive sections it would send', async () => {

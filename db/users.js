@@ -92,7 +92,9 @@ export function startUserRun(store, name, meta = {}, logger) {
   if (!uid) throw new TypeError(`startUserRun(${name}): the store is not scoped to a user`);
   // The raw handle: a run record never fails a job over another request's open transaction (db/database.ts).
   const run = createTracer({ store: { db: store.raw ?? store.db }, logger }).startRun(name, meta);
-  if (run.id != null) store.db.prepare('UPDATE runs SET user_id = ? WHERE id = ?').run(uid, run.id);
+  // Sync until 1D replaces the tracer: on the raw handle like the tracer's insert (the uid is bound explicitly), so a
+  // store whose db is the async handle works too.
+  if (run.id != null) (store.raw ?? store.db).prepare('UPDATE runs SET user_id = ? WHERE id = ?').run(uid, run.id);
   return run;
 }
 

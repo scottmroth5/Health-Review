@@ -23,19 +23,21 @@ const quiet = { info() {}, warn() {}, error() {} };
 export async function weeklyReview({ store, claude, sync = null, weekEnd, catalog, scheduled = false, force = false, noSync = false, today = localDate(),
   model = process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort = process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT }) {
   const week = weekEnd ?? lastWeekEnd(today);
-  if (scheduled && store.db.prepare('SELECT 1 FROM reviews WHERE user_id = @uid AND week_ending = ?').get(week)) return { status: 'exists', weekEnd: week };
+  // The async handle (docs/adr/0006; v3 Phase 1B slice 3): nothing here opens a transaction, and none spans the Claude call.
+  const db = store.adb ?? store.db;
+  if (scheduled && await db.prepare('SELECT 1 FROM reviews WHERE user_id = @uid AND week_ending = ?').get(week)) return { status: 'exists', weekEnd: week };
   let syncError;
   if (sync && !noSync) {
     try { await sync(); } catch (err) { syncError = err.message; }
   }
   // reviewStatus works from today's last week; for an explicit week it is asked as of the Sunday after that week.
-  const gate = reviewStatus(store.db, weekEnd ? addDays(week, 1) : today);
+  const gate = await reviewStatus(db, weekEnd ? addDays(week, 1) : today);
   if (!gate.ready && !force) {
     startUserRun(store, 'review', { weekEnd: week, gate: true }, quiet)
       .finish('skipped', { weekEnd: week, reason: gate.reason, missingDays: gate.missingDays, partialDays: gate.partialDays });
     return { status: 'skipped', weekEnd: week, reason: gate.reason, missingDays: gate.missingDays, partialDays: gate.partialDays, syncError };
   }
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set in .env');
-  const result = await runReview({ store, claude: claude(), weekEnd: week, today, catalog, model, effort, logger: quiet });
+  const result = await runReview({ store: { ...store, db }, claude: claude(), weekEnd: week, today, catalog, model, effort, logger: quiet });
   return { status: 'written', weekEnd: week, result, syncError };
 }

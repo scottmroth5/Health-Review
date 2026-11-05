@@ -32,7 +32,7 @@ export async function restoreTestJob({ store, passphrase = process.env.HEALTH_BA
       name = newest.name;
       file = await client.download(newest.id);
     }
-    const r = restoreTest({ file, passphrase, live: store.db });
+    const r = restoreTest({ file, passphrase, live: store.db }); // sync until 1G (sqlite_master row counts)
     const summary = { file: name, tables: r.tables, rowsBackup: r.rowsBackup, rowsLive: r.rowsLive, differences: r.differences.length, problems: r.problems };
     run.finish(r.ok ? 'ok' : 'error', summary);
     return { ...r, file: name };

@@ -74,11 +74,11 @@ test('hand entry only: no Apple Health warnings, the review runs on check-ins, a
   const store = openOwnerStore(':memory:');
   const db = store.db;
   assert.deepEqual(await dataCheckWarnings(db, TODAY, { apple: 'rest', now: new Date(`${TODAY}T12:00:00Z`) }), []);
-  const none = reviewStatus(db, TODAY, new Date(`${TODAY}T12:00:00Z`));
+  const none = await reviewStatus(db, TODAY, new Date(`${TODAY}T12:00:00Z`));
   assert.equal(none.reason, 'no_data');
   assert.equal(none.overdue, false, 'nothing to review is never due');
   db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, '2026-10-14', 'daily', 7, 'ui', 'x')").run();
-  const status = reviewStatus(db, TODAY, new Date(`${TODAY}T12:00:00Z`));
+  const status = await reviewStatus(db, TODAY, new Date(`${TODAY}T12:00:00Z`));
   assert.equal(status.ready, true);
   assert.equal(status.reason, null);
   assert.deepEqual(status.missingDays, []);

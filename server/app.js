@@ -734,8 +734,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.get('/api/reviews', { schema: { summary: 'Weekly reviews, newest first', response: { 200: { type: 'array', items: anyObject } } } },
     async () => q.listReviews(db));
 
-  const reviewState = (req) => ({
-    ...q.reviewStatus(db, q.localDate(clock()), clock()),
+  const reviewState = async (req) => ({
+    ...(await q.reviewStatus(db, q.localDate(clock()), clock())),
     running: reviewRunOf(req).running,
     error: reviewRunOf(req).error,
     canRun: typeof services.review === 'function' && aiOn(req),
@@ -745,7 +745,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.get('/api/reviews/status', {
     schema: { summary: "Last week's review: whether it exists, the last run, and Apple Health days missing or partial (dates only)", response: { 200: anyObject } },
-  }, async (req) => reviewState(req));
+  }, async (req) => await reviewState(req));
 
   app.post('/api/reviews/run', {
     schema: {
@@ -766,7 +766,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
         syncing.add(uid);
         try { await services.sync({ uid }); } catch { /* review the data already stored, as npm run review does */ } finally { syncing.delete(uid); }
       }
-      const status = q.reviewStatus(db, q.localDate(clock()), clock());
+      const status = await q.reviewStatus(db, q.localDate(clock()), clock());
       if (!status.ready && !req.body?.force) {
         reviewRun.running = false;
         return reply.code(409).send({ error: status.reason === 'no_data' ? 'No data for that week yet' : 'Apple Health data is incomplete for the week', reason: status.reason, missingDays: status.missingDays, partialDays: status.partialDays });

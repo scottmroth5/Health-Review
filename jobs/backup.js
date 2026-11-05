@@ -23,7 +23,7 @@ export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_
   const run = startUserRun(store, 'backup', { to: toDir ? 'folder' : 'google-drive' }, quiet);
   try {
     const r = await runBackup({
-      db: store.db,
+      db: store.db, // the guarded sync handle until 1G (better-sqlite3's backup API): it throws rather than copy another request's open transaction
       passphrase,
       extras: [{ name: 'programs.json', path: dataPath('maps', 'programs.json') }],
       drive: toDir ? null : drive ?? createDriveClient(getGoogleAuth()),
