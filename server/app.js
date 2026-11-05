@@ -35,7 +35,7 @@ import { parseWorkoutJson } from '../ingest/parsers.js';
 import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
 import { DEFAULT_TZ, isTimeZone, localDate as zonedDate, localStamp, ownerTz, withTimeZone } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { scopeDb } from '../db/scope.js';
+import { scopeDatabase, scopeDb } from '../db/scope.js';
 import { HEALTH_CONSENT_VERSION, OWNER_ID, clearIngestToken, getUser, newIngestToken, recordHealthConsent, setClaudeKey, setGoogleToken, setUserFeeds, startUserRun, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
 import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus, usageByWeek, usageTotals } from './admin-queries.js';
 import { createUsageTotals, hostnameOrNull } from './usage-totals.js';
@@ -150,15 +150,18 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // Every request runs as one user (multi-user, phase 1): `db` below is that user's view of the database (db/scope.js),
   // set for the request in preHandler. Local (none) and the demo are the owner; google mode is the signed-in user, and a
   // request without one (open routes) has no database at all, so nothing can read across users by mistake.
+  // adb is the same user's async handle (docs/adr/0006), for the ingest functions that open transactions (v3 Phase 1B).
   const requestDb = new AsyncLocalStorage();
-  const currentDb = () => {
+  const currentHandles = () => {
     const scoped = requestDb.getStore();
     if (!scoped) throw new Error('No user for this request');
     return scoped;
   };
+  const currentDb = () => currentHandles().db;
   const db = new Proxy({}, { get: (_, prop) => Reflect.get(currentDb(), prop) });
+  const adb = new Proxy({}, { get: (_, prop) => Reflect.get(currentHandles().adb, prop) });
   // The store as the request's user sees it, for code that takes a store (the chat); tx is the shared one.
-  const userStore = () => ({ ...store, db: currentDb() });
+  const userStore = () => ({ ...store, db: currentDb(), adb: currentHandles().adb });
   const uidOf = (req) => req.uid ?? (authMode === 'google' ? null : OWNER_ID);
   // Per user: one sync, one manual review and one chat question at a time for each user (never shared between users).
   const syncing = new Set();
@@ -277,7 +280,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const uid = uidOf(req);
     if (!uid) return done();
     // The request runs as its user: their scoped database and their own time zone (tools/time.js withTimeZone).
-    withTimeZone(timeZoneOf(store.db, uid), () => requestDb.run(scopeDb(store.db, uid), done));
+    withTimeZone(timeZoneOf(store.db, uid), () => requestDb.run({ db: scopeDb(store.db, uid), adb: scopeDatabase(store.adb, uid) }, done));
   });
 
   // The deploy health check: open in every mode, status and version only.
@@ -364,7 +367,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       querystring: { type: 'object', required: ['view'], properties: { view: { type: 'string', enum: VIEWS } } },
       response: { 200: anyObject },
     },
-  }, async (req) => q.trainingDashboard(db, req.query.view, q.localDate(clock())));
+  }, async (req) => await q.trainingDashboard(db, req.query.view, q.localDate(clock())));
 
   // The MAPS catalog is read per request when not injected, so edits to data/maps/programs.json show without a restart.
   // The program catalog a request may use (metrics/load.js userCatalog): the user's own programs (phase 5), then the
@@ -380,7 +383,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       summary: 'The confirmed in-progress program block: week, phase, deload or failure week, expected end (program is null when none)',
       response: { 200: { type: 'object', properties: { program: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: true }] } } } },
     },
-  }, async (req) => ({ program: currentProgram(db, q.localDate(clock()), programCatalog(req)) }));
+  }, async (req) => ({ program: await currentProgram(db, q.localDate(clock()), await programCatalog(req)) }));
 
   // The dictionary and substitutions are committed config, read per request (like the catalog) unless injected.
   const goalWeight = { type: 'integer', minimum: 0, maximum: MAX_WEIGHT, default: 1 };
@@ -391,8 +394,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       querystring: { type: 'object', properties: Object.fromEntries(GOALS.map((g) => [g, goalWeight])) },
       response: { 200: anyObject },
     },
-  }, async (req) => q.advisor(db, q.localDate(clock()), {
-    catalog: programCatalog(req),
+  }, async (req) => await q.advisor(db, q.localDate(clock()), {
+    catalog: await programCatalog(req),
     dictionary: dictionary ?? loadDictionary(),
     substitutions: substitutions ?? loadSubstitutions(),
     weights: Object.fromEntries(GOALS.map((g) => [g, req.query[g]])),
@@ -407,7 +410,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     const result = await q.programAdherence(db, q.localDate(clock()), {
-      catalog: programCatalog(req), dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), blockId: req.query.block,
+      catalog: await programCatalog(req), dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), blockId: req.query.block,
     });
     if (result === null) return reply.code(404).send({ error: 'No such confirmed block' });
     return result;
@@ -454,7 +457,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!chatOn(req)) return reply.code(503).send({ error: 'The chat is off in this instance' });
     if (!req.body.text.trim()) throw badRequest('text must not be blank');
     if (chatting.has(uidOf(req))) return reply.code(409).send({ error: 'A question is already being answered' });
-    const cat = programCatalog(req);
+    const cat = await programCatalog(req);
     if (!cat) return reply.code(503).send({ error: 'The chat needs a program catalog' });
     chatting.add(uidOf(req));
     try {
@@ -475,8 +478,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   // ---- a user's own programs (multi-user, phase 5; ingest/user-programs.js): built here, imported as JSON, or drafted
   // by Claude from a PDF (never stored). The shared catalog (the owner's MAPS) shows by name only, never its contents.
-  const programsView = (req) => {
-    const own = loadUserPrograms(db);
+  const programsView = async (req) => {
+    const own = await loadUserPrograms(db);
     const names = new Set(own.map((r) => r.name));
     return {
       programs: own,
@@ -496,27 +499,27 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   };
   const programIdParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64 } } };
   app.get('/api/programs', { schema: { summary: 'Your own programs in full, and the names of the shared catalog\'s programs', response: { 200: anyObject } } },
-    async (req) => programsView(req));
+    async (req) => await programsView(req));
   app.post('/api/programs', { schema: { summary: 'Add a program of your own (checked like a catalog entry; problems listed)', body: programBody, response: { 200: anyObject } } },
     async (req, reply) => {
-      try { saveProgram(db, { ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
-      return programsView(req);
+      try { await saveProgram(adb, { ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
+      return await programsView(req);
     });
   app.put('/api/programs/:id', { schema: { summary: 'Replace one of your programs', params: programIdParams, body: programBody, response: { 200: anyObject } } },
     async (req, reply) => {
-      try { saveProgram(db, { id: req.params.id, ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
-      return programsView(req);
+      try { await saveProgram(adb, { id: req.params.id, ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
+      return await programsView(req);
     });
   app.delete('/api/programs/:id', { schema: { summary: 'Delete one of your programs', params: programIdParams, response: { 200: anyObject } } },
-    async (req, reply) => (deleteProgram(db, req.params.id, programWrite(req)) ? programsView(req) : reply.code(404).send({ error: 'No such program' })));
+    async (req, reply) => ((await deleteProgram(adb, req.params.id, programWrite(req))) ? await programsView(req) : reply.code(404).send({ error: 'No such program' })));
   app.post('/api/programs/import', { schema: { summary: 'Import one program or a catalog of programs, all or nothing', body: anyObject, response: { 200: anyObject } } },
     async (req, reply) => {
       let added;
-      try { added = importPrograms(db, req.body, programWrite(req)); } catch (err) { return programError(reply, err); }
-      return { added, ...programsView(req) };
+      try { added = await importPrograms(adb, req.body, programWrite(req)); } catch (err) { return programError(reply, err); }
+      return { added, ...(await programsView(req)) };
     });
   app.get('/api/programs/export', { schema: { summary: 'Your own programs as a catalog file (never the shared catalog)', response: { 200: anyObject } } },
-    async (req, reply) => reply.header('Content-Disposition', 'attachment; filename="my-programs.json"').send(exportPrograms(db)));
+    async (req, reply) => reply.header('Content-Disposition', 'attachment; filename="my-programs.json"').send(await exportPrograms(db)));
   // Claude reads a PDF the user uploaded, on their own AI; the draft comes back to check in the builder, nothing saved.
   app.post('/api/programs/extract', {
     bodyLimit: Math.ceil(MAX_PDF_BYTES * 1.4),
@@ -556,10 +559,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const to = req.query.to ? requireDate(req.query.to) : today;
     const from = req.query.from ? requireDate(req.query.from) : addDays(to, -29);
     if (from > to) throw badRequest('from must not be after to');
-    return listWorkouts(db, { from, to });
+    return await listWorkouts(db, { from, to });
   });
   app.get('/api/workouts/suggest', { schema: { summary: 'Exercise names (yours, then the dictionary) and your own programs\' workouts to start from', response: { 200: anyObject } } },
-    async () => workoutSuggestions(db, { dictionary: dictionary ?? loadDictionary(), ownPrograms: loadUserPrograms(db).map((r) => r.program) }));
+    async () => await workoutSuggestions(db, { dictionary: dictionary ?? loadDictionary(), ownPrograms: (await loadUserPrograms(db)).map((r) => r.program) }));
   const setItem = { type: 'object', additionalProperties: false, properties: { weight: { type: ['string', 'null'], maxLength: 40 }, reps: { type: ['string', 'null'], maxLength: 40 } } };
   app.put('/api/workouts/:date', {
     schema: {
@@ -573,10 +576,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req, reply) => {
-    try { return saveWorkout(db, requireDate(req.params.date), req.body, workoutCtx(req)); } catch (err) { return workoutError(reply, err); }
+    try { return await saveWorkout(adb, requireDate(req.params.date), req.body, workoutCtx(req)); } catch (err) { return workoutError(reply, err); }
   });
   app.delete('/api/workouts/:date', { schema: { summary: "Delete the day's workout logged in the app", params: dateOnly, response: { 200: anyObject } } },
-    async (req, reply) => (deleteWorkout(db, requireDate(req.params.date), workoutCtx(req)) ? { deleted: true } : reply.code(404).send({ error: 'No workout logged in the app that day' })));
+    async (req, reply) => ((await deleteWorkout(adb, requireDate(req.params.date), workoutCtx(req))) ? { deleted: true } : reply.code(404).send({ error: 'No workout logged in the app that day' })));
 
   // ---- the Excel Workout Log (ingest/excel-upload.js, tools/xlsx.js): a template to download, and uploading it ----
   // Only .xlsx is accepted: this content type (any other gets 415 before anything is read), a name ending .xlsx, up to
@@ -610,7 +613,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const run = startUserRun(userStore(), 'workout-upload', { bytes: req.body.length }, { info() {}, warn() {}, error() {} });
     let result;
     try {
-      result = ingestWorkbook(db, req.body, workoutCtx(req));
+      result = await ingestWorkbook(adb, req.body, workoutCtx(req));
     } catch (err) {
       if (!(err instanceof XlsxError || err instanceof UploadError)) { run.finish('error', { error: err.name }); throw err; }
       run.finish('error', { error: 'not_accepted' });
@@ -623,17 +626,17 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   // Program blocks for a user to confirm in the app (the owner also has npm run programs:review for edits, merges and splits).
   app.get('/api/program/blocks', { schema: { summary: 'Your program blocks, detected and confirmed, oldest first', response: { 200: { type: 'array', items: anyObject } } } },
-    async () => listBlocks(db));
+    async () => await listBlocks(db));
   app.post('/api/program/blocks/:id/confirm', { schema: { summary: 'Confirm a detected program block (phases and progress then follow it)', params: programIdParams, response: { 200: anyObject } } },
     async (req, reply) => {
       try {
-        confirmBlocks(db, req.params.id, { today: q.localDate(clock()), now: clock() });
+        await confirmBlocks(adb, req.params.id, { today: q.localDate(clock()), now: clock() });
       } catch (err) {
         if (err instanceof ReviewError) return reply.code(409).send({ error: err.message });
         throw err;
       }
-      refreshPhases(db, programCatalog(req));
-      return { blocks: listBlocks(db) };
+      await refreshPhases(adb, await programCatalog(req));
+      return { blocks: await listBlocks(db) };
     });
 
   app.get('/api/lifts', {
@@ -688,7 +691,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req, reply) => {
     const received = clock();
     try {
-      const counts = apply(req.body, received);
+      const counts = await apply(req.body, received);
       logIngest(randomUUID(), received.toISOString(), route, 'ok', JSON.stringify(counts), null);
       log.info(`[ingest] ${route} ok ${JSON.stringify(counts)}`);
       return { ok: true, ...counts };
@@ -698,18 +701,18 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       return reply.code(400).send({ error: err.message });
     }
   });
-  ingestRoute('health', "Health Auto Export's health metrics (JSON, Version 2, grouped by day; Apple Stand Hour grouped by hour), stored like the Drive files", (body, received) => {
+  ingestRoute('health', "Health Auto Export's health metrics (JSON, Version 2, grouped by day; Apple Stand Hour grouped by hour), stored like the Drive files", async (body, received) => {
     const parsed = parseHealthJson(body, { file: 'post' });
     const at = localStamp(received); // received now: a day posted before it ended is partial
     let result;
-    store.tx(() => {
-      result = applyHealthDays(db, { records: parsed.records, exportedThrough: new Map(parsed.records.map((r) => [r.date, at])), standHours: parsed.standHours }, received.toISOString());
+    await store.atx(async () => {
+      result = await applyHealthDays(adb, { records: parsed.records, exportedThrough: new Map(parsed.records.map((r) => [r.date, at])), standHours: parsed.standHours }, received.toISOString());
     });
     return { days: result.days.length, standHours: parsed.standHours.length, warnings: parsed.warnings.length };
   });
-  ingestRoute('workouts', "Health Auto Export's workouts (JSON, Version 2, with per-minute heart rate), stored like the Drive files", (body, received) => {
+  ingestRoute('workouts', "Health Auto Export's workouts (JSON, Version 2, with per-minute heart rate), stored like the Drive files", async (body, received) => {
     const parsed = parseWorkoutJson(body, { file: 'post' });
-    store.tx(() => applyWorkouts(db, parsed.records, parsed.samples, received.toISOString()));
+    await store.atx(() => applyWorkouts(adb, parsed.records, parsed.samples, received.toISOString()));
     return { workouts: parsed.records.length, hrSamples: parsed.samples.length, warnings: parsed.warnings.length };
   });
 
@@ -1146,7 +1149,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const today = q.localDate(clock());
     const { facts, setup } = setupOf(req);
     const chosen = facts.chosen ?? {};
-    const program = (() => { try { return currentProgram(db, today, programCatalog(req)); } catch { return null; } })();
+    const program = await (async () => { try { return await currentProgram(db, today, await programCatalog(req)); } catch { return null; } })();
     const feedRows = [
       chosen.appleHealth || facts.owner ? { feed: 'appleHealth', latest: facts.apple.lastPost ?? facts.apple.latestDay ?? null, latestDay: facts.apple.latestDay } : null,
       chosen.workoutLog || facts.owner ? { feed: 'workoutLog', latest: facts.sheet.lastSync, problem: setup.steps.find((s) => s.id === 'data').ways.workoutLog.problem } : null,

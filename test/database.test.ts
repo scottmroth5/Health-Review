@@ -146,6 +146,29 @@ test('the sync handle throws during another context\'s transaction, and works in
   }
 });
 
+// Why the guard never fires in the app (ADR 0006): on SQLite every awaited statement settles at once, so a transaction
+// that awaits only statements runs to its end in the microtask queue, before any other request (its own event-loop task).
+test('a transaction that awaits only statements finishes before a sync-handle read queued beside it', async () => {
+  const store = scratch();
+  try {
+    const { adb, db } = store;
+    const seen: unknown[] = [];
+    const reader = new Promise<void>((resolve, reject) => {
+      setImmediate(() => {
+        try { seen.push(db.prepare('SELECT COUNT(*) FROM t').pluck().get()); resolve(); } catch (err) { reject(err as Error); }
+      });
+    });
+    const insert = adb.prepare('INSERT INTO t (name, n) VALUES (?, ?)');
+    await adb.tx(async () => {
+      for (let i = 0; i < 2000; i++) await insert.run(`row ${i}`, i);
+    });
+    await reader;
+    assert.deepEqual(seen, [2000], 'no TransactionConflictError, and the committed rows');
+  } finally {
+    store.close();
+  }
+});
+
 test('scopeDatabase binds @uid, never reads another user\'s rows, and fails unscoped', async () => {
   const store = memoryStore({ uid: 'user-b' });
   try {

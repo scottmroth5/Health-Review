@@ -21,11 +21,11 @@ export function moveHours(text, hours) {
  * @returns {{ total: number, fromExports: number, lateTwins: number, toMove: number, movedToEarlierDate: number,
  *   collisions: number, alreadyApplied: boolean, applied: boolean }}
  */
-export function fixSessionTimes(store, { apply = false, logger = { info() {}, warn() {}, error() {} } } = {}) {
-  const { db } = store;
-  const alreadyApplied = Boolean(db.prepare("SELECT 1 FROM runs WHERE user_id = @uid AND name = ? AND status = 'ok'").get(RUN_NAME));
-  const stamps = new Set(db.prepare("SELECT DISTINCT synced_at FROM drive_exports WHERE user_id = @uid AND kind = 'workouts'").pluck().all());
-  const rows = db.prepare('SELECT rowid AS id, type, start, end, updated_at FROM workout_sessions WHERE user_id = @uid').all();
+export async function fixSessionTimes(store, { apply = false, logger = { info() {}, warn() {}, error() {} } } = {}) {
+  const db = store.adb;
+  const alreadyApplied = Boolean(await db.prepare("SELECT 1 FROM runs WHERE user_id = @uid AND name = ? AND status = 'ok'").get(RUN_NAME));
+  const stamps = new Set(await db.prepare("SELECT DISTINCT synced_at FROM drive_exports WHERE user_id = @uid AND kind = 'workouts'").pluck().all());
+  const rows = await db.prepare('SELECT rowid AS id, type, start, end, updated_at FROM workout_sessions WHERE user_id = @uid').all();
   const key = (type, start, end) => `${type}|${start}|${end}`;
   const fromExports = new Set(rows.filter((r) => stamps.has(r.updated_at)).map((r) => key(r.type, r.start, r.end)));
   const sheetRows = rows.filter((r) => !stamps.has(r.updated_at));
@@ -60,11 +60,11 @@ export function fixSessionTimes(store, { apply = false, logger = { info() {}, wa
   try {
     const del = db.prepare('DELETE FROM workout_sessions WHERE user_id = @uid AND rowid = ?');
     const upd = db.prepare('UPDATE workout_sessions SET start = ?, end = ? WHERE user_id = @uid AND rowid = ?');
-    store.tx(() => {
-      for (const r of lateTwins) del.run(r.id);
+    await store.atx(async () => {
+      for (const r of lateTwins) await del.run(r.id);
       // Earliest first is not enough when moves chain into each other's old slots; move all to a temporary mark first.
-      for (const m of toMove) upd.run(`~${m.newStart}`, `~${m.newEnd}`, m.id);
-      for (const m of toMove) upd.run(m.newStart, m.newEnd, m.id);
+      for (const m of toMove) await upd.run(`~${m.newStart}`, `~${m.newEnd}`, m.id);
+      for (const m of toMove) await upd.run(m.newStart, m.newEnd, m.id);
     });
     run.finish('ok', { deleted: lateTwins.length, moved: toMove.length });
   } catch (err) {

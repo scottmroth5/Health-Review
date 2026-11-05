@@ -2,8 +2,7 @@
 // medication changes plus their 28-day before windows), plus the following morning for
 // next-morning recovery after the last day of the week.
 // Async (v3 Phase 1B, docs/adr/0006): each loader awaits every statement, so it runs on the sync handle or the async
-// one. loadStrengthSets, loadUserPrograms, programMatchers and userCatalog stay sync until ingest converts: they run
-// inside ingest's sync transactions.
+// one.
 import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { addDays } from './stats.js';
@@ -37,27 +36,27 @@ export async function programForWeek(db, weekEnd, catalog) {
 }
 
 /** A user's own programs (user_programs, phase 5), by name: [{ id, name, match, source, program, created_at, updated_at }]. */
-export function loadUserPrograms(db) {
-  return db.prepare('SELECT id, name, match, source, program, created_at, updated_at FROM user_programs WHERE user_id = @uid ORDER BY name COLLATE NOCASE')
-    .all().map((r) => ({ ...r, program: JSON.parse(r.program) }));
+export async function loadUserPrograms(db) {
+  return (await db.prepare('SELECT id, name, match, source, program, created_at, updated_at FROM user_programs WHERE user_id = @uid ORDER BY name COLLATE NOCASE')
+    .all()).map((r) => ({ ...r, program: JSON.parse(r.program) }));
 }
 
 /** The program matchers for a user's Workout Log names: their own programs' match words, then metrics/programs.js. */
-export const programMatchers = (db) => userMatchers(loadUserPrograms(db));
+export const programMatchers = async (db) => userMatchers(await loadUserPrograms(db));
 
 /**
  * The program catalog a user gets: their own programs, then the shared catalog's (theirs win a name clash); null when
  * there are neither. shared left out means the owner's MAPS file (the owner, and scripts acting as the owner); pass null
  * for a user it is not shared with.
  */
-export function userCatalog(db, shared = loadCatalog()) {
-  const own = loadUserPrograms(db).map((r) => r.program);
+export async function userCatalog(db, shared = loadCatalog()) {
+  const own = (await loadUserPrograms(db)).map((r) => r.program);
   return own.length ? mergeCatalogs(own, shared) : shared ?? null;
 }
 
 export async function loadWeekData(db, weekEnd, { catalog, dictionary, substitutions } = {}) {
   const from = addDays(weekEnd, -125);
-  const cat = catalog === undefined ? userCatalog(db) : catalog;
+  const cat = catalog === undefined ? await userCatalog(db) : catalog;
   const program = await programForWeek(db, weekEnd, cat);
   // The Program Advisor's input, only when the review should carry the ranking (near the end of a block or between).
   const advisorInput = cat && advisorDue(program, weekEnd)
@@ -81,7 +80,7 @@ export async function loadWeekData(db, weekEnd, { catalog, dictionary, substitut
     workout_hr_samples: await db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${nextMorning}`),
     birth_year: (await loadProfile(db, weekEnd)).birthYear,
     // About 13 months, for the 12-month volume trend (the 28-day strength metrics filter their own window).
-    strength_sets: loadStrengthSets(db, addDays(weekEnd, -400), weekEnd),
+    strength_sets: await loadStrengthSets(db, addDays(weekEnd, -400), weekEnd),
     drinking_days: await db.prepare('SELECT * FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(from, weekEnd),
     checkins: await db.prepare('SELECT * FROM checkins WHERE user_id = @uid AND date <= ? ORDER BY date').all(weekEnd),
     ...(await loadMedications(db)),
@@ -133,11 +132,11 @@ function canonicalName(id) {
 }
 
 /** Performed and planned sets with their normalized exercise (canonical_id, canonical_name, implement). */
-export function loadStrengthSets(db, from, to) {
-  return db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, e.is_primary, s.set_no, s.weight_lbs, s.per_hand,
+export async function loadStrengthSets(db, from, to) {
+  return (await db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, e.is_primary, s.set_no, s.weight_lbs, s.per_hand,
       s.band, s.bodyweight, s.reps, s.reps_text, s.duration_sec, s.distance_yd
     FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
-    WHERE e.user_id = @uid AND e.date BETWEEN ? AND ? ORDER BY e.date, e.row_no, s.set_no`).all(from, to)
+    WHERE e.user_id = @uid AND e.date BETWEEN ? AND ? ORDER BY e.date, e.row_no, s.set_no`).all(from, to))
     .map((s) => ({ ...s, canonical_name: canonicalName(s.canonical_id) }));
 }
 

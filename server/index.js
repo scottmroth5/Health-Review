@@ -114,20 +114,20 @@ if (demo) {
     client.setCredentials({ refresh_token: open(sealed, uid) });
     return client;
   };
-  const userFeedFor = (uid) => {
+  const userFeedFor = async (uid) => {
     const sheetId = forUser(uid).db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").pluck().get() ?? null;
     if (!sheetId || !getUser(store.db, uid)?.google_refresh_enc) return null;
     const created = forUser(uid).db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_created'").pluck().get();
     const auth = sheetsAuthFor(uid);
-    return { auth, sheetId, catalog: catalogFor(uid),
+    return { auth, sheetId, catalog: await catalogFor(uid),
       // Only the sheet Health Review created for them (drive.file); the year is theirs (their time zone).
       ensureYearTab: created === sheetId ? () => ensureYearTab({ auth, sheetId, year: ownerDate().slice(0, 4) }) : null };
   };
   // A user's program catalog: their own programs (phase 5), plus the owner's MAPS catalog when the owner shares it with
   // them. The owner's is left undefined, so each job reads the MAPS file and the owner's own programs when it runs.
-  const catalogFor = (uid) => (uid === OWNER_ID ? undefined : userCatalog(forUser(uid).db, getUser(store.db, uid)?.maps_shared ? loadCatalog() : null));
+  const catalogFor = async (uid) => (uid === OWNER_ID ? undefined : await userCatalog(forUser(uid).db, getUser(store.db, uid)?.maps_shared ? loadCatalog() : null));
   const services = {
-    sync: ({ uid = OWNER_ID } = {}) => syncJob({ store: forUser(uid), userFeed: uid === OWNER_ID ? undefined : userFeedFor(uid) }),
+    sync: async ({ uid = OWNER_ID } = {}) => syncJob({ store: forUser(uid), userFeed: uid === OWNER_ID ? undefined : await userFeedFor(uid) }),
     // A user's sheet: its tab names, read with their own Google permission (checks a sheet before it is saved).
     sheetTabs: async (uid, sheetId) => createSheetsSource(sheetsAuthFor(uid), { WORKOUT_LOG_SHEET_ID: sheetId }).listTabs('workout_log'),
     // "Create my Workout Log": a new sheet in their Drive with their drive.file permission, tabbed for this year.
@@ -136,8 +136,8 @@ if (demo) {
     hasAi,
     aiAccess: (uid) => ai.check(uid),
     // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.
-    review: ({ uid = OWNER_ID, weekEnd, today }) => runReview({
-      store: forUser(uid), claude: claudeFor(uid), catalog: catalogFor(uid), weekEnd, today, logger: quiet,
+    review: async ({ uid = OWNER_ID, weekEnd, today }) => runReview({
+      store: forUser(uid), claude: claudeFor(uid), catalog: await catalogFor(uid), weekEnd, today, logger: quiet,
       model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
     }),
   };
@@ -183,7 +183,7 @@ if (demo) {
         startUserRun(forUser(uid), 'review', { gate: true, reason }, quiet).finish('skipped', { reason });
         return;
       }
-      const r = await weeklyReview({ store: forUser(uid), claude: () => claudeFor(uid), catalog: catalogFor(uid), sync: () => services.sync({ uid }), scheduled: true });
+      const r = await weeklyReview({ store: forUser(uid), claude: () => claudeFor(uid), catalog: await catalogFor(uid), sync: () => services.sync({ uid }), scheduled: true });
       console.log(`[review] ${r.status} (${who(uid)}) week ending ${r.weekEnd}${r.syncError ? ' (sync failed first)' : ''}`);
       // Tuesday is the last catch-up: still skipped then, the owner's week gets no review unless it is run by hand.
       if (uid === OWNER_ID && r.status === 'skipped' && zonedParts(new Date()).weekday === 2) {

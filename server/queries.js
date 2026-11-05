@@ -328,11 +328,11 @@ export function saveSettings(db, changes) {
 // ---- training volume ----
 
 /** The training dashboard for one view (week, month, year, all), ending today. Planned future sets are excluded. */
-export function trainingDashboard(db, view, today) {
+export async function trainingDashboard(db, view, today) {
   // Enough history for the view and its previous period; 'all' reads everything.
   const back = { week: 14, month: 60, year: 371 * 2, '2y': 31 * 48, '5y': 31 * 120 }[view];
   const from = back ? addDays(today, -back) : '0000-01-01';
-  return trainingView(loadStrengthSets(db, from, today), view, today, programMatchers(db));
+  return trainingView(await loadStrengthSets(db, from, today), view, today, await programMatchers(db));
 }
 
 /** Plateau status of every primary lift as of today, with 26 weeks of trend points (Training tab). */

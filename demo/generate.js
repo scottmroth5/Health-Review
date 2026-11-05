@@ -23,7 +23,7 @@ import { loadWeekData, loadMetricSettings, loadWeekNotes, loadAdvisorInput } fro
 import { buildSummary } from '../agent/summary.js';
 import { renderReport } from '../agent/instructions.js';
 import { recommendPrograms } from '../metrics/advisor.js';
-import { scopeDb } from '../db/scope.js';
+import { scopeDatabase, scopeDb } from '../db/scope.js';
 import { OWNER_ID } from '../db/users.js';
 
 export const DEMO_DB_PATH = dataPath('demo', 'demo.db');
@@ -62,6 +62,7 @@ const dow = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
 export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = loadDemoCatalog(), dictionary = loadDictionary() }) {
   // The demo's made-up data all belongs to user 1 (OWNER_ID), the only user in a demo database.
   const db = scopeDb(store.db, OWNER_ID);
+  const adb = scopeDatabase(store.adb, OWNER_ID); // the ingest pipeline below opens (nested) transactions
   const r = random(seed);
   const stamp = `${today}T12:00:00.000Z`;
   // ---- Workout Log: about two years on the MAPS-named programs (demo/training.js) ----
@@ -245,11 +246,11 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
   insertRun.run('restore-test', '{"from":"google-drive"}', `${addDays(today, -((Number(today.slice(8, 10)) || 1) - 1))}T09:00:00.000Z`, null, 6000, 0, 0, '{"ok":true,"tables":27,"problems":[]}');
 
   // ---- The app's own pipeline: normalize names, detect blocks (confirmed), phases from workout names ----
-  normalizeAll(db, dictionary, { now: new Date(stamp) });
-  writeDetected(db, detect(db, today), { now: new Date(stamp) });
+  await normalizeAll(adb, dictionary, { now: new Date(stamp) });
+  await writeDetected(adb, await detect(adb, today), { now: new Date(stamp) });
   db.prepare("UPDATE program_blocks SET source = 'confirmed' WHERE user_id = @uid").run();
   db.prepare("UPDATE log_sessions SET source = 'confirmed' WHERE user_id = @uid AND source = 'detected'").run();
-  refreshPhases(db, catalog);
+  await refreshPhases(adb, catalog);
 
   // ---- Weekly reviews: the last 26 weeks, each written in code from that week's real summary (demo/reviews.js) ----
   const substitutions = JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8'));

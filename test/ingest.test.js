@@ -27,7 +27,7 @@ async function server({ token = TOKEN, authMode = 'none', auth = {} } = {}) {
   return { store, db: store.db, app, post, done: async () => { await app.close(); store.close(); } };
 }
 
-test('health JSON: each metric to its column, steps whole, a metric the app does not store skipped; Day-grouped stand hours ignored', () => {
+test('health JSON: each metric to its column, steps whole, a metric the app does not store skipped; Day-grouped stand hours ignored', async () => {
   const { records, standHours, warnings } = parseHealthJson(fixture('health'));
   assert.deepEqual(warnings, []);
   assert.deepEqual(standHours, [], 'a Day-grouped stand hour count (above 1) undercounts, so it is ignored');
@@ -41,7 +41,7 @@ test('health JSON: each metric to its column, steps whole, a metric the app does
   assert.deepEqual(records.find((r) => r.date === '2026-03-02'), { date: '2026-03-02', steps: 9500, active_energy_kcal: 702.25 });
 });
 
-test('health JSON: wrong units and readings not grouped by day are skipped with a warning, never converted by guess', () => {
+test('health JSON: wrong units and readings not grouped by day are skipped with a warning, never converted by guess', async () => {
   const { records, warnings } = parseHealthJson({ data: { metrics: [
     { name: 'walking_speed', units: 'km/hr', data: [{ date: '2026-03-01 00:00:00 -0500', qty: 5 }] },
     { name: 'step_count', units: 'count', data: [{ date: '2026-03-01 08:00:00 -0500', qty: 100 }, { date: '2026-03-01 09:00:00 -0500', qty: 200 }] },
@@ -51,36 +51,36 @@ test('health JSON: wrong units and readings not grouped by day are skipped with 
   assert.throws(() => parseHealthJson({ data: { workouts: [] } }), /no data.metrics/);
 });
 
-test('stand hours: hour-grouped entries counted per day (0 does not count); parts of a day add up; a re-sent hour counts once', () => {
+test('stand hours: hour-grouped entries counted per day (0 does not count); parts of a day add up; a re-sent hour counts once', async () => {
   const { standHours } = parseHealthJson(fixture('stand'));
   assert.deepEqual(standHours, [{ date: '2026-03-01', hour: 8 }, { date: '2026-03-01', hour: 9 }, { date: '2026-03-01', hour: 14 }, { date: '2026-03-02', hour: 7 }]);
   const store = openOwnerStore(':memory:');
-  const { db } = store;
-  const apply = (p) => store.tx(() => applyHealthDays(db, p, 'x'));
-  apply({ records: parseHealthJson(fixture('health')).records }); // the days exist
-  apply({ records: [], standHours: standHours.slice(0, 2) }); // the morning
+  const { db, adb } = store;
+  const apply = (p) => store.atx(() => applyHealthDays(adb, p, 'x'));
+  await apply({ records: parseHealthJson(fixture('health')).records }); // the days exist
+  await apply({ records: [], standHours: standHours.slice(0, 2) }); // the morning
   assert.equal(rowOf(db, '2026-03-01').stand_hours, 2);
-  apply({ records: [], standHours }); // a later export with the whole day, the morning again
+  await apply({ records: [], standHours }); // a later export with the whole day, the morning again
   assert.equal(rowOf(db, '2026-03-01').stand_hours, 3);
   assert.equal(rowOf(db, '2026-03-02').stand_hours, 1);
   // A larger value already stored (the old Sheets export, which counted correctly) is kept.
   db.prepare("UPDATE daily_metrics SET stand_hours = 12 WHERE date = '2026-03-01'").run();
-  apply({ records: [], standHours });
+  await apply({ records: [], standHours });
   assert.equal(rowOf(db, '2026-03-01').stand_hours, 12);
   // A stand hour alone never creates a day.
-  apply({ records: [], standHours: [{ date: '2026-03-09', hour: 9 }] });
+  await apply({ records: [], standHours: [{ date: '2026-03-09', hour: 9 }] });
   assert.equal(rowOf(db, '2026-03-09'), undefined);
   store.close();
 });
 
-test('a day without steps never erases stored steps; a fuller day replaces a partial one', () => {
+test('a day without steps never erases stored steps; a fuller day replaces a partial one', async () => {
   const store = openOwnerStore(':memory:');
-  const { db } = store;
-  const apply = (records) => store.tx(() => applyHealthDays(db, { records }, 'x'));
-  apply([{ date: '2026-03-01', steps: 9000, hrv_ms: 40 }]);
-  apply([{ date: '2026-03-01', hrv_ms: 45 }]); // a past-range export without the day's totals
+  const { db, adb } = store;
+  const apply = (records) => store.atx(() => applyHealthDays(adb, { records }, 'x'));
+  await apply([{ date: '2026-03-01', steps: 9000, hrv_ms: 40 }]);
+  await apply([{ date: '2026-03-01', hrv_ms: 45 }]); // a past-range export without the day's totals
   assert.deepEqual([rowOf(db, '2026-03-01').steps, rowOf(db, '2026-03-01').hrv_ms], [9000, 40], 'the fuller stored day wins; its gaps fill from the new');
-  apply([{ date: '2026-03-01', steps: 12000, hrv_ms: 46 }]);
+  await apply([{ date: '2026-03-01', steps: 12000, hrv_ms: 46 }]);
   assert.deepEqual([rowOf(db, '2026-03-01').steps, rowOf(db, '2026-03-01').hrv_ms], [12000, 46]);
   store.close();
 });

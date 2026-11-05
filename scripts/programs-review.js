@@ -25,15 +25,15 @@ for (let i = 0; i < rest.length; i++) {
 const today = localDate();
 const opts = { today };
 const store = openOwnerStore();
-const db = store.db;
-const catalog = userCatalog(db);
+const db = store.adb;
+const catalog = await userCatalog(db);
 const shortDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
-function printList(unconfirmed) {
-  const blocks = listBlocks(db, { unconfirmed });
+async function printList(unconfirmed) {
+  const blocks = await listBlocks(db, { unconfirmed });
   for (const b of blocks) {
     const end = b.end_date ?? 'in progress';
-    const st = blockStatus(db, b, today, catalog);
+    const st = await blockStatus(db, b, today, catalog);
     const finish = st.earliest_finish
       ? `, finish ~${shortDate(st.earliest_finish)}${st.pace_finish && st.pace_finish !== st.earliest_finish ? ` to ${shortDate(st.pace_finish)}` : ''}` : '';
     const progress = !st.program_weeks ? ''
@@ -47,8 +47,8 @@ function printList(unconfirmed) {
   if (!blocks.length) console.log(unconfirmed ? 'No detected blocks left to review.' : 'No blocks yet. Run npm run programs:detect -- --write first.');
 }
 
-function printCoverage() {
-  const c = sessionCoverage(db, today);
+async function printCoverage() {
+  const c = await sessionCoverage(db, today);
   console.log(`Lifting days: ${c.liftingDays}. In confirmed blocks ${c.confirmed}, unassigned ${c.unassigned}, `
     + `in detected blocks (to review) ${c.detected}, not detected yet ${c.missing}.`);
 }
@@ -56,34 +56,34 @@ function printCoverage() {
 try {
   switch (command) {
     case 'list':
-      printList(Boolean(flags.unconfirmed));
+      await printList(Boolean(flags.unconfirmed));
       break;
     case 'confirm':
-      console.log(`Confirmed ${confirmBlocks(db, args[0], opts)} block(s).`);
+      console.log(`Confirmed ${await confirmBlocks(db, args[0], opts)} block(s).`);
       break;
     case 'edit': {
-      const b = editBlock(db, args[0], { program: flags.program, phase: flags.phase, start: flags.start, end: flags.end, status: flags.status, notes: flags.notes }, opts);
+      const b = await editBlock(db, args[0], { program: flags.program, phase: flags.phase, start: flags.start, end: flags.end, status: flags.status, notes: flags.notes }, opts);
       console.log(`Updated ${b.id.slice(0, 8)}: ${b.program}, ${b.start_date} to ${b.end_date ?? 'in progress'}, ${b.status}.`);
       break;
     }
     case 'merge': {
-      const b = mergeBlocks(db, args[0], args[1], opts);
+      const b = await mergeBlocks(db, args[0], args[1], opts);
       console.log(`Merged into ${b.id.slice(0, 8)}: ${b.program}, ${b.start_date} to ${b.end_date ?? 'in progress'}.`);
       break;
     }
     case 'split':
-      console.log(`Split; the new block is ${splitBlock(db, args[0], args[1], opts).slice(0, 8)}.`);
+      console.log(`Split; the new block is ${(await splitBlock(db, args[0], args[1], opts)).slice(0, 8)}.`);
       break;
     case 'unassign':
-      console.log(`Marked ${unassignDays(db, args[0], args[1] ?? args[0], opts)} lifting day(s) unassigned.`);
+      console.log(`Marked ${await unassignDays(db, args[0], args[1] ?? args[0], opts)} lifting day(s) unassigned.`);
       break;
     default:
       console.log('Commands: list [--unconfirmed] | confirm <id|all-detected> | edit <id> --field value | merge <id> <id> | split <id> <date> | unassign <date> [<to date>]');
       process.exitCode = command ? 1 : 0;
   }
   if (command && command !== 'list') {
-    refreshPhases(db, catalog);
-    printCoverage();
+    await refreshPhases(db, catalog);
+    await printCoverage();
   }
 } catch (err) {
   if (!(err instanceof ReviewError)) throw err;

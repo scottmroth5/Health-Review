@@ -40,7 +40,8 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
 
 /**
  * @param {object} options
- * @param {{ db: import('better-sqlite3').Database, tx: Function }} options.store  from openHealthStore()
+ * @param {{ adb: import('../db/database.ts').Database, atx: Function }} options.store  a scoped store (db/scope.js scopeStore);
+ *   the whole sync runs on its async handle (docs/adr/0006), each write group in one atx
  * @param {ReturnType<import('./sheets.js').createSheetsSource>} options.source
  * @param {boolean} [options.backfill]   read everything and import the drinking log and check-ins
  * @param {Date} [options.now]
@@ -78,22 +79,22 @@ export async function runSync({ store, source, backfill = false, now = new Date(
     }
     counts.workout_log = await syncWorkoutLog({ store, source, backfill, now, warnings });
     if (counts.workout_log.tabsReplaced) {
-      counts.normalized = normalizeLog(store.db, dictionary, now, warnings);
-      counts.sessions = assignForward(store.db, localDay(now), { now });
-      try { refreshPhases(store.db, catalog === undefined ? userCatalog(store.db) : catalog); } catch (err) {
+      counts.normalized = await normalizeLog(store.adb, dictionary, now, warnings);
+      counts.sessions = await assignForward(store.adb, localDay(now), { now });
+      try { await refreshPhases(store.adb, catalog === undefined ? await userCatalog(store.adb) : catalog); } catch (err) {
         warnings.push({ source: 'program_catalog', kind: 'invalid catalog, phases not updated', detail: err.problems?.length ? `${err.problems.length} problems; run npm run programs:catalog` : err.message });
       }
     }
     counts.lab_results = await syncLabs({ store, source, warnings, stamp });
     if (backfill) {
-      counts.drinking_log = await importOnce({ store, source, key: 'drinking_log', parse: parseDrinkingLog, write: upsertDrinkingDays(store.db, stamp), warnings });
-      counts.weekly_checkin = await importOnce({ store, source, key: 'weekly_checkin', parse: parseWeeklyCheckins, write: upsertCheckins(store.db, stamp), warnings });
+      counts.drinking_log = await importOnce({ store, source, key: 'drinking_log', parse: parseDrinkingLog, write: upsertDrinkingDays(store.adb, stamp), warnings });
+      counts.weekly_checkin = await importOnce({ store, source, key: 'weekly_checkin', parse: parseWeeklyCheckins, write: upsertCheckins(store.adb, stamp), warnings });
     }
     // Data checks (stale or missing Apple Health days, an export automation that stopped, partial days, workouts not exported, impossible values).
-    const checks = dataChecks(await loadDataCheckInput(store.db, localDay(now), { apple, now, lookedAt: apple === 'drive' && exportFolders.health ? stamp : null, workoutsLookedAt: apple === 'drive' && exportFolders.workouts ? stamp : null }));
+    const checks = dataChecks(await loadDataCheckInput(store.adb, localDay(now), { apple, now, lookedAt: apple === 'drive' && exportFolders.health ? stamp : null, workoutsLookedAt: apple === 'drive' && exportFolders.workouts ? stamp : null }));
     for (const c of checks) warnings.push({ source: 'data_check', kind: c.kind, detail: c.message, severity: c.severity });
     counts.data_checks = { warn: checks.filter((c) => c.severity === 'warn').length, info: checks.filter((c) => c.severity === 'info').length };
-    const typos = typoCount(store.db, dictionary);
+    const typos = await typoCount(store.adb, dictionary);
     if (typos) warnings.push({ source: 'exercise_names', kind: 'likely typos', detail: `${typos === 1 ? '1 exercise name looks like a typo' : `${typos} exercise names look like typos`}; see npm run log:typos`, severity: 'info' });
     run.finish('ok', { counts, warnings: warnings.length });
     return { counts, warnings };
@@ -103,12 +104,12 @@ export async function runSync({ store, source, backfill = false, now = new Date(
   }
 }
 
-function getState(db, sourceKey, tab) {
-  return db.prepare('SELECT * FROM sync_state WHERE user_id = @uid AND source = ? AND tab = ?').get(sourceKey, tab) ?? null;
+async function getState(db, sourceKey, tab) {
+  return (await db.prepare('SELECT * FROM sync_state WHERE user_id = @uid AND source = ? AND tab = ?').get(sourceKey, tab)) ?? null;
 }
 
-function setState(db, sourceKey, tab, { rowCount, headerHash = null, contentHash = null }) {
-  db.prepare(`INSERT INTO sync_state (user_id, source, tab, row_count, header_hash, content_hash, synced_at)
+async function setState(db, sourceKey, tab, { rowCount, headerHash = null, contentHash = null }) {
+  await db.prepare(`INSERT INTO sync_state (user_id, source, tab, row_count, header_hash, content_hash, synced_at)
     VALUES (@uid, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (user_id, source, tab) DO UPDATE SET row_count = excluded.row_count, header_hash = excluded.header_hash,
       content_hash = excluded.content_hash, synced_at = excluded.synced_at`)
@@ -123,9 +124,9 @@ async function dataTab(source, key) {
 }
 
 // Records what was read and drops state left under an earlier tab name.
-function saveState(db, key, tab, data) {
-  db.prepare('DELETE FROM sync_state WHERE user_id = @uid AND source = ? AND tab <> ?').run(key, tab);
-  setState(db, key, tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, headerHash: hash(data.header) });
+async function saveState(db, key, tab, data) {
+  await db.prepare('DELETE FROM sync_state WHERE user_id = @uid AND source = ? AND tab <> ?').run(key, tab);
+  await setState(db, key, tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, headerHash: hash(data.header) });
 }
 
 /** Export files read per folder per sync at most; at Google's paced read rate that is about 2 minutes a folder. */
@@ -145,8 +146,8 @@ const isRateLimit = (err) => (err?.response?.status ?? err?.status ?? err?.code)
  * (reads are paced in the source), the folder stops there and the rest waits for the next sync.
  */
 async function syncExports({ store, source, kind, folderId, warnings, stamp, limit = EXPORT_FILES_PER_SYNC }) {
-  const { db } = store;
-  const known = new Map(db.prepare('SELECT file_id, modified_time FROM drive_exports WHERE user_id = @uid').all().map((r) => [r.file_id, r.modified_time]));
+  const db = store.adb;
+  const known = new Map((await db.prepare('SELECT file_id, modified_time FROM drive_exports WHERE user_id = @uid').all()).map((r) => [r.file_id, r.modified_time]));
   const todo = (await source.listExports(folderId, kind)).filter((f) => known.get(f.id) !== f.modifiedTime);
   const batch = todo.slice(0, limit);
   const health = kind !== 'workouts'; // 'health' (Sheets files) or 'health_json'
@@ -193,10 +194,10 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
     }
     // The shared writers (ingest/apply.js), the same ones the REST ingest uses.
     let days = [];
-    store.tx(() => {
-      if (health) ({ days } = applyHealthDays(db, { records: healthRecords, exportedThrough, standHours }, stamp));
-      applyWorkouts(db, workoutRecords, hrRecords, stamp);
-      for (const f of read) record.run(f.id, kind, f.name, f.modifiedTime, f.rows, stamp);
+    await store.atx(async () => {
+      if (health) ({ days } = await applyHealthDays(db, { records: healthRecords, exportedThrough, standHours }, stamp));
+      await applyWorkouts(db, workoutRecords, hrRecords, stamp);
+      for (const f of read) await record.run(f.id, kind, f.name, f.modifiedTime, f.rows, stamp);
     });
     filesRead += read.length;
     for (const d of days) healthDays.add(d);
@@ -221,31 +222,32 @@ async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
   const wanted = backfill ? yearTabs : yearTabs.filter((t) => Number(t) === year || (inJanuary && Number(t) === year - 1));
   const result = { tabsRead: wanted.length, tabsReplaced: 0, exercises: 0, sets: 0, notes: 0 };
 
-  const insertExercise = store.db.prepare(`INSERT INTO strength_exercises
+  const db = store.adb;
+  const insertExercise = db.prepare(`INSERT INTO strength_exercises
     (user_id, tab_year, row_no, date, workout, prime, exercise, post, comment) VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`);
-  const insertSet = store.db.prepare(`INSERT INTO strength_sets
+  const insertSet = db.prepare(`INSERT INTO strength_sets
     (user_id, exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const insertNote = store.db.prepare('INSERT INTO workout_log_notes (user_id, tab_year, row_no, date, text) VALUES (@uid, ?, ?, ?, ?)');
+  const insertNote = db.prepare('INSERT INTO workout_log_notes (user_id, tab_year, row_no, date, text) VALUES (@uid, ?, ?, ?, ?)');
 
   for (const tab of wanted) {
     const data = await source.readRows('workout_log', tab);
     const contentHash = hash([data.header, data.rows]);
-    if (getState(store.db, 'workout_log', tab)?.content_hash === contentHash) continue;
+    if ((await getState(db, 'workout_log', tab))?.content_hash === contentHash) continue;
     const { records, notes, warnings: w } = parseWorkoutLogTab({ ...data, tab });
     warnings.push(...w);
-    store.tx(() => {
-      store.db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ?').run(Number(tab));
-      store.db.prepare('DELETE FROM workout_log_notes WHERE user_id = @uid AND tab_year = ?').run(Number(tab));
+    await store.atx(async () => {
+      await db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ?').run(Number(tab));
+      await db.prepare('DELETE FROM workout_log_notes WHERE user_id = @uid AND tab_year = ?').run(Number(tab));
       for (const e of records) {
-        const id = insertExercise.get(e.tab_year, e.row_no, e.date, e.workout, e.prime, e.exercise, e.post, e.comment).id;
+        const id = (await insertExercise.get(e.tab_year, e.row_no, e.date, e.workout, e.prime, e.exercise, e.post, e.comment)).id;
         for (const s of e.sets) {
-          insertSet.run(id, s.set_no, s.weight_text, s.weight_lbs, s.per_hand, s.band, s.bodyweight, s.reps_text, s.reps, s.duration_sec, s.distance_yd);
+          await insertSet.run(id, s.set_no, s.weight_text, s.weight_lbs, s.per_hand, s.band, s.bodyweight, s.reps_text, s.reps, s.duration_sec, s.distance_yd);
         }
         result.sets += e.sets.length;
       }
-      for (const n of notes) insertNote.run(n.tab_year, n.row_no, n.date, n.text);
-      setState(store.db, 'workout_log', tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, contentHash });
+      for (const n of notes) await insertNote.run(n.tab_year, n.row_no, n.date, n.text);
+      await setState(db, 'workout_log', tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, contentHash });
     });
     result.tabsReplaced += 1;
     result.exercises += records.length;
@@ -274,23 +276,23 @@ async function syncLabs({ store, source, warnings, stamp }) {
   }
   if (!data) return { skipped: 'the lab spreadsheet has no tabs' };
   const contentHash = hash([data.header, data.rows]);
-  if (getState(store.db, 'lab_results', tab)?.content_hash === contentHash) return { tab, changed: false };
+  const db = store.adb;
+  if ((await getState(db, 'lab_results', tab))?.content_hash === contentHash) return { tab, changed: false };
 
   const { tests, results, warnings: w } = parseLabSheet({ ...data, tab });
   warnings.push(...w);
-  const { db } = store;
   let keptFromApp = 0;
-  store.tx(() => {
+  await store.atx(async () => {
     const findTest = db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?');
     const insertTest = db.prepare('INSERT INTO lab_tests (user_id, name, panel, position, created_at) VALUES (@uid, ?, ?, ?, ?) RETURNING id');
     const updateTest = db.prepare('UPDATE lab_tests SET panel = ?, position = ? WHERE user_id = @uid AND id = ?');
     const ids = new Map();
     for (const t of tests) {
-      const found = findTest.get(t.name);
-      if (found) updateTest.run(t.panel, t.position, found.id);
-      ids.set(t.name.toLowerCase(), found?.id ?? insertTest.get(t.name, t.panel, t.position, stamp).id);
+      const found = await findTest.get(t.name);
+      if (found) await updateTest.run(t.panel, t.position, found.id);
+      ids.set(t.name.toLowerCase(), found?.id ?? (await insertTest.get(t.name, t.panel, t.position, stamp)).id);
     }
-    db.prepare("DELETE FROM lab_results WHERE user_id = @uid AND source = 'sheet'").run();
+    await db.prepare("DELETE FROM lab_results WHERE user_id = @uid AND source = 'sheet'").run();
     // An app row wins: one added in the app on the same date, or a correction of this sheet result
     // (found by its original date, since a correction may have moved it).
     const fromApp = db.prepare(`SELECT value_text, corrected_from_date FROM lab_results WHERE user_id = @uid AND test_id = @test AND source = 'ui'
@@ -298,7 +300,7 @@ async function syncLabs({ store, source, warnings, stamp }) {
     const insert = db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'sheet', ?)");
     for (const r of results) {
       const testId = ids.get(r.test.toLowerCase());
-      const app = fromApp.get({ test: testId, date: r.drawn_on });
+      const app = await fromApp.get({ test: testId, date: r.drawn_on });
       if (app) {
         keptFromApp += 1;
         // Corrections are expected to differ from the sheet; only a disagreeing app-added value is worth a warning.
@@ -308,14 +310,14 @@ async function syncLabs({ store, source, warnings, stamp }) {
         continue;
       }
       try {
-        insert.run(testId, r.drawn_on, r.value, r.value_text, stamp);
+        await insert.run(testId, r.drawn_on, r.value, r.value_text, stamp);
       } catch (err) {
         // A correction moved another result onto this date; the app's row stays.
         if (!/UNIQUE/.test(err.message)) throw err;
         keptFromApp += 1;
       }
     }
-    setState(db, 'lab_results', tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, contentHash });
+    await setState(db, 'lab_results', tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, contentHash });
   });
   return { tab, changed: true, tests: tests.length, draws: new Set(results.map((r) => r.drawn_on)).size, results: results.length - keptFromApp, keptFromApp };
 }
@@ -328,9 +330,9 @@ async function importOnce({ store, source, key, parse, write, warnings }) {
   const { records, warnings: w } = parse({ ...data, tab });
   warnings.push(...w);
   let written = 0;
-  store.tx(() => {
-    for (const r of records) written += write(r);
-    saveState(store.db, key, tab, data);
+  await store.atx(async () => {
+    for (const r of records) written += await write(r);
+    await saveState(store.adb, key, tab, data);
   });
   return { rowsRead: data.rows.length, imported: written, keptFromUi: records.length - written };
 }
@@ -340,7 +342,7 @@ const localDay = (d) => localDate(d);
 
 // Replaced Workout Log rows lose their normalized columns, so they are rewritten from the dictionary.
 // A missing or broken dictionary is a warning, never a failed sync.
-function normalizeLog(db, dictionary, now, warnings) {
+async function normalizeLog(db, dictionary, now, warnings) {
   let dict = dictionary;
   if (dict === undefined) {
     if (!existsSync(DICTIONARY_PATH)) return { skipped: 'no exercise dictionary' };
@@ -350,12 +352,12 @@ function normalizeLog(db, dictionary, now, warnings) {
     }
   }
   if (!dict) return { skipped: 'no exercise dictionary' };
-  const { sets, mappedPct } = normalizeAll(db, dict, { now });
+  const { sets, mappedPct } = await normalizeAll(db, dict, { now });
   return { sets, mappedPct };
 }
 
 /** How many exercise names look like typos (metrics/name-typos.js), for an info line; 0 without a valid dictionary. */
-function typoCount(db, dictionary) {
+async function typoCount(db, dictionary) {
   let dict = dictionary;
   try {
     if (dict === undefined) dict = existsSync(DICTIONARY_PATH) ? loadDictionary() : null;
@@ -363,7 +365,7 @@ function typoCount(db, dictionary) {
     return 0; // an invalid dictionary is reported by normalizeLog
   }
   if (!dict) return 0;
-  const found = typoCandidates({ dictionary: dict, unmapped: unmappedNames(db), setCounts: canonicalSetCounts(db) });
+  const found = typoCandidates({ dictionary: dict, unmapped: await unmappedNames(db), setCounts: await canonicalSetCounts(db) });
   return found.entries.length + found.unmapped.length;
 }
 
@@ -378,7 +380,7 @@ function upsertDrinkingDays(db, stamp) {
       other = excluded.other, setting = excluded.setting, mood_before = excluded.mood_before, mood_after = excluded.mood_after,
       notes = excluded.notes, updated_at = excluded.updated_at
     WHERE drinking_days.source = '${V1_SOURCE}'`);
-  return (r) => stmt.run({ ...r, updated_at: stamp }).changes;
+  return async (r) => (await stmt.run({ ...r, updated_at: stamp })).changes;
 }
 
 function upsertCheckins(db, stamp) {
@@ -388,5 +390,5 @@ function upsertCheckins(db, stamp) {
     VALUES (@uid, @date, ${cols.map((c) => `@${c}`).join(', ')}, '${V1_SOURCE}', @updated_at)
     ON CONFLICT (user_id, date) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(', ')}, updated_at = excluded.updated_at
     WHERE checkins.source = '${V1_SOURCE}'`);
-  return (r) => stmt.run({ ...r, updated_at: stamp }).changes;
+  return async (r) => (await stmt.run({ ...r, updated_at: stamp })).changes;
 }

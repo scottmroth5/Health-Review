@@ -11,7 +11,7 @@ const write = process.argv.includes('--write');
 const today = localDate();
 const store = openOwnerStore();
 try {
-  const d = detect(store.db, today);
+  const d = await detect(store.adb, today);
   console.log(`${d.blocks.length} blocks detected (lifting days already in confirmed blocks are left out):\n`);
   for (const b of d.blocks) {
     const end = b.end_date ?? `${b.last_session}, in progress`;
@@ -20,9 +20,9 @@ try {
   }
   console.log(`\n${d.unassigned.length} lifting days with no program would be marked unassigned.`);
   if (write) {
-    writeDetected(store.db, d);
-    refreshPhases(store.db, userCatalog(store.db));
-    const c = sessionCoverage(store.db, today);
+    await writeDetected(store.adb, d);
+    await refreshPhases(store.adb, await userCatalog(store.adb));
+    const c = await sessionCoverage(store.adb, today);
     console.log(`Saved. Lifting days: ${c.liftingDays}; in confirmed blocks ${c.confirmed}, in detected blocks ${c.detected}, unassigned ${c.unassigned}, missing ${c.missing}.`);
     console.log('Next: npm run programs:review -- list');
   } else {

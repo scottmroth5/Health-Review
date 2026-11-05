@@ -35,8 +35,8 @@ const store = openOwnerStore();
 let groups;
 let typos = 0;
 try {
-  groups = unmappedNames(store.db);
-  const found = typoCandidates({ dictionary: JSON.parse(readFileSync(DICTIONARY_PATH, 'utf8')), unmapped: groups, setCounts: canonicalSetCounts(store.db) });
+  groups = await unmappedNames(store.adb);
+  const found = typoCandidates({ dictionary: JSON.parse(readFileSync(DICTIONARY_PATH, 'utf8')), unmapped: groups, setCounts: await canonicalSetCounts(store.adb) });
   typos = found.entries.length + found.unmapped.length;
 } finally {
   store.close();

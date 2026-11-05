@@ -2,7 +2,8 @@
 // strength_sets, under tab_year 0 ("entered in the app"), so volume, lift progress, program blocks, phases, adherence and
 // the weekly review use them exactly like sheet rows (they all read by date). The Sheets sync replaces only the year tabs
 // it reads (tab_year = the year), so it never touches these. One app workout per day; weights and reps are read with
-// the sheet's own parsers, so "BW", "40ea", a band color or "30s" mean the same here. Takes a scoped database.
+// the sheet's own parsers, so "BW", "40ea", a band color or "30s" mean the same here. Takes a scoped database: the async
+// handle (docs/adr/0006) for saveWorkout, deleteWorkout and afterChange, which open transactions; either for the rest.
 import { parseSet, parseWeight, SET_PAIRS } from './parsers.js';
 import { detect, writeDetected, assignForward, refreshPhases } from './program-blocks.js';
 import { performed } from '../metrics/strength.js';
@@ -17,10 +18,10 @@ const clean = (v, max) => {
 };
 
 /** The days with workouts between two dates, newest first: each with its source (app: editable; sheet: read only). */
-export function listWorkouts(db, { from, to }) {
-  const rows = db.prepare(`SELECT e.id, e.tab_year, e.row_no, e.date, e.workout, e.exercise, e.comment
+export async function listWorkouts(db, { from, to }) {
+  const rows = await db.prepare(`SELECT e.id, e.tab_year, e.row_no, e.date, e.workout, e.exercise, e.comment
     FROM strength_exercises e WHERE e.user_id = @uid AND e.date BETWEEN ? AND ? ORDER BY e.date DESC, e.tab_year, e.row_no`).all(from, to);
-  const sets = db.prepare(`SELECT s.exercise_id, s.set_no, s.weight_text, s.reps_text, s.weight_lbs, s.reps, s.duration_sec, s.distance_yd, s.bodyweight, s.band
+  const sets = await db.prepare(`SELECT s.exercise_id, s.set_no, s.weight_text, s.reps_text, s.weight_lbs, s.reps, s.duration_sec, s.distance_yd, s.bodyweight, s.band
     FROM strength_sets s JOIN strength_exercises e ON e.id = s.exercise_id AND e.user_id = s.user_id
     WHERE s.user_id = @uid AND e.date BETWEEN ? AND ? ORDER BY s.exercise_id, s.set_no`).all(from, to);
   const setsOf = new Map();
@@ -56,50 +57,50 @@ export function checkWorkout(body) {
 }
 
 /** After a change to the log: the dictionary onto the given names, then blocks and phases as a sync does (confirmed blocks untouched). */
-export function afterChange(db, names, { today, now, dictionary, catalog }) {
+export async function afterChange(db, names, { today, now, dictionary, catalog }) {
   const update = db.prepare(`UPDATE strength_exercises SET canonical_id = ?, implement = ?, movement_pattern = ?, is_primary = ?, map_status = ?, normalized_at = ?
     WHERE user_id = @uid AND exercise = ?`);
   for (const name of new Set(names)) {
     const m = dictionary.lookup(name);
-    update.run(m.id, m.implement, m.pattern, m.primary ? 1 : 0, m.status, now.toISOString(), name);
+    await update.run(m.id, m.implement, m.pattern, m.primary ? 1 : 0, m.status, now.toISOString(), name);
   }
-  writeDetected(db, detect(db, today), { now });
-  assignForward(db, today, { now });
-  refreshPhases(db, catalog());
+  await writeDetected(db, await detect(db, today), { now });
+  await assignForward(db, today, { now });
+  await refreshPhases(db, await catalog());
 }
 
 /**
  * Saves a day's app workout, replacing any earlier one that day (sheet rows that day are left as they are).
  * @param {{ today: string, now?: Date, dictionary: object, catalog: () => object|null }} ctx
  */
-export function saveWorkout(db, date, body, ctx) {
+export async function saveWorkout(db, date, body, ctx) {
   if (date > ctx.today) throw new WorkoutError('Log workouts up to today, not ahead');
   const w = checkWorkout(body);
   const now = ctx.now ?? new Date();
-  db.transaction(() => {
-    db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ? AND date = ?').run(APP_TAB_YEAR, date);
-    let rowNo = db.prepare('SELECT COALESCE(MAX(row_no), 0) FROM strength_exercises WHERE user_id = @uid AND tab_year = ?').pluck().get(APP_TAB_YEAR);
+  await db.tx(async () => {
+    await db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ? AND date = ?').run(APP_TAB_YEAR, date);
+    let rowNo = await db.prepare('SELECT COALESCE(MAX(row_no), 0) FROM strength_exercises WHERE user_id = @uid AND tab_year = ?').pluck().get(APP_TAB_YEAR);
     const insertExercise = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, comment)
       VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id`);
     const insertSet = db.prepare(`INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
       VALUES (@uid, @exercise_id, @set_no, @weight_text, @weight_lbs, @per_hand, @band, @bodyweight, @reps_text, @reps, @duration_sec, @distance_yd)`);
     for (const ex of w.exercises) {
       rowNo += 1;
-      const id = insertExercise.get(APP_TAB_YEAR, rowNo, date, w.workout, ex.name, ex.comment).id;
-      for (const s of ex.sets) insertSet.run({ exercise_id: id, ...s });
+      const id = (await insertExercise.get(APP_TAB_YEAR, rowNo, date, w.workout, ex.name, ex.comment)).id;
+      for (const s of ex.sets) await insertSet.run({ exercise_id: id, ...s });
     }
-    afterChange(db, w.exercises.map((e) => e.name), { ...ctx, now });
-  })();
-  return listWorkouts(db, { from: date, to: date }).find((d) => d.source === 'app');
+    await afterChange(db, w.exercises.map((e) => e.name), { ...ctx, now });
+  });
+  return (await listWorkouts(db, { from: date, to: date })).find((d) => d.source === 'app');
 }
 
 /** Deletes a day's app workout; returns whether there was one. */
-export function deleteWorkout(db, date, ctx) {
+export async function deleteWorkout(db, date, ctx) {
   let gone = 0;
-  db.transaction(() => {
-    gone = db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ? AND date = ?').run(APP_TAB_YEAR, date).changes;
-    if (gone) afterChange(db, [], { ...ctx, now: ctx.now ?? new Date() });
-  })();
+  await db.tx(async () => {
+    gone = (await db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ? AND date = ?').run(APP_TAB_YEAR, date)).changes;
+    if (gone) await afterChange(db, [], { ...ctx, now: ctx.now ?? new Date() });
+  });
   return gone > 0;
 }
 
@@ -107,8 +108,8 @@ export function deleteWorkout(db, date, ctx) {
  * Help for the form: exercise names from their own history (most logged first) and the dictionary, and their own
  * programs' workouts to start from (never a shared catalog's contents).
  */
-export function workoutSuggestions(db, { dictionary, ownPrograms }) {
-  const history = db.prepare(`SELECT exercise, COUNT(*) AS n FROM strength_exercises WHERE user_id = @uid GROUP BY exercise ORDER BY n DESC LIMIT 300`).all().map((r) => r.exercise);
+export async function workoutSuggestions(db, { dictionary, ownPrograms }) {
+  const history = (await db.prepare(`SELECT exercise, COUNT(*) AS n FROM strength_exercises WHERE user_id = @uid GROUP BY exercise ORDER BY n DESC LIMIT 300`).all()).map((r) => r.exercise);
   const names = [...new Set([...history, ...dictionary.exercises.map((e) => e.name)])];
   const templates = ownPrograms.flatMap((p) => p.phases.flatMap((ph) => (ph.workouts ?? []).map((wo) => ({
     label: `${p.name}, ${ph.name}, ${wo.name}`,

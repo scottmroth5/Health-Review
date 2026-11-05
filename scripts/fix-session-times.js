@@ -9,7 +9,7 @@ import { fixSessionTimes } from '../ingest/session-times.js';
 const apply = process.argv.includes('--apply');
 const store = openOwnerStore();
 try {
-  const r = fixSessionTimes(store, { apply });
+  const r = await fixSessionTimes(store, { apply });
   console.log(`Workouts: ${r.total}. From the export files (kept as they are): ${r.fromExports}.`);
   console.log(`From the consolidated sheet: ${r.lateTwins} late duplicates of export workouts to delete; ${r.toMove} to move back 3 hours`
     + ` (${r.movedToEarlierDate} of them to the previous day); collisions: ${r.collisions}.`);

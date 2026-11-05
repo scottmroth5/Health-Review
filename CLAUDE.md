@@ -41,9 +41,11 @@ Health specific logic stays in this repo; never add it to agent-core.
                     TransactionConflictError while another request holds an async transaction) and adb and atx (async); raw is
                     the unguarded handle (agent-core's run tracer, the SQLite-only tools). Never hold an async transaction across
                     an external call (Claude, Google). Converted code awaits every statement, so it runs on either handle
-                    (callers pass db until their entry point flips to adb); converted so far: metrics/load.js (but
-                    loadStrengthSets, loadUserPrograms, programMatchers, userCatalog, which run in ingest's sync
-                    transactions) and agent/; the demo build runs on atx Tests: memoryStore in test/helpers.js (both handles, owner or a second user)
+                    (callers pass db until their entry point flips to adb); converted so far: metrics/load.js, agent/ and
+                    ingest/. A function that opens a transaction takes adb (db.tx; better-sqlite3 refuses an async body),
+                    so its callers pass adb already: the routes (app.js scopes adb per request beside db), the sync,
+                    the program and log scripts and the demo build (one atx). A transaction awaits only statements, so on
+                    SQLite it ends before another request can run (test/database.test.ts) Tests: memoryStore in test/helpers.js (both handles, owner or a second user)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status

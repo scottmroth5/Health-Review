@@ -6,6 +6,7 @@
 //   Stand hours: each { date, hour } with standing is kept (stand_hour_samples); a day's stand_hours is the larger of the
 //     stored value and the distinct hours recorded, so exports holding part of a day add up and a re-sent hour counts once.
 //   Workouts: one row per workout (same type, start within a minute is the same one) and its per-minute heart rate.
+// Async (docs/adr/0006), statements only: the callers hold the transaction, so these run on either handle.
 import { HEALTH_METRIC_COLUMNS, mergeHealthDays } from './parsers.js';
 
 /** Upsert of one daily_metrics row; a column the record lacks keeps its stored value. */
@@ -26,7 +27,7 @@ export function upsertDailyMetrics(db, stamp) {
  * @param {Array<{date: string, hour: number}>} [p.standHours]
  * @returns {{ days: string[], standDays: string[] }}
  */
-export function applyHealthDays(db, { records, exportedThrough = new Map(), standHours = [] }, stamp) {
+export async function applyHealthDays(db, { records, exportedThrough = new Map(), standHours = [] }, stamp) {
   const storedDay = db.prepare(`SELECT date, ${HEALTH_METRIC_COLUMNS.join(', ')} FROM daily_metrics WHERE user_id = @uid AND date = ?`);
   const writeDay = upsertDailyMetrics(db, stamp);
   // The latest write time holding each day; an older one read later never lowers it (MAX, NULL treated as earliest).
@@ -38,14 +39,18 @@ export function applyHealthDays(db, { records, exportedThrough = new Map(), stan
 
   // Each day merged with the stored day (stored first, so a tie goes to the newer data).
   const dates = [...new Set(records.map((r) => r.date))];
-  const stored = dates.map((d) => storedDay.get(d)).filter(Boolean);
+  const stored = [];
+  for (const d of dates) {
+    const row = await storedDay.get(d);
+    if (row) stored.push(row);
+  }
   const days = mergeHealthDays([...stored, ...records]).filter((r) => dates.includes(r.date));
-  for (const d of days) writeDay(d);
-  for (const [date, at] of exportedThrough) markExported.run(at, date);
-  for (const s of standHours) addHour.run(s.date, s.hour);
+  for (const d of days) await writeDay(d);
+  for (const [date, at] of exportedThrough) await markExported.run(at, date);
+  for (const s of standHours) await addHour.run(s.date, s.hour);
   // Stand hours for every day touched, once its daily row exists (a stand hour alone never creates a day).
   const standDays = [...new Set([...dates, ...standHours.map((s) => s.date)])];
-  for (const d of standDays) countStand.run(d);
+  for (const d of standDays) await countStand.run(d);
   return { days: dates, standDays: [...new Set(standHours.map((s) => s.date))] };
 }
 
@@ -69,22 +74,22 @@ export function writeJsonWorkout(db, stamp) {
     ON CONFLICT (user_id, type, start, end) DO UPDATE SET ${cols.map((c) => `${c} = COALESCE(excluded.${c}, workout_sessions.${c})`).join(', ')},
       updated_at = excluded.updated_at`);
   const sample = db.prepare('INSERT OR REPLACE INTO workout_hr_samples (user_id, type, start, t, avg_bpm, min_bpm, max_bpm) VALUES (@uid, ?, ?, ?, ?, ?, ?)');
-  return (w, samples) => {
+  return async (w, samples) => {
     const merged = { ...w };
-    for (const old of near.all(w.type, shiftMinutes(w.start, -1), shiftMinutes(w.start, 1), w.start, w.end)) {
+    for (const old of await near.all(w.type, shiftMinutes(w.start, -1), shiftMinutes(w.start, 1), w.start, w.end)) {
       for (const c of cols) if (merged[c] === null || merged[c] === undefined) merged[c] = old[c];
-      drop.run(old.type, old.start, old.end);
-      dropSamples.run(old.type, old.start);
+      await drop.run(old.type, old.start, old.end);
+      await dropSamples.run(old.type, old.start);
     }
-    upsert.run({ ...merged, updated_at: stamp });
-    dropSamples.run(w.type, w.start);
-    for (const s of samples) sample.run(s.type, s.start, s.t, s.avg_bpm, s.min_bpm, s.max_bpm);
+    await upsert.run({ ...merged, updated_at: stamp });
+    await dropSamples.run(w.type, w.start);
+    for (const s of samples) await sample.run(s.type, s.start, s.t, s.avg_bpm, s.min_bpm, s.max_bpm);
   };
 }
 
 /** Writes JSON workouts with their per-minute heart rate. Call inside a transaction. Returns the workout count. */
-export function applyWorkouts(db, records, samples, stamp) {
+export async function applyWorkouts(db, records, samples, stamp) {
   const write = writeJsonWorkout(db, stamp);
-  for (const w of records) write(w, samples.filter((h) => h.type === w.type && h.start === w.start));
+  for (const w of records) await write(w, samples.filter((h) => h.type === w.type && h.start === w.start));
   return records.length;
 }

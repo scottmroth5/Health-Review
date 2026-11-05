@@ -34,10 +34,10 @@ function seed(db) {
 const columns = (db) => db.prepare(`SELECT exercise, canonical_id, implement, movement_pattern, is_primary, map_status
   FROM strength_exercises ORDER BY row_no`).all();
 
-test('normalize: writes canonical exercise, implement, pattern and status next to the raw name', () => {
+test('normalize: writes canonical exercise, implement, pattern and status next to the raw name', async () => {
   const store = openOwnerStore(':memory:');
   seed(store.db);
-  const c = normalizeAll(store.db, DICT, { now: new Date('2026-03-07T12:00:00Z') });
+  const c = await normalizeAll(store.adb, DICT, { now: new Date('2026-03-07T12:00:00Z') });
   assert.deepEqual(columns(store.db), [
     { exercise: 'Squats', canonical_id: 'barbell-squat', implement: 'barbell', movement_pattern: 'squat', is_primary: 1, map_status: 'mapped' },
     { exercise: 'Dumbell Rows', canonical_id: 'dumbbell-row', implement: 'dumbbell', movement_pattern: 'horizontal pull', is_primary: 0, map_status: 'mapped' },
@@ -51,30 +51,30 @@ test('normalize: writes canonical exercise, implement, pattern and status next t
   store.close();
 });
 
-test('normalize: rerunning changes nothing and adds no rows; a dictionary change is picked up', () => {
+test('normalize: rerunning changes nothing and adds no rows; a dictionary change is picked up', async () => {
   const store = openOwnerStore(':memory:');
   seed(store.db);
-  normalizeAll(store.db, DICT);
+  await normalizeAll(store.adb, DICT);
   const first = columns(store.db);
   const rows = (t) => store.db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n;
   const before = [rows('strength_exercises'), rows('strength_sets')];
-  normalizeAll(store.db, DICT);
+  await normalizeAll(store.adb, DICT);
   assert.deepEqual(columns(store.db), first);
   assert.deepEqual([rows('strength_exercises'), rows('strength_sets')], before);
 
   const more = createDictionary({ version: 1, exercises: [...DICT.exercises,
     { id: 'cable-fly', name: 'Cable Fly', implement: 'cable', pattern: 'horizontal press', primary: false }] });
-  normalizeAll(store.db, more);
+  await normalizeAll(store.adb, more);
   assert.equal(columns(store.db)[2].map_status, 'mapped');
   store.close();
 });
 
-test('normalize: unmapped names are listed by variant group with set counts and years, most sets first', () => {
+test('normalize: unmapped names are listed by variant group with set counts and years, most sets first', async () => {
   const store = openOwnerStore(':memory:');
   seed(store.db);
   store.db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2025, 9, '2025-05-01', 'Cable Flyes')").run();
-  normalizeAll(store.db, DICT);
-  assert.deepEqual(unmappedNames(store.db).map((g) => [g.spellings.sort(), g.status, g.sets, g.first, g.last]), [
+  await normalizeAll(store.adb, DICT);
+  assert.deepEqual((await unmappedNames(store.db)).map((g) => [g.spellings.sort(), g.status, g.sets, g.first, g.last]), [
     [['Cable Fly', 'Cable Flyes'], 'inferred', 2, 2025, 2026],
     [['Zercher Thing'], 'unmapped', 1, 2026, 2026],
   ]);
