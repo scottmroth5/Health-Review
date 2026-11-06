@@ -311,22 +311,22 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       querystring: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 } } },
       response: { 200: { type: 'array', items: anyObject } },
     },
-  }, async (req) => q.listRuns(db, req.query.limit));
+  }, async (req) => await q.listRuns(db, req.query.limit));
 
   app.get('/api/runs/:id', {
     schema: { summary: 'One run with its counts and Claude calls (metadata only)', params: idParams, response: { 200: anyObject } },
-  }, async (req, reply) => q.getRun(db, req.params.id) ?? reply.code(404).send({ error: 'Run not found' }));
+  }, async (req, reply) => (await q.getRun(db, req.params.id)) ?? reply.code(404).send({ error: 'Run not found' }));
 
   app.get('/api/jobs', {
     schema: {
       summary: "Each scheduled job's last runs (sync, review, backup, restore test) and the last Health Auto Export posts: status, times and counts only",
       response: { 200: anyObject },
     },
-  }, async () => ({ ...q.jobsActivity(db), schedule: schedule() }));
+  }, async () => ({ ...(await q.jobsActivity(db)), schedule: schedule() }));
 
   app.get('/api/status', { schema: { summary: 'Today, the last sync, and data check warnings as of today (stale or missing Apple Health days, partial days, impossible values)', response: { 200: anyObject } } }, async () => {
     const today = q.localDate(clock());
-    return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: q.lastSync(db), dataChecks: await q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }),
+    return { today, instance, readOnly: authMode === 'demo', sync: typeof services.sync === 'function', lastSync: await q.lastSync(db), dataChecks: await q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() }),
       // The demo's "Request access" link to the main app (REQUEST_ACCESS_URL; none when unset).
       ...(authMode === 'demo' && requestAccessUrl ? { requestAccessUrl } : {}),
       // The demo's anonymous visit counts (DEMO_ANALYTICS_TOKEN; none when unset, and never outside the demo).
@@ -337,26 +337,26 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   // ---- one day ----
   app.get('/api/days/:date', { schema: { summary: 'Check-in and drinks for a day', params: dateParams, response: { 200: anyObject } } },
-    async (req) => q.getDay(db, requireDate(req.params.date)));
+    async (req) => await q.getDay(db, requireDate(req.params.date)));
 
   app.put('/api/checkins/:date', { schema: { summary: 'Save a daily check-in', params: dateParams, body: checkinBody, response: { 200: anyObject } } },
     async (req) => {
       const date = requireNotFuture(requireDate(req.params.date));
       const hasValue = Object.entries(req.body).some(([, v]) => v !== null && v !== '' && v !== undefined);
       if (!hasValue) throw badRequest('Nothing to save: fill in at least one field, or delete the check-in');
-      return q.saveCheckin(db, date, req.body);
+      return await q.saveCheckin(db, date, req.body);
     });
 
   app.delete('/api/checkins/:date', { schema: { summary: 'Delete a check-in', params: dateParams } }, async (req, reply) => {
-    if (!q.deleteCheckin(db, requireDate(req.params.date))) return reply.code(404).send({ error: 'No check-in for that day' });
+    if (!(await q.deleteCheckin(db, requireDate(req.params.date)))) return reply.code(404).send({ error: 'No check-in for that day' });
     return reply.code(204).send();
   });
 
   app.put('/api/drinking/:date', { schema: { summary: 'Save drinks for a day (all zeros means no drinks)', params: dateParams, body: drinkingBody, response: { 200: anyObject } } },
-    async (req) => q.saveDrinking(db, requireNotFuture(requireDate(req.params.date)), req.body));
+    async (req) => await q.saveDrinking(db, requireNotFuture(requireDate(req.params.date)), req.body));
 
   app.delete('/api/drinking/:date', { schema: { summary: 'Delete a drinking day', params: dateParams } }, async (req, reply) => {
-    if (!q.deleteDrinking(db, requireDate(req.params.date))) return reply.code(404).send({ error: 'No drinks logged for that day' });
+    if (!(await q.deleteDrinking(db, requireDate(req.params.date)))) return reply.code(404).send({ error: 'No drinks logged for that day' });
     return reply.code(204).send();
   });
 
@@ -652,7 +652,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       querystring: { type: 'object', required: ['view'], properties: { view: { type: 'string', enum: VO2_VIEWS } } },
       response: { 200: anyObject },
     },
-  }, async (req) => q.vo2max(db, req.query.view, q.localDate(clock())));
+  }, async (req) => await q.vo2max(db, req.query.view, q.localDate(clock())));
 
   app.get('/api/cardio-zones', {
     schema: {
@@ -660,7 +660,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       querystring: { type: 'object', required: ['view'], properties: { view: { type: 'string', enum: Object.keys(q.CARDIO_ZONE_VIEWS) }, group: { type: 'string', enum: q.CARDIO_ZONE_GROUPS } } },
       response: { 200: anyObject },
     },
-  }, async (req) => q.cardioZoneView(db, req.query.view, q.localDate(clock()), req.query.group));
+  }, async (req) => await q.cardioZoneView(db, req.query.view, q.localDate(clock()), req.query.group));
 
   // ---- Health Auto Export REST ingest (the server: APPLE_SOURCE=rest) ----
   // Open to the internet without a Google session (server/auth.js), so each post carries Authorization: Bearer
@@ -728,11 +728,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     requireDate(from);
     requireDate(to);
     if (from > to) throw badRequest('from must not be after to');
-    return q.history(db, from, to);
+    return await q.history(db, from, to);
   });
 
   app.get('/api/reviews', { schema: { summary: 'Weekly reviews, newest first', response: { 200: { type: 'array', items: anyObject } } } },
-    async () => q.listReviews(db));
+    async () => await q.listReviews(db));
 
   const reviewState = async (req) => ({
     ...(await q.reviewStatus(db, q.localDate(clock()), clock())),
@@ -786,7 +786,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // ---- spend ----
   app.get('/api/spend', {
     schema: { summary: 'Estimated Claude API spend by month and year (reviews, chat, evals) at list prices', response: { 200: anyObject } },
-  }, async (req) => q.spend(db, { evalDir: uidOf(req) === OWNER_ID ? evalDir : null, price, today: q.localDate(clock()) }));
+  }, async (req) => await q.spend(db, { evalDir: uidOf(req) === OWNER_ID ? evalDir : null, price, today: q.localDate(clock()) }));
 
   // ---- sync ----
   app.post('/api/sync', { schema: { summary: 'Copy new rows from the Google Sheets now', response: { 200: anyObject } } }, async (req, reply) => {
@@ -824,7 +824,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const pastDate = (d) => requireNotFuture(requireDate(d));
 
   app.get('/api/medications', { schema: { summary: 'Medications and supplements: current first, then stopped', response: medList } },
-    async () => q.listMedications(db));
+    async () => await q.listMedications(db));
 
   app.post('/api/medications', {
     schema: {
@@ -841,12 +841,12 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req, reply) => {
     pastDate(req.body.started_on);
     if (req.body.stopped_on) pastDate(req.body.stopped_on);
-    return reply.code(201).send(q.addMedication(db, req.body));
+    return reply.code(201).send(await q.addMedication(adb, req.body));
   });
 
   app.put('/api/medications/:id', {
     schema: { summary: 'Edit name, type, purpose, prescribed or notes', params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: medDetails }, response: { 200: anyObject } },
-  }, async (req) => q.updateMedicationDetails(db, req.params.id, req.body));
+  }, async (req) => await q.updateMedicationDetails(adb, req.params.id, req.body));
 
   app.post('/api/medications/:id/changes', {
     schema: {
@@ -861,7 +861,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 200: anyObject },
     },
-  }, async (req) => q.changeMedication(db, req.params.id, {
+  }, async (req) => await q.changeMedication(adb, req.params.id, {
     ...req.body,
     effective_on: req.body.effective_on ? pastDate(req.body.effective_on) : undefined,
   }));
@@ -873,7 +873,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       body: { type: 'object', additionalProperties: false, required: ['stopped_on'], properties: { stopped_on: dateField, reason: text(200) } },
       response: { 200: anyObject },
     },
-  }, async (req) => q.stopMedication(db, req.params.id, { ...req.body, stopped_on: pastDate(req.body.stopped_on) }));
+  }, async (req) => await q.stopMedication(adb, req.params.id, { ...req.body, stopped_on: pastDate(req.body.stopped_on) }));
 
   app.post('/api/medications/:id/start', {
     schema: {
@@ -882,7 +882,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       body: { type: 'object', additionalProperties: false, required: ['timings', 'started_on'], properties: { dose, ingredients, timings, started_on: dateField } },
       response: { 200: anyObject },
     },
-  }, async (req) => q.startMedication(db, req.params.id, { ...req.body, started_on: pastDate(req.body.started_on) }));
+  }, async (req) => await q.startMedication(adb, req.params.id, { ...req.body, started_on: pastDate(req.body.started_on) }));
 
   app.post('/api/medications/combine', {
     schema: {
@@ -898,10 +898,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 200: anyObject },
     },
-  }, async (req) => q.combineMedications(db, req.body));
+  }, async (req) => await q.combineMedications(adb, req.body));
 
   app.delete('/api/medications/:id', { schema: { summary: 'Remove an entry added by mistake, with all its history', params: idParams } }, async (req, reply) => {
-    if (!q.deleteMedication(db, req.params.id)) return reply.code(404).send({ error: 'Medication not found' });
+    if (!(await q.deleteMedication(db, req.params.id))) return reply.code(404).send({ error: 'Medication not found' });
     return reply.code(204).send();
   });
 
@@ -927,10 +927,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 200: anyObject },
     },
-  }, async (req) => q.saveDoses(db, pastDate(req.params.date), req.body.doses));
+  }, async (req) => await q.saveDoses(adb, pastDate(req.params.date), req.body.doses));
 
   app.delete('/api/doses/:date', { schema: { summary: "Clear the day's check-off (back to not logged)", params: dateParams } }, async (req, reply) => {
-    if (!q.clearDoses(db, requireDate(req.params.date))) return reply.code(404).send({ error: 'Nothing saved for that day' });
+    if (!(await q.clearDoses(db, requireDate(req.params.date)))) return reply.code(404).send({ error: 'Nothing saved for that day' });
     return reply.code(204).send();
   });
 
@@ -940,16 +940,16 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       querystring: { type: 'object', additionalProperties: false, properties: { weeks: { type: 'integer', minimum: 4, maximum: 52, default: 12 } } },
       response: { 200: anyObject },
     },
-  }, async (req) => q.medicationCheckoffs(db, q.localDate(clock()), req.query.weeks));
+  }, async (req) => await q.medicationCheckoffs(db, q.localDate(clock()), req.query.weeks));
 
   app.get('/api/medications/impact', {
     schema: { summary: 'Each start, change and stop with before and after averages (observational, not cause)', response: medList },
-  }, async () => q.medicationImpact(db, q.localDate(clock())));
+  }, async () => await q.medicationImpact(db, q.localDate(clock())));
 
   // ---- labs ----
   const labValueField = { type: ['string', 'number'], maxLength: 50 };
   app.get('/api/labs', { schema: { summary: 'Lab tests by panel with their results, newest first', response: { 200: anyObject } } },
-    async () => q.listLabs(db, labRanges ?? loadLabRanges()));
+    async () => await q.listLabs(db, labRanges ?? loadLabRanges()));
 
   app.post('/api/labs/results', {
     schema: {
@@ -963,7 +963,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 201: anyObject },
     },
-  }, async (req, reply) => reply.code(201).send(q.addLabResult(db, { ...req.body, drawn_on: pastDate(req.body.drawn_on) })));
+  }, async (req, reply) => reply.code(201).send(await q.addLabResult(adb, { ...req.body, drawn_on: pastDate(req.body.drawn_on) })));
 
   app.put('/api/labs/results/:id', {
     schema: {
@@ -972,10 +972,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { drawn_on: dateField, value: labValueField } },
       response: { 200: anyObject },
     },
-  }, async (req) => q.updateLabResult(db, req.params.id, { ...req.body, drawn_on: req.body.drawn_on ? pastDate(req.body.drawn_on) : undefined }));
+  }, async (req) => await q.updateLabResult(adb, req.params.id, { ...req.body, drawn_on: req.body.drawn_on ? pastDate(req.body.drawn_on) : undefined }));
 
   app.delete('/api/labs/results/:id', { schema: { summary: 'Delete a result added in the app, or undo a correction (restores the sheet value)', params: idParams } }, async (req, reply) => {
-    q.deleteLabResult(db, req.params.id);
+    await q.deleteLabResult(adb, req.params.id);
     return reply.code(204).send();
   });
 
@@ -994,7 +994,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 200: anyObject },
     },
-  }, async (req) => q.updateLabTest(db, req.params.id, req.body));
+  }, async (req) => await q.updateLabTest(adb, req.params.id, req.body));
 
   // ---- settings ----
   const bpm = nullable({ type: 'integer', minimum: 40, maximum: 220 });
@@ -1587,7 +1587,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   };
 
   app.get('/api/settings', { schema: { summary: 'Personal settings used by the metrics, with the age defaults of the heart rate zones', response: { 200: anyObject } } },
-    async () => settingsView(q.getSettings(db)));
+    async () => settingsView(await q.getSettings(db)));
 
   app.put('/api/settings', {
     schema: {
@@ -1596,16 +1596,18 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req) => {
-    // Each zone's top above the one before, so every zone holds at least one bpm and none overlap (no gaps by design).
-    const next = { ...q.getSettings(db), ...req.body };
-    const problem = zoneOrderProblem({ zone2Low: next.zone2_low_bpm, zone2High: next.zone2_high_bpm, zone3High: next.zone3_high_bpm, zone4High: next.zone4_high_bpm });
-    if (problem) throw badRequest(problem);
-    return settingsView(q.saveSettings(db, req.body));
+    // Each zone's top above the one before, so every zone holds at least one bpm and none overlap (no gaps by design);
+    // checked inside the save's transaction, so two saves at once cannot pass it together.
+    const check = (next) => {
+      const problem = zoneOrderProblem({ zone2Low: next.zone2_low_bpm, zone2High: next.zone2_high_bpm, zone3High: next.zone3_high_bpm, zone4High: next.zone4_high_bpm });
+      if (problem) throw badRequest(problem);
+    };
+    return settingsView(await q.saveSettings(adb, req.body, { check }));
   });
 
   // ---- prompt sections ----
   app.get('/api/prompt/sections', { schema: { summary: 'Prompt sections in order', response: { 200: { type: 'array', items: anyObject } } } },
-    async () => q.listSections(db));
+    async () => await q.listSections(db));
 
   app.post('/api/prompt/sections', {
     schema: {
@@ -1615,7 +1617,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     try {
-      return reply.code(201).send(q.createSection(db, req.body));
+      return reply.code(201).send(await q.createSection(db, req.body));
     } catch (err) {
       if (/UNIQUE/.test(err.message)) throw Object.assign(new Error('A section with that name already exists'), { statusCode: 409 });
       throw err;
@@ -1631,7 +1633,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     try {
-      const section = q.updateSection(db, req.params.id, req.body);
+      const section = await q.updateSection(adb, req.params.id, req.body);
       return section ?? reply.code(404).send({ error: 'Section not found' });
     } catch (err) {
       if (/UNIQUE/.test(err.message)) throw Object.assign(new Error('A section with that name already exists'), { statusCode: 409 });
@@ -1640,12 +1642,12 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
 
   app.delete('/api/prompt/sections/:id', { schema: { summary: 'Delete a prompt section (a copy is kept)', params: idParams } }, async (req, reply) => {
-    if (!q.deleteSection(db, req.params.id)) return reply.code(404).send({ error: 'Section not found' });
+    if (!(await q.deleteSection(adb, req.params.id))) return reply.code(404).send({ error: 'Section not found' });
     return reply.code(204).send();
   });
 
   app.get('/api/prompt/preview', { schema: { summary: 'The weekly review instructions as the model would receive them', response: { 200: anyObject } } },
-    async () => q.previewInstructions(db, q.localDate(clock())));
+    async () => await q.previewInstructions(db, q.localDate(clock())));
 
   if (publicDir && existsSync(publicDir)) {
     await app.register(fastifyStatic, { root: publicDir });

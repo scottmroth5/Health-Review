@@ -12,12 +12,12 @@ const DIR = dataPath('v1-export', 'prompts');
 const FILE = /^PROMPT_(\d+)_([A-Za-z0-9_]+)\.txt$/;
 const SENSITIVE = /MEDICAL|GENETIC/i;
 
-function main() {
+async function main() {
   if (!existsSync(DIR)) throw new Error(`No v1 prompt export at ${DIR}`);
   const replace = process.argv.includes('--replace');
   const store = openOwnerStore();
   try {
-    const existing = new Map(listSections(store.db).map((s) => [s.name, s]));
+    const existing = new Map((await listSections(store.adb)).map((s) => [s.name, s]));
     for (const file of readdirSync(DIR).sort()) {
       const m = FILE.exec(file);
       if (!m) continue;
@@ -32,10 +32,10 @@ function main() {
       if (current && !replace) {
         console.log(`skipped ${label}: already exists (use --replace to overwrite; the old text is kept as a version)`);
       } else if (current) {
-        updateSection(store.db, current.id, section);
+        await updateSection(store.adb, current.id, section);
         console.log(`replaced ${label}`);
       } else {
-        createSection(store.db, section);
+        await createSection(store.adb, section);
         console.log(`imported ${label}`);
       }
     }
@@ -44,9 +44,7 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err) => {
   console.error(err.message);
   process.exitCode = 1;
-}
+});

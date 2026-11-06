@@ -221,7 +221,7 @@ test('from the database: settings, joined strength sets, and planned sets left o
   const store = openOwnerStore(':memory:');
   const { db } = store;
   assert.equal((await loadMetricSettings(db)).zone2, null);
-  saveSettings(db, { zone2_low_bpm: 110, zone2_high_bpm: 125 });
+  await saveSettings(store.adb, { zone2_low_bpm: 110, zone2_high_bpm: 125 });
   assert.deepEqual((await loadMetricSettings(db)).zone2, { low: 110, high: 125 });
 
   const ex = db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2026, ?, ?, ?)");

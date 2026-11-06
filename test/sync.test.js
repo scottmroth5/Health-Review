@@ -244,8 +244,8 @@ test('labs: a sheet result corrected in the app (value or date) is kept by sync,
   const { updateLabResult, deleteLabResult } = await import('../server/queries.js');
   const row = (name, date) => store.db.prepare('SELECT r.* FROM lab_results r JOIN lab_tests t ON t.id = r.test_id WHERE t.name = ? AND r.drawn_on = ?').get(name, date);
 
-  updateLabResult(store.db, row('PSA', '2026-03-23').id, { value: '0.9' }); // value fix
-  updateLabResult(store.db, row('Cholesterol', '2025-09-15').id, { drawn_on: '2025-09-16' }); // date fix
+  await updateLabResult(store.adb, row('PSA', '2026-03-23').id, { value: '0.9' }); // value fix
+  await updateLabResult(store.adb, row('Cholesterol', '2025-09-15').id, { drawn_on: '2025-09-16' }); // date fix
   data.lab_results.Labs[2][1] = 171; // the sheet changes, so sync runs
   const { counts, warnings } = await sync(store, source);
   assert.deepEqual(importWarnings(warnings), []);
@@ -255,7 +255,7 @@ test('labs: a sheet result corrected in the app (value or date) is kept by sync,
   assert.equal(row('Cholesterol', '2025-09-16').corrected_from_date, '2025-09-15');
 
   // Undoing a correction brings the sheet value back on the next sync.
-  deleteLabResult(store.db, row('PSA', '2026-03-23').id);
+  await deleteLabResult(store.adb, row('PSA', '2026-03-23').id);
   data.lab_results.Labs[2][1] = 165;
   await sync(store, source);
   assert.deepEqual([row('PSA', '2026-03-23').value_text, row('PSA', '2026-03-23').source], ['0.6', 'sheet']);

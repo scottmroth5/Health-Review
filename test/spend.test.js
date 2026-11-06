@@ -32,7 +32,7 @@ function evalFolder() {
   return dir;
 }
 
-test('spend: runs by kind, month and year, plus evals dated by their results file', () => {
+test('spend: runs by kind, month and year, plus evals dated by their results file', async () => {
   const store = openOwnerStore(':memory:');
   const { db } = store;
   addRun(db, 'review', '2026-10-04T12:00:00.000Z', 0.3);
@@ -43,7 +43,7 @@ test('spend: runs by kind, month and year, plus evals dated by their results fil
   addRun(db, 'other-thing', '2026-10-12T11:00:00.000Z', 0.05);
   const dir = evalFolder();
 
-  const s = spend(db, { evalDir: dir, price, today: '2026-10-13' });
+  const s = await spend(db, { evalDir: dir, price, today: '2026-10-13' });
   assert.equal(s.thisMonth, 0.77);
   assert.equal(s.thisYear, 1.12); // 0.77 + evals 0.35 in September
   assert.equal(s.allTime, 1.37);

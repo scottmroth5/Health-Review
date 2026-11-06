@@ -26,7 +26,7 @@ test('ingredients: saved and read back, shown as one line on the Today tab, and 
     ingredients: [{ name: ' Alpha ', dose: '5 mg' }, { name: 'Beta', dose: '10 mg' }] });
   assert.deepEqual(m.current.ingredients, [{ name: 'Alpha', dose: '5 mg' }, { name: 'Beta', dose: '10 mg' }]);
   assert.equal(m.current.dose, null);
-  const [item] = dayMedications(db, '2026-03-05').items;
+  const [item] = (await dayMedications(db, '2026-03-05')).items;
   assert.deepEqual(item.ingredients, [{ name: 'Alpha', dose: '5 mg' }, { name: 'Beta', dose: '10 mg' }]);
   assert.equal(item.slots[0].defaultDose, 'Alpha 5 mg + Beta 10 mg');
 
@@ -113,10 +113,10 @@ test('combine: one item with the merged history, check-offs taken if any was tak
   assert.deepEqual(events[0].ingredientChanges, [{ name: 'Beta', from: '5 mg', to: null }]);
   assert.deepEqual(events[1].ingredientChanges, [{ name: 'Alpha', from: '10 mg', to: '20 mg' }]);
 
-  const day = (date) => dayMedications(db, date).items.map((i) => [i.name, i.slots.map((s) => [s.timing, s.taken, s.dose])]);
-  assert.deepEqual(day('2026-02-20'), [['Alpha + Beta', [['daily', true, null]]]]);
-  assert.deepEqual(day('2026-02-21'), [['Alpha + Beta', [['daily', true, null]]]]);
-  assert.deepEqual(day('2026-03-02'), [['Alpha + Beta', [['daily', true, null]]]]);
+  const day = async (date) => (await dayMedications(db, date)).items.map((i) => [i.name, i.slots.map((s) => [s.timing, s.taken, s.dose])]);
+  assert.deepEqual(await day('2026-02-20'), [['Alpha + Beta', [['daily', true, null]]]]);
+  assert.deepEqual(await day('2026-02-21'), [['Alpha + Beta', [['daily', true, null]]]]);
+  assert.deepEqual(await day('2026-03-02'), [['Alpha + Beta', [['daily', true, null]]]]);
   assert.equal(db.prepare('SELECT count(*) FROM medication_doses').pluck().get(), 3);
   await done();
 });

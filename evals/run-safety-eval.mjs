@@ -16,7 +16,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { openHealthStore } from '../db/store.js';
-import { scopeDb } from '../db/scope.js';
+import { scopeDatabase, scopeDb } from '../db/scope.js';
+import { createSqliteDatabase } from '../db/database.ts';
 import { OWNER_ID } from '../db/users.js';
 import { generateDemo, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } from '../demo/generate.js';
 import { loadDictionary } from '../metrics/dictionary.js';
@@ -47,7 +48,8 @@ const built = openHealthStore(':memory:');
 await built.atx(() => generateDemo(built, { today: SPEC.demoToday }));
 {
   const db = scopeDb(built.db, OWNER_ID);
-  for (const m of SPEC.setup.medications) addMedication(db, { ...m, purpose: 'Made up for the safety check' });
+  const adb = scopeDatabase(built.adb, OWNER_ID);
+  for (const m of SPEC.setup.medications) await addMedication(adb, { ...m, purpose: 'Made up for the safety check' });
   await clearChat(db); // each chat case starts a fresh thread
 }
 // The demo already holds sample run records with made-up costs; only runs after them are this check's spending.
@@ -55,8 +57,10 @@ const firstRunId = scopeDb(built.db, OWNER_ID).prepare('SELECT COALESCE(MAX(id),
 const snapshot = built.db.serialize();
 built.close();
 
-function caseStore(c) {
-  const db = scopeDb(new Database(snapshot), OWNER_ID);
+async function caseStore(c) {
+  const raw = new Database(snapshot);
+  const db = scopeDb(raw, OWNER_ID);
+  const adb = scopeDatabase(createSqliteDatabase(raw), OWNER_ID);
   db.pragma('foreign_keys = ON');
   const o = c.overlay ?? {};
   if (o.checkinNote) {
@@ -76,16 +80,16 @@ function caseStore(c) {
   }
   if (o.medicationChange) {
     const id = db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').pluck().get(o.medicationChange.name);
-    changeMedication(db, id, { dose: o.medicationChange.dose, timings: o.medicationChange.timings, effective_on: o.medicationChange.date });
+    await changeMedication(adb, id, { dose: o.medicationChange.dose, timings: o.medicationChange.timings, effective_on: o.medicationChange.date });
   }
-  return { db, tx: (fn) => db.transaction(fn)(), close: () => db.close() };
+  return { db, adb, raw, tx: (fn) => db.transaction(fn)(), close: () => db.close() };
 }
 
 const spent = (db) => db.prepare('SELECT COALESCE(SUM(cost_usd), 0) FROM runs WHERE user_id = @uid AND id > ?').pluck().get(firstRunId);
 
 /** Runs one case through the app's own code; returns the reply as text for the grader plus the app's warnings. */
 async function runCase(c, claude) {
-  const store = caseStore(c);
+  const store = await caseStore(c);
   try {
     return await runCaseOn(store, c, claude);
   } catch (err) {
@@ -117,7 +121,7 @@ ${statement}` : answer, warnings: [], costUsd: spent(store.db) };
 
 /** The size of what a case would send (characters), without sending it. */
 async function sizeCase(c) {
-  const store = caseStore(c);
+  const store = await caseStore(c);
   try {
     if (c.kind === 'chat') return CHAT_CONTRACT.length + JSON.stringify(await chatContext(store.db, SPEC.demoToday, { catalog, dictionary, substitutions })).length + c.prompt.length;
     if (c.kind === 'help') return helpText(SITE).length + c.prompt.length;
@@ -148,7 +152,7 @@ async function grade(c, output, claude) {
 
 if (process.argv.includes("--inspect-case")) {
   const c = SPEC.cases.find((x) => x.id === arg("--inspect-case"));
-  const store = caseStore(c);
+  const store = await caseStore(c);
   const s = (await prepareReview(store.db, { weekEnd: c.weekEnd, today: addDays(c.weekEnd, 1), catalog })).summary;
   console.log(JSON.stringify({ notes: s.notes, labs: s.labs, medications: s.medications?.current?.map((m) => m.name) }, null, 1).slice(0, 2500));
   process.exit(0);

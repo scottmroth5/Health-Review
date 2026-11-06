@@ -46,7 +46,8 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import Anthropic from '@anthropic-ai/sdk';
 import { openHealthStore } from '../db/store.js';
-import { scopeDb } from '../db/scope.js';
+import { scopeDatabase, scopeDb } from '../db/scope.js';
+import { createSqliteDatabase } from '../db/database.ts';
 import { OWNER_ID } from '../db/users.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL } from '../agent/claude.js';
 import { prepareReview, runReview } from '../agent/review.js';
@@ -64,7 +65,7 @@ async function loadCases() {
 }
 
 /** A store over a fresh in-memory copy of the real database, with the case's synthetic additions. */
-function caseStore(input) {
+async function caseStore(input) {
   if (!snapshot) {
     const real = openHealthStore();
     snapshot = Buffer.from(real.db.serialize());
@@ -75,7 +76,9 @@ function caseStore(input) {
     snapshot[19] = 1;
   }
   // The owner's weeks: every query on the copy is scoped to user 1 (db/scope.js).
-  const db = scopeDb(new Database(snapshot), OWNER_ID);
+  const raw = new Database(snapshot);
+  const db = scopeDb(raw, OWNER_ID);
+  const adb = scopeDatabase(createSqliteDatabase(raw), OWNER_ID);
   db.pragma('foreign_keys = ON');
   const o = input.overlay ?? {};
   if (o.checkinNote) {
@@ -99,9 +102,9 @@ function caseStore(input) {
     const med = db.prepare(`SELECT m.id, p.timings FROM medications m JOIN medication_periods p ON p.medication_id = m.id AND p.user_id = m.user_id
       WHERE m.user_id = @uid AND m.kind = 'medication' AND p.stopped_on IS NULL AND p.started_on < ? ORDER BY m.name LIMIT 1`).get(o.medicationChange.date);
     if (!med) throw Object.assign(new Error('no current prescription medication to change'), { failure_class: 'harness' });
-    changeMedication(db, med.id, { dose: o.medicationChange.dose, timings: JSON.parse(med.timings), effective_on: o.medicationChange.date });
+    await changeMedication(adb, med.id, { dose: o.medicationChange.dose, timings: JSON.parse(med.timings), effective_on: o.medicationChange.date });
   }
-  return { db, tx: (fn) => db.transaction(fn)(), close: () => db.close() };
+  return { db, adb, raw, tx: (fn) => db.transaction(fn)(), close: () => db.close() };
 }
 
 const draftOf = (response) => JSON.parse(response.content.filter((b) => b.type === 'text').map((b) => b.text).join(''));
@@ -113,7 +116,7 @@ const sumUsage = (calls) => {
 
 /** Runs the real review pipeline on the case, recording every Claude call. */
 async function runCase(input, ctx) {
-  const store = caseStore(input);
+  const store = await caseStore(input);
   try {
     const today = addDays(input.weekEnd, 1);
     const prep = await prepareReview(store.db, { weekEnd: input.weekEnd, today });

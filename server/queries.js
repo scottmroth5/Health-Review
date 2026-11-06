@@ -35,62 +35,62 @@ export const localDate = (date = new Date()) => ownerDate(date);
 
 // ---- one day ----
 
-export function getDay(db, date) {
-  const checkin = db.prepare('SELECT * FROM checkins WHERE user_id = @uid AND date = ?').get(date) ?? null;
-  const drinking = db.prepare('SELECT * FROM drinking_days WHERE user_id = @uid AND date = ?').get(date) ?? null;
-  return { date, checkin, drinking: drinking && { ...drinking, alcohol: alcoholOf(drinking) }, medications: dayMedications(db, date) };
+export async function getDay(db, date) {
+  const checkin = await db.prepare('SELECT * FROM checkins WHERE user_id = @uid AND date = ?').get(date) ?? null;
+  const drinking = await db.prepare('SELECT * FROM drinking_days WHERE user_id = @uid AND date = ?').get(date) ?? null;
+  return { date, checkin, drinking: drinking && { ...drinking, alcohol: alcoholOf(drinking) }, medications: await dayMedications(db, date) };
 }
 
 /** Saves the day's check-in from the UI (daily cadence). Body fields mark the day as measured. */
-export function saveCheckin(db, date, body) {
+export async function saveCheckin(db, date, body) {
   const row = { date, notes: body.notes?.trim() || null };
   for (const f of [...SCALE_FIELDS, ...BODY_FIELDS]) row[f] = body[f] ?? null;
   row.body_measured_on = BODY_FIELDS.some((f) => row[f] !== null) ? date : null;
   const cols = [...SCALE_FIELDS, ...BODY_FIELDS, 'body_measured_on', 'notes'];
-  db.prepare(`INSERT INTO checkins (user_id, date, cadence, ${cols.join(', ')}, source, updated_at)
+  await db.prepare(`INSERT INTO checkins (user_id, date, cadence, ${cols.join(', ')}, source, updated_at)
     VALUES (@uid, @date, 'daily', ${cols.map((c) => `@${c}`).join(', ')}, 'ui', @updated_at)
     ON CONFLICT (user_id, date) DO UPDATE SET cadence = 'daily', ${cols.map((c) => `${c} = excluded.${c}`).join(', ')},
       source = 'ui', updated_at = excluded.updated_at`).run({ ...row, updated_at: now() });
-  return getDay(db, date).checkin;
+  return (await getDay(db, date)).checkin;
 }
 
 /** Saves the day's drinks from the UI. All zeros is a deliberate no-drink day. */
-export function saveDrinking(db, date, body) {
+export async function saveDrinking(db, date, body) {
   const row = { date, setting: body.setting?.trim() || null, notes: body.notes?.trim() || null };
   for (const f of DRINK_COUNT_FIELDS) row[f] = body[f] ?? 0;
   row.mood_before = body.mood_before ?? null;
   row.mood_after = body.mood_after ?? null;
   const cols = [...DRINK_COUNT_FIELDS, 'setting', 'mood_before', 'mood_after', 'notes'];
-  db.prepare(`INSERT INTO drinking_days (user_id, date, ${cols.join(', ')}, source, updated_at)
+  await db.prepare(`INSERT INTO drinking_days (user_id, date, ${cols.join(', ')}, source, updated_at)
     VALUES (@uid, @date, ${cols.map((c) => `@${c}`).join(', ')}, 'ui', @updated_at)
     ON CONFLICT (user_id, date) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(', ')},
       source = 'ui', updated_at = excluded.updated_at`).run({ ...row, updated_at: now() });
-  return getDay(db, date).drinking;
+  return (await getDay(db, date)).drinking;
 }
 
-export const deleteCheckin = (db, date) => db.prepare('DELETE FROM checkins WHERE user_id = @uid AND date = ?').run(date).changes;
-export const deleteDrinking = (db, date) => db.prepare('DELETE FROM drinking_days WHERE user_id = @uid AND date = ?').run(date).changes;
+export const deleteCheckin = async (db, date) => (await db.prepare('DELETE FROM checkins WHERE user_id = @uid AND date = ?').run(date)).changes;
+export const deleteDrinking = async (db, date) => (await db.prepare('DELETE FROM drinking_days WHERE user_id = @uid AND date = ?').run(date)).changes;
 
 // ---- history ----
 
-export function history(db, from, to) {
+export async function history(db, from, to) {
   // Partial Apple Health days in the range, by the data checks' rule (exported before the day ended, else low steps).
-  const steps = db.prepare('SELECT date, steps, exported_through FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(addDays(from, -28), to);
+  const steps = await db.prepare('SELECT date, steps, exported_through FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(addDays(from, -28), to);
   return {
     partialDays: partialDays(steps, from, to),
-    metrics: db.prepare(`SELECT date, hrv_ms, resting_hr, sleep_total_hr, steps, exercise_min, cardio_recovery_bpm, walking_hr_avg,
+    metrics: await db.prepare(`SELECT date, hrv_ms, resting_hr, sleep_total_hr, steps, exercise_min, cardio_recovery_bpm, walking_hr_avg,
       walking_speed_mph, walking_asymmetry_pct, wrist_temp_f, spo2_pct, breathing_disturbances FROM daily_metrics
       WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`).all(from, to),
-    checkins: db.prepare(`SELECT date, cadence, readiness, energy, mood, stress, nutrition, weight_lbs, body_fat_pct, muscle_mass_lbs, visceral_fat FROM checkins
+    checkins: await db.prepare(`SELECT date, cadence, readiness, energy, mood, stress, nutrition, weight_lbs, body_fat_pct, muscle_mass_lbs, visceral_fat FROM checkins
       WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`).all(from, to),
-    drinking: db.prepare(`SELECT date, ${DRINK_COUNT_FIELDS.join(', ')} FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`)
-      .all(from, to)
+    drinking: (await db.prepare(`SELECT date, ${DRINK_COUNT_FIELDS.join(', ')} FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`)
+      .all(from, to))
       .map((d) => ({ date: d.date, alcohol: alcoholOf(d), cbd: d.cbd })),
   };
 }
 
-export function listReviews(db) {
-  return db.prepare('SELECT week_ending, report_md, created_at, model, warnings FROM reviews WHERE user_id = @uid ORDER BY week_ending DESC').all()
+export async function listReviews(db) {
+  return (await db.prepare('SELECT week_ending, report_md, created_at, model, warnings FROM reviews WHERE user_id = @uid ORDER BY week_ending DESC').all())
     .map((r) => ({ ...r, warnings: r.warnings ? JSON.parse(r.warnings) : [] }));
 }
 
@@ -99,19 +99,19 @@ const parseJson = (text) => { try { return text ? JSON.parse(text) : null; } cat
 const RUN_COLUMNS = 'id, name, status, started_at, finished_at, duration_ms, calls, errors, input_tokens, output_tokens, cost_usd';
 
 /** Recent runs, newest first by when they started (rows can be written out of order, such as the demo's). */
-export function listRuns(db, limit = 100) {
-  return db.prepare(`SELECT ${RUN_COLUMNS} FROM runs WHERE user_id = @uid ORDER BY started_at DESC, id DESC LIMIT ?`).all(limit);
+export async function listRuns(db, limit = 100) {
+  return await db.prepare(`SELECT ${RUN_COLUMNS} FROM runs WHERE user_id = @uid ORDER BY started_at DESC, id DESC LIMIT ?`).all(limit);
 }
 
 /** One run with its parsed meta and summary and its Claude calls, or null. */
-export function getRun(db, id) {
-  const run = db.prepare(`SELECT ${RUN_COLUMNS}, cache_read_tokens, cache_write_tokens, meta, summary FROM runs WHERE user_id = @uid AND id = ?`).get(id);
+export async function getRun(db, id) {
+  const run = await db.prepare(`SELECT ${RUN_COLUMNS}, cache_read_tokens, cache_write_tokens, meta, summary FROM runs WHERE user_id = @uid AND id = ?`).get(id);
   if (!run) return null;
   return {
     ...run,
     meta: parseJson(run.meta),
     summary: parseJson(run.summary),
-    calls: db.prepare(`SELECT id, label, model, stop_reason, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+    calls: await db.prepare(`SELECT id, label, model, stop_reason, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
       cost_usd, duration_ms, error_name, error_message, created_at FROM run_calls WHERE run_id = ? ORDER BY id`).all(id),
   };
 }
@@ -123,29 +123,31 @@ export const JOB_NAMES = ['sync', 'review', 'backup', 'restore-test'];
  * Each scheduled job's last runs, and the last Health Auto Export posts (ingest_log), newest first. Metadata only:
  * status, times and counts, never report, prompt or health text.
  */
-export function jobsActivity(db, { runs = 5, posts = 20 } = {}) {
+export async function jobsActivity(db, { runs = 5, posts = 20 } = {}) {
   const last = db.prepare('SELECT id, status, started_at, finished_at, duration_ms, summary FROM runs WHERE user_id = @uid AND name = ? ORDER BY id DESC LIMIT ?');
+  const jobs = [];
+  for (const name of JOB_NAMES) jobs.push({ name, runs: (await last.all(name, runs)).map((r) => ({ ...r, summary: parseJson(r.summary) })) });
   return {
-    jobs: JOB_NAMES.map((name) => ({ name, runs: last.all(name, runs).map((r) => ({ ...r, summary: parseJson(r.summary) })) })),
-    ingest: db.prepare('SELECT received_at, route, result, counts, error FROM ingest_log WHERE user_id = @uid ORDER BY received_at DESC LIMIT ?').all(posts)
+    jobs,
+    ingest: (await db.prepare('SELECT received_at, route, result, counts, error FROM ingest_log WHERE user_id = @uid ORDER BY received_at DESC LIMIT ?').all(posts))
       .map((r) => ({ ...r, counts: parseJson(r.counts) })),
   };
 }
 
-export function lastSync(db) {
-  const run = db.prepare("SELECT status, started_at, finished_at, summary FROM runs WHERE user_id = @uid AND name = 'sync' ORDER BY id DESC LIMIT 1").get();
+export async function lastSync(db) {
+  const run = await db.prepare("SELECT status, started_at, finished_at, summary FROM runs WHERE user_id = @uid AND name = 'sync' ORDER BY id DESC LIMIT 1").get();
   return run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
 }
 
 /** Data check warnings as of today (info findings, such as a lifting day without a watch workout, stay in the sync log). */
 export async function dataCheckWarnings(db, today, { apple = 'drive', now = new Date() } = {}) {
   // The checks are about Apple Health data; someone who has never had any (entering by hand) has nothing stale or missing.
-  const hasApple = db.prepare('SELECT 1 FROM daily_metrics WHERE user_id = @uid LIMIT 1').get() || db.prepare('SELECT 1 FROM workout_sessions WHERE user_id = @uid LIMIT 1').get();
+  const hasApple = await db.prepare('SELECT 1 FROM daily_metrics WHERE user_id = @uid LIMIT 1').get() || await db.prepare('SELECT 1 FROM workout_sessions WHERE user_id = @uid LIMIT 1').get();
   const warnings = hasApple
     ? dataChecks(await loadDataCheckInput(db, today, { apple, now })).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }))
     : [];
   // The backup restore test (jobs/restore-check.js): its last run failing stays a warning until a later one passes.
-  const test = db.prepare("SELECT status, started_at, summary FROM runs WHERE user_id = @uid AND name = 'restore-test' AND status IN ('ok', 'error') ORDER BY id DESC LIMIT 1").get();
+  const test = await db.prepare("SELECT status, started_at, summary FROM runs WHERE user_id = @uid AND name = 'restore-test' AND status IN ('ok', 'error') ORDER BY id DESC LIMIT 1").get();
   if (test?.status === 'error') {
     const s = parseJson(test.summary) ?? {};
     const why = s.problems?.[0] ?? s.error ?? 'see the Activity tab';
@@ -213,7 +215,7 @@ export function evalSpendRows(evalDir, price) {
  * review eval priced from its saved token counts. Estimates at list prices.
  * @param {{ evalDir?: string, price?: (model: string, usage: object) => number|null, today: string }} options
  */
-export function spend(db, { evalDir, price, today }) {
+export async function spend(db, { evalDir, price, today }) {
   const months = new Map();
   const add = (month, kind, usd) => {
     if (!months.has(month)) months.set(month, emptySpend());
@@ -222,7 +224,7 @@ export function spend(db, { evalDir, price, today }) {
     m.total += usd;
   };
   // started_at is UTC; each run counts in the owner's month (a run at 9pm on the 31st in New York is that month).
-  const runs = db.prepare('SELECT name, started_at, cost_usd AS usd FROM runs WHERE user_id = @uid AND cost_usd > 0').all();
+  const runs = await db.prepare('SELECT name, started_at, cost_usd AS usd FROM runs WHERE user_id = @uid AND cost_usd > 0').all();
   for (const r of runs) add(localDate(new Date(r.started_at)).slice(0, 7), SPEND_KINDS[r.name] ?? 'other', r.usd);
   let unpriced = 0;
   for (const e of price ? evalSpendRows(evalDir, price) : []) {
@@ -311,21 +313,25 @@ export async function reviewStatus(db, today, now = new Date()) {
 
 export const SETTING_KEYS = ['zone2_low_bpm', 'zone2_high_bpm', 'zone3_high_bpm', 'zone4_high_bpm'];
 
-export function getSettings(db) {
-  const rows = db.prepare(`SELECT key, value FROM settings WHERE user_id = @uid AND key IN (${SETTING_KEYS.map(() => '?').join(', ')})`).all(...SETTING_KEYS);
+export async function getSettings(db) {
+  const rows = await db.prepare(`SELECT key, value FROM settings WHERE user_id = @uid AND key IN (${SETTING_KEYS.map(() => '?').join(', ')})`).all(...SETTING_KEYS);
   const values = Object.fromEntries(rows.map((r) => [r.key, Number(r.value)]));
   return Object.fromEntries(SETTING_KEYS.map((k) => [k, values[k] ?? null]));
 }
 
-/** Sets the given keys; null removes a setting. */
-export function saveSettings(db, changes) {
+/**
+ * Sets the given keys; null removes a setting. check (optional) sees the settings as they would be and throws to refuse
+ * them, inside the same transaction. Takes the async handle (docs/adr/0006): it opens a transaction.
+ */
+export async function saveSettings(db, changes, { check } = {}) {
   const upsert = db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
     ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
   const remove = db.prepare('DELETE FROM settings WHERE user_id = @uid AND key = ?');
-  db.transaction(() => {
-    for (const [k, v] of Object.entries(changes)) (v === null ? remove.run(k) : upsert.run(k, String(v), now()));
-  })();
-  return getSettings(db);
+  return db.tx(async () => {
+    check?.({ ...(await getSettings(db)), ...changes });
+    for (const [k, v] of Object.entries(changes)) await (v === null ? remove.run(k) : upsert.run(k, String(v), now()));
+    return getSettings(db);
+  });
 }
 
 // ---- training volume ----
@@ -344,8 +350,8 @@ export async function lifts(db, today) {
 }
 
 /** The VO2 max card for one view. Reads every reading: the tiles (best on record, change vs a year ago) need them all. */
-export function vo2max(db, view, today) {
-  const rows = db.prepare('SELECT date, vo2max FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date').all(today);
+export async function vo2max(db, view, today) {
+  const rows = await db.prepare('SELECT date, vo2max FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date').all(today);
   return vo2maxReport(rows, view, today);
 }
 
@@ -364,9 +370,9 @@ export async function cardioZoneView(db, view, today, group = CARDIO_ZONE_VIEWS[
   const to = buckets.at(-1).to;
   const { zone2, zones } = await loadMetricSettings(db);
   const bounds = zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, ...zones, birthYear: (await loadProfile(db, today)).birthYear, year: Number(today.slice(0, 4)) });
-  const sessions = db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
+  const sessions = await db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
     .all(from, `${addDays(to, 1)}`);
-  const samples = db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${addDays(to, 1)}`);
+  const samples = await db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${addDays(to, 1)}`);
   return { view, bucket: group, bounds, buckets: cardioZones({ sessions, samples, bounds, buckets }) };
 }
 
@@ -399,22 +405,23 @@ function regimenOf({ dose, ingredients }) {
 }
 const openPeriod = (db, id) => db.prepare('SELECT * FROM medication_periods WHERE user_id = @uid AND medication_id = ? AND stopped_on IS NULL').get(id);
 
-function getMedication(db, id) {
-  const m = db.prepare('SELECT id, name, kind, purpose, prescribed, notes, created_at FROM medications WHERE user_id = @uid AND id = ?').get(id);
+async function getMedication(db, id) {
+  const m = await db.prepare('SELECT id, name, kind, purpose, prescribed, notes, created_at FROM medications WHERE user_id = @uid AND id = ?').get(id);
   if (!m) return null;
-  const periods = db.prepare('SELECT * FROM medication_periods WHERE user_id = @uid AND medication_id = ? ORDER BY started_on, id').all(id).map(asPeriod);
+  const periods = (await db.prepare('SELECT * FROM medication_periods WHERE user_id = @uid AND medication_id = ? ORDER BY started_on, id').all(id)).map(asPeriod);
   return { ...m, prescribed: Boolean(m.prescribed), current: periods.find((p) => p.stopped_on === null) ?? null, periods };
 }
 
-function requireMedication(db, id) {
-  const m = getMedication(db, id);
+async function requireMedication(db, id) {
+  const m = await getMedication(db, id);
   if (!m) throw fail(404, 'Medication not found');
   return m;
 }
 
 /** Current ones first (by name), then stopped ones (most recently stopped first). */
-export function listMedications(db) {
-  const all = db.prepare('SELECT id FROM medications WHERE user_id = @uid').all().map((r) => getMedication(db, r.id));
+export async function listMedications(db) {
+  const all = [];
+  for (const r of await db.prepare('SELECT id FROM medications WHERE user_id = @uid').all()) all.push(await getMedication(db, r.id));
   const lastStop = (m) => m.periods.reduce((d, p) => (p.stopped_on > d ? p.stopped_on : d), '');
   return [
     ...all.filter((m) => m.current).sort((a, b) => a.name.localeCompare(b.name)),
@@ -423,15 +430,15 @@ export function listMedications(db) {
 }
 
 /** Throws unless [start, stop) fits around the medication's existing periods. */
-function assertNoOverlap(db, id, start, stop) {
-  const periods = db.prepare('SELECT started_on, stopped_on FROM medication_periods WHERE user_id = @uid AND medication_id = ?').all(id);
+async function assertNoOverlap(db, id, start, stop) {
+  const periods = await db.prepare('SELECT started_on, stopped_on FROM medication_periods WHERE user_id = @uid AND medication_id = ?').all(id);
   const clash = periods.find((p) => start < (p.stopped_on ?? '9999-12-31') && p.started_on < (stop ?? '9999-12-31'));
   if (clash) throw fail(409, `Those dates overlap an existing period that started ${clash.started_on}`);
 }
 
-function insertPeriod(db, id, { dose, ingredients, timings, started_on, stopped_on = null, stop_reason = null, start_estimated = false }) {
+async function insertPeriod(db, id, { dose, ingredients, timings, started_on, stopped_on = null, stop_reason = null, start_estimated = false }) {
   const r = regimenOf({ dose, ingredients });
-  db.prepare(`INSERT INTO medication_periods (user_id, medication_id, dose, ingredients, timings, started_on, stopped_on, stop_reason, start_estimated, created_at)
+  await db.prepare(`INSERT INTO medication_periods (user_id, medication_id, dose, ingredients, timings, started_on, stopped_on, stop_reason, start_estimated, created_at)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, r.dose, r.ingredients, JSON.stringify(timings), started_on, stopped_on, stop_reason?.trim() || null, start_estimated ? 1 : 0, now());
 }
@@ -443,10 +450,10 @@ function insertPeriod(db, id, { dose, ingredients, timings, started_on, stopped_
  * one-day adjustment: dose (what was taken instead of defaultDose) and movedTo (the slot it was taken in instead of
  * its scheduled timing); null means the default.
  */
-export function dayMedications(db, date) {
-  const rows = db.prepare(`SELECT m.id, m.name, m.kind, p.dose, p.ingredients, p.timings FROM medication_periods p JOIN medications m ON m.id = p.medication_id AND m.user_id = p.user_id
+export async function dayMedications(db, date) {
+  const rows = await db.prepare(`SELECT m.id, m.name, m.kind, p.dose, p.ingredients, p.timings FROM medication_periods p JOIN medications m ON m.id = p.medication_id AND m.user_id = p.user_id
     WHERE p.user_id = @uid AND p.started_on <= ? AND (p.stopped_on IS NULL OR p.stopped_on > ?) ORDER BY m.kind, m.name`).all(date, date);
-  const saved = db.prepare('SELECT medication_id, timing, taken, dose, moved_to FROM medication_doses WHERE user_id = @uid AND date = ?').all(date);
+  const saved = await db.prepare('SELECT medication_id, timing, taken, dose, moved_to FROM medication_doses WHERE user_id = @uid AND date = ?').all(date);
   const savedOf = (id, timing) => saved.find((s) => s.medication_id === id && s.timing === timing);
   return {
     saved: saved.length > 0,
@@ -460,129 +467,130 @@ export function dayMedications(db, date) {
   };
 }
 
+// The functions below that change medications, labs or prompt sections read and then write in one transaction, so they
+// take the async handle (docs/adr/0006; v3 Phase 1B slice 4a).
+
 /**
  * Saves the day's check-off: every listed slot is recorded taken or not, replacing what was saved before. Each slot
  * must belong to a medication in effect that day. An optional dose or moved_to adjusts that slot for this day only; a
  * value equal to the default is stored as no adjustment.
  */
-export function saveDoses(db, date, doses) {
-  const day = dayMedications(db, date);
-  const expected = new Map(day.items.flatMap((m) => m.slots.map((s) => [`${m.id}|${s.timing}`, m])));
-  for (const d of doses) {
-    if (!expected.has(`${d.medication_id}|${d.timing}`)) throw fail(400, 'One of the checked items is not in effect on that day');
-  }
-  db.transaction(() => {
-    db.prepare('DELETE FROM medication_doses WHERE user_id = @uid AND date = ?').run(date);
+export async function saveDoses(db, date, doses) {
+  return db.tx(async () => {
+    const day = await dayMedications(db, date);
+    const expected = new Map(day.items.flatMap((m) => m.slots.map((s) => [`${m.id}|${s.timing}`, m])));
+    for (const d of doses) {
+      if (!expected.has(`${d.medication_id}|${d.timing}`)) throw fail(400, 'One of the checked items is not in effect on that day');
+    }
+    await db.prepare('DELETE FROM medication_doses WHERE user_id = @uid AND date = ?').run(date);
     const ins = db.prepare('INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at, dose, moved_to) VALUES (@uid, ?, ?, ?, ?, ?, ?, ?)');
     for (const d of doses) {
       const item = expected.get(`${d.medication_id}|${d.timing}`);
       const dose = d.dose?.trim() || null;
       const adjustedDose = dose && dose !== (doseText(item) ?? '').trim() ? dose : null;
       const movedTo = d.moved_to && d.moved_to !== d.timing ? d.moved_to : null;
-      ins.run(date, d.medication_id, d.timing, d.taken ? 1 : 0, now(), adjustedDose, movedTo);
+      await ins.run(date, d.medication_id, d.timing, d.taken ? 1 : 0, now(), adjustedDose, movedTo);
     }
-  })();
-  return dayMedications(db, date);
+    return dayMedications(db, date);
+  });
 }
 
-export const clearDoses = (db, date) => db.prepare('DELETE FROM medication_doses WHERE user_id = @uid AND date = ?').run(date).changes;
+export const clearDoses = async (db, date) => (await db.prepare('DELETE FROM medication_doses WHERE user_id = @uid AND date = ?').run(date)).changes;
 
 /**
  * Adds a medication, or a new period for one that is not currently taken. A stopped_on date
  * records a past course. Adding a name that is currently taken is a conflict.
  */
-export function addMedication(db, body) {
+export async function addMedication(db, body) {
   if (body.stopped_on && body.stopped_on < body.started_on) throw fail(400, 'The stop date cannot be before the start date');
-  return db.transaction(() => {
-    const existing = db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').get(body.name.trim());
+  return db.tx(async () => {
+    const existing = await db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').get(body.name.trim());
     let id = existing?.id;
     if (id) {
-      if (openPeriod(db, id) && !body.stopped_on) throw fail(409, `${body.name.trim()} is already in your current list; use Change instead`);
-      assertNoOverlap(db, id, body.started_on, body.stopped_on ?? null);
+      if (await openPeriod(db, id) && !body.stopped_on) throw fail(409, `${body.name.trim()} is already in your current list; use Change instead`);
+      await assertNoOverlap(db, id, body.started_on, body.stopped_on ?? null);
       const sets = ['kind', 'purpose', 'prescribed', 'notes'].filter((k) => body[k] !== undefined);
       if (sets.length) {
-        db.prepare(`UPDATE medications SET ${sets.map((k) => `${k} = @${k}`).join(', ')} WHERE user_id = @uid AND id = @id`)
+        await db.prepare(`UPDATE medications SET ${sets.map((k) => `${k} = @${k}`).join(', ')} WHERE user_id = @uid AND id = @id`)
           .run({ id, kind: body.kind, purpose: body.purpose?.trim() || null, prescribed: body.prescribed ? 1 : 0, notes: body.notes?.trim() || null });
       }
     } else {
-      id = db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id')
-        .get(body.name.trim(), body.kind, body.purpose?.trim() || null, body.prescribed ? 1 : 0, body.notes?.trim() || null, now()).id;
+      id = (await db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id')
+        .get(body.name.trim(), body.kind, body.purpose?.trim() || null, body.prescribed ? 1 : 0, body.notes?.trim() || null, now())).id;
     }
-    insertPeriod(db, id, body);
+    await insertPeriod(db, id, body);
     return getMedication(db, id);
-  })();
+  });
 }
 
 /**
  * A dose or timing change from effective_on, kept as a new period. A correction (or a change on the
  * current period's start day) fixes the current period in place instead, so no change is recorded.
  */
-export function changeMedication(db, id, { dose, ingredients, timings, effective_on, correction = false }) {
-  requireMedication(db, id);
-  return db.transaction(() => {
-    const open = openPeriod(db, id);
+export async function changeMedication(db, id, { dose, ingredients, timings, effective_on, correction = false }) {
+  return db.tx(async () => {
+    await requireMedication(db, id);
+    const open = await openPeriod(db, id);
     if (!open) throw fail(409, 'Not currently taken; use Start again');
     if (!correction && !effective_on) throw fail(400, 'Choose the date the change took effect, or mark it as a correction');
     if (!correction && effective_on < open.started_on) throw fail(400, `The change cannot be before the current period started (${open.started_on})`);
     if (correction || effective_on === open.started_on) {
       const r = regimenOf({ dose, ingredients });
-      db.prepare('UPDATE medication_periods SET dose = ?, ingredients = ?, timings = ? WHERE user_id = @uid AND id = ?').run(r.dose, r.ingredients, JSON.stringify(timings), open.id);
+      await db.prepare('UPDATE medication_periods SET dose = ?, ingredients = ?, timings = ? WHERE user_id = @uid AND id = ?').run(r.dose, r.ingredients, JSON.stringify(timings), open.id);
     } else {
-      db.prepare('UPDATE medication_periods SET stopped_on = ? WHERE user_id = @uid AND id = ?').run(effective_on, open.id);
-      insertPeriod(db, id, { dose, ingredients, timings, started_on: effective_on });
+      await db.prepare('UPDATE medication_periods SET stopped_on = ? WHERE user_id = @uid AND id = ?').run(effective_on, open.id);
+      await insertPeriod(db, id, { dose, ingredients, timings, started_on: effective_on });
     }
     return getMedication(db, id);
-  })();
+  });
 }
 
-export function stopMedication(db, id, { stopped_on, reason }) {
-  requireMedication(db, id);
-  const open = openPeriod(db, id);
-  if (!open) throw fail(409, 'Not currently taken');
-  if (stopped_on < open.started_on) throw fail(400, `The stop date cannot be before it started (${open.started_on})`);
-  db.prepare('UPDATE medication_periods SET stopped_on = ?, stop_reason = ? WHERE user_id = @uid AND id = ?').run(stopped_on, reason?.trim() || null, open.id);
-  return getMedication(db, id);
-}
-
-export function startMedication(db, id, { dose, ingredients, timings, started_on }) {
-  requireMedication(db, id);
-  return db.transaction(() => {
-    if (openPeriod(db, id)) throw fail(409, 'Already being taken; use Change instead');
-    assertNoOverlap(db, id, started_on, null);
-    insertPeriod(db, id, { dose, ingredients, timings, started_on });
+export async function stopMedication(db, id, { stopped_on, reason }) {
+  return db.tx(async () => {
+    await requireMedication(db, id);
+    const open = await openPeriod(db, id);
+    if (!open) throw fail(409, 'Not currently taken');
+    if (stopped_on < open.started_on) throw fail(400, `The stop date cannot be before it started (${open.started_on})`);
+    await db.prepare('UPDATE medication_periods SET stopped_on = ?, stop_reason = ? WHERE user_id = @uid AND id = ?').run(stopped_on, reason?.trim() || null, open.id);
     return getMedication(db, id);
-  })();
+  });
+}
+
+export async function startMedication(db, id, { dose, ingredients, timings, started_on }) {
+  return db.tx(async () => {
+    await requireMedication(db, id);
+    if (await openPeriod(db, id)) throw fail(409, 'Already being taken; use Change instead');
+    await assertNoOverlap(db, id, started_on, null);
+    await insertPeriod(db, id, { dose, ingredients, timings, started_on });
+    return getMedication(db, id);
+  });
 }
 
 /** Label edits (name, type, purpose, prescribed, notes); these are not dated events. */
-export function updateMedicationDetails(db, id, changes) {
-  requireMedication(db, id);
-  const keys = ['name', 'kind', 'purpose', 'prescribed', 'notes'].filter((k) => changes[k] !== undefined);
-  const values = { id, ...changes, name: changes.name?.trim(), purpose: changes.purpose?.trim() || null, prescribed: changes.prescribed ? 1 : 0, notes: changes.notes?.trim() || null };
-  try {
-    db.prepare(`UPDATE medications SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE user_id = @uid AND id = @id`).run(values);
-  } catch (err) {
-    if (/UNIQUE/.test(err.message)) throw fail(409, 'Another entry already has that name');
-    throw err;
-  }
-  return getMedication(db, id);
+export async function updateMedicationDetails(db, id, changes) {
+  return db.tx(async () => {
+    await requireMedication(db, id);
+    const keys = ['name', 'kind', 'purpose', 'prescribed', 'notes'].filter((k) => changes[k] !== undefined);
+    const values = { id, ...changes, name: changes.name?.trim(), purpose: changes.purpose?.trim() || null, prescribed: changes.prescribed ? 1 : 0, notes: changes.notes?.trim() || null };
+    try {
+      await db.prepare(`UPDATE medications SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE user_id = @uid AND id = @id`).run(values);
+    } catch (err) {
+      if (/UNIQUE/.test(err.message)) throw fail(409, 'Another entry already has that name');
+      throw err;
+    }
+    return getMedication(db, id);
+  });
 }
 
-export const deleteMedication = (db, id) => db.prepare('DELETE FROM medications WHERE user_id = @uid AND id = ?').run(id).changes > 0;
+export const deleteMedication = async (db, id) => (await db.prepare('DELETE FROM medications WHERE user_id = @uid AND id = ?').run(id)).changes > 0;
 
-/**
- * Combines items taken as one pill into one item with ingredients, for past history and from now on. Every start,
- * change and stop date of any of them starts a new period whose ingredients are the items in effect then, at their doses
- * (an item with ingredients is flattened); consecutive identical periods merge. A period that begins only where estimated
- * starts began stays estimated (no start event). All periods use the one slot given: the old slots count as a
- * correction, not a dated change. Each logged day becomes one check-off in that slot, taken if any item was taken that
- * day; one-day adjustments on the old rows are dropped. The old items are removed. preview returns the plan unchanged.
- */
-export function combineMedications(db, { ids, name, timing, preview = false }) {
-  const items = [...new Set(ids)].map((id) => requireMedication(db, id));
+/** combineMedications' plan from what is stored now (reads only): the items, the combined periods and the logged days. */
+async function combinePlan(db, { ids, name, timing }) {
+  const items = [];
+  for (const id of new Set(ids)) items.push(await requireMedication(db, id));
   if (items.length < 2) throw fail(400, 'Choose at least two items to combine');
   const newName = name.trim();
-  const clash = db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').get(newName);
+  const clash = await db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').get(newName);
   if (clash && !items.some((m) => m.id === clash.id)) throw fail(409, 'Another entry already has that name');
 
   const periods = items.flatMap((m) => m.periods.map((p) => ({ ...p, item: m })));
@@ -617,7 +625,7 @@ export function combineMedications(db, { ids, name, timing, preview = false }) {
     seg.stop_reason = reasons.join('; ') || null;
   });
 
-  const marks = db.prepare(`SELECT date, taken, dose, moved_to FROM medication_doses WHERE user_id = @uid AND medication_id IN (${items.map(() => '?').join(', ')})`)
+  const marks = await db.prepare(`SELECT date, taken, dose, moved_to FROM medication_doses WHERE user_id = @uid AND medication_id IN (${items.map(() => '?').join(', ')})`)
     .all(...items.map((m) => m.id));
   const days = new Map();
   for (const r of marks) {
@@ -642,25 +650,38 @@ export function combineMedications(db, { ids, name, timing, preview = false }) {
     adjustmentsDropped: marks.filter((r) => r.dose !== null || r.moved_to !== null).length,
   };
   for (const seg of segments) regimenOf({ ingredients: seg.ingredients }); // the same ingredient in two items is refused
-  if (preview) return { preview: true, ...plan };
+  return { items, segments, days, plan };
+}
 
-  return db.transaction(() => {
-    for (const m of items) db.prepare('DELETE FROM medications WHERE user_id = @uid AND id = ?').run(m.id);
-    const id = db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id')
-      .get(plan.name, plan.kind, plan.purpose, plan.prescribed ? 1 : 0, plan.notes, now()).id;
-    for (const seg of segments) insertPeriod(db, id, { ...seg, timings: [timing] });
+/**
+ * Combines items taken as one pill into one item with ingredients, for past history and from now on. Every start,
+ * change and stop date of any of them starts a new period whose ingredients are the items in effect then, at their doses
+ * (an item with ingredients is flattened); consecutive identical periods merge. A period that begins only where estimated
+ * starts began stays estimated (no start event). All periods use the one slot given: the old slots count as a
+ * correction, not a dated change. Each logged day becomes one check-off in that slot, taken if any item was taken that
+ * day; one-day adjustments on the old rows are dropped. The old items are removed. preview returns the plan unchanged
+ * (reads only, either handle); combining plans and writes in one transaction.
+ */
+export async function combineMedications(db, { ids, name, timing, preview = false }) {
+  if (preview) return { preview: true, ...(await combinePlan(db, { ids, name, timing })).plan };
+  return db.tx(async () => {
+    const { items, segments, days, plan } = await combinePlan(db, { ids, name, timing });
+    for (const m of items) await db.prepare('DELETE FROM medications WHERE user_id = @uid AND id = ?').run(m.id);
+    const id = (await db.prepare('INSERT INTO medications (user_id, name, kind, purpose, prescribed, notes, created_at) VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id')
+      .get(plan.name, plan.kind, plan.purpose, plan.prescribed ? 1 : 0, plan.notes, now())).id;
+    for (const seg of segments) await insertPeriod(db, id, { ...seg, timings: [timing] });
     const ins = db.prepare('INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at) VALUES (@uid, ?, ?, ?, ?, ?)');
-    for (const [date, d] of days) ins.run(date, id, timing, d.any ? 1 : 0, now());
-    return { preview: false, ...plan, medication: getMedication(db, id) };
-  })();
+    for (const [date, d] of days) await ins.run(date, id, timing, d.any ? 1 : 0, now());
+    return { preview: false, ...plan, medication: await getMedication(db, id) };
+  });
 }
 
 /** Weekly check-offs (taken out of logged) for each current item, oldest week first, ending with this week so far. */
-export function medicationCheckoffs(db, today, weeks = 12) {
-  const current = db.prepare(`SELECT m.id, m.name FROM medications m JOIN medication_periods p ON p.medication_id = m.id AND p.user_id = m.user_id
+export async function medicationCheckoffs(db, today, weeks = 12) {
+  const current = await db.prepare(`SELECT m.id, m.name FROM medications m JOIN medication_periods p ON p.medication_id = m.id AND p.user_id = m.user_id
     WHERE m.user_id = @uid AND p.stopped_on IS NULL ORDER BY m.name`).all();
   const from = addDays(today, -7 * weeks);
-  const doses = db.prepare('SELECT date, medication_id, taken FROM medication_doses WHERE user_id = @uid AND date BETWEEN ? AND ?').all(from, today);
+  const doses = await db.prepare('SELECT date, medication_id, taken FROM medication_doses WHERE user_id = @uid AND date BETWEEN ? AND ?').all(from, today);
   const { weekEnds, items } = weeklyCheckoffs(doses, { weeks, today });
   const empty = () => weekEnds.map((weekEnd) => ({ weekEnd, taken: 0, logged: 0 }));
   return { weekEnds, items: current.map((m) => ({ id: m.id, name: m.name, weeks: items.get(m.id) ?? empty() })) };
@@ -672,8 +693,8 @@ export async function medicationImpact(db, today) {
   const events = medicationEvents(medications, periods).filter((e) => e.date <= today);
   if (!events.length) return [];
   const from = addDays(events[0].date, -28);
-  const metrics = db.prepare('SELECT date, hrv_ms, resting_hr, sleep_total_hr FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ?').all(from, today);
-  const checkins = db.prepare('SELECT date, readiness, energy, mood, stress FROM checkins WHERE user_id = @uid AND date BETWEEN ? AND ?').all(from, today);
+  const metrics = await db.prepare('SELECT date, hrv_ms, resting_hr, sleep_total_hr FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ?').all(from, today);
+  const checkins = await db.prepare('SELECT date, readiness, energy, mood, stress FROM checkins WHERE user_id = @uid AND date BETWEEN ? AND ?').all(from, today);
   return events
     .map((e) => ({ ...e, impact: eventImpact(e, metrics, checkins, today, events) }))
     .reverse();
@@ -688,13 +709,13 @@ export async function medicationImpact(db, today) {
  * Lab tests by panel with their results, newest first. Each test carries the range in effect (yours, or typical from
  * config/lab-ranges.json), the typical one for "Use typical range", and each result where it sits (below, within, above).
  */
-export function listLabs(db, rangesConfig = null) {
-  const tests = db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid ORDER BY position, name').all()
+export async function listLabs(db, rangesConfig = null) {
+  const tests = (await db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid ORDER BY position, name').all())
     .map(({ ref_low, ref_high, ref_set, ...t }) => {
       const range = effectiveRange({ name: t.name, ref_low, ref_high, ref_set }, rangesConfig);
       return { ...t, range, typicalRange: typicalRange(t.name, rangesConfig) };
     });
-  const results = db.prepare('SELECT id, test_id, drawn_on, value, value_text, source, corrected_from, corrected_from_date FROM lab_results WHERE user_id = @uid ORDER BY drawn_on DESC').all();
+  const results = await db.prepare('SELECT id, test_id, drawn_on, value, value_text, source, corrected_from, corrected_from_date FROM lab_results WHERE user_id = @uid ORDER BY drawn_on DESC').all();
   const panels = [];
   for (const t of tests) {
     const mine = results.filter((r) => r.test_id === t.id).map(({ test_id, ...r }) => ({ ...r, rangeStatus: rangeStatus(r.value, t.range) }));
@@ -713,30 +734,30 @@ const labValue = (text) => {
 };
 
 /** Adds an app-entered result for an existing test (test_id) or a new or existing test by name. */
-export function addLabResult(db, { test_id, name, panel, unit, drawn_on, value }) {
-  return db.transaction(() => {
+export async function addLabResult(db, { test_id, name, panel, unit, drawn_on, value }) {
+  return db.tx(async () => {
     let id = test_id;
     if (!id) {
       if (!name?.trim()) throw fail(400, 'Choose a test or enter a new test name');
-      id = db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?').get(name.trim())?.id;
-      id ??= db.prepare('INSERT INTO lab_tests (user_id, name, panel, unit, created_at) VALUES (@uid, ?, ?, ?, ?) RETURNING id')
-        .get(name.trim(), panel?.trim() || null, unit?.trim() || null, now()).id;
-    } else if (!db.prepare('SELECT 1 FROM lab_tests WHERE user_id = @uid AND id = ?').get(id)) {
+      id = (await db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?').get(name.trim()))?.id;
+      id ??= (await db.prepare('INSERT INTO lab_tests (user_id, name, panel, unit, created_at) VALUES (@uid, ?, ?, ?, ?) RETURNING id')
+        .get(name.trim(), panel?.trim() || null, unit?.trim() || null, now())).id;
+    } else if (!await db.prepare('SELECT 1 FROM lab_tests WHERE user_id = @uid AND id = ?').get(id)) {
       throw fail(404, 'Test not found');
     }
-    const existing = db.prepare('SELECT source FROM lab_results WHERE user_id = @uid AND test_id = ? AND drawn_on = ?').get(id, drawn_on);
+    const existing = await db.prepare('SELECT source FROM lab_results WHERE user_id = @uid AND test_id = ? AND drawn_on = ?').get(id, drawn_on);
     if (existing) {
       throw fail(409, existing.source === 'sheet' ? 'That test already has a result from the Google Sheet on that date; change it in the sheet' : 'That test already has a result on that date; edit it instead');
     }
     const v = labValue(value);
-    const rid = db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?) RETURNING id")
-      .get(id, drawn_on, v.value, v.value_text, now()).id;
+    const rid = (await db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?) RETURNING id")
+      .get(id, drawn_on, v.value, v.value_text, now())).id;
     return db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(rid);
-  })();
+  });
 }
 
-function requireResult(db, id) {
-  const r = db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(id);
+async function requireResult(db, id) {
+  const r = await db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(id);
   if (!r) throw fail(404, 'Result not found');
   return r;
 }
@@ -745,65 +766,71 @@ function requireResult(db, id) {
  * Corrects a result's value or date. A sheet result becomes an app correction: it keeps the sheet's
  * original value and date, and sync never overwrites it or re-adds the sheet's copy.
  */
-export function updateLabResult(db, id, { drawn_on, value }) {
-  const r = requireResult(db, id);
-  const v = value === undefined ? { value: r.value, value_text: r.value_text } : labValue(value);
-  const date = drawn_on ?? r.drawn_on;
-  if (v.value_text === r.value_text && date === r.drawn_on) return r;
-  const fromSheet = r.source === 'sheet';
-  try {
-    db.prepare(`UPDATE lab_results SET drawn_on = ?, value = ?, value_text = ?, source = 'ui', updated_at = ?,
-        corrected_from = ?, corrected_from_date = ? WHERE user_id = @uid AND id = ?`)
-      .run(date, v.value, v.value_text, now(), fromSheet ? r.value_text : r.corrected_from, fromSheet ? r.drawn_on : r.corrected_from_date, id);
-  } catch (err) {
-    if (/UNIQUE/.test(err.message)) throw fail(409, 'That test already has a result on that date');
-    throw err;
-  }
-  return db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(id);
+export async function updateLabResult(db, id, { drawn_on, value }) {
+  return db.tx(async () => {
+    const r = await requireResult(db, id);
+    const v = value === undefined ? { value: r.value, value_text: r.value_text } : labValue(value);
+    const date = drawn_on ?? r.drawn_on;
+    if (v.value_text === r.value_text && date === r.drawn_on) return r;
+    const fromSheet = r.source === 'sheet';
+    try {
+      await db.prepare(`UPDATE lab_results SET drawn_on = ?, value = ?, value_text = ?, source = 'ui', updated_at = ?,
+          corrected_from = ?, corrected_from_date = ? WHERE user_id = @uid AND id = ?`)
+        .run(date, v.value, v.value_text, now(), fromSheet ? r.value_text : r.corrected_from, fromSheet ? r.drawn_on : r.corrected_from_date, id);
+    } catch (err) {
+      if (/UNIQUE/.test(err.message)) throw fail(409, 'That test already has a result on that date');
+      throw err;
+    }
+    return db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(id);
+  });
 }
 
 /**
  * Deletes a result added in the app. Undoing a correction restores the sheet's original value and
  * date right away. Sheet results cannot be deleted here, since the next sync would bring them back.
  */
-export function deleteLabResult(db, id) {
-  const r = requireResult(db, id);
-  if (r.source === 'sheet') throw fail(409, 'This result comes from the Google Sheet and would return on the next sync; correct its value, or remove it from the sheet');
-  if (r.corrected_from_date) {
-    const original = labValue(r.corrected_from);
-    try {
-      db.prepare(`UPDATE lab_results SET drawn_on = ?, value = ?, value_text = ?, source = 'sheet', corrected_from = NULL,
-          corrected_from_date = NULL, updated_at = ? WHERE user_id = @uid AND id = ?`).run(r.corrected_from_date, original.value, original.value_text, now(), id);
-    } catch (err) {
-      if (/UNIQUE/.test(err.message)) throw fail(409, 'Another result already sits on the original date; move or delete it first');
-      throw err;
+export async function deleteLabResult(db, id) {
+  return db.tx(async () => {
+    const r = await requireResult(db, id);
+    if (r.source === 'sheet') throw fail(409, 'This result comes from the Google Sheet and would return on the next sync; correct its value, or remove it from the sheet');
+    if (r.corrected_from_date) {
+      const original = labValue(r.corrected_from);
+      try {
+        await db.prepare(`UPDATE lab_results SET drawn_on = ?, value = ?, value_text = ?, source = 'sheet', corrected_from = NULL,
+            corrected_from_date = NULL, updated_at = ? WHERE user_id = @uid AND id = ?`).run(r.corrected_from_date, original.value, original.value_text, now(), id);
+      } catch (err) {
+        if (/UNIQUE/.test(err.message)) throw fail(409, 'Another result already sits on the original date; move or delete it first');
+        throw err;
+      }
+      return { restored: true };
     }
-    return { restored: true };
-  }
-  db.prepare('DELETE FROM lab_results WHERE user_id = @uid AND id = ?').run(id);
-  return { restored: false };
+    await db.prepare('DELETE FROM lab_results WHERE user_id = @uid AND id = ?').run(id);
+    return { restored: false };
+  });
 }
 
 /** Unit, panel, or reference range (your own from the lab report, either bound null; reset_range goes back to typical). */
-export function updateLabTest(db, id, { unit, panel, ref_low, ref_high, reset_range }) {
-  if (!db.prepare('SELECT 1 FROM lab_tests WHERE user_id = @uid AND id = ?').get(id)) throw fail(404, 'Test not found');
-  const sets = [];
-  const values = { id };
-  if (unit !== undefined) { sets.push('unit = @unit'); values.unit = unit?.trim() || null; }
-  if (panel !== undefined) { sets.push('panel = @panel'); values.panel = panel?.trim() || null; }
-  if (reset_range) {
-    sets.push('ref_low = NULL', 'ref_high = NULL', 'ref_set = 0');
-  } else if (ref_low !== undefined || ref_high !== undefined) {
-    if (ref_low !== undefined && ref_low !== null && ref_high !== undefined && ref_high !== null && ref_low > ref_high) {
-      throw fail(400, 'The low end of the range is above the high end');
+export async function updateLabTest(db, id, { unit, panel, ref_low, ref_high, reset_range }) {
+  return db.tx(async () => {
+    if (!await db.prepare('SELECT 1 FROM lab_tests WHERE user_id = @uid AND id = ?').get(id)) throw fail(404, 'Test not found');
+    const sets = [];
+    const values = { id };
+    if (unit !== undefined) { sets.push('unit = @unit'); values.unit = unit?.trim() || null; }
+    if (panel !== undefined) { sets.push('panel = @panel'); values.panel = panel?.trim() || null; }
+    if (reset_range) {
+      sets.push('ref_low = NULL', 'ref_high = NULL', 'ref_set = 0');
+    } else if (ref_low !== undefined || ref_high !== undefined) {
+      if (ref_low !== undefined && ref_low !== null && ref_high !== undefined && ref_high !== null && ref_low > ref_high) {
+        throw fail(400, 'The low end of the range is above the high end');
+      }
+      sets.push('ref_low = @ref_low', 'ref_high = @ref_high', 'ref_set = 1');
+      values.ref_low = ref_low ?? null;
+      values.ref_high = ref_high ?? null;
     }
-    sets.push('ref_low = @ref_low', 'ref_high = @ref_high', 'ref_set = 1');
-    values.ref_low = ref_low ?? null;
-    values.ref_high = ref_high ?? null;
-  }
-  if (!sets.length) throw fail(400, 'Nothing to change');
-  db.prepare(`UPDATE lab_tests SET ${sets.join(', ')} WHERE user_id = @uid AND id = @id`).run(values);
-  return db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid AND id = ?').get(id);
+    if (!sets.length) throw fail(400, 'Nothing to change');
+    await db.prepare(`UPDATE lab_tests SET ${sets.join(', ')} WHERE user_id = @uid AND id = @id`).run(values);
+    return db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid AND id = ?').get(id);
+  });
 }
 
 // ---- prompt sections ----
@@ -811,53 +838,53 @@ export function updateLabTest(db, id, { unit, panel, ref_low, ref_high, reset_ra
 const SECTION_COLS = 'id, position, name, text, sensitive, updated_at';
 const asSection = (r) => r && { ...r, sensitive: Boolean(r.sensitive) };
 
-export function listSections(db) {
-  return db.prepare(`SELECT ${SECTION_COLS} FROM prompt_sections WHERE user_id = @uid ORDER BY position, name`).all().map(asSection);
+export async function listSections(db) {
+  return (await db.prepare(`SELECT ${SECTION_COLS} FROM prompt_sections WHERE user_id = @uid ORDER BY position, name`).all()).map(asSection);
 }
 
-export function getSection(db, id) {
-  return asSection(db.prepare(`SELECT ${SECTION_COLS} FROM prompt_sections WHERE user_id = @uid AND id = ?`).get(id));
+export async function getSection(db, id) {
+  return asSection(await db.prepare(`SELECT ${SECTION_COLS} FROM prompt_sections WHERE user_id = @uid AND id = ?`).get(id));
 }
 
-function keepVersion(db, section) {
-  db.prepare(`INSERT INTO prompt_section_versions (user_id, section_id, position, name, text, sensitive, replaced_at)
+async function keepVersion(db, section) {
+  await db.prepare(`INSERT INTO prompt_section_versions (user_id, section_id, position, name, text, sensitive, replaced_at)
     VALUES (@uid, ?, ?, ?, ?, ?, ?)`).run(section.id, section.position, section.name, section.text, section.sensitive ? 1 : 0, now());
 }
 
-export function createSection(db, { position, name, text, sensitive = false }) {
-  const id = db.prepare(`INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, ?, ?, ?, ?, ?) RETURNING id`)
-    .get(position, name.trim(), text, sensitive ? 1 : 0, now()).id;
+export async function createSection(db, { position, name, text, sensitive = false }) {
+  const { id } = await db.prepare(`INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, ?, ?, ?, ?, ?) RETURNING id`)
+    .get(position, name.trim(), text, sensitive ? 1 : 0, now());
   return getSection(db, id);
 }
 
 /** Updates a section, keeping its previous contents. Returns null when it does not exist. */
-export function updateSection(db, id, changes) {
-  const current = getSection(db, id);
-  if (!current) return null;
-  const next = { ...current, ...changes, name: (changes.name ?? current.name).trim() };
-  const unchanged = ['position', 'name', 'text', 'sensitive'].every((k) => next[k] === current[k]);
-  if (unchanged) return current;
-  db.transaction(() => {
-    keepVersion(db, current);
-    db.prepare('UPDATE prompt_sections SET position = ?, name = ?, text = ?, sensitive = ?, updated_at = ? WHERE user_id = @uid AND id = ?')
+export async function updateSection(db, id, changes) {
+  return db.tx(async () => {
+    const current = await getSection(db, id);
+    if (!current) return null;
+    const next = { ...current, ...changes, name: (changes.name ?? current.name).trim() };
+    const unchanged = ['position', 'name', 'text', 'sensitive'].every((k) => next[k] === current[k]);
+    if (unchanged) return current;
+    await keepVersion(db, current);
+    await db.prepare('UPDATE prompt_sections SET position = ?, name = ?, text = ?, sensitive = ?, updated_at = ? WHERE user_id = @uid AND id = ?')
       .run(next.position, next.name, next.text, next.sensitive ? 1 : 0, now(), id);
-  })();
-  return getSection(db, id);
+    return getSection(db, id);
+  });
 }
 
-export function deleteSection(db, id) {
-  const current = getSection(db, id);
-  if (!current) return false;
-  db.transaction(() => {
-    keepVersion(db, current);
-    db.prepare('DELETE FROM prompt_sections WHERE user_id = @uid AND id = ?').run(id);
-  })();
-  return true;
+export async function deleteSection(db, id) {
+  return db.tx(async () => {
+    const current = await getSection(db, id);
+    if (!current) return false;
+    await keepVersion(db, current);
+    await db.prepare('DELETE FROM prompt_sections WHERE user_id = @uid AND id = ?').run(id);
+    return true;
+  });
 }
 
 /** The weekly review's instructions as the model would receive them (sensitive sections left out). */
-export function previewInstructions(db, today) {
-  const sections = listSections(db);
+export async function previewInstructions(db, today) {
+  const sections = await listSections(db);
   const includeSensitive = WEEKLY_INCLUDES_SENSITIVE;
   const text = buildInstructions(sections, today, { includeSensitive });
   const sent = sections.filter((s) => includeSensitive || !s.sensitive);
