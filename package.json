@@ -44,7 +44,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.129.0",
+    "@anthropic-ai/sdk": "^1.6.0",
     "@fastify/rate-limit": "^11.2.2",
     "@fastify/static": "^10.1.10",
     "@fastify/swagger": "^9.9.3",
