@@ -129,7 +129,7 @@ const safeNext = (next) => (typeof next === 'string' && /^\/(?!\/)/.test(next) &
  * @param {{ mode: string, settings?: object, exchange?: Function, now?: () => number }} opts  exchange: googleExchange(settings) (tests pass a fake)
  */
 /**
- * @param {object} [users]  findUser(email) -> users row or null; registerUser({ email, name }) -> creates a pending user and
+ * @param {object} [users]  findUser(email) -> users row or null (or a promise of it); registerUser({ email, name }) -> creates a pending user and
  *   tells the admin (google mode)
  */
 export function registerAuth(app, { mode = 'none', settings = {}, exchange, now = () => Date.now(), findUser = () => null, registerUser = async () => {},
@@ -178,7 +178,7 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     // The users row behind the address (multi-user): only an approved one gets in, checked on every request, so pausing
     // or rejecting someone locks them out at once. req.uid scopes every query of the request to them (db/scope.js).
     // No row yet: request access first; pending or rejected: their page. Approved and paused users get in.
-    const user = findUser(session.email);
+    const user = await findUser(session.email);
     const where = !user ? '/auth/register' : user.status === 'pending' ? '/auth/waiting' : user.status === 'rejected' ? '/auth/not-approved' : null;
     if (where) {
       if (path.startsWith('/api/')) return reply.code(403).send({ error: user ? 'This account is not approved yet.' : 'Request access first.' });
@@ -252,7 +252,7 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
   const tokensFor = sheetsExchange ?? googleTokenExchange(settings);
   app.get('/auth/google/sheets', { schema: { hide: true } }, async (req, reply) => {
     const session = verify(parseCookies(req.headers.cookie)[SESSION_COOKIE], key, now());
-    if (findUser(session?.email ?? '')?.status !== 'approved') return reply.redirect('/auth/login');
+    if ((await findUser(session?.email ?? ''))?.status !== 'approved') return reply.redirect('/auth/login');
     const state = b64url(randomBytes(24));
     const codeVerifier = b64url(randomBytes(32));
     const create = req.query?.create === '1';
@@ -302,7 +302,7 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
   app.get('/auth/register', { schema: { hide: true } }, async (req, reply) => {
     const session = sessionOf(req);
     if (!session) return reply.redirect('/auth/login');
-    const there = statusPage(findUser(session.email));
+    const there = statusPage(await findUser(session.email));
     if (there) return reply.redirect(there);
     return reply.type('text/html').send(page('Request access to Health Review', `
       <p>You're asking to use <strong>Health Review with your own data</strong>. It's a private app. Anyone can request access, and the owner approves each request by hand.</p>
@@ -324,13 +324,13 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     if (req.headers.origin !== origin) return reply.code(403).send({ error: 'Requests that change data must come from this site.' });
     const session = sessionOf(req);
     if (!session) return reply.redirect('/auth/login');
-    if (!findUser(session.email)) {
+    if (!(await findUser(session.email))) {
       // Both boxes: the terms and privacy policy, and the separate health data consent (the terms alone are not consent).
       if (req.body?.agree !== 'on' || req.body?.healthConsent !== 'on') return reply.redirect('/auth/register');
       const feeds = Object.fromEntries(['appleHealth', 'workoutLog', 'manual'].map((f) => [f, req.body?.[f] === 'on']));
       await registerUser({ email: session.email, name: typeof session.name === 'string' ? session.name : null, feeds, healthConsent: true });
     }
-    return reply.redirect(statusPage(findUser(session.email)) ?? '/');
+    return reply.redirect(statusPage(await findUser(session.email)) ?? '/');
   });
   // The one-time health data consent for users approved before it: agree, or delete the account (typed email), with a
   // link to export their data first. Anyone else goes where they belong.
@@ -350,20 +350,20 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
         <p><button type="submit">Delete my account</button></p>
       </form>${POLICY_LINKS}${contact}${signOut}`);
   // Who the consent step is for: a signed-in, approved or paused user who has not given it.
-  const consentUser = (req) => {
+  const consentUser = async (req) => {
     const session = sessionOf(req);
-    const user = session ? findUser(session.email) : null;
+    const user = session ? await findUser(session.email) : null;
     return { session, user, ok: Boolean(user) && !['pending', 'rejected'].includes(user.status) && needsHealthConsent(user) };
   };
   app.get('/auth/consent', { schema: { hide: true } }, async (req, reply) => {
-    const { session, user, ok } = consentUser(req);
+    const { session, user, ok } = await consentUser(req);
     if (!session) return reply.redirect('/auth/login');
     if (!ok) return reply.redirect(statusPage(user) ?? '/auth/register');
     return reply.type('text/html').send(consentPage(session.email));
   });
   app.post('/auth/consent', { schema: { hide: true } }, async (req, reply) => {
     if (req.headers.origin !== origin) return reply.code(403).send({ error: 'Requests that change data must come from this site.' });
-    const { session, user, ok } = consentUser(req);
+    const { session, user, ok } = await consentUser(req);
     if (!session) return reply.redirect('/auth/login');
     if (!ok) return reply.redirect(statusPage(user) ?? '/auth/register');
     if (req.body?.action === 'agree') {

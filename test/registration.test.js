@@ -59,11 +59,11 @@ test('registration: request access, wait, get approved by the admin with emails 
   assert.equal((await post('')).headers.location, '/auth/register');
   assert.equal((await post('agree=on')).headers.location, '/auth/register', 'the terms alone are not consent');
   assert.equal((await post('healthConsent=on')).headers.location, '/auth/register');
-  assert.equal(userByEmail(store.db, 'kim@example.com'), null);
+  assert.equal((await userByEmail(store.db, 'kim@example.com')), null);
   assert.equal((await post('agree=on&healthConsent=on')).headers.location, '/auth/waiting');
-  assert.equal(userByEmail(store.db, 'kim@example.com').status, 'pending');
-  assert.equal(userByEmail(store.db, 'kim@example.com').health_consent_version, HEALTH_CONSENT_VERSION);
-  assert.ok(userByEmail(store.db, 'kim@example.com').health_consent_at);
+  assert.equal((await userByEmail(store.db, 'kim@example.com')).status, 'pending');
+  assert.equal((await userByEmail(store.db, 'kim@example.com')).health_consent_version, HEALTH_CONSENT_VERSION);
+  assert.ok((await userByEmail(store.db, 'kim@example.com')).health_consent_at);
   assert.equal(mail.length, 1);
   assert.equal(mail[0].to, 'owner@example.com');
   assert.match(mail[0].text, /kim@example\.com/);

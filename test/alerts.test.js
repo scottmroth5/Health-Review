@@ -9,7 +9,7 @@ function setup() {
   const store = openHealthStore(':memory:');
   const mail = [];
   let now = new Date('2026-10-25T16:00:00Z');
-  const alerts = createAlerts({ db: store.db, mailer: { send: async (m) => { mail.push(m); return true; } }, adminEmail: () => 'owner@example.com',
+  const alerts = createAlerts({ db: store.adb, mailer: { send: async (m) => { mail.push(m); return true; } }, adminEmail: async () => 'owner@example.com',
     appUrl: () => 'https://app.example.com', clock: () => now, log: { info() {} } });
   return { alerts, mail, later: (hours) => { now = new Date(now.getTime() + hours * 3600_000); } };
 }
@@ -24,7 +24,7 @@ test('a job failure emails once a day, and again after it recovers', async () =>
   assert.match(mail[0].text, /#activity/);
   later(24);
   assert.equal(await alerts.alert('backup', 'the backup failed', 'next day'), true, 'still failing the next day: one more');
-  alerts.recovered('backup');
+  await alerts.recovered('backup');
   assert.equal(await alerts.alert('backup', 'the backup failed', 'failed again'), true, 'a fresh failure after recovery');
   assert.equal(await alerts.alert('sync:a', 'x', 'y'), true, 'kinds are separate');
 });

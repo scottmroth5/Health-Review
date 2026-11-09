@@ -29,7 +29,7 @@ async function setup({ claude = null, access = {} } = {}) {
   const services = {
     sync: async () => ({ counts: {}, warnings: [] }),
     ...(claude ? { claude: () => claude } : {}),
-    aiAccess: (uid) => (getUser(store.db, uid)?.status === 'paused' ? { source: null, reason: 'paused' } : access[uid] ?? { source: 'own', reason: null }),
+    aiAccess: async (uid) => ((await getUser(store.db, uid))?.status === 'paused' ? { source: null, reason: 'paused' } : access[uid] ?? { source: 'own', reason: null }),
   };
   let email;
   let nonce;
@@ -84,7 +84,7 @@ test('export: every row of theirs, none of anyone else\'s, never a sealed key, t
   assert.ok(data.tables.user_programs, 'later tables are included too');
   const text = JSON.stringify(data);
   assert.ok(!text.includes('kim@example.com') && !text.includes('"kim"'), 'nothing of another user');
-  assert.ok(!text.includes('sealed-made-up') && !text.includes(getUser(store.db, 'lee').ingest_token_hash));
+  assert.ok(!text.includes('sealed-made-up') && !text.includes((await getUser(store.db, 'lee')).ingest_token_hash));
 });
 
 test('delete: typed email, every table emptied for them, the other user untouched, admin emailed, signed out', async () => {
@@ -98,7 +98,7 @@ test('delete: typed email, every table emptied for them, the other user untouche
   assert.equal(res.statusCode, 200);
   assert.match([res.headers['set-cookie']].flat().join(';'), /hr_session=;/);
   assert.ok(Object.values(rowsOf('lee')).every((n) => n === 0), 'nothing of theirs left');
-  assert.equal(getUser(store.db, 'lee'), null);
+  assert.equal((await getUser(store.db, 'lee')), null);
   assert.equal(store.db.prepare('SELECT COUNT(*) FROM run_calls').pluck().get(), 1, "only kim's run call is left");
   assert.deepEqual(rowsOf('kim'), kimBefore, 'the other user untouched');
   assert.equal(mail.at(-1).to, 'owner@example.com');
@@ -120,7 +120,7 @@ test('admin delete: confirmed with their email, only admins, never an admin', as
   assert.equal((await owner.send('POST', '/api/admin/users/lee/delete', { confirmEmail: 'kim@example.com' })).statusCode, 400);
   assert.equal((await owner.send('POST', `/api/admin/users/${OWNER_ID}/delete`, { confirmEmail: 'owner@example.com' })).statusCode, 409);
   assert.equal((await owner.send('POST', '/api/admin/users/lee/delete', { confirmEmail: 'lee@example.com' })).statusCode, 200);
-  assert.equal(getUser(store.db, 'lee'), null);
+  assert.equal((await getUser(store.db, 'lee')), null);
   assert.ok(Object.values(rowsOf('lee')).every((n) => n === 0));
   assert.ok(Object.values(rowsOf('kim')).some((n) => n > 0));
 });
@@ -135,7 +135,7 @@ test('pause yourself: posts and syncs stop; you can resume your own pause, never
   assert.equal(paused.pausedBySelf, true);
   assert.equal((await post()).statusCode, 401);
   assert.equal((await lee.send('POST', '/api/sync')).statusCode, 403);
-  assert.ok(!activeUserIds(store.db).includes('lee'));
+  assert.ok(!(await activeUserIds(store.db)).includes('lee'));
   assert.equal((await lee.send('POST', '/api/account/resume')).json().status, 'approved');
   assert.equal((await post()).statusCode, 200);
 

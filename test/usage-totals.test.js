@@ -204,7 +204,7 @@ test('arrivals: the sign-in page and the app page only, by source; the table hol
   assert.equal((await lee('/', { referer: 'https://accounts.google.com/', 'sec-fetch-dest': 'document', 'sec-fetch-site': 'cross-site' })).statusCode, 200);
   assert.equal((await lee('/', { referer: 'https://github.com/someone' })).statusCode, 200);
   assert.deepEqual(totals('source'), { demo: 1, direct: 1, github: 1, google_signin_return: 1, linkedin: 1, other: 1, site: 1 });
-  const period = usageTotals(store.db, { from: '2026-11-01', to: '2026-11-03' });
+  const period = (await usageTotals(store.db, { from: '2026-11-01', to: '2026-11-03' }));
   assert.ok(!period.arrivals.some((r) => r.value === 'google_signin_return'));
   assert.equal(period.arrivals.reduce((n, r) => n + r.count, 0), 6);
   // The whole table: only day, dimension, value and count, and nothing that points back to a request or a person.
@@ -231,7 +231,7 @@ test('the demo and local mode count nothing', async () => {
   }
 });
 
-test('the period totals: devices, locations rolled up to countries and states with the top cities, sources', () => {
+test('the period totals: devices, locations rolled up to countries and states with the top cities, sources', async () => {
   const store = openHealthStore(':memory:');
   const add = store.db.prepare('INSERT INTO usage_totals (day, dimension, value, count) VALUES (?, ?, ?, ?)');
   add.run('2026-11-02', 'device', 'phone', 3);
@@ -246,7 +246,7 @@ test('the period totals: devices, locations rolled up to countries and states wi
   add.run('2026-11-03', 'location', 'unknown', 1);
   add.run('2026-11-03', 'source', 'linkedin', 2);
   add.run('2026-11-03', 'source', 'google_signin_return', 5);
-  const t = usageTotals(store.db, { from: '2026-10-27', to: '2026-11-03' });
+  const t = (await usageTotals(store.db, { from: '2026-10-27', to: '2026-11-03' }));
   assert.deepEqual(t.visits.device, [{ value: 'phone', count: 4 }, { value: 'computer', count: 2 }]);
   assert.deepEqual(t.visits.browser, [{ value: 'Safari 18', count: 2 }, { value: 'Chrome 130', count: 1 }]);
   assert.deepEqual(t.visits.location.countries, [{ value: 'United States', count: 4 }, { value: 'Unknown', count: 1 }]);

@@ -38,6 +38,6 @@ export async function weeklyReview({ store, claude, sync = null, weekEnd, catalo
     return { status: 'skipped', weekEnd: week, reason: gate.reason, missingDays: gate.missingDays, partialDays: gate.partialDays, syncError };
   }
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set in .env');
-  const result = await runReview({ store: { ...store, db }, claude: claude(), weekEnd: week, today, catalog, model, effort, logger: quiet });
+  const result = await runReview({ store: { ...store, db }, claude: await claude(), weekEnd: week, today, catalog, model, effort, logger: quiet });
   return { status: 'written', weekEnd: week, result, syncError };
 }

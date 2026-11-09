@@ -35,7 +35,7 @@ import { parseWorkoutJson } from '../ingest/parsers.js';
 import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
 import { DEFAULT_TZ, isTimeZone, localDate as zonedDate, localStamp, ownerTz, withTimeZone } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { scopeDatabase, scopeDb } from '../db/scope.js';
+import { scopeDatabase } from '../db/scope.js';
 import { HEALTH_CONSENT_VERSION, OWNER_ID, clearIngestToken, getUser, newIngestToken, recordHealthConsent, setClaudeKey, setGoogleToken, setUserFeeds, startUserRun, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
 import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus, usageByWeek, usageTotals } from './admin-queries.js';
 import { createUsageTotals, hostnameOrNull } from './usage-totals.js';
@@ -150,18 +150,18 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // Every request runs as one user (multi-user, phase 1): `db` below is that user's view of the database (db/scope.js),
   // set for the request in preHandler. Local (none) and the demo are the owner; google mode is the signed-in user, and a
   // request without one (open routes) has no database at all, so nothing can read across users by mistake.
-  // adb is the same user's async handle (docs/adr/0006), for the ingest functions that open transactions (v3 Phase 1B).
+  // Every request runs on the async handle (docs/adr/0006; v3 Phase 1B slice 4b): db and adb are the same user's view.
   const requestDb = new AsyncLocalStorage();
   const currentHandles = () => {
     const scoped = requestDb.getStore();
     if (!scoped) throw new Error('No user for this request');
     return scoped;
   };
-  const currentDb = () => currentHandles().db;
+  const currentDb = () => currentHandles().adb;
   const db = new Proxy({}, { get: (_, prop) => Reflect.get(currentDb(), prop) });
-  const adb = new Proxy({}, { get: (_, prop) => Reflect.get(currentHandles().adb, prop) });
-  // The store as the request's user sees it, for code that takes a store (the chat); tx is the shared one.
-  const userStore = () => ({ ...store, db: currentDb(), adb: currentHandles().adb });
+  const adb = db;
+  // The store as the request's user sees it, for code that takes a store (the chat); tx and atx are the shared ones.
+  const userStore = () => ({ ...store, db: currentDb(), adb: currentDb() });
   const uidOf = (req) => req.uid ?? (authMode === 'google' ? null : OWNER_ID);
   // Per user: one sync, one manual review and one chat question at a time for each user (never shared between users).
   const syncing = new Set();
@@ -191,50 +191,55 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
   if (authMode !== 'none') registerRateLimits(app, { all: authMode === 'demo' ? DEMO_REQUEST_LIMIT : null, now: auth.now });
   // Google sign-in maps an address to its users row; the first allowed address is the owner (user 1) until registration.
-  if (authMode === 'google' && auth.settings?.allowed?.[0]) syncOwnerEmail(store.db, { OWNER_EMAIL: auth.settings.allowed[0] });
-  const adminEmail = () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email;
+  if (authMode === 'google' && auth.settings?.allowed?.[0]) syncOwnerEmail(store.raw ?? store.db, { OWNER_EMAIL: auth.settings.allowed[0] });
+  const adminEmail = async () => process.env.ADMIN_EMAIL || (await getUser(store.adb, OWNER_ID))?.email;
   const appUrl = () => auth.settings?.publicUrl || 'http://localhost:5188';
   // A registration: a pending user, and an email to the admin (names and addresses only).
   const registerUser = async ({ email, name, feeds, healthConsent = false }) => {
-    if (userByEmail(store.db, email)) return;
-    createPendingUser(store.db, { id: randomUUID(), email, name, healthConsentVersion: healthConsent ? HEALTH_CONSENT_VERSION : null });
-    if (feeds) setUserFeeds(store.db, userByEmail(store.db, email).id, JSON.stringify(feeds));
+    // Exists, then create, in one transaction (the email is UNIQUE besides); the email goes after it.
+    const created = await store.adb.tx(async () => {
+      if (await userByEmail(store.adb, email)) return false;
+      const u = await createPendingUser(store.adb, { id: randomUUID(), email, name, healthConsentVersion: healthConsent ? HEALTH_CONSENT_VERSION : null });
+      if (feeds) await setUserFeeds(store.adb, u.id, JSON.stringify(feeds));
+      return true;
+    });
+    if (!created) return;
     log.info('[users] new registration');
-    await mailer.send({ to: adminEmail(), subject: 'New Health Review registration',
+    await mailer.send({ to: await adminEmail(), subject: 'New Health Review registration',
       text: `${name ?? 'Someone'} <${email}> asked for access to Health Review.\n\nApprove or reject on the Users tile: ${appUrl()}/#users\n` });
   };
   // A user's own Google Sheets permission (read only): the refresh token is sealed to them; never logged or shown.
   const connectSheets = async ({ email, refreshToken }) => {
-    const u = userByEmail(store.db, email);
+    const u = await userByEmail(store.adb, email);
     if (!u) return;
-    setGoogleToken(store.db, u.id, seal(refreshToken, u.id, keyBox ?? boxKey()));
+    await setGoogleToken(store.adb, u.id, seal(refreshToken, u.id, keyBox ?? boxKey()));
     log.info('[users] Google Sheets connected');
   };
   // "Create my Workout Log": a new sheet in their Drive (services.createWorkoutSheet, ingest/create-sheet.js), saved as
   // their Workout Log. Never the owner, whose Workout Log comes from the server's settings.
   const createSheet = async ({ email }) => {
-    const u = userByEmail(store.db, email);
+    const u = await userByEmail(store.adb, email);
     if (!u || u.id === OWNER_ID || u.status !== 'approved') throw new Error('not for this account');
     if (typeof services.createWorkoutSheet !== 'function') throw new Error('not available');
     const { id } = await services.createWorkoutSheet(u.id);
-    const upsert = scopeDb(store.db, u.id).prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
+    const upsert = scopeDatabase(store.adb, u.id).prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
       ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
-    upsert.run('workout_log_sheet_id', id, clock().toISOString());
+    await upsert.run('workout_log_sheet_id', id, clock().toISOString());
     // Remembered so each January's sync can add the new year's tab to this sheet (and only this one).
-    upsert.run('workout_log_created', id, clock().toISOString());
+    await upsert.run('workout_log_created', id, clock().toISOString());
     log.info('[users] a Workout Log sheet was created');
   };
   // Deleting an account (Settings, or the one-time consent step): everything stored for them, and an email to the admin.
   const deleteAccount = async (uid) => {
-    const u = getUser(store.db, uid);
-    if (!u || u.role === 'admin') return;
-    deleteUserData(store.db, u.id);
+    const u = await getUser(store.adb, uid);
+    // The role is checked again inside deleteUserData's transaction (null: an administrator, or already gone).
+    if (!u || u.role === 'admin' || !(await deleteUserData(store.adb, u.id))) return;
     log.info('[users] a user deleted their account');
-    await mailer.send({ to: adminEmail(), subject: 'Health Review: a user deleted their account',
+    await mailer.send({ to: await adminEmail(), subject: 'Health Review: a user deleted their account',
       text: `${u.name || u.email} (${u.email}) deleted their Health Review account and its data. Encrypted backups keep a copy until they age out.\n` });
   };
   const recordConsent = async (uid) => {
-    recordHealthConsent(store.db, uid, clock());
+    await recordHealthConsent(store.adb, uid, clock());
     log.info('[users] health data consent given');
   };
   // Usage totals (server/usage-totals.js): the signed-in app only, never the demo or local mode. A signed-in browser
@@ -242,7 +247,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // device and location; an arrival on the app page or the sign-in page counts by source. Only counts are kept, and a
   // failure here never touches the response.
   const counter = authMode === 'google' ? createUsageTotals({
-    db: store.db, place: usage?.place ?? null, tz: process.env.OWNER_TZ || DEFAULT_TZ, now: clock,
+    db: store.adb, place: usage?.place ?? null, tz: process.env.OWNER_TZ || DEFAULT_TZ, now: clock,
     siteHost: hostnameOrNull(usage?.siteHost), demoHost: hostnameOrNull(usage?.demoHost),
     appHost: (() => { try { return new URL(auth.settings.publicUrl).hostname.toLowerCase(); } catch { return null; } })(),
   }) : null;
@@ -250,13 +255,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     app.addHook('onResponse', async (req, reply) => {
       try {
         const [path, query = ''] = req.url.split('?');
-        if (req.browserSession && reply.statusCode < 400 && (path === '/' || path.startsWith('/api/'))) counter.visit(req, req.uid);
+        if (req.browserSession && reply.statusCode < 400 && (path === '/' || path.startsWith('/api/'))) await counter.visit(req, req.uid);
         const signInPage = path === '/auth/login' && new URLSearchParams(query).get('go') !== '1';
-        if (req.method === 'GET' && reply.statusCode === 200 && (path === '/' || signInPage)) counter.arrival(req);
+        if (req.method === 'GET' && reply.statusCode === 200 && (path === '/' || signInPage)) await counter.arrival(req);
       } catch { /* counting never affects a request */ }
     });
   }
-  registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
+  registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.adb, email), registerUser,
     sheetsExchange: auth.sheetsExchange, connectSheets, createSheet, recordConsent, deleteAccount });
   // The privacy policy and terms, readable before signing in.
   // {{PERSONAL_SITE}}: the operator's website (PERSONAL_SITE), named only at render time so the repo never holds it.
@@ -280,7 +285,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const uid = uidOf(req);
     if (!uid) return done();
     // The request runs as its user: their scoped database and their own time zone (tools/time.js withTimeZone).
-    withTimeZone(timeZoneOf(store.db, uid), () => requestDb.run({ db: scopeDb(store.db, uid), adb: scopeDatabase(store.adb, uid) }, done));
+    // done runs inside both, so the handler and later hooks keep the user's zone and database.
+    timeZoneOf(store.adb, uid).then((tz) => withTimeZone(tz, () => requestDb.run({ adb: scopeDatabase(store.adb, uid) }, done)), done);
   });
 
   // The deploy health check: open in every mode, status and version only.
@@ -373,11 +379,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // The program catalog a request may use (metrics/load.js userCatalog): the user's own programs (phase 5), then the
   // owner's (MAPS) for the owner and for users the owner shares it with (users.maps_shared); theirs win a name clash.
   const ownerCatalog = () => (catalog === undefined ? loadCatalog() : catalog);
-  const sharedCatalog = (req) => {
+  const sharedCatalog = async (req) => {
     const uid = uidOf(req);
-    return uid === OWNER_ID || getUser(store.db, uid)?.maps_shared ? ownerCatalog() : null;
+    return uid === OWNER_ID || (await getUser(store.adb, uid))?.maps_shared ? ownerCatalog() : null;
   };
-  const programCatalog = (req) => userCatalog(db, sharedCatalog(req));
+  const programCatalog = async (req) => userCatalog(db, await sharedCatalog(req));
   app.get('/api/program', {
     schema: {
       summary: 'The confirmed in-progress program block: week, phase, deload or failure week, expected end (program is null when none)',
@@ -419,13 +425,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // ---- Next program chat (computed training facts and the owner's notes go to Claude; see agent/advisor-chat.js) ----
   // AI per user (server/ai-access.js): the owner's key, a user's own key, the owner's key under a monthly cap, or none
   // (then no AI, and the screens say why: aiReason no_key, cap or paused).
-  const aiAccessOf = (req) => {
-    if (services.aiAccess) return services.aiAccess(uidOf(req));
-    const on = !services.hasAi || services.hasAi(uidOf(req));
+  const aiAccessOf = async (req) => {
+    if (services.aiAccess) return await services.aiAccess(uidOf(req));
+    const on = !services.hasAi || await services.hasAi(uidOf(req));
     return { source: on ? 'owner' : null, reason: on ? null : 'no_key' };
   };
-  const aiOn = (req) => aiAccessOf(req).source !== null;
-  const aiReason = (req) => aiAccessOf(req).reason ?? null;
+  const aiOn = async (req) => (await aiAccessOf(req)).source !== null;
+  const aiReason = async (req) => (await aiAccessOf(req)).reason ?? null;
   const NO_AI = {
     no_key: 'No AI is used until you add your Claude API key in Settings',
     cap: "This month's AI allowance is used up; add your own Claude API key in Settings to keep going",
@@ -433,11 +439,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     consent: 'No AI is used until you agree to the health data consent',
   };
   const noAi = (reply, reason) => reply.code(503).send({ error: NO_AI[reason] ?? NO_AI.no_key, needsKey: true, aiReason: reason ?? 'no_key' });
-  const isPaused = (req) => getUser(store.db, uidOf(req))?.status === 'paused';
-  const chatOn = (req) => features.chat !== false && typeof services.claude === 'function' && aiOn(req);
+  const isPaused = async (req) => (await getUser(store.adb, uidOf(req)))?.status === 'paused';
+  const chatOn = async (req) => features.chat !== false && typeof services.claude === 'function' && await aiOn(req);
   const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, needsKey: { type: 'boolean' }, aiReason: { type: ['string', 'null'] }, notes: { type: 'array', items: anyObject } } } };
   app.get('/api/advisor/chat', { schema: { summary: 'The Next program chat thread, oldest first, and whether the chat is on', response: chatThread } },
-    async (req) => { const reason = aiReason(req); return { enabled: chatOn(req), needsKey: reason !== null, aiReason: reason, notes: await listChat(db) }; });
+    async (req) => { const reason = await aiReason(req); return { enabled: await chatOn(req), needsKey: reason !== null, aiReason: reason, notes: await listChat(db) }; });
   const chatting = new Set();
   app.post('/api/advisor/chat', {
     schema: {
@@ -452,9 +458,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req, reply) => {
-    const reason = aiReason(req);
+    const reason = await aiReason(req);
     if (reason) return noAi(reply, reason);
-    if (!chatOn(req)) return reply.code(503).send({ error: 'The chat is off in this instance' });
+    if (!(await chatOn(req))) return reply.code(503).send({ error: 'The chat is off in this instance' });
     if (!req.body.text.trim()) throw badRequest('text must not be blank');
     if (chatting.has(uidOf(req))) return reply.code(409).send({ error: 'A question is already being answered' });
     const cat = await programCatalog(req);
@@ -462,7 +468,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     chatting.add(uidOf(req));
     try {
       return await askAdvisor({
-        store: userStore(), claude: services.claude(uidOf(req)), text: req.body.text.trim(), today: q.localDate(clock()), catalog: cat,
+        store: userStore(), claude: await services.claude(uidOf(req)), text: req.body.text.trim(), today: q.localDate(clock()), catalog: cat,
         dictionary: dictionary ?? loadDictionary(), substitutions: substitutions ?? loadSubstitutions(), weights: req.body.weights,
         logger: { info() {}, warn() {}, error() {} },
       });
@@ -483,7 +489,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const names = new Set(own.map((r) => r.name));
     return {
       programs: own,
-      shared: (sharedCatalog(req)?.programs ?? []).map((p) => p.name).filter((n) => !names.has(n)),
+      shared: ((await sharedCatalog(req))?.programs ?? []).map((p) => p.name).filter((n) => !names.has(n)),
       canExtract: typeof services.claude === 'function',
       owner: uidOf(req) === OWNER_ID,
     };
@@ -531,14 +537,14 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     if (typeof services.claude !== 'function') return reply.code(503).send({ error: 'Reading PDFs is not available in this server' });
-    const reason = aiReason(req);
+    const reason = await aiReason(req);
     if (reason) return noAi(reply, reason);
     if (req.body.rightToUse !== true) throw badRequest('Confirm that you own this program or have the right to use it');
     const pdf = Buffer.from(req.body.pdf, 'base64');
     if (!isPdf(pdf)) throw badRequest('That file is not a PDF');
     if (pdf.length > MAX_PDF_BYTES) throw badRequest('The PDF is over 20 MB');
     try {
-      return await extractProgram({ store: userStore(), claude: services.claude(uidOf(req)), pdf, logger: { info() {}, warn() {}, error() {} } });
+      return await extractProgram({ store: userStore(), claude: await services.claude(uidOf(req)), pdf, logger: { info() {}, warn() {}, error() {} } });
     } catch (err) {
       log.warn(`[programs] reading a PDF failed: ${err.name}`);
       return reply.code(502).send({ error: err.status === 400 ? 'Claude could not read that PDF (it may be over 100 pages or protected)' : 'Claude could not read the PDF; try again' });
@@ -601,8 +607,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!/\.xlsx$/i.test(name) || name.length > 200) return reply.code(415).send({ error: 'Upload an Excel workbook (.xlsx); other files are not accepted' });
     const uid = uidOf(req);
     if (uid === OWNER_ID) return reply.code(409).send({ error: "The owner's Workout Log comes from the server's Google Sheet" });
-    if (isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
-    if (db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").get()) {
+    if (await isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
+    if (await db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").get()) {
       return reply.code(409).send({ error: 'You sync a Google Sheet Workout Log. Disconnect Google Sheets in Settings to upload Excel instead.' });
     }
     const hourAgo = clock().getTime() - 3600_000;
@@ -675,7 +681,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!r.allowed) return reply.code(429).header('retry-after', String(r.retryAfterSeconds)).send({ error: 'Too many posts from this address. Try again later.' });
     const given = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ''))?.[1] ?? '';
     const owner = tokenHash && timingSafeEqual(createHash('sha256').update(given).digest(), tokenHash);
-    const user = owner ? null : userByIngestToken(store.db, given);
+    const user = owner ? null : await userByIngestToken(store.adb, given);
     if (!owner && !user) {
       if (!tokenHash) return reply.code(503).send({ error: 'Ingest is not set up on this server (INGEST_TOKEN).' });
       return reply.code(401).send({ error: 'Missing or wrong ingest token.' });
@@ -692,11 +698,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const received = clock();
     try {
       const counts = await apply(req.body, received);
-      logIngest(randomUUID(), received.toISOString(), route, 'ok', JSON.stringify(counts), null);
+      await logIngest(randomUUID(), received.toISOString(), route, 'ok', JSON.stringify(counts), null);
       log.info(`[ingest] ${route} ok ${JSON.stringify(counts)}`);
       return { ok: true, ...counts };
     } catch (err) {
-      logIngest(randomUUID(), received.toISOString(), route, 'error', null, err.name);
+      await logIngest(randomUUID(), received.toISOString(), route, 'error', null, err.name);
       log.warn(`[ingest] ${route} error ${err.name}`);
       return reply.code(400).send({ error: err.message });
     }
@@ -734,14 +740,18 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.get('/api/reviews', { schema: { summary: 'Weekly reviews, newest first', response: { 200: { type: 'array', items: anyObject } } } },
     async () => await q.listReviews(db));
 
-  const reviewState = async (req) => ({
-    ...(await q.reviewStatus(db, q.localDate(clock()), clock())),
-    running: reviewRunOf(req).running,
-    error: reviewRunOf(req).error,
-    canRun: typeof services.review === 'function' && aiOn(req),
-    needsKey: typeof services.review === 'function' && !aiOn(req),
-    aiReason: typeof services.review === 'function' ? aiReason(req) : null,
-  });
+  const reviewState = async (req) => {
+    const status = await q.reviewStatus(db, q.localDate(clock()), clock());
+    const access = typeof services.review === 'function' ? await aiAccessOf(req) : null;
+    return {
+      ...status,
+      running: reviewRunOf(req).running,
+      error: reviewRunOf(req).error,
+      canRun: access !== null && access.source !== null,
+      needsKey: access !== null && access.source === null,
+      aiReason: access ? access.reason ?? null : null,
+    };
+  };
 
   app.get('/api/reviews/status', {
     schema: { summary: "Last week's review: whether it exists, the last run, and Apple Health days missing or partial (dates only)", response: { 200: anyObject } },
@@ -755,7 +765,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     if (typeof services.review !== 'function') return reply.code(503).send({ error: 'Writing reviews is not available in this server' });
-    if (!aiOn(req)) return noAi(reply, aiReason(req));
+    const access = await aiAccessOf(req);
+    if (access.source === null) return noAi(reply, access.reason ?? null);
     const reviewRun = reviewRunOf(req);
     const uid = uidOf(req);
     if (reviewRun.running) return reply.code(409).send({ error: 'A review is already being written' });
@@ -791,7 +802,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // ---- sync ----
   app.post('/api/sync', { schema: { summary: 'Copy new rows from the Google Sheets now', response: { 200: anyObject } } }, async (req, reply) => {
     if (!services.sync) return reply.code(503).send({ error: 'Sync is not available in this server' });
-    if (isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
+    if (await isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
     const uid = uidOf(req);
     if (syncing.has(uid)) return reply.code(409).send({ error: 'A sync is already running' });
     syncing.add(uid);
@@ -1020,20 +1031,22 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req) => {
     const metric = knownMetric(req.params.metric);
-    db.prepare(`INSERT INTO health_targets (user_id, metric, target, updated_at) VALUES (@uid, ?, ?, ?)
+    await db.prepare(`INSERT INTO health_targets (user_id, metric, target, updated_at) VALUES (@uid, ?, ?, ?)
       ON CONFLICT (user_id, metric) DO UPDATE SET target = excluded.target, updated_at = excluded.updated_at`).run(metric, req.body.target, new Date().toISOString());
     return (await loadTargets(db, q.localDate(clock()), targetsConfig())).find((t) => t.metric === metric);
   });
   app.delete('/api/targets/:metric', { schema: { summary: 'Go back to the suggested target', params: metricParams, response: { 200: anyObject } } }, async (req) => {
     const metric = knownMetric(req.params.metric);
-    db.prepare('DELETE FROM health_targets WHERE user_id = @uid AND metric = ?').run(metric);
+    await db.prepare('DELETE FROM health_targets WHERE user_id = @uid AND metric = ?').run(metric);
     return (await loadTargets(db, q.localDate(clock()), targetsConfig())).find((t) => t.metric === metric);
   });
   // ---- account: the signed-in user's own settings (multi-user, phase 2) ----
   const accountView = async (req) => {
     const uid = uidOf(req);
-    const u = getUser(store.db, uid);
-    const access = aiAccessOf(req);
+    const u = await getUser(store.adb, uid);
+    const access = await aiAccessOf(req);
+    const setting = async (key) => (await db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck().get(key)) ?? null;
+    const json = (text) => { try { return JSON.parse(text ?? 'null'); } catch { return null; } };
     return {
       email: u?.email ?? null, name: u?.name ?? req.userName ?? null, role: u?.role ?? 'user', owner: uid === OWNER_ID, status: u?.status ?? 'approved',
       // Never the key: where it comes from and when it was saved.
@@ -1041,34 +1054,36 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       ai: access.source !== null,
       aiReason: access.reason ?? null,
       // The zone this account runs in: its own (Settings), else the server default; the owner's is always the default.
-      timeZone: { zone: ownerTz(), own: Boolean(timeZoneOf(store.db, uid)), fromServer: uid === OWNER_ID },
+      timeZone: { zone: ownerTz(), own: Boolean(await timeZoneOf(store.adb, uid)), fromServer: uid === OWNER_ID },
       // Training goals (Settings) and the Home tile order the user arranged (null: the goals' default).
       goals: await loadGoals(db),
-      tileOrder: (() => { try { return JSON.parse(db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'tile_order'").pluck().get() ?? 'null'); } catch { return null; } })(),
-      layouts: Object.fromEntries(Object.keys(LAYOUT_ITEMS).map((area) => {
-        try { return [area, JSON.parse(db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck().get(`layout_${area}`) ?? 'null')]; } catch { return [area, null]; }
-      })),
+      tileOrder: json(await setting('tile_order')),
+      layouts: await (async () => {
+        const out = {};
+        for (const area of Object.keys(LAYOUT_ITEMS)) out[area] = json(await setting(`layout_${area}`));
+        return out;
+      })(),
       // Home's setup checklist was hidden (Settings brings it back).
-      setupHidden: Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'setup_hidden'").get()),
+      setupHidden: Boolean(await db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'setup_hidden'").get()),
       // Supplement suggestions (off by default): when the statement was accepted, and the statement itself.
       supplementAdvice: { since: await supplementAdviceSince(db), statement: SUPPLEMENT_DISCLAIMER },
-      pausedBySelf: u?.status === 'paused' && Boolean(db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
+      pausedBySelf: u?.status === 'paused' && Boolean(await db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
       // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
       ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
-        ? { cap: u.owner_key_cap_usd, spent: Math.round(spentThisMonth(store.db, uid, clock()) * 100) / 100 } : null,
-      feeds: feedsView(req, u),
+        ? { cap: u.owner_key_cap_usd, spent: Math.round((await spentThisMonth(store.adb, uid, clock())) * 100) / 100 } : null,
+      feeds: await feedsView(req, u),
     };
   };
   // ---- data feeds (multi-user, phase 3): Health Auto Export by REST, the Workout Log in Google Sheets, entering in the app ----
   const FEEDS = ['appleHealth', 'workoutLog', 'manual'];
-  const feedsView = (req, u) => {
+  const feedsView = async (req, u) => {
     const uid = uidOf(req);
     const owner = uid === OWNER_ID;
     let chosen = {};
     try { chosen = JSON.parse(u?.feeds ?? '{}') ?? {}; } catch { chosen = {}; }
-    const lastPost = db.prepare("SELECT MAX(received_at) FROM ingest_log WHERE user_id = @uid AND result = 'ok'").pluck().get() ?? null;
-    const lastSync = db.prepare("SELECT MAX(finished_at) FROM runs WHERE user_id = @uid AND name = 'sync' AND status = 'ok'").pluck().get() ?? null;
-    const sheetId = db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").pluck().get() ?? null;
+    const lastPost = (await db.prepare("SELECT MAX(received_at) FROM ingest_log WHERE user_id = @uid AND result = 'ok'").pluck().get()) ?? null;
+    const lastSync = (await db.prepare("SELECT MAX(finished_at) FROM runs WHERE user_id = @uid AND name = 'sync' AND status = 'ok'").pluck().get()) ?? null;
+    const sheetId = (await db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").pluck().get()) ?? null;
     const sheetSet = Boolean(sheetId);
     return {
       chosen: Object.fromEntries(FEEDS.map((f) => [f, chosen[f] ?? (owner || f === 'manual')])),
@@ -1085,18 +1100,18 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.put('/api/account/feeds', {
     schema: { summary: 'Which data feeds you use (Apple Health, Workout Log, entering in the app)', body: { type: 'object', additionalProperties: false, properties: Object.fromEntries(FEEDS.map((f) => [f, { type: 'boolean' }])) }, response: { 200: anyObject } },
   }, async (req) => {
-    setUserFeeds(store.db, uidOf(req), JSON.stringify(req.body));
+    await setUserFeeds(store.adb, uidOf(req), JSON.stringify(req.body));
     return accountView(req);
   });
   app.post('/api/account/ingest-token', { schema: { summary: 'A new Health Auto Export token for your account, shown once (replaces any earlier one)', response: { 200: anyObject } } }, async (req, reply) => {
     if (uidOf(req) === OWNER_ID) return reply.code(409).send({ error: "The owner's posts use INGEST_TOKEN from the server's settings" });
-    const token = newIngestToken(store.db, uidOf(req));
+    const token = await newIngestToken(store.adb, uidOf(req));
     log.info('[users] an ingest token was created');
     // The status first, then the token itself (the status's own token field is only true or false).
-    return { ...feedsView(req, getUser(store.db, uidOf(req))).appleHealth, token };
+    return { ...(await feedsView(req, await getUser(store.adb, uidOf(req)))).appleHealth, token };
   });
   app.delete('/api/account/ingest-token', { schema: { summary: 'Turn off your Health Auto Export token', response: { 200: anyObject } } }, async (req) => {
-    clearIngestToken(store.db, uidOf(req));
+    await clearIngestToken(store.adb, uidOf(req));
     return accountView(req);
   });
   app.put('/api/account/workout-sheet', {
@@ -1106,7 +1121,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (uid === OWNER_ID) return reply.code(409).send({ error: "The owner's Workout Log comes from the server's settings" });
     const id = /\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/.exec(req.body.sheet)?.[1] ?? (/^[A-Za-z0-9_-]{20,}$/.test(req.body.sheet.trim()) ? req.body.sheet.trim() : null);
     if (!id) return reply.code(400).send({ error: 'Paste the link to your Google Sheet (or its ID)' });
-    if (!getUser(store.db, uid)?.google_refresh_enc) return reply.code(409).send({ error: 'Connect Google Sheets first' });
+    if (!(await getUser(store.adb, uid))?.google_refresh_enc) return reply.code(409).send({ error: 'Connect Google Sheets first' });
     let tabs;
     try {
       tabs = await services.sheetTabs(uid, id);
@@ -1115,30 +1130,30 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     }
     const years = tabs.filter((t) => /^\d{4}$/.test(t));
     if (!years.length) return reply.code(400).send({ error: 'That sheet has no year tabs (a tab named like 2026); see the Workout Log guide' });
-    db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'workout_log_sheet_id', ?, ?)
+    await db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'workout_log_sheet_id', ?, ?)
       ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(id, new Date().toISOString());
     return { ...(await accountView(req)), yearTabs: years };
   });
   app.delete('/api/account/google', { schema: { summary: 'Disconnect Google Sheets: forgets your permission and your sheet', response: { 200: anyObject } } }, async (req) => {
-    setGoogleToken(store.db, uidOf(req), null);
-    db.prepare("DELETE FROM settings WHERE user_id = @uid AND key IN ('workout_log_sheet_id', 'workout_log_created')").run();
+    await setGoogleToken(store.adb, uidOf(req), null);
+    await db.prepare("DELETE FROM settings WHERE user_id = @uid AND key IN ('workout_log_sheet_id', 'workout_log_created')").run();
     return accountView(req);
   });
   app.get('/api/account', { schema: { summary: "The signed-in user's account: name, email, role, and whether a Claude key is set (never the key)", response: { 200: anyObject } } },
     async (req) => accountView(req));
 
   // ---- Home (UX roadmap phase 2): the setup checklist for new users, then a summary of where things stand ----
-  const setupOf = (req) => {
+  const setupOf = async (req) => {
     const uid = uidOf(req);
-    const u = getUser(store.db, uid);
-    const feeds = feedsView(req, u);
-    const facts = loadSetupFacts(db, { owner: uid === OWNER_ID, chosen: feeds.chosen, ai: aiAccessOf(req).source !== null,
+    const u = await getUser(store.adb, uid);
+    const feeds = await feedsView(req, u);
+    const facts = await loadSetupFacts(db, { owner: uid === OWNER_ID, chosen: feeds.chosen, ai: (await aiAccessOf(req)).source !== null,
       appleToken: feeds.appleHealth.token, sheetConnected: feeds.workoutLog.connected });
     return { facts, feeds, setup: setupSteps(facts, { today: q.localDate(clock()) }) };
   };
   /** The newest review's opening: the first two bullets of its first section, as plain text. */
-  const reviewOpening = () => {
-    const latest = db.prepare('SELECT week_ending, report_md FROM reviews WHERE user_id = @uid ORDER BY week_ending DESC LIMIT 1').get();
+  const reviewOpening = async () => {
+    const latest = await db.prepare('SELECT week_ending, report_md FROM reviews WHERE user_id = @uid ORDER BY week_ending DESC LIMIT 1').get();
     if (!latest) return null;
     const first = String(latest.report_md).split(/^## /m)[1] ?? '';
     const lines = first.split('\n').filter((l) => /^\s*[-*] /.test(l)).slice(0, 2)
@@ -1147,7 +1162,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   };
   app.get('/api/home', { schema: { summary: 'Home: the setup checklist (goals, profile, how data comes in, AI, first result) and a summary: today\'s check-in, current program, the latest review\'s opening, each feed\'s freshness, data issue count', response: { 200: anyObject } } }, async (req) => {
     const today = q.localDate(clock());
-    const { facts, setup } = setupOf(req);
+    const { facts, setup } = await setupOf(req);
     const chosen = facts.chosen ?? {};
     const program = await (async () => { try { return await currentProgram(db, today, await programCatalog(req)); } catch { return null; } })();
     const feedRows = [
@@ -1159,9 +1174,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       setup,
       summary: {
         today,
-        checkin: { done: Boolean(db.prepare('SELECT 1 FROM checkins WHERE user_id = @uid AND date = ?').get(today)) },
+        checkin: { done: Boolean(await db.prepare('SELECT 1 FROM checkins WHERE user_id = @uid AND date = ?').get(today)) },
         program: program ? { program: program.program, phase: program.phase ?? null, week: program.week ?? null, programWeeks: program.programWeeks ?? null } : null,
-        latestReview: reviewOpening(),
+        latestReview: await reviewOpening(),
         feeds: feedRows,
         dataIssues: (await q.dataCheckWarnings(db, today, { apple: ingest.apple ?? 'drive', now: clock() })).length,
       },
@@ -1175,13 +1190,18 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req) => {
-    const { facts } = setupOf(req);
-    const dismissed = new Set(facts.dismissed);
-    if (req.body.dismiss) dismissed.add(req.body.dismiss);
-    if (req.body.restore) dismissed.delete(req.body.restore);
-    putSetting('setup_dismissed', dismissed.size ? JSON.stringify([...dismissed]) : null);
-    if (req.body.hidden !== undefined) putSetting('setup_hidden', req.body.hidden ? '1' : null);
-    return { setup: setupOf(req).setup };
+    // Read the skipped steps and write them back in one transaction, so two changes at once keep both.
+    await db.tx(async () => {
+      const saved = await db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'setup_dismissed'").pluck().get();
+      let list = [];
+      try { list = JSON.parse(saved ?? '[]') ?? []; } catch { list = []; }
+      const dismissed = new Set(list.filter((s) => SETUP_STEPS.includes(s)));
+      if (req.body.dismiss) dismissed.add(req.body.dismiss);
+      if (req.body.restore) dismissed.delete(req.body.restore);
+      await putSetting('setup_dismissed', dismissed.size ? JSON.stringify([...dismissed]) : null);
+      if (req.body.hidden !== undefined) await putSetting('setup_hidden', req.body.hidden ? '1' : null);
+    });
+    return { setup: (await setupOf(req)).setup };
   });
   app.put('/api/account/claude-key', {
     schema: {
@@ -1193,7 +1213,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const uid = uidOf(req);
     if (uid === OWNER_ID) return reply.code(409).send({ error: "The owner's key comes from the server's settings" });
     if (!(await keyCheck(req.body.key))) return reply.code(400).send({ error: 'Anthropic did not accept that key. Check it and try again.' });
-    setClaudeKey(store.db, uid, seal(req.body.key, uid, keyBox ?? boxKey()));
+    await setClaudeKey(store.adb, uid, seal(req.body.key, uid, keyBox ?? boxKey()));
     log.info('[users] a Claude key was saved');
     return accountView(req);
   });
@@ -1207,8 +1227,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     schema: { summary: 'Your training goals: primary and an optional secondary (strength, cardio, weight, endurance, health), or null', body: { type: 'object', additionalProperties: false, required: ['primary'], properties: { primary: goalValue, secondary: goalValue } }, response: { 200: anyObject } },
   }, async (req) => {
     const g = cleanGoals(req.body);
-    putSetting('goal_primary', g.primary);
-    putSetting('goal_secondary', g.secondary);
+    await db.tx(async () => {
+      await putSetting('goal_primary', g.primary);
+      await putSetting('goal_secondary', g.secondary);
+    });
     return accountView(req);
   });
   // Supplement suggestions in the review, the chat and Help: on only with the statement accepted; a paused account may
@@ -1218,9 +1240,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req, reply) => {
     if (req.body.on) {
       if (req.body.accept !== true) return reply.code(400).send({ error: 'Read and accept the statement to turn supplement suggestions on' });
-      if (isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
-      putSetting('supplement_advice', clock().toISOString());
-    } else putSetting('supplement_advice', null);
+      if (await isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
+      await putSetting('supplement_advice', clock().toISOString());
+    } else await putSetting('supplement_advice', null);
     return accountView(req);
   });
 
@@ -1228,7 +1250,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.put('/api/account/tile-order', {
     schema: { summary: 'Your Home tile order (view names), or null for the default', body: { type: 'object', additionalProperties: false, required: ['tiles'], properties: { tiles: { type: ['array', 'null'], maxItems: 30, items: { type: 'string', enum: TILES } } } }, response: { 200: anyObject } },
   }, async (req) => {
-    putSetting('tile_order', req.body.tiles ? JSON.stringify([...new Set(req.body.tiles)]) : null);
+    await putSetting('tile_order', req.body.tiles ? JSON.stringify([...new Set(req.body.tiles)]) : null);
     return accountView(req);
   });
 
@@ -1243,7 +1265,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req) => {
     const { area, order } = req.body;
     if (order && order.some((x) => !LAYOUT_ITEMS[area].includes(x))) throw badRequest(`Unknown item for ${area}`);
-    putSetting(`layout_${area}`, order ? JSON.stringify([...new Set(order)]) : null);
+    await putSetting(`layout_${area}`, order ? JSON.stringify([...new Set(order)]) : null);
     return accountView(req);
   });
 
@@ -1254,7 +1276,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const feedbackTimes = new Map();
   const FEEDBACK_PER_HOUR = 5;
   app.get('/api/feedback', { schema: { summary: 'What you have sent, newest first, with its status', response: { 200: { type: 'array', items: anyObject } } } },
-    async () => db.prepare('SELECT id, kind, subject, status, created_at FROM feedback WHERE user_id = @uid ORDER BY created_at DESC LIMIT 50').all());
+    async () => await db.prepare('SELECT id, kind, subject, status, created_at FROM feedback WHERE user_id = @uid ORDER BY created_at DESC LIMIT 50').all());
   app.post('/api/feedback', {
     schema: {
       summary: 'Send feedback, an enhancement request or a bug report to the administrator',
@@ -1265,7 +1287,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     if (authMode === 'demo') return reply.code(403).send({ error: 'Feedback is turned off in the demo' });
-    if (isPaused(req)) return reply.code(403).send({ error: 'Your account is paused; email the administrator instead' });
+    if (await isPaused(req)) return reply.code(403).send({ error: 'Your account is paused; email the administrator instead' });
     const uid = uidOf(req);
     // A subject is one line: control characters (line breaks, tabs) become spaces, so it can never add an email header.
     const subject = req.body.subject.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
@@ -1278,26 +1300,26 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const context = { screen: req.body.screen || null, version: process.env.APP_VERSION || VERSION, browser: String(req.headers['user-agent'] ?? '').slice(0, 300) || null };
     const doing = req.body.doing?.trim() || null;
     const id = randomUUID();
-    db.prepare(`INSERT INTO feedback (user_id, id, kind, subject, body, context, status, created_at) VALUES (@uid, ?, ?, ?, ?, ?, 'new', ?)`)
+    await db.prepare(`INSERT INTO feedback (user_id, id, kind, subject, body, context, status, created_at) VALUES (@uid, ?, ?, ?, ?, ?, 'new', ?)`)
       .run(id, req.body.kind, subject, doing ? `${body}\n\nWhat I was doing: ${doing}` : body, JSON.stringify(context), clock().toISOString());
-    const u = getUser(store.db, uid);
+    const u = await getUser(store.adb, uid);
     log.info(`[feedback] ${req.body.kind} received`);
-    await mailer.send({ to: adminEmail(), replyTo: u?.email, subject: `Health Review [${req.body.kind}] ${subject}`,
+    await mailer.send({ to: await adminEmail(), replyTo: u?.email, subject: `Health Review [${req.body.kind}] ${subject}`,
       text: `${FEEDBACK_KINDS[req.body.kind]} from ${u?.name || u?.email || 'a user'} <${u?.email ?? 'unknown'}>\n\n${subject}\n\n${body}${doing ? `\n\nWhat they were doing: ${doing}` : ''}\n\nScreen: ${context.screen ?? 'not given'} | App: ${context.version} | Browser: ${context.browser ?? 'unknown'}\n\nReply to this email to answer them. All feedback: ${appUrl()}/#users\n` });
     return { sent: true, id };
   });
   app.get('/api/admin/feedback', { onRequest: adminOnlyHook, schema: { summary: 'All feedback, newest first (administrators)', response: { 200: anyObject } } },
-    async () => ({ items: listFeedback(store.db), newCount: newFeedbackCount(store.db) }));
+    async () => ({ items: await listFeedback(store.adb), newCount: await newFeedbackCount(store.adb) }));
   app.post('/api/admin/feedback/:id/status', {
     onRequest: adminOnlyHook,
     schema: { summary: 'Mark feedback new or done (administrators)', params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
       body: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { type: 'string', enum: ['new', 'done'] } } }, response: { 200: anyObject } },
-  }, async (req, reply) => (setFeedbackStatus(store.db, req.params.id, req.body.status) ? { ok: true } : reply.code(404).send({ error: 'Not found' })));
+  }, async (req, reply) => ((await setFeedbackStatus(store.adb, req.params.id, req.body.status)) ? { ok: true } : reply.code(404).send({ error: 'Not found' })));
 
   // ---- the Prompt tab's builder (agent/prompt-draft.js): guided questions, then a template or Claude's draft ----
   const draftTimes = new Map();
   app.get('/api/prompt/builder', { schema: { summary: 'The prompt builder: kinds of section with their questions, and whether Claude can draft', response: { 200: anyObject } } },
-    async (req) => ({ kinds: builderSpec(), claude: typeof services.claude === 'function' && aiOn(req), aiReason: typeof services.claude === 'function' ? aiReason(req) : null }));
+    async (req) => ({ kinds: builderSpec(), claude: typeof services.claude === 'function' && await aiOn(req), aiReason: typeof services.claude === 'function' ? await aiReason(req) : null }));
   app.post('/api/prompt/draft', {
     schema: {
       summary: 'Draft a prompt section from your answers: a template (no AI) or Claude with your AI (your answers only, never your data); nothing is saved',
@@ -1310,7 +1332,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (authMode === 'demo') return reply.code(403).send({ error: 'Changes are turned off in the demo' });
     if (!req.body.useClaude) return templateDraft(req.body.kind, req.body.answers);
     if (typeof services.claude !== 'function') return reply.code(503).send({ error: 'Claude is not available in this server' });
-    const reason = aiReason(req);
+    const reason = await aiReason(req);
     if (reason) return noAi(reply, reason);
     const uid = uidOf(req);
     const hourAgo = clock().getTime() - 3600_000;
@@ -1319,7 +1341,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     draftTimes.set(uid, [...recent, clock().getTime()]);
     const g = await loadGoals(db);
     try {
-      return await claudeDraft({ store: userStore(), claude: services.claude(uid), kind: req.body.kind, answers: req.body.answers,
+      return await claudeDraft({ store: userStore(), claude: await services.claude(uid), kind: req.body.kind, answers: req.body.answers,
         goals: [g.primary, g.secondary].filter(Boolean).map((k) => GOAL_LABELS[k]), logger: { info() {}, warn() {}, error() {} } });
     } catch (err) {
       log.warn(`[prompt] draft failed: ${err.name}`);
@@ -1334,63 +1356,74 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (uidOf(req) === OWNER_ID) return reply.code(409).send({ error: "The owner's time zone comes from the server's settings (OWNER_TZ)" });
     const tz = req.body.timeZone;
     if (tz !== null && !isTimeZone(tz)) throw badRequest('Unknown time zone');
-    if (tz === null) db.prepare("DELETE FROM settings WHERE user_id = @uid AND key = 'time_zone'").run();
+    if (tz === null) await db.prepare("DELETE FROM settings WHERE user_id = @uid AND key = 'time_zone'").run();
     else {
-      db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'time_zone', ?, ?)
+      await db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'time_zone', ?, ?)
         ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(tz, clock().toISOString());
     }
     // This request began in the old zone; answer in the new one.
     return withTimeZone(tz ?? process.env.OWNER_TZ, () => accountView(req));
   });
   app.delete('/api/account/claude-key', { schema: { summary: 'Remove your Claude API key (no AI is used without one)', response: { 200: anyObject } } }, async (req) => {
-    setClaudeKey(store.db, uidOf(req), null);
+    await setClaudeKey(store.adb, uidOf(req), null);
     return accountView(req);
   });
 
   // ---- your account (multi-user, phase 6): export, pause and resume yourself, delete ----
-  const selfFlag = (uid) => scopeDb(store.db, uid);
-  const setSelfPaused = (uid, on) => {
+  const selfFlag = (uid) => scopeDatabase(store.adb, uid);
+  const setSelfPaused = async (uid, on) => {
     const sdb = selfFlag(uid);
     if (on) {
-      sdb.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'paused_by_self', '1', ?)
+      await sdb.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'paused_by_self', '1', ?)
         ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(clock().toISOString());
     } else {
-      sdb.prepare("DELETE FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").run();
+      await sdb.prepare("DELETE FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").run();
     }
   };
-  const notOwner = (req, reply, what) => {
-    if (uidOf(req) !== OWNER_ID && getUser(store.db, uidOf(req))) return true;
+  const notOwner = async (req, reply, what) => {
+    if (uidOf(req) !== OWNER_ID && await getUser(store.adb, uidOf(req))) return true;
     reply.code(409).send({ error: `The owner's account cannot be ${what} here` });
     return false;
   };
   app.get('/api/account/export', { schema: { summary: 'Everything stored for you, as one JSON file (never your sealed key, tokens or Google permission)', response: { 200: anyObject } } },
     async (req, reply) => {
-      const data = exportUserData(store.db, uidOf(req), { now: clock() });
+      const data = await exportUserData(store.adb, uidOf(req), { now: clock() });
       if (!data) return reply.code(404).send({ error: 'No such account' });
       return reply.header('Content-Disposition', `attachment; filename="health-review-export-${q.localDate(clock())}.json"`).send(data);
     });
   app.post('/api/account/pause', { schema: { summary: 'Pause your account: posts, syncs and AI stop until you resume; your data stays', response: { 200: anyObject } } },
     async (req, reply) => {
-      if (!notOwner(req, reply, 'paused')) return reply;
-      if (getUser(store.db, uidOf(req)).status !== 'approved') return reply.code(409).send({ error: 'Your account is not active' });
-      setUserStatus(store.db, uidOf(req), 'paused');
-      setSelfPaused(uidOf(req), true);
+      if (!(await notOwner(req, reply, 'paused'))) return reply;
+      // The status check and both writes in one transaction, so a pause racing an administrator's change cannot mix them.
+      const paused = await store.adb.tx(async () => {
+        if ((await getUser(store.adb, uidOf(req)))?.status !== 'approved') return false;
+        await setUserStatus(store.adb, uidOf(req), 'paused');
+        await setSelfPaused(uidOf(req), true);
+        return true;
+      });
+      if (!paused) return reply.code(409).send({ error: 'Your account is not active' });
       return accountView(req);
     });
   app.post('/api/account/resume', { schema: { summary: 'Resume your account after pausing it yourself (a pause by the administrator stays)', response: { 200: anyObject } } },
     async (req, reply) => {
-      if (!notOwner(req, reply, 'resumed')) return reply;
-      if (!(await accountView(req)).pausedBySelf) return reply.code(409).send({ error: 'Only the administrator can resume this account' });
-      setSelfPaused(uidOf(req), false);
-      setUserStatus(store.db, uidOf(req), 'approved');
+      if (!(await notOwner(req, reply, 'resumed'))) return reply;
+      // Paused by themselves (status paused and the flag set), checked and undone in one transaction.
+      const resumed = await store.adb.tx(async () => {
+        if ((await getUser(store.adb, uidOf(req)))?.status !== 'paused') return false;
+        if (!(await selfFlag(uidOf(req)).prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get())) return false;
+        await setSelfPaused(uidOf(req), false);
+        await setUserStatus(store.adb, uidOf(req), 'approved');
+        return true;
+      });
+      if (!resumed) return reply.code(409).send({ error: 'Only the administrator can resume this account' });
       return accountView(req);
     });
   app.post('/api/account/delete', {
     schema: { summary: 'Delete your account and everything stored for you (confirm with your email); signs you out',
       body: { type: 'object', additionalProperties: false, required: ['confirmEmail'], properties: { confirmEmail: { type: 'string', maxLength: 320 } } }, response: { 200: anyObject } },
   }, async (req, reply) => {
-    if (!notOwner(req, reply, 'deleted')) return reply;
-    const u = getUser(store.db, uidOf(req));
+    if (!(await notOwner(req, reply, 'deleted'))) return reply;
+    const u = await getUser(store.adb, uidOf(req));
     if (String(req.body.confirmEmail).trim().toLowerCase() !== u.email) throw badRequest('Type your email exactly to confirm');
     await deleteAccount(u.id);
     reply.header('Set-Cookie', cookie(SESSION_COOKIE, '', { maxAge: 0, secure: appUrl().startsWith('https:') }));
@@ -1401,13 +1434,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const asks = new Map(); // uid -> times of this hour's questions
   const ASKS_PER_HOUR = 20;
   app.get('/api/help', { schema: { summary: 'Whether Ask is on for you, and why not', response: { 200: anyObject } } },
-    async (req) => ({ ask: typeof services.claude === 'function' && aiOn(req), aiReason: typeof services.claude === 'function' ? aiReason(req) : null }));
+    async (req) => ({ ask: typeof services.claude === 'function' && await aiOn(req), aiReason: typeof services.claude === 'function' ? await aiReason(req) : null }));
   app.post('/api/help/ask', {
     schema: { summary: 'Ask a question about using the app (answered from the guides with your AI; nothing of your data is sent or the answer kept)',
       body: { type: 'object', additionalProperties: false, required: ['question'], properties: { question: { type: 'string', minLength: 1, maxLength: MAX_QUESTION_CHARS } } }, response: { 200: anyObject } },
   }, async (req, reply) => {
     if (typeof services.claude !== 'function') return reply.code(503).send({ error: 'Ask is not available in this server' });
-    const reason = aiReason(req);
+    const reason = await aiReason(req);
     if (reason) return noAi(reply, reason);
     const question = req.body.question.trim();
     if (!question) throw badRequest('question must not be blank');
@@ -1417,7 +1450,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (recent.length >= ASKS_PER_HOUR) return reply.code(429).send({ error: `At most ${ASKS_PER_HOUR} questions an hour; try again later` });
     asks.set(uid, [...recent, clock().getTime()]);
     try {
-      return await askHelp({ store: userStore(), claude: services.claude(uid), question, site: appUrl(), logger: { info() {}, warn() {}, error() {} } });
+      return await askHelp({ store: userStore(), claude: await services.claude(uid), question, site: appUrl(), logger: { info() {}, warn() {}, error() {} } });
     } catch (err) {
       log.warn(`[help] ask failed: ${err.name}`);
       return reply.code(502).send({ error: 'Claude could not answer just now; try again' });
@@ -1447,34 +1480,35 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       querystring: { type: 'object', additionalProperties: false, properties: { weeks: { type: 'integer', minimum: 4, maximum: 52, default: 12 } } },
       response: { 200: usageSchema } },
   }, async (req) => {
-    const weeks = usageByWeek(store.db, { weeks: req.query.weeks, now: clock() });
+    const weeks = await usageByWeek(store.adb, { weeks: req.query.weeks, now: clock() });
     const today = zonedDate(clock(), process.env.OWNER_TZ || DEFAULT_TZ);
-    return { weeks, ...usageTotals(store.db, { from: addDays(weeks.at(-1).weekEnding, -6), to: today }) };
+    return { weeks, ...(await usageTotals(store.adb, { from: addDays(weeks.at(-1).weekEnding, -6), to: today })) };
   });
   app.get('/api/admin/users', { onRequest: adminOnly, schema: { summary: 'Every user (account facts only, never keys or health data), pending first', response: { 200: { type: 'array', items: anyObject } } } },
-    async () => listUsers(store.db, { now: clock() }));
+    async () => await listUsers(store.adb, { now: clock() }));
   const userIdParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64 } } };
   app.post('/api/admin/users/:id/approve', { onRequest: adminOnly, schema: { summary: 'Approve a user: they get in, start from the default prompt sections, and get an email', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
-    const u = setUserStatus(store.db, req.params.id, 'approved');
+    const u = await setUserStatus(store.adb, req.params.id, 'approved');
     if (!u) return reply.code(404).send({ error: 'No such user' });
-    await addDefaultPromptSections(scopeDb(store.db, u.id));
+    // Count, then add, in one transaction (agent/default-prompts.js adds only to an empty list).
+    await store.adb.tx(() => addDefaultPromptSections(scopeDatabase(store.adb, u.id)));
     await mailer.send({ to: u.email, subject: "You're in: Health Review",
       text: `Your Health Review account is approved.\n\nOpen ${appUrl()} and sign in with this Google account. To use the AI weekly review and chat, add your own Claude API key in Settings (see https://docs.claude.com/en/api/getting-started). Everything else works without one.\n${supportLine}` });
-    return adminUser(u.id);
+    return await adminUser(u.id);
   });
   app.post('/api/admin/users/:id/reject', { onRequest: adminOnly, schema: { summary: 'Reject a pending user (or end access)', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
-    const u = setUserStatus(store.db, req.params.id, 'rejected');
+    const u = await setUserStatus(store.adb, req.params.id, 'rejected');
     if (!u) return reply.code(404).send({ error: 'No such user' });
     // Ending access also ends the owner's key for them, so approving them again never quietly restores it.
-    if (u.uses_owner_key) { setOwnerKey(store.db, u.id, { on: false }); clearCapNotice(store.db, u.id); }
-    return adminUser(u.id);
+    if (u.uses_owner_key) { await setOwnerKey(store.adb, u.id, { on: false }); await clearCapNotice(store.adb, u.id); }
+    return await adminUser(u.id);
   });
   // One user as the Users screen lists them (the same facts as GET /api/admin/users).
-  const adminUser = (id) => listUsers(store.db, { now: clock() }).find((u) => u.id === id) ?? null;
+  const adminUser = async (id) => (await listUsers(store.adb, { now: clock() })).find((u) => u.id === id) ?? null;
   // A user these switches may change: exists, not an administrator, and in one of the given statuses. Sends the refusal
   // and returns null otherwise.
-  const changeable = (reply, id, statuses = ['approved', 'paused']) => {
-    const u = getUser(store.db, id);
+  const changeable = async (reply, id, statuses = ['approved', 'paused']) => {
+    const u = await getUser(store.adb, id);
     const refuse = (code, error) => { reply.code(code).send({ error }); return null; };
     if (!u) return refuse(404, 'No such user');
     if (u.role === 'admin') return refuse(409, "An administrator's account is not changed here");
@@ -1485,11 +1519,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   for (const [action, from, to] of [['pause', 'approved', 'paused'], ['resume', 'paused', 'approved']]) {
     const summary = action === 'pause' ? 'Pause a user: posts, syncs, reviews and chat stop; they can still sign in and see their data' : 'Resume a paused user';
     app.post(`/api/admin/users/:id/${action}`, { onRequest: adminOnly, schema: { summary, params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
-      if (!changeable(reply, req.params.id, [from])) return reply;
-      setUserStatus(store.db, req.params.id, to);
-      setSelfPaused(req.params.id, false); // the administrator's pause or resume: only the administrator resumes it
+      if (!(await changeable(reply, req.params.id, [from]))) return reply;
+      await store.adb.tx(async () => {
+        await setUserStatus(store.adb, req.params.id, to);
+        await setSelfPaused(req.params.id, false); // the administrator's pause or resume: only the administrator resumes it
+      });
       log.info(`[users] a user was ${to === 'paused' ? 'paused' : 'resumed'}`);
-      return adminUser(req.params.id);
+      return await adminUser(req.params.id);
     });
   }
   // Delete a user and everything stored for them, confirmed with their email (for a user who asks the administrator).
@@ -1498,11 +1534,12 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     schema: { summary: "Delete a user's account and all of their data (confirm with their email)", params: userIdParams,
       body: { type: 'object', additionalProperties: false, required: ['confirmEmail'], properties: { confirmEmail: { type: 'string', maxLength: 320 } } }, response: { 200: anyObject } },
   }, async (req, reply) => {
-    const u = getUser(store.db, req.params.id);
+    const u = await getUser(store.adb, req.params.id);
     if (!u) return reply.code(404).send({ error: 'No such user' });
     if (u.role === 'admin') return reply.code(409).send({ error: "An administrator's account is not deleted here" });
     if (String(req.body.confirmEmail).trim().toLowerCase() !== u.email) throw badRequest("Type the user's email exactly to confirm");
-    deleteUserData(store.db, u.id);
+    // The role is checked again inside the deletion's transaction.
+    if (!(await deleteUserData(store.adb, u.id))) return reply.code(409).send({ error: "An administrator's account is not deleted here" });
     log.info('[users] a user and their data were deleted by the administrator');
     return { deleted: true };
   });
@@ -1519,7 +1556,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     // Revoking is always allowed (any status, even rejected); turning it on needs an approved or paused user.
-    const u = changeable(reply, req.params.id, req.body.on ? ['approved', 'paused'] : ['pending', 'approved', 'paused', 'rejected']);
+    const u = await changeable(reply, req.params.id, req.body.on ? ['approved', 'paused'] : ['pending', 'approved', 'paused', 'rejected']);
     if (!u) return reply;
     const { on, confirmEmail } = req.body;
     const cap = req.body.cap === undefined ? null : Math.round(req.body.cap * 100) / 100;
@@ -1527,13 +1564,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       if (cap === null) throw badRequest(`A monthly cap from $${OWNER_KEY_CAP.min} to $${OWNER_KEY_CAP.max} is required`);
       if (String(confirmEmail ?? '').trim().toLowerCase() !== u.email) throw badRequest("Type the user's email exactly to confirm");
     }
-    setOwnerKey(store.db, u.id, { on, cap: on ? cap : null });
-    clearCapNotice(store.db, u.id);
+    await setOwnerKey(store.adb, u.id, { on, cap: on ? cap : null });
+    await clearCapNotice(store.adb, u.id);
     log.info(`[users] the owner's key was turned ${on ? 'on' : 'off'} for a user`);
     await mailer.send({ to: u.email, subject: on ? 'Health Review: AI turned on for you' : 'Health Review: AI allowance ended',
       text: on ? `The administrator turned on the AI weekly review and chat for you, up to $${cap.toFixed(2)} a month. Open ${appUrl()} to use them. If you add your own Claude API key in Settings, it is used instead.\n${supportLine}`
         : `The administrator's AI allowance for you has ended. To keep using the AI weekly review and chat, add your own Claude API key in Settings at ${appUrl()}.\n${supportLine}` });
-    return adminUser(u.id);
+    return await adminUser(u.id);
   });
   // Share the owner's MAPS catalog (family): their Advisor, phases and called-for comparisons use it; only computed facts
   // reach them, never the catalog's text.
@@ -1542,11 +1579,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     schema: { summary: 'Share your MAPS program catalog with a user, or stop', params: userIdParams,
       body: { type: 'object', additionalProperties: false, required: ['shared'], properties: { shared: { type: 'boolean' } } }, response: { 200: anyObject } },
   }, async (req, reply) => {
-    const u = changeable(reply, req.params.id);
+    const u = await changeable(reply, req.params.id);
     if (!u) return reply;
-    setMapsShared(store.db, u.id, req.body.shared);
+    await setMapsShared(store.adb, u.id, req.body.shared);
     log.info(`[users] the MAPS catalog was ${req.body.shared ? 'shared with' : 'unshared from'} a user`);
-    return adminUser(u.id);
+    return await adminUser(u.id);
   });
 
   app.put('/api/profile', {
@@ -1568,7 +1605,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const upsert = db.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
       ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
     const remove = db.prepare('DELETE FROM settings WHERE user_id = @uid AND key = ?');
-    for (const [k, v] of Object.entries(req.body)) (v === null ? remove.run(k) : upsert.run(k, String(v), new Date().toISOString()));
+    await db.tx(async () => {
+      for (const [k, v] of Object.entries(req.body)) await (v === null ? remove.run(k) : upsert.run(k, String(v), new Date().toISOString()));
+    });
     return loadProfile(db, today);
   });
 

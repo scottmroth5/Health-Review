@@ -1,6 +1,7 @@
 // The only queries that read across users (multi-user, phase 1): system checks such as the scheduler's, and later the
 // admin's user list. test/user-scope.test.js exempts this file; every other query is scoped to one user (db/scope.js).
 // Takes the shared, unscoped database. Metadata only: names, statuses and times, never health or report text.
+// Async (v3 Phase 1B slice 4b, docs/adr/0006): every statement is awaited, so each runs on either handle.
 
 import { RUNNING_STALE_MINUTES } from './scheduler.js';
 import { monthStartIso } from './ai-access.js';
@@ -18,8 +19,8 @@ export function jobRunsLookup(db) {
   const last = raw.prepare('SELECT started_at FROM runs WHERE name = ? ORDER BY id DESC LIMIT 1').pluck();
   const running = raw.prepare("SELECT 1 FROM runs WHERE name = ? AND status = 'running' AND started_at >= ? LIMIT 1").pluck();
   return {
-    lastRanAt: (name) => last.get(name) ?? null,
-    isRunning: (name, now = new Date()) => Boolean(running.get(name, new Date(now.getTime() - RUNNING_STALE_MINUTES * 60_000).toISOString())),
+    lastRanAt: async (name) => (await last.get(name)) ?? null,
+    isRunning: async (name, now = new Date()) => Boolean(await running.get(name, new Date(now.getTime() - RUNNING_STALE_MINUTES * 60_000).toISOString())),
   };
 }
 
@@ -28,9 +29,9 @@ export function jobRunsLookup(db) {
  * key or sheet ID), the last post and sync, this month's AI spend (owner's time zone) and counts of their stored days and
  * reviews. Never health values or report text.
  */
-export function listUsers(db, { now = new Date() } = {}) {
+export async function listUsers(db, { now = new Date() } = {}) {
   const raw = db.unscoped ?? db;
-  return raw.prepare(`SELECT u.id, u.email, u.name, u.role, u.status, u.created_at, u.approved_at, u.last_seen_at,
+  return (await raw.prepare(`SELECT u.id, u.email, u.name, u.role, u.status, u.created_at, u.approved_at, u.last_seen_at,
       u.claude_key_enc IS NOT NULL AS has_key, u.uses_owner_key, u.owner_key_cap_usd, u.maps_shared, u.feeds,
       u.ingest_token_hash IS NOT NULL AS has_token, u.google_refresh_enc IS NOT NULL AS google_connected,
       EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'workout_log_sheet_id') AS sheet_set,
@@ -53,7 +54,7 @@ export function listUsers(db, { now = new Date() } = {}) {
       (SELECT COUNT(*) FROM drinking_days d WHERE d.user_id = u.id) AS drinks,
       (SELECT value FROM settings s WHERE s.user_id = u.id AND s.key = 'setup_dismissed') AS setup_dismissed,
       EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'setup_hidden') AS setup_hidden
-    FROM users u ORDER BY u.status = 'pending' DESC, u.role = 'admin' DESC, u.created_at DESC`).all({ since: monthStartIso(now) })
+    FROM users u ORDER BY u.status = 'pending' DESC, u.role = 'admin' DESC, u.created_at DESC`).all({ since: monthStartIso(now) }))
     .map(({ feeds, goals_set, profile_keys, workouts, sheet_days, app_workouts, checkins, meds, labs, drinks, setup_dismissed, setup_hidden, ...u }) => {
       let chosen = {};
       try { chosen = JSON.parse(feeds ?? '{}') ?? {}; } catch { chosen = {}; }
@@ -80,43 +81,45 @@ export function listUsers(db, { now = new Date() } = {}) {
 }
 
 /** A new pending user from a registration (their Google name and address); returns the row. */
-export function createPendingUser(db, { email, name, id, now = new Date().toISOString(), healthConsentVersion = null }) {
+export async function createPendingUser(db, { email, name, id, now = new Date().toISOString(), healthConsentVersion = null }) {
   const raw = db.unscoped ?? db;
-  raw.prepare(`INSERT INTO users (id, email, name, role, status, created_at, terms_accepted_at, health_consent_at, health_consent_version)
+  await raw.prepare(`INSERT INTO users (id, email, name, role, status, created_at, terms_accepted_at, health_consent_at, health_consent_version)
     VALUES (?, ?, ?, 'user', 'pending', ?, ?, ?, ?)`)
     .run(id, String(email).toLowerCase(), name ?? null, now, now, healthConsentVersion ? now : null, healthConsentVersion);
-  return raw.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  return await raw.prepare('SELECT * FROM users WHERE id = ?').get(id);
 }
 
 /** Sets a user's status (approve, reject, pause, resume); the owner's own status never changes. Returns the row or null. */
-export function setUserStatus(db, id, status, now = new Date().toISOString()) {
+export async function setUserStatus(db, id, status, now = new Date().toISOString()) {
   const raw = db.unscoped ?? db;
-  const changed = raw.prepare(`UPDATE users SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN COALESCE(approved_at, ?) ELSE approved_at END
-    WHERE id = ? AND role <> 'admin'`).run(status, status, now, id).changes;
-  return changed ? raw.prepare('SELECT * FROM users WHERE id = ?').get(id) : null;
+  const { changes: changed } = await raw.prepare(`UPDATE users SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN COALESCE(approved_at, ?) ELSE approved_at END
+    WHERE id = ? AND role <> 'admin'`).run(status, status, now, id);
+  return changed ? await raw.prepare('SELECT * FROM users WHERE id = ?').get(id) : null;
 }
 
 /** Users who get scheduled jobs: approved, not paused. The owner is first. */
-export function activeUserIds(db) {
+export async function activeUserIds(db) {
   const raw = db.unscoped ?? db;
   // A user who has not given the health data consent gets no scheduled jobs until they do.
-  return raw.prepare("SELECT id FROM users WHERE status = 'approved' AND (role = 'admin' OR health_consent_at IS NOT NULL) ORDER BY role = 'admin' DESC, created_at").pluck().all();
+  return await raw.prepare("SELECT id FROM users WHERE status = 'approved' AND (role = 'admin' OR health_consent_at IS NOT NULL) ORDER BY role = 'admin' DESC, created_at").pluck().all();
 }
 
 /** The administrator's Claude key for a user: on with a monthly cap in dollars, or off (cap cleared). Never an admin. */
-export function setOwnerKey(db, id, { on, cap = null }) {
-  (db.unscoped ?? db).prepare("UPDATE users SET uses_owner_key = ?, owner_key_cap_usd = ? WHERE id = ? AND role <> 'admin'").run(on ? 1 : 0, on ? cap : null, id);
+export async function setOwnerKey(db, id, { on, cap = null }) {
+  await (db.unscoped ?? db).prepare("UPDATE users SET uses_owner_key = ?, owner_key_cap_usd = ? WHERE id = ? AND role <> 'admin'").run(on ? 1 : 0, on ? cap : null, id);
 }
 
 /** Shares the owner's MAPS catalog with a user, or stops. Never an admin. */
-export function setMapsShared(db, id, shared) {
-  (db.unscoped ?? db).prepare("UPDATE users SET maps_shared = ? WHERE id = ? AND role <> 'admin'").run(shared ? 1 : 0, id);
+export async function setMapsShared(db, id, shared) {
+  await (db.unscoped ?? db).prepare("UPDATE users SET maps_shared = ? WHERE id = ? AND role <> 'admin'").run(shared ? 1 : 0, id);
 }
 
 /** Every table with a user_id column, read from the schema (so a new user table is never missed), parents first. */
-function userIdTables(raw) {
-  const tables = raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all()
-    .filter((t) => raw.prepare(`PRAGMA table_info("${t}")`).all().some((c) => c.name === 'user_id'));
+async function userIdTables(raw) {
+  const tables = [];
+  for (const t of await raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all()) {
+    if ((await raw.prepare(`PRAGMA table_info("${t}")`).all()).some((c) => c.name === 'user_id')) tables.push(t);
+  }
   const order = new Map(USER_TABLES.map((t, i) => [t, i]));
   return tables.sort((a, b) => (order.get(a) ?? -1) - (order.get(b) ?? -1));
 }
@@ -128,31 +131,33 @@ const SECRET_USER_COLUMNS = ['claude_key_enc', 'ingest_token_hash', 'google_refr
  * Everything stored for one user (multi-user, phase 6, "Export my data"): their account facts and every row of theirs
  * in every table with a user_id, plus their runs' call metadata. Never their sealed keys, Google permission or token hash.
  */
-export function exportUserData(db, uid, { now = new Date() } = {}) {
+export async function exportUserData(db, uid, { now = new Date() } = {}) {
   const raw = db.unscoped ?? db;
-  const user = raw.prepare('SELECT * FROM users WHERE id = ?').get(uid);
+  const user = await raw.prepare('SELECT * FROM users WHERE id = ?').get(uid);
   if (!user) return null;
   for (const c of SECRET_USER_COLUMNS) delete user[c];
-  const tables = Object.fromEntries(userIdTables(raw).map((t) => [t, raw.prepare(`SELECT * FROM "${t}" WHERE user_id = ? ORDER BY rowid`).all(uid)]));
-  tables.run_calls = raw.prepare('SELECT c.* FROM run_calls c JOIN runs r ON r.id = c.run_id WHERE r.user_id = ? ORDER BY c.id').all(uid);
+  const tables = {};
+  for (const t of await userIdTables(raw)) tables[t] = await raw.prepare(`SELECT * FROM "${t}" WHERE user_id = ? ORDER BY rowid`).all(uid);
+  tables.run_calls = await raw.prepare('SELECT c.* FROM run_calls c JOIN runs r ON r.id = c.run_id WHERE r.user_id = ? ORDER BY c.id').all(uid);
   return { exportedAt: now.toISOString(), format: 'health-review-export-1', account: user, tables };
 }
 
 /**
  * Deletes a user and everything stored for them (phase 6): every row of theirs in every table with a user_id (children
  * first; run_calls go with their runs), then the users row, in one transaction. Never an admin. Returns the counts
- * deleted per table, or null when there is no such user (or it is an admin).
+ * deleted per table, or null when there is no such user (or it is an admin). Takes the async handle (db.tx): the role
+ * check runs inside the transaction, so a change to the user between the check and the deletes cannot slip through.
  */
-export function deleteUserData(db, uid) {
+export async function deleteUserData(db, uid) {
   const raw = db.unscoped ?? db;
-  const user = raw.prepare('SELECT role FROM users WHERE id = ?').get(uid);
-  if (!user || user.role === 'admin') return null;
-  const counts = {};
-  raw.transaction(() => {
-    for (const t of userIdTables(raw).reverse()) counts[t] = raw.prepare(`DELETE FROM "${t}" WHERE user_id = ?`).run(uid).changes;
-    raw.prepare('DELETE FROM users WHERE id = ?').run(uid);
-  })();
-  return counts;
+  return raw.tx(async () => {
+    const user = await raw.prepare('SELECT role FROM users WHERE id = ?').get(uid);
+    if (!user || user.role === 'admin') return null;
+    const counts = {};
+    for (const t of (await userIdTables(raw)).reverse()) counts[t] = (await raw.prepare(`DELETE FROM "${t}" WHERE user_id = ?`).run(uid)).changes;
+    await raw.prepare('DELETE FROM users WHERE id = ?').run(uid);
+    return counts;
+  });
 }
 
 /**
@@ -166,7 +171,7 @@ export function deleteUserData(db, uid) {
  * - feedback: items received
  * Totals only: never a user, an entry's date, a value or any text. UTC times are read as the owner's dates.
  */
-export function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env.OWNER_TZ || DEFAULT_TZ } = {}) {
+export async function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env.OWNER_TZ || DEFAULT_TZ } = {}) {
   const raw = db.unscoped ?? db;
   const today = localDate(now, tz);
   const dayOfWeek = (date) => new Date(`${date}T00:00:00Z`).getUTCDay();
@@ -182,7 +187,7 @@ export function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env
   const ownerDay = (iso) => localDate(new Date(iso), tz);
   // A day of slack before the first week: UTC times, and the owner's day can begin a few hours later or earlier.
   const since = `${addDays(from, -1)}T00:00:00Z`;
-  for (const r of raw.prepare('SELECT name, status, started_at, cost_usd, user_id FROM runs WHERE started_at >= ?').all(since)) {
+  for (const r of await raw.prepare('SELECT name, status, started_at, cost_usd, user_id FROM runs WHERE started_at >= ?').all(since)) {
     const week = weekOf(ownerDay(r.started_at));
     if (!week) continue;
     const w = rows.get(week);
@@ -195,18 +200,18 @@ export function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env
     }
   }
   for (const table of ['checkins', 'log_sessions']) {
-    for (const { date, user_id: uid } of raw.prepare(`SELECT date, user_id FROM ${table} WHERE date BETWEEN ? AND ?`).all(from, today)) {
+    for (const { date, user_id: uid } of await raw.prepare(`SELECT date, user_id FROM ${table} WHERE date BETWEEN ? AND ?`).all(from, today)) {
       const week = weekOf(date);
       if (!week) continue;
       rows.get(week)[table === 'checkins' ? 'checkins' : 'liftingDays'] += 1;
       active.get(week).add(uid);
     }
   }
-  for (const { received_at: at, user_id: uid } of raw.prepare("SELECT received_at, user_id FROM ingest_log WHERE result = 'ok' AND received_at >= ?").all(since)) {
+  for (const { received_at: at, user_id: uid } of await raw.prepare("SELECT received_at, user_id FROM ingest_log WHERE result = 'ok' AND received_at >= ?").all(since)) {
     const week = weekOf(ownerDay(at));
     if (week) active.get(week).add(uid);
   }
-  for (const { created_at: at } of raw.prepare('SELECT created_at FROM feedback WHERE created_at >= ?').all(since)) {
+  for (const { created_at: at } of await raw.prepare('SELECT created_at FROM feedback WHERE created_at >= ?').all(since)) {
     const week = weekOf(ownerDay(at));
     if (week) rows.get(week).feedback += 1;
   }
@@ -223,7 +228,7 @@ export function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env
  * sign-in is left out of arrivals: it is kept only so that coming back from signing in never counts as a real source.
  * Counts only, largest first.
  */
-export function usageTotals(db, { from, to, topCities = 15 }) {
+export async function usageTotals(db, { from, to, topCities = 15 }) {
   const raw = db.unscoped ?? db;
   const sum = (dimension) => raw.prepare(`SELECT value, SUM(count) AS count FROM usage_totals
     WHERE dimension = ? AND day BETWEEN ? AND ? GROUP BY value ORDER BY count DESC, value`).all(dimension, from, to);
@@ -231,7 +236,7 @@ export function usageTotals(db, { from, to, topCities = 15 }) {
   const countries = new Map();
   const states = new Map();
   const cities = [];
-  for (const { value, count } of sum('location')) {
+  for (const { value, count } of await sum('location')) {
     const parts = value.split(', ');
     const country = parts.length === 3 ? parts[2] : 'Unknown';
     countries.set(country, (countries.get(country) ?? 0) + count);
@@ -240,25 +245,25 @@ export function usageTotals(db, { from, to, topCities = 15 }) {
     cities.push({ value: parts.length === 3 ? value : 'Unknown', count });
   }
   return {
-    visits: { device: sum('device'), browser: sum('browser'), location: { countries: ranked(countries), states: ranked(states), cities: cities.slice(0, topCities) } },
-    arrivals: sum('source').filter((r) => r.value !== 'google_signin_return'),
+    visits: { device: await sum('device'), browser: await sum('browser'), location: { countries: ranked(countries), states: ranked(states), cities: cities.slice(0, topCities) } },
+    arrivals: (await sum('source')).filter((r) => r.value !== 'google_signin_return'),
   };
 }
 
 /** Feedback from every user for the administrator, newest first, with who sent it. */
-export function listFeedback(db) {
+export async function listFeedback(db) {
   const raw = db.unscoped ?? db;
-  return raw.prepare(`SELECT f.id, f.kind, f.subject, f.body, f.context, f.status, f.created_at, u.email, u.name
-    FROM feedback f JOIN users u ON u.id = f.user_id ORDER BY f.created_at DESC LIMIT 500`).all()
+  return (await raw.prepare(`SELECT f.id, f.kind, f.subject, f.body, f.context, f.status, f.created_at, u.email, u.name
+    FROM feedback f JOIN users u ON u.id = f.user_id ORDER BY f.created_at DESC LIMIT 500`).all())
     .map((r) => ({ ...r, context: r.context ? JSON.parse(r.context) : null }));
 }
 
 /** Marks a feedback item new or done; returns whether it existed. */
-export function setFeedbackStatus(db, id, status) {
-  return (db.unscoped ?? db).prepare('UPDATE feedback SET status = ? WHERE id = ?').run(status, id).changes > 0;
+export async function setFeedbackStatus(db, id, status) {
+  return (await (db.unscoped ?? db).prepare('UPDATE feedback SET status = ? WHERE id = ?').run(status, id)).changes > 0;
 }
 
 /** How many feedback items are new (the Users tile badge). */
-export function newFeedbackCount(db) {
-  return (db.unscoped ?? db).prepare("SELECT COUNT(*) FROM feedback WHERE status = 'new'").pluck().get();
+export async function newFeedbackCount(db) {
+  return await (db.unscoped ?? db).prepare("SELECT COUNT(*) FROM feedback WHERE status = 'new'").pluck().get();
 }

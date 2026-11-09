@@ -108,17 +108,17 @@ export function createUsageTotals({ db, place = null, tz, siteHost = null, demoH
   const today = () => localDate(now(), tz);
   return {
     /** A signed-in browser visit by uid (the auth hook marked it); counted once a day per account. */
-    visit(req, uid) {
+    async visit(req, uid) {
       const day = today();
       if (day !== seenDay) { seenDay = day; seen = new Set(); }
       if (!uid || seen.has(uid)) return;
       seen.add(uid);
-      add.run(day, 'device', deviceOf(header(req, 'user-agent'), header(req, 'sec-ch-ua-mobile')));
-      add.run(day, 'browser', browserOf(header(req, 'user-agent')));
-      add.run(day, 'location', locationOf(place, req.ip));
+      await add.run(day, 'device', deviceOf(header(req, 'user-agent'), header(req, 'sec-ch-ua-mobile')));
+      await add.run(day, 'browser', browserOf(header(req, 'user-agent')));
+      await add.run(day, 'location', locationOf(place, req.ip));
     },
     /** A page arrival (the sign-in page or the app page): its source only. Internal navigation is not an arrival. */
-    arrival(req) {
+    async arrival(req) {
       const dest = header(req, 'sec-fetch-dest');
       if (dest && dest !== 'document') return;
       if (header(req, 'sec-fetch-site') === 'same-origin') return;
@@ -127,7 +127,7 @@ export function createUsageTotals({ db, place = null, tz, siteHost = null, demoH
         try { if (new URL(referer).hostname.toLowerCase() === appHost) return; } catch { /* other */ }
       }
       const query = String(req.url ?? '').split('?')[1] ?? '';
-      add.run(today(), 'source', sourceOf({ query, referer, siteHost, demoHost }));
+      await add.run(today(), 'source', sourceOf({ query, referer, siteHost, demoHost }));
     },
   };
 }

@@ -97,47 +97,49 @@ if (demo) {
   // none otherwise (no AI for them, and the screens say why).
   const mailer = createMailer();
   const appUrl = () => auth.settings?.publicUrl || `http://localhost:${port}`;
-  const alerts = createAlerts({ db: store.db, mailer, adminEmail: () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email, appUrl });
-  const ai = createAiAccess({ supportEmail: process.env.SUPPORT_EMAIL, db: store.db, mailer, adminEmail: () => process.env.ADMIN_EMAIL || getUser(store.db, OWNER_ID)?.email, appUrl });
+  // The async handle throughout (docs/adr/0006, v3 Phase 1B slice 4b).
+  const adminEmail = async () => process.env.ADMIN_EMAIL || (await getUser(store.adb, OWNER_ID))?.email;
+  const alerts = createAlerts({ db: store.adb, mailer, adminEmail, appUrl });
+  const ai = createAiAccess({ supportEmail: process.env.SUPPORT_EMAIL, db: store.adb, mailer, adminEmail, appUrl });
   const ownerClaude = (() => { let c; return () => (c ??= createReviewClaude()); })();
-  const claudeFor = (uid = OWNER_ID) => {
-    const { source } = ai.check(uid);
+  const claudeFor = async (uid = OWNER_ID) => {
+    const { source } = await ai.check(uid);
     if (source === 'owner' || source === 'owner-for-user') return ownerClaude();
-    return source === 'own' ? createReviewClaude({ apiKey: open(getUser(store.db, uid).claude_key_enc, uid) }) : null;
+    return source === 'own' ? createReviewClaude({ apiKey: open((await getUser(store.adb, uid)).claude_key_enc, uid) }) : null;
   };
-  const hasAi = (uid) => ai.check(uid).source !== null;
+  const hasAi = async (uid) => (await ai.check(uid)).source !== null;
   // A user's own Google permission for Sheets (read only), from their sealed refresh token, with the web sign-in client.
-  const sheetsAuthFor = (uid) => {
-    const sealed = getUser(store.db, uid)?.google_refresh_enc;
+  const sheetsAuthFor = async (uid) => {
+    const sealed = (await getUser(store.adb, uid))?.google_refresh_enc;
     if (!sealed) throw new Error('Google Sheets is not connected');
     const client = new OAuth2Client({ clientId: auth.settings.clientId, clientSecret: auth.settings.clientSecret });
     client.setCredentials({ refresh_token: open(sealed, uid) });
     return client;
   };
   const userFeedFor = async (uid) => {
-    const sheetId = forUser(uid).db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").pluck().get() ?? null;
-    if (!sheetId || !getUser(store.db, uid)?.google_refresh_enc) return null;
-    const created = forUser(uid).db.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_created'").pluck().get();
-    const auth = sheetsAuthFor(uid);
+    const sheetId = (await forUser(uid).adb.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_sheet_id'").pluck().get()) ?? null;
+    if (!sheetId || !(await getUser(store.adb, uid))?.google_refresh_enc) return null;
+    const created = await forUser(uid).adb.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'workout_log_created'").pluck().get();
+    const auth = await sheetsAuthFor(uid);
     return { auth, sheetId, catalog: await catalogFor(uid),
       // Only the sheet Health Review created for them (drive.file); the year is theirs (their time zone).
       ensureYearTab: created === sheetId ? () => ensureYearTab({ auth, sheetId, year: ownerDate().slice(0, 4) }) : null };
   };
   // A user's program catalog: their own programs (phase 5), plus the owner's MAPS catalog when the owner shares it with
   // them. The owner's is left undefined, so each job reads the MAPS file and the owner's own programs when it runs.
-  const catalogFor = async (uid) => (uid === OWNER_ID ? undefined : await userCatalog(forUser(uid).db, getUser(store.db, uid)?.maps_shared ? loadCatalog() : null));
+  const catalogFor = async (uid) => (uid === OWNER_ID ? undefined : await userCatalog(forUser(uid).adb, (await getUser(store.adb, uid))?.maps_shared ? loadCatalog() : null));
   const services = {
     sync: async ({ uid = OWNER_ID } = {}) => syncJob({ store: forUser(uid), userFeed: uid === OWNER_ID ? undefined : await userFeedFor(uid) }),
     // A user's sheet: its tab names, read with their own Google permission (checks a sheet before it is saved).
-    sheetTabs: async (uid, sheetId) => createSheetsSource(sheetsAuthFor(uid), { WORKOUT_LOG_SHEET_ID: sheetId }).listTabs('workout_log'),
+    sheetTabs: async (uid, sheetId) => createSheetsSource(await sheetsAuthFor(uid), { WORKOUT_LOG_SHEET_ID: sheetId }).listTabs('workout_log'),
     // "Create my Workout Log": a new sheet in their Drive with their drive.file permission, tabbed for this year.
-    createWorkoutSheet: (uid) => createWorkoutSheet({ auth: sheetsAuthFor(uid), year: ownerDate().slice(0, 4) }),
+    createWorkoutSheet: async (uid) => createWorkoutSheet({ auth: await sheetsAuthFor(uid), year: ownerDate().slice(0, 4) }),
     claude: claudeFor,
     hasAi,
     aiAccess: (uid) => ai.check(uid),
     // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.
     review: async ({ uid = OWNER_ID, weekEnd, today }) => runReview({
-      store: forUser(uid), claude: claudeFor(uid), catalog: await catalogFor(uid), weekEnd, today, logger: quiet,
+      store: forUser(uid), claude: await claudeFor(uid), catalog: await catalogFor(uid), weekEnd, today, logger: quiet,
       model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
     }),
   };
@@ -147,23 +149,23 @@ if (demo) {
   // Each user's jobs run in their own time zone (tools/time.js withTimeZone), so their "today" and review week are theirs;
   // the schedule itself is on the owner's clock. A failure emails the administrator (server/alerts.js), once a day.
   const who = (uid) => (uid === OWNER_ID ? 'owner' : 'a user');
-  const emailOf = (uid) => getUser(store.db, uid)?.email ?? 'a user';
+  const emailOf = async (uid) => (await getUser(store.adb, uid))?.email ?? 'a user';
   const eachUser = async (job, fn) => {
-    for (const uid of activeUserIds(store.db)) {
+    for (const uid of await activeUserIds(store.adb)) {
       try {
-        await withTimeZone(timeZoneOf(store.db, uid), () => fn(uid));
-        alerts.recovered(`${job}:${uid}`);
+        await withTimeZone(await timeZoneOf(store.adb, uid), () => fn(uid));
+        await alerts.recovered(`${job}:${uid}`);
       } catch (err) {
         console.error(`[${job}] failed for ${who(uid)}: ${err.name}`);
         await alerts.alert(`${job}:${uid}`, uid === OWNER_ID ? `the scheduled ${job} failed` : `a user's scheduled ${job} failed`,
-          `The scheduled ${job} failed${uid === OWNER_ID ? '' : ` for ${emailOf(uid)}`} (${err.name}).`);
+          `The scheduled ${job} failed${uid === OWNER_ID ? '' : ` for ${await emailOf(uid)}`} (${err.name}).`);
       }
     }
   };
   const ownerJob = async (job, fn) => {
     try {
       await fn();
-      alerts.recovered(job);
+      await alerts.recovered(job);
     } catch (err) {
       await alerts.alert(job, `the ${job} failed`, `The scheduled ${job} failed (${err.name}).`);
       throw err;
@@ -178,7 +180,7 @@ if (demo) {
     }),
     review: () => eachUser('review', async (uid) => {
       // No AI (no key, or the owner's key past its cap): the week is skipped for that user and recorded with its reason.
-      const { reason } = ai.check(uid);
+      const { reason } = await ai.check(uid);
       if (reason) {
         startUserRun(forUser(uid), 'review', { gate: true, reason }, quiet).finish('skipped', { reason });
         return;
@@ -203,7 +205,7 @@ if (demo) {
   if (geo.lookup && !relay) alerts.alert('geo-relay', 'Private Relay list missing', "Apple's iCloud Private Relay address list is missing from the server image, so visitors with Private Relay on may be refused. The next image build adds it.").catch(() => {});
   scheduler = createScheduler({
     jobs: schedulesFromEnv().filter((j) => runners[j.name]).map((j) => ({ ...j, run: runners[j.name] })),
-    runs: jobRunsLookup(store.db),
+    runs: jobRunsLookup(store.adb),
   });
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
   const ingest = { token: process.env.INGEST_TOKEN || null, apple: appleSource() };
@@ -216,7 +218,7 @@ if (demo) {
 }
 await app.listen({ host, port });
 console.log(`Health Review${demo ? ' (demo data)' : ''}: http://localhost:${port}  (API contract: http://localhost:${port}/api/openapi.json)`);
-scheduler?.start();
+await scheduler?.start();
 
 const shutdown = async () => {
   scheduler?.stop();

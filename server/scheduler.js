@@ -105,7 +105,8 @@ export function schedulesFromEnv(env = process.env) {
 /**
  * @param {object} o
  * @param {Array<{ name: string, schedule: object, run: () => Promise<void> }>} o.jobs  run resolves when the job is done
- * @param {{ lastRanAt: (name) => string|null, isRunning: (name, now) => boolean }} o.runs  jobRunsLookup(db) (server/admin-queries.js)
+ * @param {{ lastRanAt: (name) => Promise<string|null>|string|null, isRunning: (name, now) => Promise<boolean>|boolean }} o.runs
+ *   jobRunsLookup(db) (server/admin-queries.js; async, docs/adr/0006)
  * @param {() => Date} [o.now]
  * @param {string} [o.tz]
  * @param {{ info: Function, warn: Function }} [o.log]
@@ -117,11 +118,21 @@ export function createScheduler({ jobs, runs, now = () => new Date(), tz = owner
 
   const fire = async (job, why) => {
     if (job.running) return;
-    if (runs.isRunning(job.name, now())) {
+    // Marked before the database check is awaited, so a tick in between cannot fire the same job twice.
+    job.running = true;
+    let elsewhere;
+    try {
+      elsewhere = await runs.isRunning(job.name, now());
+    } catch (err) {
+      job.running = false;
+      log.warn?.(`[schedule] ${job.name}: could not check for a running copy (${err.name}), skipped (${why})`);
+      return;
+    }
+    if (elsewhere) {
+      job.running = false;
       log.info?.(`[schedule] ${job.name}: already running elsewhere, skipped (${why})`);
       return;
     }
-    job.running = true;
     log.info?.(`[schedule] ${job.name}: starting (${why})`);
     try {
       await job.run();
@@ -146,12 +157,15 @@ export function createScheduler({ jobs, runs, now = () => new Date(), tz = owner
   };
 
   return {
-    /** Starts checking, after running any job whose last scheduled time was missed within CATCH_UP_HOURS. */
-    start() {
+    /**
+     * Starts checking, after running any job whose last scheduled time was missed within CATCH_UP_HOURS. Resolves once
+     * the catch-ups have started (not finished).
+     */
+    async start() {
       const t = now();
       for (const job of state) {
         const missed = lastRun(job.schedule, t, tz);
-        const ran = runs.lastRanAt(job.name);
+        const ran = await runs.lastRanAt(job.name);
         if (missed && t - missed <= CATCH_UP_HOURS * 3600 * 1000 && (!ran || new Date(ran) < missed)) void fire(job, 'missed while the server was off');
       }
       timer = every(tick, CHECK_EVERY_MS);

@@ -70,7 +70,7 @@ test('scheduler: runs a due job once, catches up a recently missed run, skips on
     ],
     runs, now: () => clock, tz: NY, log: {}, every: () => null,
   });
-  scheduler.start();
+  await scheduler.start();
   await tick();
   assert.deepEqual(ran, [], "nothing missed: last night's backup ran, and the review ran Tuesday");
   clock = ny('2026-10-25T08:00:30');
@@ -83,7 +83,7 @@ test('scheduler: runs a due job once, catches up a recently missed run, skips on
   // Back at 7:00 after a night off: last night's 23:00 backup was missed (within CATCH_UP_HOURS) and runs now.
   assert.ok(CATCH_UP_HOURS >= 8);
   const late = [];
-  createScheduler({
+  await createScheduler({
     jobs: [{ name: 'backup', schedule: parseSchedule('daily 23:00'), run: async () => late.push('backup') }],
     runs: { lastRanAt: () => ny('2026-10-23T23:00:00').toISOString(), isRunning: () => false },
     now: () => ny('2026-10-25T07:00:00'), tz: NY, log: {}, every: () => null,
@@ -98,11 +98,11 @@ test('scheduler: a job never overlaps itself, here or with a run marked running 
   const now = ny('2026-10-25T07:00:10');
   // A sync started 5 minutes ago (Sync now) is still running: the scheduled one is skipped.
   store.db.prepare("INSERT INTO runs (user_id, name, meta, status, started_at) VALUES (@uid, 'sync', '{}', 'running', ?)").run(new Date(now - 5 * 60_000).toISOString());
-  assert.equal(lookup.isRunning('sync', now), true);
-  assert.equal(lookup.isRunning('sync', new Date(now.getTime() + 40 * 60_000)), false, 'a run left marked running for 30+ minutes never blocks the job');
+  assert.equal(await lookup.isRunning('sync', now), true);
+  assert.equal(await lookup.isRunning('sync', new Date(now.getTime() + 40 * 60_000)), false, 'a run left marked running for 30+ minutes never blocks the job');
   const ran = [];
   const s = createScheduler({ jobs: [{ name: 'sync', schedule: parseSchedule('daily 07:00'), run: async () => ran.push('sync') }], runs: lookup, now: () => now, tz: NY, log: {}, every: () => null });
-  s.start();
+  await s.start();
   await tick();
   assert.deepEqual(ran, []);
 
@@ -110,8 +110,7 @@ test('scheduler: a job never overlaps itself, here or with a run marked running 
   let release;
   const slow = [];
   const t = createScheduler({ jobs: [{ name: 'backup', schedule: parseSchedule('daily 23:00'), run: () => { slow.push(1); return new Promise((r) => { release = r; }); } }], runs: noRuns, now: () => ny('2026-10-24T23:00:30'), tz: NY, log: {}, every: () => null });
-  t.start();
-  t.start();
+  await Promise.all([t.start(), t.start()]);
   await tick();
   assert.equal(slow.length, 1);
   release();

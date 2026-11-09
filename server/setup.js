@@ -67,50 +67,50 @@ const json = (text, fallback) => { try { return JSON.parse(text ?? '') ?? fallba
  * @param {object} db  a scoped database (db/scope.js)
  * @param {{ owner: boolean, chosen: object, ai: boolean, appleToken: boolean, sheetConnected: boolean }} o
  */
-export function loadSetupFacts(db, { owner, chosen, ai, appleToken, sheetConnected }) {
+export async function loadSetupFacts(db, { owner, chosen, ai, appleToken, sheetConnected }) {
   const one = (sql, ...args) => db.prepare(sql).pluck().get(...args);
-  const setting = (key) => one('SELECT value FROM settings WHERE user_id = @uid AND key = ?', key) ?? null;
-  const lastSync = db.prepare("SELECT status, finished_at, summary FROM runs WHERE user_id = @uid AND name = 'sync' AND status IN ('ok', 'error') ORDER BY started_at DESC, id DESC LIMIT 1").get();
+  const setting = async (key) => (await one('SELECT value FROM settings WHERE user_id = @uid AND key = ?', key)) ?? null;
+  const lastSync = await db.prepare("SELECT status, finished_at, summary FROM runs WHERE user_id = @uid AND name = 'sync' AND status IN ('ok', 'error') ORDER BY started_at DESC, id DESC LIMIT 1").get();
   const syncSummary = json(lastSync?.summary, {});
   const firstDates = [
-    one('SELECT MIN(date) FROM daily_metrics WHERE user_id = @uid'),
-    one('SELECT MIN(date) FROM checkins WHERE user_id = @uid'),
-    one('SELECT MIN(date) FROM strength_exercises WHERE user_id = @uid'),
-    one('SELECT MIN(date) FROM drinking_days WHERE user_id = @uid'),
+    await one('SELECT MIN(date) FROM daily_metrics WHERE user_id = @uid'),
+    await one('SELECT MIN(date) FROM checkins WHERE user_id = @uid'),
+    await one('SELECT MIN(date) FROM strength_exercises WHERE user_id = @uid'),
+    await one('SELECT MIN(date) FROM drinking_days WHERE user_id = @uid'),
   ].filter(Boolean).sort();
   return {
     owner,
     chosen,
     ai,
-    goalsSet: Boolean(setting('goal_primary')),
-    profileSet: ['birth_year', 'sex', 'height_in'].every((k) => setting(k)),
-    zone2Set: Boolean(setting('zone2_low_bpm') && setting('zone2_high_bpm')),
+    goalsSet: Boolean(await setting('goal_primary')),
+    profileSet: Boolean((await setting('birth_year')) && (await setting('sex')) && (await setting('height_in'))),
+    zone2Set: Boolean((await setting('zone2_low_bpm')) && (await setting('zone2_high_bpm'))),
     apple: {
       token: appleToken,
-      firstPost: one("SELECT MIN(received_at) FROM ingest_log WHERE user_id = @uid AND result = 'ok'") ?? null,
-      lastPost: one("SELECT MAX(received_at) FROM ingest_log WHERE user_id = @uid AND result = 'ok'") ?? null,
-      days: one('SELECT COUNT(*) FROM daily_metrics WHERE user_id = @uid'),
-      workouts: one('SELECT COUNT(*) FROM workout_sessions WHERE user_id = @uid'),
-      latestDay: one('SELECT MAX(date) FROM daily_metrics WHERE user_id = @uid') ?? null,
+      firstPost: (await one("SELECT MIN(received_at) FROM ingest_log WHERE user_id = @uid AND result = 'ok'")) ?? null,
+      lastPost: (await one("SELECT MAX(received_at) FROM ingest_log WHERE user_id = @uid AND result = 'ok'")) ?? null,
+      days: await one('SELECT COUNT(*) FROM daily_metrics WHERE user_id = @uid'),
+      workouts: await one('SELECT COUNT(*) FROM workout_sessions WHERE user_id = @uid'),
+      latestDay: (await one('SELECT MAX(date) FROM daily_metrics WHERE user_id = @uid')) ?? null,
     },
     sheet: {
       connected: sheetConnected,
-      sheetSet: Boolean(setting('workout_log_sheet_id')),
+      sheetSet: Boolean(await setting('workout_log_sheet_id')),
       lastSync: lastSync?.status === 'ok' ? lastSync.finished_at : null,
       tabsRead: lastSync?.status === 'ok' ? syncSummary.counts?.workout_log?.tabsRead ?? null : null,
-      liftingDays: one('SELECT COUNT(DISTINCT date) FROM strength_exercises WHERE user_id = @uid AND tab_year <> 0'),
+      liftingDays: await one('SELECT COUNT(DISTINCT date) FROM strength_exercises WHERE user_id = @uid AND tab_year <> 0'),
       error: lastSync?.status === 'error' ? syncSummary.error ?? 'failed' : null,
     },
     manual: {
-      checkins: one('SELECT COUNT(*) FROM checkins WHERE user_id = @uid'),
-      lastCheckin: one('SELECT MAX(date) FROM checkins WHERE user_id = @uid') ?? null,
-      appWorkouts: one('SELECT COUNT(DISTINCT date) FROM strength_exercises WHERE user_id = @uid AND tab_year = 0'),
-      meds: one('SELECT COUNT(*) FROM medications WHERE user_id = @uid'),
-      labs: one('SELECT COUNT(*) FROM lab_results WHERE user_id = @uid'),
-      drinks: one('SELECT COUNT(*) FROM drinking_days WHERE user_id = @uid'),
+      checkins: await one('SELECT COUNT(*) FROM checkins WHERE user_id = @uid'),
+      lastCheckin: (await one('SELECT MAX(date) FROM checkins WHERE user_id = @uid')) ?? null,
+      appWorkouts: await one('SELECT COUNT(DISTINCT date) FROM strength_exercises WHERE user_id = @uid AND tab_year = 0'),
+      meds: await one('SELECT COUNT(*) FROM medications WHERE user_id = @uid'),
+      labs: await one('SELECT COUNT(*) FROM lab_results WHERE user_id = @uid'),
+      drinks: await one('SELECT COUNT(*) FROM drinking_days WHERE user_id = @uid'),
     },
     firstDataDate: firstDates[0] ?? null,
-    dismissed: json(setting('setup_dismissed'), []).filter((s) => SETUP_STEPS.includes(s)),
-    hidden: setting('setup_hidden') === '1',
+    dismissed: json(await setting('setup_dismissed'), []).filter((s) => SETUP_STEPS.includes(s)),
+    hidden: (await setting('setup_hidden')) === '1',
   };
 }

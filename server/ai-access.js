@@ -5,9 +5,12 @@
 // the user's settings row owner_key_cap_notified, YYYY-MM). Spend is every AI run of theirs that month (runs.cost_usd),
 // so a run that starts under the cap may finish a little over it.
 import { OWNER_ID, getUser } from '../db/users.js';
-import { scopeDb } from '../db/scope.js';
+import { scopeDatabase, scopeDb } from '../db/scope.js';
 import { localDate, zonedInstant } from '../tools/time.js';
 import { supportEmailFrom } from './pages.js';
+
+// Either handle, scoped to one user: the async one (db/database.ts, which has tx) or the sync one.
+const scope = (db, uid) => (typeof (db.unscoped ?? db).tx === 'function' ? scopeDatabase : scopeDb)(db.unscoped ?? db, uid);
 
 /** The monthly cap the admin may set, in US dollars. */
 export const OWNER_KEY_CAP = { min: 1, max: 100 };
@@ -37,45 +40,50 @@ export function monthStartIso(now = new Date()) {
 }
 
 /** A user's estimated AI spend since the start of the owner's month, in dollars. */
-export function spentThisMonth(db, uid, now = new Date()) {
-  return scopeDb(db.unscoped ?? db, uid).prepare('SELECT COALESCE(SUM(cost_usd), 0) FROM runs WHERE user_id = @uid AND started_at >= ?')
+export async function spentThisMonth(db, uid, now = new Date()) {
+  return await scope(db, uid).prepare('SELECT COALESCE(SUM(cost_usd), 0) FROM runs WHERE user_id = @uid AND started_at >= ?')
     .pluck().get(monthStartIso(now));
 }
 
 /** Forgets this month's cap email, so a raised cap that is reached again sends a fresh one. */
-export function clearCapNotice(db, uid) {
-  scopeDb(db.unscoped ?? db, uid).prepare('DELETE FROM settings WHERE user_id = @uid AND key = ?').run(NOTIFIED_KEY);
+export async function clearCapNotice(db, uid) {
+  await scope(db, uid).prepare('DELETE FROM settings WHERE user_id = @uid AND key = ?').run(NOTIFIED_KEY);
 }
 
 /**
- * The server's AI access check: check(uid) gives aiAccess for the user now, and sends the cap emails once a month.
+ * The server's AI access check: check(uid) resolves to aiAccess for the user now, and sends the cap emails once a month.
  * @param {{ db: object, mailer?: { send: Function }, adminEmail?: () => string, appUrl?: () => string, clock?: () => Date, log?: object }} options
  */
 export function createAiAccess({ db, mailer, adminEmail = () => null, appUrl = () => '', clock = () => new Date(), log = console, supportEmail = null }) {
   const support = supportEmailFrom(supportEmail);
   const raw = db.unscoped ?? db;
-  const notifyCap = (user) => {
-    const sdb = scopeDb(raw, user.id);
+  const notifyCap = async (user) => {
+    const sdb = scopeDatabase(raw, user.id);
     const month = localDate(clock()).slice(0, 7);
-    if (sdb.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck().get(NOTIFIED_KEY) === month) return;
-    sdb.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
-      ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(NOTIFIED_KEY, month, clock().toISOString());
+    // Read and mark in one transaction, so two requests at the cap send one email; the mail goes after it.
+    const first = await raw.tx(async () => {
+      if (await sdb.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck().get(NOTIFIED_KEY) === month) return false;
+      await sdb.prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
+        ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(NOTIFIED_KEY, month, clock().toISOString());
+      return true;
+    });
+    if (!first) return;
     log.info?.('[users] a user reached their monthly AI cap');
     if (!mailer) return;
     const cap = `$${Number(user.owner_key_cap_usd).toFixed(2)}`;
     const send = (to, subject, text) => mailer.send({ to, subject, text }).catch(() => false);
     send(user.email, 'Health Review: AI paused for this month',
       `Your Health Review AI allowance for this month (${cap}) is used up, so the weekly review and chat are paused until next month.\n\nTo keep going now, add your own Claude API key in Settings at ${appUrl()}.\n${support ? `\nQuestions or problems: ${support}\n` : ''}`);
-    const admin = adminEmail();
+    const admin = await adminEmail();
     if (admin) send(admin, 'Health Review: a user reached their AI cap',
       `${user.name || user.email} (${user.email}) used this month's ${cap} AI allowance on your Claude key. Their AI is paused until next month; you can raise the cap on the Users screen.\n`);
   };
   return {
-    check(uid) {
-      const user = getUser(raw, uid);
-      const spent = user && user.id !== OWNER_ID && !user.claude_key_enc && user.uses_owner_key ? spentThisMonth(raw, uid, clock()) : 0;
+    async check(uid) {
+      const user = await getUser(raw, uid);
+      const spent = user && user.id !== OWNER_ID && !user.claude_key_enc && user.uses_owner_key ? await spentThisMonth(raw, uid, clock()) : 0;
       const access = aiAccess(user, { spent });
-      if (access.capReached) notifyCap(user);
+      if (access.capReached) await notifyCap(user);
       return access;
     },
   };
