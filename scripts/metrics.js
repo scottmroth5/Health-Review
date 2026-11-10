@@ -16,7 +16,7 @@ if (!isValidDate(weekEnd)) {
 
 const store = openOwnerStore();
 try {
-  const summary = computeWeek(await loadWeekData(store.db, weekEnd), { weekEnd, ...(await loadMetricSettings(store.db)) });
+  const summary = computeWeek(await loadWeekData(store.adb, weekEnd), { weekEnd, ...(await loadMetricSettings(store.adb)) });
   console.log(JSON.stringify(summary, null, 2));
 } finally {
   store.close();

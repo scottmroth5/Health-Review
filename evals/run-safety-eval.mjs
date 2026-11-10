@@ -16,7 +16,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { openHealthStore } from '../db/store.js';
-import { scopeDatabase, scopeDb } from '../db/scope.js';
+import { scopeDatabase } from '../db/scope.js';
 import { createSqliteDatabase } from '../db/database.ts';
 import { OWNER_ID } from '../db/users.js';
 import { generateDemo, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } from '../demo/generate.js';
@@ -46,43 +46,40 @@ const dictionary = loadDictionary();
 const substitutions = JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8'));
 const built = openHealthStore(':memory:');
 await built.atx(() => generateDemo(built, { today: SPEC.demoToday }));
-{
-  const db = scopeDb(built.db, OWNER_ID);
-  const adb = scopeDatabase(built.adb, OWNER_ID);
-  for (const m of SPEC.setup.medications) await addMedication(adb, { ...m, purpose: 'Made up for the safety check' });
-  await clearChat(db); // each chat case starts a fresh thread
-}
+const builtDb = scopeDatabase(built.adb, OWNER_ID);
+for (const m of SPEC.setup.medications) await addMedication(builtDb, { ...m, purpose: 'Made up for the safety check' });
+await clearChat(builtDb); // each chat case starts a fresh thread
 // The demo already holds sample run records with made-up costs; only runs after them are this check's spending.
-const firstRunId = scopeDb(built.db, OWNER_ID).prepare('SELECT COALESCE(MAX(id), 0) FROM runs WHERE user_id = @uid').pluck().get();
-const snapshot = built.db.serialize();
+const firstRunId = await builtDb.prepare('SELECT COALESCE(MAX(id), 0) FROM runs WHERE user_id = @uid').pluck().get();
+const snapshot = built.raw.serialize();
 built.close();
 
+/** A copy of the demo database with the case's overlay, shaped like the app's scoped store (db/store.js), on the async handle. */
 async function caseStore(c) {
   const raw = new Database(snapshot);
-  const db = scopeDb(raw, OWNER_ID);
-  const adb = scopeDatabase(createSqliteDatabase(raw), OWNER_ID);
-  db.pragma('foreign_keys = ON');
+  raw.pragma('foreign_keys = ON');
+  const db = scopeDatabase(createSqliteDatabase(raw), OWNER_ID);
   const o = c.overlay ?? {};
   if (o.checkinNote) {
-    db.prepare(`INSERT INTO checkins (user_id, date, cadence, notes, source, updated_at) VALUES (@uid, ?, 'daily', ?, 'ui', 'eval')
+    await db.prepare(`INSERT INTO checkins (user_id, date, cadence, notes, source, updated_at) VALUES (@uid, ?, 'daily', ?, 'ui', 'eval')
       ON CONFLICT (user_id, date) DO UPDATE SET notes = excluded.notes`).run(o.checkinNote.date, o.checkinNote.text);
   }
   if (o.labDraw) {
     for (const r of o.labDraw.results) {
-      let id = db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?').get(r.test)?.id;
-      id ??= db.prepare("INSERT INTO lab_tests (user_id, name, created_at) VALUES (@uid, ?, 'eval')").run(r.test).lastInsertRowid;
-      db.prepare(`INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', 'eval')
+      let id = (await db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?').get(r.test))?.id;
+      id ??= (await db.prepare("INSERT INTO lab_tests (user_id, name, created_at) VALUES (@uid, ?, 'eval') RETURNING id").get(r.test)).id;
+      await db.prepare(`INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', 'eval')
         ON CONFLICT (test_id, drawn_on) DO UPDATE SET value = excluded.value, value_text = excluded.value_text`).run(id, o.labDraw.date, Number(r.value), r.value);
     }
   }
   if (o.supplementAdvice) {
-    db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', 'eval', 'eval')").run();
+    await db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', 'eval', 'eval')").run();
   }
   if (o.medicationChange) {
-    const id = db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').pluck().get(o.medicationChange.name);
-    await changeMedication(adb, id, { dose: o.medicationChange.dose, timings: o.medicationChange.timings, effective_on: o.medicationChange.date });
+    const id = await db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').pluck().get(o.medicationChange.name);
+    await changeMedication(db, id, { dose: o.medicationChange.dose, timings: o.medicationChange.timings, effective_on: o.medicationChange.date });
   }
-  return { db, adb, raw, tx: (fn) => db.transaction(fn)(), close: () => db.close() };
+  return { raw, db, tx: db.tx, adb: db, atx: db.tx, uid: OWNER_ID, close: () => raw.close() };
 }
 
 const spent = (db) => db.prepare('SELECT COALESCE(SUM(cost_usd), 0) FROM runs WHERE user_id = @uid AND id > ?').pluck().get(firstRunId);
@@ -93,7 +90,7 @@ async function runCase(c, claude) {
   try {
     return await runCaseOn(store, c, claude);
   } catch (err) {
-    err.costUsd = spent(store.db); // a case that fails after a paid call still counts what it spent
+    err.costUsd = await spent(store.db); // a case that fails after a paid call still counts what it spent
     throw err;
   } finally {
     store.close();
@@ -106,17 +103,17 @@ async function runCaseOn(store, c, claude) {
     const { reply } = await askAdvisor({ store, claude, text: c.prompt, today, catalog, dictionary, substitutions, logger: quiet });
     const physician = reply.physician.map((p) => `- ${p.topic}: ${p.detail}`).join('\n');
     // reply.warnings comes back already parsed (advisor-chat.js parse).
-    return { output: `Reply:\n${reply.text}\n\nPhysician discussion items:\n${physician || '(none)'}`, warnings: reply.warnings ?? [], costUsd: spent(store.db) };
+    return { output: `Reply:\n${reply.text}\n\nPhysician discussion items:\n${physician || '(none)'}`, warnings: reply.warnings ?? [], costUsd: await spent(store.db) };
   }
   if (c.kind === 'help') {
     const { answer, statement } = await askHelp({ store, claude, question: c.prompt, site: SITE, logger: quiet });
     return { output: statement ? `${answer}
 
-${statement}` : answer, warnings: [], costUsd: spent(store.db) };
+${statement}` : answer, warnings: [], costUsd: await spent(store.db) };
   }
   const result = await runReview({ store, claude, weekEnd: c.weekEnd, today: addDays(c.weekEnd, 1), catalog, logger: quiet });
-  const saved = store.db.prepare('SELECT report_md FROM reviews WHERE user_id = @uid AND week_ending = ?').pluck().get(c.weekEnd);
-  return { output: saved, warnings: result.warnings, costUsd: spent(store.db) };
+  const saved = await store.db.prepare('SELECT report_md FROM reviews WHERE user_id = @uid AND week_ending = ?').pluck().get(c.weekEnd);
+  return { output: saved, warnings: result.warnings, costUsd: await spent(store.db) };
 }
 
 /** The size of what a case would send (characters), without sending it. */

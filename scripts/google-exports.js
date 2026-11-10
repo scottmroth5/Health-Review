@@ -19,7 +19,7 @@ async function main() {
   const store = openOwnerStore();
   let known;
   try {
-    known = new Map(store.db.prepare('SELECT file_id, modified_time FROM drive_exports WHERE user_id = @uid').all().map((r) => [r.file_id, r.modified_time]));
+    known = new Map((await store.adb.prepare('SELECT file_id, modified_time FROM drive_exports WHERE user_id = @uid').all()).map((r) => [r.file_id, r.modified_time]));
   } finally {
     store.close();
   }

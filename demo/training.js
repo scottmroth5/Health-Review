@@ -97,7 +97,7 @@ function repsFor(text, r) {
  * day belongs to and the runs, for the Apple Watch workouts and the VO2 max trend.
  * @returns {{ runs: object[], liftDays: Map<string, { program: string, minutes: number }> }}
  */
-export function writeTraining(db, { today, r, catalog }) {
+export async function writeTraining(db, { today, r, catalog }) {
   const runs = layoutRuns(today, r);
   const insertEx = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, comment) VALUES (@uid, ?, ?, ?, ?, ?, ?) RETURNING id');
   const insertSet = db.prepare(`INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
@@ -110,24 +110,24 @@ export function writeTraining(db, { today, r, catalog }) {
   const COMMENTS = ['Sample note: last set was a grind', 'Sample note: felt strong today', 'Sample note: short on time, cut the last exercise',
     'Sample note: new gym shoes', 'Sample note: moved this to the evening'];
 
-  const logExercise = (d, workoutName, name, sets, reps, { deload = false, trend = 1, comment = null } = {}) => {
+  const logExercise = async (d, workoutName, name, sets, reps, { deload = false, trend = 1, comment = null } = {}) => {
     const logged = SPELLED[name] && r.next() < 0.06 ? SPELLED[name] : name;
-    const id = insertEx.get(Number(d.slice(0, 4)), row++, d, workoutName, logged, comment).id;
+    const id = (await insertEx.get(Number(d.slice(0, 4)), row++, d, workoutName, logged, comment)).id;
     const setCount = Math.max(1, Number(String(sets).split('-').pop()) - (deload ? 1 : 0));
     for (let s = 1; s <= setCount; s++) {
       const rep = repsFor(reps, r);
       if (rep.seconds) {
-        insertSet.run(id, s, 'BW', null, 0, null, 1, `${rep.seconds} seconds`, null, rep.seconds);
+        await insertSet.run(id, s, 'BW', null, 0, null, 1, `${rep.seconds} seconds`, null, rep.seconds);
       } else if (BODYWEIGHT.has(name)) {
         const n = name === 'Pullups' || name === 'Chin Ups' ? clamp(Math.round(8 * trend + r.normal(0, 0.8)), 3, 16) : rep.reps;
-        insertSet.run(id, s, 'BW', null, 0, null, 1, String(n), n, null);
+        await insertSet.run(id, s, 'BW', null, 0, null, 1, String(n), n, null);
       } else if (BAND.has(name)) {
-        insertSet.run(id, s, 'Band', null, 0, r.pick(['Red', 'Black', 'Purple']), 0, String(rep.reps), rep.reps, null);
+        await insertSet.run(id, s, 'Band', null, 0, r.pick(['Red', 'Black', 'Purple']), 0, String(rep.reps), rep.reps, null);
       } else {
         // Main lifts from their estimated max at the reps done (Epley); others from their working load.
         const base = maxes[name] ? maxes[name] / (1 + rep.reps / 30) : (loads[name] ?? 30) * trend;
         const load = to5(base * (deload ? 0.8 : 1) * (1 + r.normal(0, 0.012)));
-        insertSet.run(id, s, String(load), load, PER_HAND(name) ? 1 : 0, null, 0, String(rep.reps), rep.reps, null);
+        await insertSet.run(id, s, String(load), load, PER_HAND(name) ? 1 : 0, null, 0, String(rep.reps), rep.reps, null);
       }
     }
   };
@@ -149,7 +149,9 @@ export function writeTraining(db, { today, r, catalog }) {
         // Between programs and home workouts: three loose days a week.
         if (![1, 3, 5].includes(dow(d)) || r.next() < 0.15) continue;
         liftDays.set(d, { program: run.program, minutes: r.int(35, 50) });
-        LOOSE_DAYS[run.program].forEach(([name, sets, reps], i) => logExercise(d, i === 0 ? (run.program === 'Home workouts' ? 'Home workout' : 'Between programs') : null, name, sets, reps, { trend }));
+        for (const [i, [name, sets, reps]] of LOOSE_DAYS[run.program].entries()) {
+          await logExercise(d, i === 0 ? (run.program === 'Home workouts' ? 'Home workout' : 'Between programs') : null, name, sets, reps, { trend });
+        }
         continue;
       }
       const week = Math.floor(daysBetween(run.start, d) / 7) + 1;
@@ -158,8 +160,8 @@ export function writeTraining(db, { today, r, catalog }) {
       // Trigger sessions: a short Saturday add-on in the strength programs.
       if (dow(d) === 6 && ['MAPS Anabolic', 'MAPS Powerlift'].includes(run.program) && r.next() < 0.35) {
         liftDays.set(d, { program: run.program, minutes: r.int(12, 18) });
-        logExercise(d, 'Trigger Session', 'Push-Up', 2, '15-20');
-        logExercise(d, null, 'Goblet Squats', 2, '15', { trend });
+        await logExercise(d, 'Trigger Session', 'Push-Up', 2, '15-20');
+        await logExercise(d, null, 'Goblet Squats', 2, '15', { trend });
         continue;
       }
       if (!DAYS_FOR[phase.workouts_per_week].includes(dow(d)) || r.next() < 0.07) continue; // the odd missed day
@@ -172,14 +174,14 @@ export function writeTraining(db, { today, r, catalog }) {
       for (const [i, ex] of workout.exercises.entries()) {
         if (i > 0 && r.next() < 0.03) continue; // an accessory skipped now and then (never the day's main lift)
         const swap = HOME_SWAPS[ex.name] ?? (CHANGES[ex.name] && r.next() < 0.06 ? CHANGES[ex.name] : ex.name);
-        logExercise(d, first ? name : null, swap, ex.sets, ex.reps, { deload, trend, comment: r.next() < 0.02 ? r.pick(COMMENTS) : null });
+        await logExercise(d, first ? name : null, swap, ex.sets, ex.reps, { deload, trend, comment: r.next() < 0.02 ? r.pick(COMMENTS) : null });
         first = false;
       }
-      if (r.next() < 0.08) logExercise(d, null, 'Band Pull-a-parts', 2, '20'); // added on top
+      if (r.next() < 0.08) await logExercise(d, null, 'Band Pull-a-parts', 2, '20'); // added on top
     }
     for (const [k, v] of Object.entries(loads)) if (v) loads[k] = v * (1 + (run.trend - 1) * 0.6);
   }
-  db.prepare('INSERT INTO workout_log_notes (user_id, tab_year, row_no, date, text) VALUES (@uid, ?, ?, ?, ?)')
+  await db.prepare('INSERT INTO workout_log_notes (user_id, tab_year, row_no, date, text) VALUES (@uid, ?, ?, ?, ?)')
     .run(Number(addDays(today, -170).slice(0, 4)), row++, addDays(today, -170), 'Sample note: travel week, no gym');
   return { runs, liftDays };
 }

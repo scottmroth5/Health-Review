@@ -66,7 +66,7 @@ if (demo) {
   // The data always runs through yesterday: made again in place when the owner's date moves on (checked on start and
   // every 10 minutes). The demo's clock stays at noon on the day its data was made for, so a late refresh never shows
   // "data stopped".
-  let builtFor = demoBuiltFor(store);
+  let builtFor = await demoBuiltFor(store);
   const refresh = async () => {
     const today = ownerDate();
     if (builtFor === today) return;

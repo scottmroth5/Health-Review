@@ -8,7 +8,8 @@ import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_DB_PATH } from '../db/store.js';
-import { scopeDb } from '../db/scope.js';
+import { createSqliteDatabase } from '../db/database.ts';
+import { scopeDatabase } from '../db/scope.js';
 import { OWNER_ID } from '../db/users.js';
 import { computeWeek } from '../metrics/index.js';
 import { loadMetricSettings, loadWeekData } from '../metrics/load.js';
@@ -35,6 +36,8 @@ async function timeIt(fn) {
 
 /**
  * The baseline for a database (read-only). Across users for sizes and run durations, as the owner for query timings.
+ * Sizes, row counts and pragmas are SQLite's own, read on the raw handle; the timings run on the async handle, as
+ * requests do (docs/adr/0006).
  * @param {import('better-sqlite3').Database} db  the raw database, opened read-only
  */
 export async function baseline(db, { now = new Date(), fileBytes = null } = {}) {
@@ -60,7 +63,7 @@ export async function baseline(db, { now = new Date(), fileBytes = null } = {}) 
     .map(([name, k]) => [name, { count: k.ms.length + k.skipped, failed: k.failed, skipped: k.skipped, medianMs: median(k.ms), p95Ms: p95(k.ms) }]));
 
   // The functions behind the busiest screens and the weekly review, as the owner.
-  const owner = scopeDb(db, OWNER_ID);
+  const owner = scopeDatabase(createSqliteDatabase(db), OWNER_ID);
   const weekEnd = lastWeekEnd(today);
   const queriesMs = {
     'history 90d (Health tab)': await timeIt(() => history(owner, addDays(today, -89), today)),

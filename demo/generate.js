@@ -23,7 +23,7 @@ import { loadWeekData, loadMetricSettings, loadWeekNotes, loadAdvisorInput } fro
 import { buildSummary } from '../agent/summary.js';
 import { renderReport } from '../agent/instructions.js';
 import { recommendPrograms } from '../metrics/advisor.js';
-import { scopeDatabase, scopeDb } from '../db/scope.js';
+import { scopeDatabase } from '../db/scope.js';
 import { OWNER_ID } from '../db/users.js';
 
 export const DEMO_DB_PATH = dataPath('demo', 'demo.db');
@@ -56,17 +56,16 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 const dow = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
 
 /**
- * Writes the made-up data into an empty store. Async for the metric loaders (metrics/load.js); its own statements stay sync,
- * so it runs inside the caller's async transaction (store.atx) without giving a request a turn in between.
+ * Writes the made-up data into an empty store, awaiting each statement on the async handle (docs/adr/0006). It runs inside
+ * the caller's async transaction (store.atx), so a request never sees half-built data.
  */
 export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = loadDemoCatalog(), dictionary = loadDictionary() }) {
   // The demo's made-up data all belongs to user 1 (OWNER_ID), the only user in a demo database.
-  const db = scopeDb(store.db, OWNER_ID);
-  const adb = scopeDatabase(store.adb, OWNER_ID); // the ingest pipeline below opens (nested) transactions
+  const db = scopeDatabase(store.adb, OWNER_ID); // the ingest pipeline below opens (nested) transactions on it
   const r = random(seed);
   const stamp = `${today}T12:00:00.000Z`;
   // ---- Workout Log: about two years on the MAPS-named programs (demo/training.js) ----
-  const { runs, liftDays } = writeTraining(db, { today, r, catalog });
+  const { runs, liftDays } = await writeTraining(db, { today, r, catalog });
   const first = addDays(runs[0].start, -28);
   const days = [];
   for (let d = first; d < today; d = addDays(d, 1)) days.push(d);
@@ -104,7 +103,7 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
     const sleep = round(clamp(r.normal(weekend ? 7.6 : 7.0, 0.6), 4.5, 9.5), 2);
     const steps = d === addDays(today, -6) ? 620 : Math.round(clamp(r.normal(weekend ? 10500 : 8200, 2300) + (lifting ? 800 : 0), 2500, 19000));
     const exercise = Math.round(clamp((lifting ? 55 : 15) + r.normal(0, 12) + steps / 1500, 2, 140));
-    insertDay.run({
+    await insertDay.run({
       date: d, active: Math.round(350 + steps * 0.04 + (lifting ? 250 : 0)), exercise, move: exercise + 20, stand: r.int(10, 15),
       hrv: round(clamp(r.normal(46 + (sleep - 7) * 3, 7), 22, 90), 1), resp: round(r.normal(14.5, 0.6), 1),
       rhr: round(clamp(r.normal(56 - (vo2At(d) - 40.5) * 0.6, 2.2), 46, 70), 1),
@@ -127,14 +126,14 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
       const minutes = lift.minutes;
       const startMin = 17 * 60 + r.int(0, 60);
       const type = conditioning ? 'High Intensity Interval Training' : lift.program === 'MAPS Performance' ? 'Functional Strength Training' : 'Traditional Strength Training';
-      insertSession.run(type, at(d, Math.floor(startMin / 60), startMin % 60),
+      await insertSession.run(type, at(d, Math.floor(startMin / 60), startMin % 60),
         at(d, Math.floor((startMin + minutes) / 60), (startMin + minutes) % 60), minutes * 60 - r.int(0, 50), minutes * (conditioning ? 10 : 6),
         conditioning ? r.int(138, 152) : r.int(104, 118), conditioning ? r.int(170, 182) : r.int(140, 158), null, null, stamp);
     }
     if (r.next() < 0.55) {
       const minutes = r.int(24, 48);
       const startMin = 7 * 60 + r.int(0, 90);
-      insertSession.run('Outdoor Walk', at(d, Math.floor(startMin / 60), startMin % 60), at(d, Math.floor((startMin + minutes) / 60), (startMin + minutes) % 60),
+      await insertSession.run('Outdoor Walk', at(d, Math.floor(startMin / 60), startMin % 60), at(d, Math.floor((startMin + minutes) / 60), (startMin + minutes) % 60),
         minutes * 60 - r.int(0, 40), minutes * 5, r.int(95, 112), r.int(118, 135), round(minutes / 19, 2), minutes * 110, stamp);
     }
     // Other cardio from its own stream (added later, so the walks above stay the same): weekend runs and rides, an
@@ -145,7 +144,7 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
       const minutes = r7.int(lo, hi);
       const startMin = 9 * 60 + r7.int(0, 120);
       const avg = r7.int(hrLo, hrHi);
-      insertSession.run(type, at(d, Math.floor(startMin / 60), startMin % 60), at(d, Math.floor((startMin + minutes) / 60), (startMin + minutes) % 60),
+      await insertSession.run(type, at(d, Math.floor(startMin / 60), startMin % 60), at(d, Math.floor((startMin + minutes) / 60), (startMin + minutes) % 60),
         minutes * 60 - r7.int(0, 40), minutes * (pace ? 11 : 8), avg, avg + r7.int(12, 22), pace ? round(minutes / pace, 2) : null, pace ? minutes * 160 : null, stamp);
     }
   }
@@ -154,7 +153,7 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
   // nothing above changes; older workouts have none (the tile shows them as no detail), and a few minutes drop out.
   const r5 = random(seed + 4);
   const insertHr = db.prepare('INSERT INTO workout_hr_samples (user_id, type, start, t, avg_bpm, min_bpm, max_bpm) VALUES (@uid, ?, ?, ?, ?, ?, ?)');
-  const cardioRows = db.prepare(`SELECT type, start, duration_sec, avg_hr FROM workout_sessions
+  const cardioRows = await db.prepare(`SELECT type, start, duration_sec, avg_hr FROM workout_sessions
     WHERE user_id = @uid AND type IN ('Outdoor Walk', 'High Intensity Interval Training', 'Outdoor Run', 'Indoor Cycling', 'Elliptical') AND start >= ?`).all(addDays(today, -120));
   for (const s of cardioRows) {
     const minutes = Math.round(s.duration_sec / 60);
@@ -163,7 +162,7 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
       if (r5.next() < 0.04) continue; // the watch missed a reading
       const hiit = s.type === 'High Intensity Interval Training';
       const bpm = Math.round(hiit ? s.avg_hr + (i % 4 < 2 ? 14 : -12) + r5.normal(0, 4) : s.avg_hr + 8 * Math.sin(i / 6) + r5.normal(0, 3));
-      insertHr.run(s.type, s.start, new Date(t0 + i * 60000).toISOString().slice(0, 16), bpm, bpm - r5.int(1, 4), bpm + r5.int(1, 4));
+      await insertHr.run(s.type, s.start, new Date(t0 + i * 60000).toISOString().slice(0, 16), bpm, bpm - r5.int(1, 4), bpm + r5.int(1, 4));
     }
   }
 
@@ -174,16 +173,16 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
   for (const d of days.slice(-200)) {
     if (r.next() < 0.18) continue;
     const weight = d.endsWith('5') || d.endsWith('0') ? round(188 - daysBetween(days.at(-200), d) * 0.025 + r.normal(0, 0.8), 1) : null;
-    insertCheckin.run(d, r.int(5, 9), r.int(5, 9), r.int(6, 9), r.int(2, 7), r.int(5, 9), weight, weight ? d : null, r.pick(notes), stamp);
+    await insertCheckin.run(d, r.int(5, 9), r.int(5, 9), r.int(6, 9), r.int(2, 7), r.int(5, 9), weight, weight ? d : null, r.pick(notes), stamp);
   }
   // Body composition on the weigh-in days, from its own stream (added later, so nothing above changes).
   const r4 = random(seed + 3);
-  const weighIns = db.prepare('SELECT date, weight_lbs FROM checkins WHERE user_id = @uid AND weight_lbs IS NOT NULL ORDER BY date').all();
+  const weighIns = await db.prepare('SELECT date, weight_lbs FROM checkins WHERE user_id = @uid AND weight_lbs IS NOT NULL ORDER BY date').all();
   const setBody = db.prepare('UPDATE checkins SET body_fat_pct = ?, muscle_mass_lbs = ?, visceral_fat = ? WHERE user_id = @uid AND date = ?');
-  weighIns.forEach((w, i) => {
+  for (const [i, w] of weighIns.entries()) {
     const fat = round(21.5 - i * 0.04 + r4.normal(0, 0.4), 1);
-    setBody.run(fat, round(w.weight_lbs * (1 - fat / 100) * 0.55 + r4.normal(0, 0.5), 1), Math.round(9 - i * 0.02 + r4.normal(0, 0.4)), w.date);
-  });
+    await setBody.run(fat, round(w.weight_lbs * (1 - fat / 100) * 0.55 + r4.normal(0, 0.5), 1), Math.round(9 - i * 0.02 + r4.normal(0, 0.4)), w.date);
+  }
   const insertDrink = db.prepare("INSERT INTO drinking_days (user_id, date, beers, wine, bourbon, other, cbd, setting, mood_before, mood_after, notes, source, updated_at) VALUES (@uid, ?, ?, ?, 0, 0, ?, ?, ?, ?, NULL, 'ui', ?)");
   // Most days logged for 200 days (its own stream): drinks mostly on Friday and Saturday, alcohol-free days logged as
   // zeros (a logged day with none is a real alcohol-free day; an unlogged one is unknown), a CBD drink now and then.
@@ -194,36 +193,36 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
     const drinking = weekend ? r8.next() < 0.65 : r8.next() < 0.12;
     const beers = drinking ? r8.int(0, 2) : 0;
     const wine = drinking ? r8.int(beers ? 0 : 1, 2) : 0;
-    insertDrink.run(d, beers, wine, r8.next() < 0.08 ? 1 : 0, drinking ? r8.pick(['Dinner out', 'Home', 'Friends', 'Game night']) : null,
+    await insertDrink.run(d, beers, wine, r8.next() < 0.08 ? 1 : 0, drinking ? r8.pick(['Dinner out', 'Home', 'Friends', 'Game night']) : null,
       drinking ? r8.int(6, 8) : null, drinking ? r8.int(6, 8) : null, stamp);
   }
 
   // ---- Supplements only, with a dose check-off for the last 30 days ----
   const supplements = [['Sample Creatine', '5 g', ['morning']], ['Sample Vitamin D3', '2000 IU', ['morning']], ['Sample Magnesium', '200 mg', ['before_bed']], ['Sample Fish Oil', '2 capsules', ['morning']]];
   for (const [name, dose, timings] of supplements) {
-    const id = db.prepare("INSERT INTO medications (user_id, name, kind, purpose, prescribed, created_at) VALUES (@uid, ?, 'supplement', 'Sample purpose', 0, ?) RETURNING id").get(name, stamp).id;
-    db.prepare('INSERT INTO medication_periods (user_id, medication_id, dose, timings, started_on, created_at, start_estimated) VALUES (@uid, ?, ?, ?, ?, ?, 1)')
+    const id = (await db.prepare("INSERT INTO medications (user_id, name, kind, purpose, prescribed, created_at) VALUES (@uid, ?, 'supplement', 'Sample purpose', 0, ?) RETURNING id").get(name, stamp)).id;
+    await db.prepare('INSERT INTO medication_periods (user_id, medication_id, dose, timings, started_on, created_at, start_estimated) VALUES (@uid, ?, ?, ?, ?, ?, 1)')
       .run(id, dose, JSON.stringify(timings), addDays(today, -300), stamp);
     for (const d of days.slice(-30)) for (const t of timings) {
-      db.prepare('INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at) VALUES (@uid, ?, ?, ?, ?, ?)').run(d, id, t, r.next() < 0.9 ? 1 : 0, stamp);
+      await db.prepare('INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at) VALUES (@uid, ?, ?, ?, ?, ?)').run(d, id, t, r.next() < 0.9 ? 1 : 0, stamp);
     }
   }
 
   // ---- Today as a morning: the check-in and morning supplements logged, no Apple Health day yet (its own stream) ----
   const r6 = random(seed + 5);
-  insertCheckin.run(today, r6.int(6, 9), r6.int(6, 9), r6.int(6, 9), r6.int(2, 5), r6.int(6, 9), null, null, 'Sample note: logged this morning.', stamp);
-  for (const { id } of db.prepare("SELECT m.id FROM medications m JOIN medication_periods p ON p.medication_id = m.id AND p.user_id = m.user_id WHERE m.user_id = @uid AND p.timings LIKE '%morning%'").all()) {
-    db.prepare("INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at) VALUES (@uid, ?, ?, 'morning', 1, ?)").run(today, id, stamp);
+  await insertCheckin.run(today, r6.int(6, 9), r6.int(6, 9), r6.int(6, 9), r6.int(2, 5), r6.int(6, 9), null, null, 'Sample note: logged this morning.', stamp);
+  for (const { id } of await db.prepare("SELECT m.id FROM medications m JOIN medication_periods p ON p.medication_id = m.id AND p.user_id = m.user_id WHERE m.user_id = @uid AND p.timings LIKE '%morning%'").all()) {
+    await db.prepare("INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at) VALUES (@uid, ?, ?, 'morning', 1, ?)").run(today, id, stamp);
   }
 
   // ---- A lab panel, two draws (their typical ranges come from config/lab-ranges.json, as in the real app) ----
   const labs = [['Total Cholesterol', 'Lipid Panel', 'mg/dL', 192, 181], ['LDL Cholesterol', 'Lipid Panel', 'mg/dL', 118, 109], ['HDL Cholesterol', 'Lipid Panel', 'mg/dL', 52, 55],
     ['Triglycerides', 'Lipid Panel', 'mg/dL', 110, 96], ['Glucose', 'Metabolic Panel', 'mg/dL', 92, 90], ['Hemoglobin A1c', 'Metabolic Panel', '%', 5.4, 5.3]];
-  labs.forEach(([name, panel, unit, a, b], i) => {
-    const id = db.prepare('INSERT INTO lab_tests (user_id, name, panel, unit, position, created_at) VALUES (@uid, ?, ?, ?, ?, ?) RETURNING id').get(name, panel, unit, i + 1, stamp).id;
-    db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?)").run(id, addDays(today, -330), a, String(a), stamp);
-    db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?)").run(id, addDays(today, -40), b, String(b), stamp);
-  });
+  for (const [i, [name, panel, unit, a, b]] of labs.entries()) {
+    const id = (await db.prepare('INSERT INTO lab_tests (user_id, name, panel, unit, position, created_at) VALUES (@uid, ?, ?, ?, ?, ?) RETURNING id').get(name, panel, unit, i + 1, stamp)).id;
+    await db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?)").run(id, addDays(today, -330), a, String(a), stamp);
+    await db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'ui', ?)").run(id, addDays(today, -40), b, String(b), stamp);
+  }
 
   // ---- Prompt sections, settings, two sample reviews, a sample chat thread, a few run records ----
   const sections = [
@@ -232,25 +231,27 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
     ['medical', 'Sample medical section: no conditions (made-up data for the demo).', 1],
     ['rules', 'Keep the review practical and under 2,000 words.', 0],
   ];
-  sections.forEach(([name, text, sensitive], i) => db.prepare('INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, ?, ?, ?, ?, ?)').run(i + 1, name, text, sensitive, stamp));
+  for (const [i, [name, text, sensitive]] of sections.entries()) {
+    await db.prepare('INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, ?, ?, ?, ?, ?)').run(i + 1, name, text, sensitive, stamp);
+  }
   // A made-up profile for the age-based targets (born 1975, male, 5 ft 10 in).
   // demo_built_for: the day this data was made for (server/index.js refreshes it when the owner's date moves on).
-  for (const [k, v] of [['zone2_low_bpm', '108'], ['zone2_high_bpm', '126'], ['birth_year', '1975'], ['sex', 'male'], ['height_in', '70'], ['demo_built_for', today]]) db.prepare('INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)').run(k, v, stamp);
+  for (const [k, v] of [['zone2_low_bpm', '108'], ['zone2_high_bpm', '126'], ['birth_year', '1975'], ['sex', 'male'], ['height_in', '70'], ['demo_built_for', today]]) await db.prepare('INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)').run(k, v, stamp);
   // ---- Run records for the Activity tab: daily syncs and nightly backups for two weeks, the monthly restore test ----
   const insertRun = db.prepare("INSERT INTO runs (user_id, name, meta, status, started_at, finished_at, duration_ms, calls, cost_usd, summary) VALUES (@uid, ?, ?, 'ok', ?, ?, ?, ?, ?, ?)");
   for (let i = 14; i >= 1; i--) {
     const d = addDays(today, -i);
-    insertRun.run('sync', '{"backfill":false}', `${d}T11:00:00.000Z`, `${d}T11:00:04.000Z`, 4000, 0, 0, '{"counts":{"workout_log":{"tabsRead":1,"tabsReplaced":1}},"warnings":0}');
-    insertRun.run('backup', '{"to":"google-drive"}', `${d}T03:00:00.000Z`, `${d}T03:00:09.000Z`, 9000, 0, 0, '{"name":"health-sample.hrbk","bytes":1840000}');
+    await insertRun.run('sync', '{"backfill":false}', `${d}T11:00:00.000Z`, `${d}T11:00:04.000Z`, 4000, 0, 0, '{"counts":{"workout_log":{"tabsRead":1,"tabsReplaced":1}},"warnings":0}');
+    await insertRun.run('backup', '{"to":"google-drive"}', `${d}T03:00:00.000Z`, `${d}T03:00:09.000Z`, 9000, 0, 0, '{"name":"health-sample.hrbk","bytes":1840000}');
   }
-  insertRun.run('restore-test', '{"from":"google-drive"}', `${addDays(today, -((Number(today.slice(8, 10)) || 1) - 1))}T09:00:00.000Z`, null, 6000, 0, 0, '{"ok":true,"tables":27,"problems":[]}');
+  await insertRun.run('restore-test', '{"from":"google-drive"}', `${addDays(today, -((Number(today.slice(8, 10)) || 1) - 1))}T09:00:00.000Z`, null, 6000, 0, 0, '{"ok":true,"tables":27,"problems":[]}');
 
   // ---- The app's own pipeline: normalize names, detect blocks (confirmed), phases from workout names ----
-  await normalizeAll(adb, dictionary, { now: new Date(stamp) });
-  await writeDetected(adb, await detect(adb, today), { now: new Date(stamp) });
-  db.prepare("UPDATE program_blocks SET source = 'confirmed' WHERE user_id = @uid").run();
-  db.prepare("UPDATE log_sessions SET source = 'confirmed' WHERE user_id = @uid AND source = 'detected'").run();
-  await refreshPhases(adb, catalog);
+  await normalizeAll(db, dictionary, { now: new Date(stamp) });
+  await writeDetected(db, await detect(db, today), { now: new Date(stamp) });
+  await db.prepare("UPDATE program_blocks SET source = 'confirmed' WHERE user_id = @uid").run();
+  await db.prepare("UPDATE log_sessions SET source = 'confirmed' WHERE user_id = @uid AND source = 'detected'").run();
+  await refreshPhases(db, catalog);
 
   // ---- Weekly reviews: the last 26 weeks, each written in code from that week's real summary (demo/reviews.js) ----
   const substitutions = JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8'));
@@ -263,8 +264,8 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
     const written = `${addDays(weekEnd, 1)}T13:02:00.000Z`;
     const week = computeWeek(await loadWeekData(db, weekEnd, { catalog, dictionary, substitutions }), { weekEnd, ...settings });
     const summary = buildSummary(week, await loadWeekNotes(db, weekEnd), { today: addDays(weekEnd, 1) });
-    insertReview.run(weekEnd, JSON.stringify(summary), renderReport(writeDemoReview(summary)), written);
-    insertRun.run('review', JSON.stringify({ weekEnd, model: 'sample' }), `${addDays(weekEnd, 1)}T12:00:00.000Z`, written, 122000, 1, 0.34, '{"attempts":1,"warnings":0}');
+    await insertReview.run(weekEnd, JSON.stringify(summary), renderReport(writeDemoReview(summary)), written);
+    await insertRun.run('review', JSON.stringify({ weekEnd, model: 'sample' }), `${addDays(weekEnd, 1)}T12:00:00.000Z`, written, 122000, 1, 0.34, '{"attempts":1,"warnings":0}');
   }
 
   // ---- The Next program chat: a short made-up thread about the Advisor's actual ranking (the chat is off in the demo) ----
@@ -281,13 +282,15 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
     ['owner', 'Sample note: what about my shoulders? Overhead pressing bothers them some weeks.', null],
     ['claude', `Sample reply: shoulder pain that keeps coming back is worth raising with your physician or a physical therapist before you change programs around it. For the ranking itself: the Advisor scores joint health from one-side work and mobility, and ${top3} has the most of both. You can also pause an exercise on the Training tab so it counts against programs that lean on it.`],
   ];
-  thread.forEach(([role, text, weights], i) => insertNote.run(`00000000-0000-4000-8000-0000000000${String(i + 1).padStart(2, '0')}`,
-    `${addDays(today, -3)}T18:${String(i * 2).padStart(2, '0')}:00.000Z`, role, text, role === 'claude' ? '[]' : null, weights ? JSON.stringify(weights) : null, role === 'claude' ? 'sample' : null));
+  for (const [i, [role, text, weights]] of thread.entries()) {
+    await insertNote.run(`00000000-0000-4000-8000-0000000000${String(i + 1).padStart(2, '0')}`,
+      `${addDays(today, -3)}T18:${String(i * 2).padStart(2, '0')}:00.000Z`, role, text, role === 'claude' ? '[]' : null, weights ? JSON.stringify(weights) : null, role === 'claude' ? 'sample' : null);
+  }
 
   return {
-    days: db.prepare('SELECT COUNT(*) FROM daily_metrics WHERE user_id = @uid').pluck().get(),
-    sets: db.prepare('SELECT COUNT(*) FROM strength_sets WHERE user_id = @uid').pluck().get(),
-    blocks: db.prepare('SELECT COUNT(*) FROM program_blocks WHERE user_id = @uid').pluck().get(),
+    days: await db.prepare('SELECT COUNT(*) FROM daily_metrics WHERE user_id = @uid').pluck().get(),
+    sets: await db.prepare('SELECT COUNT(*) FROM strength_sets WHERE user_id = @uid').pluck().get(),
+    blocks: await db.prepare('SELECT COUNT(*) FROM program_blocks WHERE user_id = @uid').pluck().get(),
   };
 }
 
@@ -306,23 +309,25 @@ export async function buildDemoDatabase({ path = DEMO_DB_PATH, today = ownerDate
 /**
  * Makes the made-up data again in an open demo store, for a new today: every table emptied (schema_migrations kept;
  * the migrations seed no rows), then generateDemo, all in one transaction, so a request never sees half-built data
- * and the result equals a fresh build. The demo server runs this when the owner's date moves on.
+ * and the result equals a fresh build. The demo server runs this when the owner's date moves on. The table list, the
+ * foreign key pragma and sqlite_sequence are SQLite's own, so they use the raw handle (until 1G, the demo's database work).
  */
 export async function refreshDemoDatabase(store, { today = ownerDate(), seed = DEFAULT_SEED } = {}) {
-  const { db } = store;
-  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migrations', 'users')").pluck().all();
+  const { raw, adb } = store;
+  const tables = raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migrations', 'users')").pluck().all();
+  const sequence = Boolean(raw.prepare("SELECT 1 FROM sqlite_master WHERE name = 'sqlite_sequence'").get());
   return store.atx(async () => {
-    db.pragma('defer_foreign_keys = ON');
-    for (const t of tables) db.prepare(`DELETE FROM "${t}"`).run();
-    if (db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'sqlite_sequence'").get()) db.prepare('DELETE FROM sqlite_sequence').run();
+    raw.pragma('defer_foreign_keys = ON');
+    for (const t of tables) await adb.prepare(`DELETE FROM "${t}"`).run();
+    if (sequence) await adb.prepare('DELETE FROM sqlite_sequence').run();
     return generateDemo(store, { today, seed });
   });
 }
 
 /** The day the stored demo data was made for, or null (a database from before demo_built_for, or not a demo one). */
-export function demoBuiltFor(store) {
+export async function demoBuiltFor(store) {
   try {
-    return scopeDb(store.db, OWNER_ID).prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'demo_built_for'").pluck().get() ?? null;
+    return (await scopeDatabase(store.adb, OWNER_ID).prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'demo_built_for'").pluck().get()) ?? null;
   } catch {
     return null;
   }

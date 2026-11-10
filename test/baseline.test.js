@@ -17,7 +17,7 @@ test('baseline: sizes, run durations and query timings, with no row content', as
     run.run('sync', null, 'skipped', '2026-10-31T12:00:00Z', 5, OWNER_ID); // counted apart, not in the durations or failed
     run.run('review', null, 'ok', '2026-01-01T11:00:00Z', 9000, OWNER_ID); // older than 90 days
 
-    const b = await baseline(db, { now: new Date('2026-11-02T15:00:00Z') });
+    const b = await baseline(store.raw, { now: new Date('2026-11-02T15:00:00Z') });
     assert.equal(b.rowCounts.daily_metrics, 1);
     assert.equal(b.rowCounts.runs, 4);
     assert.deepEqual(b.runs90d, { sync: { count: 3, failed: 1, skipped: 1, medianMs: 1200, p95Ms: 3000 } });
