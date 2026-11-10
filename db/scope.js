@@ -59,12 +59,12 @@ export function scopeDb(db, uid) {
 /**
  * The async database (db/database.ts) as seen by one user: the same @uid binding as scopeDb, so a statement naming @uid
  * on the unscoped database still fails instead of reading everyone's rows.
- * @param {import('./database.ts').Database & { unscoped?: import('./database.ts').Database }} adb  (a scoped one is unwrapped)
+ * @param {import('./database.ts').Database & { unscoped?: import('./database.ts').Database }} database  (a scoped one is unwrapped)
  * @param {string} uid  users.id
  */
-export function scopeDatabase(adb, uid) {
+export function scopeDatabase(database, uid) {
   if (!uid) throw new TypeError('scopeDatabase: uid is required');
-  const base = adb.unscoped ?? adb;
+  const base = database.unscoped ?? database;
   const scopeAsync = (stmt) => {
     const bind = uidBinder(stmt.source, uid);
     const scoped = {
@@ -88,9 +88,9 @@ export function scopeDatabase(adb, uid) {
 }
 
 /**
- * A store whose db (sync) and adb (async, db/database.ts) are scoped to one user; tx, atx, raw and close are the
- * shared store's.
+ * A store whose db (async, db/database.ts) and syncDb (the guarded sync handle, when the store has one) are scoped to
+ * one user; tx, raw and close are the shared store's.
  */
 export function scopeStore(store, uid) {
-  return { ...store, db: scopeDb(store.db, uid), ...(store.adb && { adb: scopeDatabase(store.adb, uid) }), uid };
+  return { ...store, db: scopeDatabase(store.db, uid), ...(store.syncDb && { syncDb: scopeDb(store.syncDb, uid) }), uid };
 }

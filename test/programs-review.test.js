@@ -14,8 +14,8 @@ const opts = { today: TODAY };
 // Two programs a week apart, every other day; then an unnamed day long after.
 async function setup() {
   const store = openOwnerStore(':memory:');
-  const db = store.db;
-  const adb = store.adb;
+  const db = store.syncDb;
+  const adb = store.db;
   const ex = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2025, ?, ?, ?, ?)');
   const set = db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, 100, 5, '5')");
   let row = 2;
@@ -93,8 +93,8 @@ test('forward: new lifting days join the in-progress confirmed block with progra
   const { assignForward } = await import('../ingest/program-blocks.js');
   const { fakeSource, serial, silentLogger } = await import('./helpers.js');
   const store = openOwnerStore(':memory:');
-  const db = store.db;
-  const adb = store.adb;
+  const db = store.syncDb;
+  const adb = store.db;
   const LOG = ['Date', 'Prime', 'Exercise', 'Weight 1', 'Set 1', 'Workout'];
   const data = {
     workout_log: { 2026: [LOG, [serial('2026-03-02'), '', 'Squat', 100, 5, 'Symmetry Foundation 1 - Phase 1']] },

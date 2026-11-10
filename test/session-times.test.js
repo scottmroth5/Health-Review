@@ -9,8 +9,8 @@ const SHEET_STAMP = '2026-10-15T11:00:03.386Z';
 
 function seed() {
   const store = openOwnerStore(':memory:');
-  const add = store.db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, updated_at) VALUES (@uid, ?, ?, ?, 600, ?)`);
-  store.db.prepare(`INSERT INTO drive_exports (user_id, file_id, kind, name, modified_time, rows, synced_at) VALUES (@uid, 'w1', 'workouts', 'Workout session metrics-a', 'x', 2, ?)`).run(EXPORT_STAMP);
+  const add = store.syncDb.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, updated_at) VALUES (@uid, ?, ?, ?, 600, ?)`);
+  store.syncDb.prepare(`INSERT INTO drive_exports (user_id, file_id, kind, name, modified_time, rows, synced_at) VALUES (@uid, 'w1', 'workouts', 'Workout session metrics-a', 'x', 2, ?)`).run(EXPORT_STAMP);
   add.run('Walk', '2026-10-13T11:00:00', '2026-10-13T11:30:00', EXPORT_STAMP); // from the export files: right
   add.run('Walk', '2026-10-13T14:00:00', '2026-10-13T14:30:00', SHEET_STAMP); // its late twin from the sheet
   add.run('Run', '2026-09-01T07:00:00', '2026-09-01T07:40:00', SHEET_STAMP); // sheet only: moves to 04:00
@@ -18,7 +18,7 @@ function seed() {
   add.run('Swim', '2026-10-14T09:00:00', '2026-10-14T09:45:00', EXPORT_STAMP); // export only: stays
   return store;
 }
-const all = (store) => store.db.prepare('SELECT type, start, end FROM workout_sessions ORDER BY start').all().map((r) => `${r.type} ${r.start}-${r.end.slice(11)}`);
+const all = (store) => store.syncDb.prepare('SELECT type, start, end FROM workout_sessions ORDER BY start').all().map((r) => `${r.type} ${r.start}-${r.end.slice(11)}`);
 
 test('moveHours shifts a local wall-clock time across midnight', async () => {
   assert.equal(moveHours('2026-08-02T01:30:00', -3), '2026-08-01T22:30:00');
@@ -50,7 +50,7 @@ test('the fix: late twins are deleted, other sheet workouts move back 3 hours, e
 test('the fix: a move that would land on an export workout of the same type and start is refused', async () => {
   const store = seed();
   // A sheet row 3 hours after an export row with the same start but a different end: not a twin, and a clash if moved.
-  store.db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, updated_at) VALUES (@uid, 'Swim', '2026-10-14T12:00:00', '2026-10-14T12:50:00', 600, ?)`).run(SHEET_STAMP);
+  store.syncDb.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, updated_at) VALUES (@uid, 'Swim', '2026-10-14T12:00:00', '2026-10-14T12:50:00', 600, ?)`).run(SHEET_STAMP);
   assert.equal((await fixSessionTimes(store)).collisions, 1);
   const before = all(store);
   await assert.rejects(() => fixSessionTimes(store, { apply: true }), /would land on stored ones/);

@@ -34,8 +34,8 @@ async function setup() {
   });
   const store = openHealthStore(':memory:');
   await refreshDemoDatabase(store, { today: TODAY }); // user A (the owner) gets the demo's made-up data
-  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, 'b@example.com', 'user', 'approved', 'x')").run(B);
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, 'b@example.com', 'user', 'approved', 'x')").run(B);
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const app = await buildApp({ store, authMode: 'google', auth: { settings }, clock: () => new Date(`${TODAY}T16:00:00Z`), catalog: loadDemoCatalog() });
   const cookie = (email) => `hr_session=${sign({ email, exp: Date.now() + 3_600_000, v: 1 }, sessionKey(secret))}`;
   return { store, app, asA: cookie('a@example.com'), asB: cookie('b@example.com') };
@@ -64,7 +64,7 @@ test('isolation: B sees none of A\'s data on any GET route; A sees it', async ()
 
 test('isolation: no write route sent by B changes any of A\'s rows', async () => {
   const { store, app, asB } = await setup();
-  const before = snapshot(store.db, OWNER_ID);
+  const before = snapshot(store.syncDb, OWNER_ID);
   const writes = app.routeList.filter((r) => ['PUT', 'POST', 'DELETE'].includes(r.method) && r.url.startsWith('/api/') && !r.url.startsWith('/api/ingest/'));
   assert.ok(writes.length >= 20);
   // Plausible bodies for the routes that edit an existing row, so they get past validation and try A's row.
@@ -87,8 +87,8 @@ test('isolation: no write route sent by B changes any of A\'s rows', async () =>
     const body = BODIES[`${r.method} ${r.url}`] ?? (r.method === 'DELETE' ? undefined : {});
     await app.inject({ method: r.method, url: fill(r.url), headers: { cookie: asB, origin: SITE }, ...(body ? { payload: body } : {}) });
   }
-  assert.equal(snapshot(store.db, OWNER_ID), before, "A's rows are unchanged");
-  assert.equal(store.db.prepare("SELECT COUNT(*) FROM users WHERE email = 'b@example.com'").pluck().get(), 0, 'B deleted only themself');
+  assert.equal(snapshot(store.syncDb, OWNER_ID), before, "A's rows are unchanged");
+  assert.equal(store.syncDb.prepare("SELECT COUNT(*) FROM users WHERE email = 'b@example.com'").pluck().get(), 0, 'B deleted only themself');
   await app.close();
   store.close();
 });

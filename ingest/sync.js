@@ -40,8 +40,8 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
 
 /**
  * @param {object} options
- * @param {{ adb: import('../db/database.ts').Database, atx: Function }} options.store  a scoped store (db/scope.js scopeStore);
- *   the whole sync runs on its async handle (docs/adr/0006), each write group in one atx
+ * @param {{ db: import('../db/database.ts').Database, tx: Function }} options.store  a scoped store (db/scope.js scopeStore);
+ *   the whole sync runs on its async handle (docs/adr/0006), each write group in one tx
  * @param {ReturnType<import('./sheets.js').createSheetsSource>} options.source
  * @param {boolean} [options.backfill]   read everything and import the drinking log and check-ins
  * @param {Date} [options.now]
@@ -79,22 +79,22 @@ export async function runSync({ store, source, backfill = false, now = new Date(
     }
     counts.workout_log = await syncWorkoutLog({ store, source, backfill, now, warnings });
     if (counts.workout_log.tabsReplaced) {
-      counts.normalized = await normalizeLog(store.adb, dictionary, now, warnings);
-      counts.sessions = await assignForward(store.adb, localDay(now), { now });
-      try { await refreshPhases(store.adb, catalog === undefined ? await userCatalog(store.adb) : catalog); } catch (err) {
+      counts.normalized = await normalizeLog(store.db, dictionary, now, warnings);
+      counts.sessions = await assignForward(store.db, localDay(now), { now });
+      try { await refreshPhases(store.db, catalog === undefined ? await userCatalog(store.db) : catalog); } catch (err) {
         warnings.push({ source: 'program_catalog', kind: 'invalid catalog, phases not updated', detail: err.problems?.length ? `${err.problems.length} problems; run npm run programs:catalog` : err.message });
       }
     }
     counts.lab_results = await syncLabs({ store, source, warnings, stamp });
     if (backfill) {
-      counts.drinking_log = await importOnce({ store, source, key: 'drinking_log', parse: parseDrinkingLog, write: upsertDrinkingDays(store.adb, stamp), warnings });
-      counts.weekly_checkin = await importOnce({ store, source, key: 'weekly_checkin', parse: parseWeeklyCheckins, write: upsertCheckins(store.adb, stamp), warnings });
+      counts.drinking_log = await importOnce({ store, source, key: 'drinking_log', parse: parseDrinkingLog, write: upsertDrinkingDays(store.db, stamp), warnings });
+      counts.weekly_checkin = await importOnce({ store, source, key: 'weekly_checkin', parse: parseWeeklyCheckins, write: upsertCheckins(store.db, stamp), warnings });
     }
     // Data checks (stale or missing Apple Health days, an export automation that stopped, partial days, workouts not exported, impossible values).
-    const checks = dataChecks(await loadDataCheckInput(store.adb, localDay(now), { apple, now, lookedAt: apple === 'drive' && exportFolders.health ? stamp : null, workoutsLookedAt: apple === 'drive' && exportFolders.workouts ? stamp : null }));
+    const checks = dataChecks(await loadDataCheckInput(store.db, localDay(now), { apple, now, lookedAt: apple === 'drive' && exportFolders.health ? stamp : null, workoutsLookedAt: apple === 'drive' && exportFolders.workouts ? stamp : null }));
     for (const c of checks) warnings.push({ source: 'data_check', kind: c.kind, detail: c.message, severity: c.severity });
     counts.data_checks = { warn: checks.filter((c) => c.severity === 'warn').length, info: checks.filter((c) => c.severity === 'info').length };
-    const typos = await typoCount(store.adb, dictionary);
+    const typos = await typoCount(store.db, dictionary);
     if (typos) warnings.push({ source: 'exercise_names', kind: 'likely typos', detail: `${typos === 1 ? '1 exercise name looks like a typo' : `${typos} exercise names look like typos`}; see npm run log:typos`, severity: 'info' });
     run.finish('ok', { counts, warnings: warnings.length });
     return { counts, warnings };
@@ -146,7 +146,7 @@ const isRateLimit = (err) => (err?.response?.status ?? err?.status ?? err?.code)
  * (reads are paced in the source), the folder stops there and the rest waits for the next sync.
  */
 async function syncExports({ store, source, kind, folderId, warnings, stamp, limit = EXPORT_FILES_PER_SYNC }) {
-  const db = store.adb;
+  const db = store.db;
   const known = new Map((await db.prepare('SELECT file_id, modified_time FROM drive_exports WHERE user_id = @uid').all()).map((r) => [r.file_id, r.modified_time]));
   const todo = (await source.listExports(folderId, kind)).filter((f) => known.get(f.id) !== f.modifiedTime);
   const batch = todo.slice(0, limit);
@@ -194,7 +194,7 @@ async function syncExports({ store, source, kind, folderId, warnings, stamp, lim
     }
     // The shared writers (ingest/apply.js), the same ones the REST ingest uses.
     let days = [];
-    await store.atx(async () => {
+    await store.tx(async () => {
       if (health) ({ days } = await applyHealthDays(db, { records: healthRecords, exportedThrough, standHours }, stamp));
       await applyWorkouts(db, workoutRecords, hrRecords, stamp);
       for (const f of read) await record.run(f.id, kind, f.name, f.modifiedTime, f.rows, stamp);
@@ -222,7 +222,7 @@ async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
   const wanted = backfill ? yearTabs : yearTabs.filter((t) => Number(t) === year || (inJanuary && Number(t) === year - 1));
   const result = { tabsRead: wanted.length, tabsReplaced: 0, exercises: 0, sets: 0, notes: 0 };
 
-  const db = store.adb;
+  const db = store.db;
   const insertExercise = db.prepare(`INSERT INTO strength_exercises
     (user_id, tab_year, row_no, date, workout, prime, exercise, post, comment) VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`);
   const insertSet = db.prepare(`INSERT INTO strength_sets
@@ -236,7 +236,7 @@ async function syncWorkoutLog({ store, source, backfill, now, warnings }) {
     if ((await getState(db, 'workout_log', tab))?.content_hash === contentHash) continue;
     const { records, notes, warnings: w } = parseWorkoutLogTab({ ...data, tab });
     warnings.push(...w);
-    await store.atx(async () => {
+    await store.tx(async () => {
       await db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ?').run(Number(tab));
       await db.prepare('DELETE FROM workout_log_notes WHERE user_id = @uid AND tab_year = ?').run(Number(tab));
       for (const e of records) {
@@ -276,13 +276,13 @@ async function syncLabs({ store, source, warnings, stamp }) {
   }
   if (!data) return { skipped: 'the lab spreadsheet has no tabs' };
   const contentHash = hash([data.header, data.rows]);
-  const db = store.adb;
+  const db = store.db;
   if ((await getState(db, 'lab_results', tab))?.content_hash === contentHash) return { tab, changed: false };
 
   const { tests, results, warnings: w } = parseLabSheet({ ...data, tab });
   warnings.push(...w);
   let keptFromApp = 0;
-  await store.atx(async () => {
+  await store.tx(async () => {
     const findTest = db.prepare('SELECT id FROM lab_tests WHERE user_id = @uid AND name = ?');
     const insertTest = db.prepare('INSERT INTO lab_tests (user_id, name, panel, position, created_at) VALUES (@uid, ?, ?, ?, ?) RETURNING id');
     const updateTest = db.prepare('UPDATE lab_tests SET panel = ?, position = ? WHERE user_id = @uid AND id = ?');
@@ -330,9 +330,9 @@ async function importOnce({ store, source, key, parse, write, warnings }) {
   const { records, warnings: w } = parse({ ...data, tab });
   warnings.push(...w);
   let written = 0;
-  await store.atx(async () => {
+  await store.tx(async () => {
     for (const r of records) written += await write(r);
-    await saveState(store.adb, key, tab, data);
+    await saveState(store.db, key, tab, data);
   });
   return { rowsRead: data.rows.length, imported: written, keptFromUi: records.length - written };
 }

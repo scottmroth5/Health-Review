@@ -64,7 +64,7 @@ test('browserOf: the browser and its main version only, most specific first', ()
 test('migration 033: the usage totals keep their rows and accept browser', () => {
   // The table as migration 032 made it, with a row, then 033 on top.
   const store = openHealthStore(':memory:');
-  const db = store.db;
+  const db = store.syncDb;
   db.exec(`DROP TABLE usage_totals;
     CREATE TABLE usage_totals (day TEXT NOT NULL, dimension TEXT NOT NULL CHECK (dimension IN ('device', 'location', 'source')),
       value TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, dimension, value));`);
@@ -121,7 +121,7 @@ async function setup({ clock }) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
-  store.db.prepare(`INSERT INTO users (id, email, role, status, created_at, health_consent_at) VALUES
+  store.syncDb.prepare(`INSERT INTO users (id, email, role, status, created_at, health_consent_at) VALUES
     ('lee', 'lee@example.com', 'user', 'approved', 'x', 'x'), ('kim', 'kim@example.com', 'user', 'pending', 'x', 'x')`).run();
   let email;
   let nonce;
@@ -139,7 +139,7 @@ async function setup({ clock }) {
     const cookie = cookies(res).split('; ').find((c) => c.startsWith('hr_session='));
     return (url2, headers = {}, remoteAddress = '192.0.2.10') => app.inject({ url: url2, remoteAddress, headers: { cookie, 'user-agent': IPHONE, ...headers } });
   };
-  const table = () => store.db.prepare('SELECT * FROM usage_totals ORDER BY dimension, value').all();
+  const table = () => store.syncDb.prepare('SELECT * FROM usage_totals ORDER BY dimension, value').all();
   const totals = (dimension) => Object.fromEntries(table().filter((r) => r.dimension === dimension).map((r) => [r.value, r.count]));
   return { app, store, signIn, table, totals };
 }
@@ -204,7 +204,7 @@ test('arrivals: the sign-in page and the app page only, by source; the table hol
   assert.equal((await lee('/', { referer: 'https://accounts.google.com/', 'sec-fetch-dest': 'document', 'sec-fetch-site': 'cross-site' })).statusCode, 200);
   assert.equal((await lee('/', { referer: 'https://github.com/someone' })).statusCode, 200);
   assert.deepEqual(totals('source'), { demo: 1, direct: 1, github: 1, google_signin_return: 1, linkedin: 1, other: 1, site: 1 });
-  const period = (await usageTotals(store.db, { from: '2026-11-01', to: '2026-11-03' }));
+  const period = (await usageTotals(store.syncDb, { from: '2026-11-01', to: '2026-11-03' }));
   assert.ok(!period.arrivals.some((r) => r.value === 'google_signin_return'));
   assert.equal(period.arrivals.reduce((n, r) => n + r.count, 0), 6);
   // The whole table: only day, dimension, value and count, and nothing that points back to a request or a person.
@@ -213,7 +213,7 @@ test('arrivals: the sign-in page and the app page only, by source; the table hol
   const text = JSON.stringify(rows);
   for (const leak of ['192.0.2', 'Mozilla', 'iPhone', 'http', 'example.test', 'made-up-campaign', 'utm', 'lee', '@', 'someone']) assert.ok(!text.includes(leak), leak);
   assert.ok(!USER_TABLES.includes('usage_totals'), 'not a user table: not exported or deleted with an account');
-  assert.equal(store.db.prepare("SELECT COUNT(*) FROM pragma_table_info('usage_totals') WHERE name = 'user_id'").pluck().get(), 0);
+  assert.equal(store.syncDb.prepare("SELECT COUNT(*) FROM pragma_table_info('usage_totals') WHERE name = 'user_id'").pluck().get(), 0);
   await app.close();
   store.close();
 });
@@ -225,7 +225,7 @@ test('the demo and local mode count nothing', async () => {
       usage: { place: fakePlace, siteHost: 'example.test', demoHost: 'demo.example.test' } });
     await app.inject({ url: '/', headers: { host: 'localhost', referer: 'https://github.com/x', 'user-agent': IPHONE } });
     await app.inject({ url: '/api/status', headers: { host: 'localhost' } });
-    assert.equal(store.db.prepare('SELECT COUNT(*) FROM usage_totals').pluck().get(), 0, authMode);
+    assert.equal(store.syncDb.prepare('SELECT COUNT(*) FROM usage_totals').pluck().get(), 0, authMode);
     await app.close();
     store.close();
   }
@@ -233,7 +233,7 @@ test('the demo and local mode count nothing', async () => {
 
 test('the period totals: devices, locations rolled up to countries and states with the top cities, sources', async () => {
   const store = openHealthStore(':memory:');
-  const add = store.db.prepare('INSERT INTO usage_totals (day, dimension, value, count) VALUES (?, ?, ?, ?)');
+  const add = store.syncDb.prepare('INSERT INTO usage_totals (day, dimension, value, count) VALUES (?, ?, ?, ?)');
   add.run('2026-11-02', 'device', 'phone', 3);
   add.run('2026-11-03', 'device', 'phone', 1);
   add.run('2026-11-03', 'device', 'computer', 2);
@@ -246,7 +246,7 @@ test('the period totals: devices, locations rolled up to countries and states wi
   add.run('2026-11-03', 'location', 'unknown', 1);
   add.run('2026-11-03', 'source', 'linkedin', 2);
   add.run('2026-11-03', 'source', 'google_signin_return', 5);
-  const t = (await usageTotals(store.db, { from: '2026-10-27', to: '2026-11-03' }));
+  const t = (await usageTotals(store.syncDb, { from: '2026-10-27', to: '2026-11-03' }));
   assert.deepEqual(t.visits.device, [{ value: 'phone', count: 4 }, { value: 'computer', count: 2 }]);
   assert.deepEqual(t.visits.browser, [{ value: 'Safari 18', count: 2 }, { value: 'Chrome 130', count: 1 }]);
   assert.deepEqual(t.visits.location.countries, [{ value: 'United States', count: 4 }, { value: 'Unknown', count: 1 }]);

@@ -52,7 +52,7 @@ function source(data = sheets()) {
 
 const open = () => openOwnerStore(':memory:');
 const sync = (store, src, opts = {}) => runSync({ store, source: src, now: NOW, logger: silentLogger, catalog: null, exportFolders: both, ...opts });
-const count = (store, table) => store.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+const count = (store, table) => store.syncDb.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 
 test('backfill imports every source, all year tabs, and skips filtered and backup tabs', async () => {
   const store = open();
@@ -60,7 +60,7 @@ test('backfill imports every source, all year tabs, and skips filtered and backu
   assert.deepEqual(importWarnings(warnings), []);
   assert.equal(count(store, 'daily_metrics'), 2);
   assert.equal(count(store, 'workout_sessions'), 1);
-  assert.deepEqual(store.db.prepare('SELECT tab_year, COUNT(*) AS n FROM strength_exercises GROUP BY tab_year').all(), [
+  assert.deepEqual(store.syncDb.prepare('SELECT tab_year, COUNT(*) AS n FROM strength_exercises GROUP BY tab_year').all(), [
     { tab_year: 2025, n: 1 }, { tab_year: 2026, n: 2 },
   ]);
   assert.equal(count(store, 'strength_sets'), 4);
@@ -79,7 +79,7 @@ test('a normal sync reads only new or changed export files; the drinking log is 
   const { counts } = await sync(store, src);
   assert.deepEqual(src.reads.filter((r) => r.file), [{ file: 'd3' }]);
   assert.deepEqual([counts.health_exports.filesRead, counts.workout_exports.filesRead], [1, 0]);
-  assert.equal(store.db.prepare("SELECT hrv_ms FROM daily_metrics WHERE date = '2026-03-03'").get().hrv_ms, 50);
+  assert.equal(store.syncDb.prepare("SELECT hrv_ms FROM daily_metrics WHERE date = '2026-03-03'").get().hrv_ms, 50);
   assert.equal(counts.drinking_log, undefined, 'drinking log is only read on backfill');
   store.close();
 });
@@ -134,7 +134,7 @@ test('Workout Log: unchanged tabs are skipped, edited tabs replaced, deleted row
   data.workout_log['2026'].pop(); // delete the plank row
   ({ counts } = await sync(store, src));
   assert.equal(counts.workout_log.tabsReplaced, 1);
-  const rows = store.db.prepare('SELECT e.exercise, s.set_no, s.weight_lbs FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id WHERE e.tab_year = 2026 ORDER BY s.set_no').all();
+  const rows = store.syncDb.prepare('SELECT e.exercise, s.set_no, s.weight_lbs FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id WHERE e.tab_year = 2026 ORDER BY s.set_no').all();
   assert.deepEqual(rows, [{ exercise: 'Squat', set_no: 1, weight_lbs: 190 }, { exercise: 'Squat', set_no: 2, weight_lbs: 205 }]);
   assert.equal(count(store, 'strength_sets'), 3, 'the plank set is gone and 2025 is untouched');
   store.close();
@@ -149,11 +149,11 @@ test('Workout Log: in January the previous year tab is synced too', async () => 
 
 test('backfill never overwrites drinking days or check-ins entered in the UI', async () => {
   const store = open();
-  store.db.prepare("INSERT INTO drinking_days (user_id, date, beers, source, updated_at) VALUES (@uid, '2026-03-06', 5, 'ui', 'x')").run();
-  store.db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, '2026-03-07', 'daily', 9, 'ui', 'x')").run();
+  store.syncDb.prepare("INSERT INTO drinking_days (user_id, date, beers, source, updated_at) VALUES (@uid, '2026-03-06', 5, 'ui', 'x')").run();
+  store.syncDb.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, '2026-03-07', 'daily', 9, 'ui', 'x')").run();
   const { counts } = await sync(store, source(), { backfill: true });
-  assert.equal(store.db.prepare("SELECT beers FROM drinking_days WHERE date = '2026-03-06'").get().beers, 5);
-  assert.equal(store.db.prepare("SELECT readiness FROM checkins WHERE date = '2026-03-07'").get().readiness, 9);
+  assert.equal(store.syncDb.prepare("SELECT beers FROM drinking_days WHERE date = '2026-03-06'").get().beers, 5);
+  assert.equal(store.syncDb.prepare("SELECT readiness FROM checkins WHERE date = '2026-03-07'").get().readiness, 9);
   assert.deepEqual([counts.drinking_log.imported, counts.drinking_log.keptFromUi], [1, 1]);
   assert.deepEqual([counts.weekly_checkin.imported, counts.weekly_checkin.keptFromUi], [0, 1]);
   store.close();
@@ -162,7 +162,7 @@ test('backfill never overwrites drinking days or check-ins entered in the UI', a
 test('each sync is recorded as a run with counts only', async () => {
   const store = open();
   await sync(store, source(), { backfill: true });
-  const run = store.db.prepare("SELECT name, status, meta, summary FROM runs WHERE name = 'sync'").get();
+  const run = store.syncDb.prepare("SELECT name, status, meta, summary FROM runs WHERE name = 'sync'").get();
   assert.equal(run.status, 'ok');
   assert.deepEqual(JSON.parse(run.meta), { backfill: true });
   const summary = JSON.parse(run.summary);
@@ -176,7 +176,7 @@ test('a failed sync is recorded as an error run and rethrown', async () => {
   const src = source();
   src.exports[0].values[0] = ['When', 'HRV'];
   await assert.rejects(sync(store, src, { backfill: true }), /no "Date\/Time" column/);
-  assert.equal(store.db.prepare("SELECT status FROM runs WHERE name = 'sync'").get().status, 'error');
+  assert.equal(store.syncDb.prepare("SELECT status FROM runs WHERE name = 'sync'").get().status, 'error');
   store.close();
 });
 
@@ -197,7 +197,7 @@ test('labs: imported from the tab headed "Lab Test"; unchanged sheets are not re
   const src = source(withLabs(LAB()));
   const { counts } = await sync(store, src);
   assert.deepEqual(counts.lab_results, { tab: 'Labs', changed: true, tests: 3, draws: 2, results: 6, keptFromApp: 0 });
-  assert.deepEqual(store.db.prepare('SELECT name, panel, position FROM lab_tests ORDER BY position').all().map((t) => [t.name, t.panel, t.position]), [
+  assert.deepEqual(store.syncDb.prepare('SELECT name, panel, position FROM lab_tests ORDER BY position').all().map((t) => [t.name, t.panel, t.position]), [
     ['Cholesterol', 'LIPID PANEL', 1], ['LDL Calculated', 'LIPID PANEL', 2], ['PSA', 'OTHER', 3],
   ]);
   assert.deepEqual((await sync(store, src)).counts.lab_results, { tab: 'Labs', changed: false });
@@ -209,16 +209,16 @@ test('labs: edits and removed draw columns are reflected; app results are kept a
   const data = withLabs(LAB());
   const source = fakeSource(data);
   await sync(store, source);
-  const psa = store.db.prepare("SELECT id FROM lab_tests WHERE name = 'PSA'").get().id;
-  store.db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, '2026-06-01', 0.9, '0.9', 'ui', 'x')").run(psa);
-  store.db.prepare("UPDATE lab_results SET value = 5, value_text = '5', source = 'ui' WHERE test_id = ? AND drawn_on = '2026-03-23'").run(psa);
+  const psa = store.syncDb.prepare("SELECT id FROM lab_tests WHERE name = 'PSA'").get().id;
+  store.syncDb.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, '2026-06-01', 0.9, '0.9', 'ui', 'x')").run(psa);
+  store.syncDb.prepare("UPDATE lab_results SET value = 5, value_text = '5', source = 'ui' WHERE test_id = ? AND drawn_on = '2026-03-23'").run(psa);
 
   data.lab_results.Labs = LAB().map((row) => row.slice(0, 2)); // drop the 2025 column
   data.lab_results.Labs[2][1] = 170; // edit cholesterol
   const { counts, warnings } = await sync(store, source);
   assert.equal(counts.lab_results.keptFromApp, 1);
   assert.deepEqual(importWarnings(warnings).map((w) => w.kind), ['app value kept over a different sheet value']);
-  const rows = store.db.prepare('SELECT t.name, r.drawn_on, r.value, r.source FROM lab_results r JOIN lab_tests t ON t.id = r.test_id ORDER BY t.position, r.drawn_on').all();
+  const rows = store.syncDb.prepare('SELECT t.name, r.drawn_on, r.value, r.source FROM lab_results r JOIN lab_tests t ON t.id = r.test_id ORDER BY t.position, r.drawn_on').all();
   assert.deepEqual(rows.map((r) => [r.name, r.drawn_on, r.value, r.source]), [
     ['Cholesterol', '2026-03-23', 170, 'sheet'],
     ['LDL Calculated', '2026-03-23', 84, 'sheet'],
@@ -242,10 +242,10 @@ test('labs: a sheet result corrected in the app (value or date) is kept by sync,
   const source = fakeSource(data);
   await sync(store, source);
   const { updateLabResult, deleteLabResult } = await import('../server/queries.js');
-  const row = (name, date) => store.db.prepare('SELECT r.* FROM lab_results r JOIN lab_tests t ON t.id = r.test_id WHERE t.name = ? AND r.drawn_on = ?').get(name, date);
+  const row = (name, date) => store.syncDb.prepare('SELECT r.* FROM lab_results r JOIN lab_tests t ON t.id = r.test_id WHERE t.name = ? AND r.drawn_on = ?').get(name, date);
 
-  await updateLabResult(store.adb, row('PSA', '2026-03-23').id, { value: '0.9' }); // value fix
-  await updateLabResult(store.adb, row('Cholesterol', '2025-09-15').id, { drawn_on: '2025-09-16' }); // date fix
+  await updateLabResult(store.db, row('PSA', '2026-03-23').id, { value: '0.9' }); // value fix
+  await updateLabResult(store.db, row('Cholesterol', '2025-09-15').id, { drawn_on: '2025-09-16' }); // date fix
   data.lab_results.Labs[2][1] = 171; // the sheet changes, so sync runs
   const { counts, warnings } = await sync(store, source);
   assert.deepEqual(importWarnings(warnings), []);
@@ -255,7 +255,7 @@ test('labs: a sheet result corrected in the app (value or date) is kept by sync,
   assert.equal(row('Cholesterol', '2025-09-16').corrected_from_date, '2025-09-15');
 
   // Undoing a correction brings the sheet value back on the next sync.
-  await deleteLabResult(store.adb, row('PSA', '2026-03-23').id);
+  await deleteLabResult(store.db, row('PSA', '2026-03-23').id);
   data.lab_results.Labs[2][1] = 165;
   await sync(store, source);
   assert.deepEqual([row('PSA', '2026-03-23').value_text, row('PSA', '2026-03-23').source], ['0.6', 'sheet']);
@@ -287,8 +287,8 @@ test('export files: with both folders set, health and workouts come from the fil
   assert.equal(counts.health_metrics, undefined);
   assert.equal(counts.workout_sessions, undefined);
   assert.ok(!src.reads.some((r) => r.source === 'health_metrics' || r.source === 'workout_sessions'), 'consolidated sheets untouched');
-  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-03-02'").get().steps, 9000);
-  assert.equal(store.db.prepare("SELECT duration_sec FROM workout_sessions WHERE type = 'Outdoor Walk'").get().duration_sec, 1800);
+  assert.equal(store.syncDb.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-03-02'").get().steps, 9000);
+  assert.equal(store.syncDb.prepare("SELECT duration_sec FROM workout_sessions WHERE type = 'Outdoor Walk'").get().duration_sec, 1800);
 
   // A second sync reads nothing new; a changed file is read again.
   assert.equal((await sync(store, src, { exportFolders: both })).counts.health_exports.filesRead, 0);
@@ -304,7 +304,7 @@ test('export files: a day whose file was written before the day ended is partial
   // Mid-day UTC times, so the local date is the same in any US time zone.
   src.exports = [healthFile('h1', '2026-03-02', [HEALTH, day('2026-03-02', 50, 54, 9000)], '2026-03-02T15:00:00Z')];
   await sync(store, src, { exportFolders: { health: HF, workouts: null } });
-  const through = () => store.db.prepare("SELECT exported_through FROM daily_metrics WHERE date = '2026-03-02'").pluck().get();
+  const through = () => store.syncDb.prepare("SELECT exported_through FROM daily_metrics WHERE date = '2026-03-02'").pluck().get();
   assert.match(through(), /^2026-03-02T\d\d:\d\d$/);
   const partial = async () => (await buildApp({ store, clock: () => new Date(2026, 2, 5, 12) }))
     .inject('/api/history?from=2026-03-01&to=2026-03-04').then((r) => r.json().partialDays);
@@ -340,14 +340,14 @@ test('export files: a sync that finds nothing newer than 26 hours warns that the
 test('JSON workouts: per-minute heart rate is stored; a stored workout starting within a minute is the same one', async () => {
   const store = open();
   // A workout stored earlier (the old Sheets export) with fields the JSON lacks, its start a minute later.
-  store.db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, flights_climbed, avg_hr, updated_at)
+  store.syncDb.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, flights_climbed, avg_hr, updated_at)
     VALUES (@uid, 'Outdoor Walk', '2026-03-02T18:01:00', '2026-03-02T18:30:00', 4, 99, 'x')`).run();
   const src = fakeSource(sheets());
   src.exports = [workoutFile('w1', '2026-03-02', walk)];
   await sync(store, src, { exportFolders: { health: null, workouts: WF } });
-  assert.deepEqual(store.db.prepare('SELECT start, end, avg_hr, flights_climbed, duration_sec FROM workout_sessions').all(),
+  assert.deepEqual(store.syncDb.prepare('SELECT start, end, avg_hr, flights_climbed, duration_sec FROM workout_sessions').all(),
     [{ start: '2026-03-02T18:00:00', end: '2026-03-02T18:30:00', avg_hr: 110, flights_climbed: 4, duration_sec: 1800 }]);
-  assert.deepEqual(store.db.prepare('SELECT t, avg_bpm, min_bpm, max_bpm FROM workout_hr_samples ORDER BY t').all(), [
+  assert.deepEqual(store.syncDb.prepare('SELECT t, avg_bpm, min_bpm, max_bpm FROM workout_hr_samples ORDER BY t').all(), [
     { t: '2026-03-02T18:00', avg_bpm: 100, min_bpm: 98, max_bpm: 102 },
     { t: '2026-03-02T18:01', avg_bpm: 110, min_bpm: 108, max_bpm: 112 },
     { t: '2026-03-02T18:02', avg_bpm: 120, min_bpm: 118, max_bpm: 122 },
@@ -378,7 +378,7 @@ test('export files: a partial export read after the full day never lowers it; it
   await sync(store, src, { exportFolders: both });
   src.exports.push(healthFile('h2', 'b', [HEALTH, [serial('2026-03-02', 3), 60, 52, 340]]));
   await sync(store, src, { exportFolders: both });
-  assert.deepEqual(store.db.prepare("SELECT hrv_ms, resting_hr, steps FROM daily_metrics WHERE date = '2026-03-02'").get(),
+  assert.deepEqual(store.syncDb.prepare("SELECT hrv_ms, resting_hr, steps FROM daily_metrics WHERE date = '2026-03-02'").get(),
     { hrv_ms: 48, resting_hr: 52, steps: 8000 });
   store.close();
 });
@@ -398,7 +398,7 @@ test('export files: at most 200 per folder per sync, oldest first; the rest wait
   assert.equal(first.warnings.find((w) => w.source === 'health_exports').detail, '5 health export files still to read; the next syncs continue');
   const second = await sync(store, src, { exportFolders: both });
   assert.deepEqual([second.counts.health_exports.filesRead, second.counts.health_exports.filesLeft], [5, 0]);
-  assert.equal(store.db.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-03-01'").get().steps, 1000 + n - 1);
+  assert.equal(store.syncDb.prepare("SELECT steps FROM daily_metrics WHERE date = '2026-03-01'").get().steps, 1000 + n - 1);
   store.close();
 });
 
@@ -422,7 +422,7 @@ test('export files: if Google still says too many requests, what was read is sav
   assert.deepEqual([counts.health_exports.filesRead, counts.health_exports.filesLeft], [failAt - 1, n - failAt + 1]);
   assert.equal(count(store, 'drive_exports'), failAt - 1, 'the full group of 25 and the 4 read after it are saved');
   assert.equal(warnings.find((w) => w.kind === 'read limit reached').detail, `Google's read limit reached; ${n - failAt + 1} health export files left for the next sync`);
-  assert.equal(store.db.prepare("SELECT status FROM runs WHERE name = 'sync' ORDER BY id DESC LIMIT 1").get().status, 'ok');
+  assert.equal(store.syncDb.prepare("SELECT status FROM runs WHERE name = 'sync' ORDER BY id DESC LIMIT 1").get().status, 'ok');
 
   src.readFileRows = realRead; // the next sync picks up the rest
   const next = await sync(store, src, { exportFolders: { health: HF, workouts: null } });

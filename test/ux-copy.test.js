@@ -41,7 +41,7 @@ test('every check-in scale names its ends', () => {
 
 test('Activity lists runs newest first by start time, whatever order they were written in', async () => {
   const store = openOwnerStore(':memory:');
-  const insert = store.db.prepare("INSERT INTO runs (user_id, name, status, started_at) VALUES (?, ?, 'ok', ?)");
+  const insert = store.syncDb.prepare("INSERT INTO runs (user_id, name, status, started_at) VALUES (?, ?, 'ok', ?)");
   insert.run(OWNER_ID, 'review', '2026-10-01T08:00:00.000Z');
   insert.run(OWNER_ID, 'sync', '2026-10-20T07:00:00.000Z');
   insert.run(OWNER_ID, 'review', '2026-09-01T08:00:00.000Z');

@@ -82,8 +82,8 @@ async function regrade(variant) {
   const { NIGHT_BREATHING_NAMES } = await import('../agent/review.js');
   const store = openOwnerStore();
   const names = {
-    medicationNames: await medicationNames(store.adb),
-    labNames: [...(await store.adb.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all()), ...NIGHT_BREATHING_NAMES],
+    medicationNames: await medicationNames(store.db),
+    labNames: [...(await store.db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all()), ...NIGHT_BREATHING_NAMES],
   };
   store.close();
   const rows = readJsonl(join(FLOW, variant, 'results.jsonl'));

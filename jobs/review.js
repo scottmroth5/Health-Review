@@ -24,7 +24,7 @@ export async function weeklyReview({ store, claude, sync = null, weekEnd, catalo
   model = process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort = process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT }) {
   const week = weekEnd ?? lastWeekEnd(today);
   // The async handle (docs/adr/0006; v3 Phase 1B slice 3): nothing here opens a transaction, and none spans the Claude call.
-  const db = store.adb ?? store.db;
+  const { db } = store;
   if (scheduled && await db.prepare('SELECT 1 FROM reviews WHERE user_id = @uid AND week_ending = ?').get(week)) return { status: 'exists', weekEnd: week };
   let syncError;
   if (sync && !noSync) {
@@ -38,6 +38,6 @@ export async function weeklyReview({ store, claude, sync = null, weekEnd, catalo
     return { status: 'skipped', weekEnd: week, reason: gate.reason, missingDays: gate.missingDays, partialDays: gate.partialDays, syncError };
   }
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set in .env');
-  const result = await runReview({ store: { ...store, db }, claude: await claude(), weekEnd: week, today, catalog, model, effort, logger: quiet });
+  const result = await runReview({ store, claude: await claude(), weekEnd: week, today, catalog, model, effort, logger: quiet });
   return { status: 'written', weekEnd: week, result, syncError };
 }

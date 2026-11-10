@@ -9,7 +9,7 @@ function setup() {
   const store = openHealthStore(':memory:');
   const mail = [];
   let now = new Date('2026-10-25T16:00:00Z');
-  const alerts = createAlerts({ db: store.adb, mailer: { send: async (m) => { mail.push(m); return true; } }, adminEmail: async () => 'owner@example.com',
+  const alerts = createAlerts({ db: store.db, mailer: { send: async (m) => { mail.push(m); return true; } }, adminEmail: async () => 'owner@example.com',
     appUrl: () => 'https://app.example.com', clock: () => now, log: { info() {} } });
   return { alerts, mail, later: (hours) => { now = new Date(now.getTime() + hours * 3600_000); } };
 }

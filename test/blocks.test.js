@@ -84,8 +84,8 @@ function seedLog(db, rows) {
 
 test('blocks: saving a detection twice adds nothing; confirmed blocks and their sessions survive re-detection', async () => {
   const store = openOwnerStore(':memory:');
-  const db = store.db;
-  const adb = store.adb;
+  const db = store.syncDb;
+  const adb = store.db;
   seedLog(db, [...run('2025-01-06', 6, 'Symmetry Foundation 1 - Phase 1'), ...run('2025-03-03', 6, 'Anabolic Foundation 1 - Phase 1'),
     { date: '2025-06-01', workout: 'Getting back at it' }]);
   const today = '2025-12-31';

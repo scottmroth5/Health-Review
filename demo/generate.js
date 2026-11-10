@@ -57,11 +57,11 @@ const dow = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
 
 /**
  * Writes the made-up data into an empty store, awaiting each statement on the async handle (docs/adr/0006). It runs inside
- * the caller's async transaction (store.atx), so a request never sees half-built data.
+ * the caller's async transaction (store.tx), so a request never sees half-built data.
  */
 export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog = loadDemoCatalog(), dictionary = loadDictionary() }) {
   // The demo's made-up data all belongs to user 1 (OWNER_ID), the only user in a demo database.
-  const db = scopeDatabase(store.adb, OWNER_ID); // the ingest pipeline below opens (nested) transactions on it
+  const db = scopeDatabase(store.db, OWNER_ID); // the ingest pipeline below opens (nested) transactions on it
   const r = random(seed);
   const stamp = `${today}T12:00:00.000Z`;
   // ---- Workout Log: about two years on the MAPS-named programs (demo/training.js) ----
@@ -300,7 +300,7 @@ export async function buildDemoDatabase({ path = DEMO_DB_PATH, today = ownerDate
   for (const suffix of ['', '-wal', '-shm']) if (existsSync(path + suffix)) rmSync(path + suffix);
   const store = openHealthStore(path);
   try {
-    return await store.atx(() => generateDemo(store, { today, seed }));
+    return await store.tx(() => generateDemo(store, { today, seed }));
   } finally {
     store.close();
   }
@@ -313,13 +313,13 @@ export async function buildDemoDatabase({ path = DEMO_DB_PATH, today = ownerDate
  * foreign key pragma and sqlite_sequence are SQLite's own, so they use the raw handle (until 1G, the demo's database work).
  */
 export async function refreshDemoDatabase(store, { today = ownerDate(), seed = DEFAULT_SEED } = {}) {
-  const { raw, adb } = store;
+  const { raw, db } = store;
   const tables = raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migrations', 'users')").pluck().all();
   const sequence = Boolean(raw.prepare("SELECT 1 FROM sqlite_master WHERE name = 'sqlite_sequence'").get());
-  return store.atx(async () => {
+  return store.tx(async () => {
     raw.pragma('defer_foreign_keys = ON');
-    for (const t of tables) await adb.prepare(`DELETE FROM "${t}"`).run();
-    if (sequence) await adb.prepare('DELETE FROM sqlite_sequence').run();
+    for (const t of tables) await db.prepare(`DELETE FROM "${t}"`).run();
+    if (sequence) await db.prepare('DELETE FROM sqlite_sequence').run();
     return generateDemo(store, { today, seed });
   });
 }
@@ -327,7 +327,7 @@ export async function refreshDemoDatabase(store, { today = ownerDate(), seed = D
 /** The day the stored demo data was made for, or null (a database from before demo_built_for, or not a demo one). */
 export async function demoBuiltFor(store) {
   try {
-    return (await scopeDatabase(store.adb, OWNER_ID).prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'demo_built_for'").pluck().get()) ?? null;
+    return (await scopeDatabase(store.db, OWNER_ID).prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'demo_built_for'").pluck().get()) ?? null;
   } catch {
     return null;
   }

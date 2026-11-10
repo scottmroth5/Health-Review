@@ -17,7 +17,7 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const json = JSON.parse(readFileSync(DICTIONARY_PATH, 'utf8'));
 const store = openOwnerStore();
 try {
-  const found = typoCandidates({ dictionary: json, unmapped: await unmappedNames(store.adb), setCounts: await canonicalSetCounts(store.adb) });
+  const found = typoCandidates({ dictionary: json, unmapped: await unmappedNames(store.db), setCounts: await canonicalSetCounts(store.db) });
   const all = [...found.entries, ...found.unmapped];
   const merge = numbers(arg('--merge'));
   const distinct = numbers(arg('--distinct'));
@@ -50,7 +50,7 @@ try {
     writeFileSync(DICTIONARY_PATH, `${JSON.stringify(next, null, 2)}\n`);
     if (distinct.length) console.log(`Marked ${plural(distinct.length, 'pair')} as different exercises.`);
     if (merge.length) {
-      const c = await normalizeAll(store.adb, dictionary);
+      const c = await normalizeAll(store.db, dictionary);
       console.log(`Merged ${plural(merge.length, 'name')} into their exercises and re-applied the dictionary: ${c.mappedSets} of ${c.sets} sets mapped (${c.mappedPct}%).`);
     }
     console.log('Run npm run log:typos again to see what is left.');

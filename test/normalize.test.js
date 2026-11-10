@@ -36,9 +36,9 @@ const columns = (db) => db.prepare(`SELECT exercise, canonical_id, implement, mo
 
 test('normalize: writes canonical exercise, implement, pattern and status next to the raw name', async () => {
   const store = openOwnerStore(':memory:');
-  seed(store.db);
-  const c = await normalizeAll(store.adb, DICT, { now: new Date('2026-03-07T12:00:00Z') });
-  assert.deepEqual(columns(store.db), [
+  seed(store.syncDb);
+  const c = await normalizeAll(store.db, DICT, { now: new Date('2026-03-07T12:00:00Z') });
+  assert.deepEqual(columns(store.syncDb), [
     { exercise: 'Squats', canonical_id: 'barbell-squat', implement: 'barbell', movement_pattern: 'squat', is_primary: 1, map_status: 'mapped' },
     { exercise: 'Dumbell Rows', canonical_id: 'dumbbell-row', implement: 'dumbbell', movement_pattern: 'horizontal pull', is_primary: 0, map_status: 'mapped' },
     { exercise: 'Cable Fly', canonical_id: null, implement: 'cable', movement_pattern: null, is_primary: 0, map_status: 'inferred' },
@@ -47,34 +47,34 @@ test('normalize: writes canonical exercise, implement, pattern and status next t
     { exercise: 'Barbell Squat', canonical_id: 'barbell-squat', implement: 'barbell', movement_pattern: 'squat', is_primary: 1, map_status: 'mapped' },
   ]);
   assert.deepEqual([c.sets, c.mappedSets, c.mappedPct], [10, 7, 70]);
-  assert.equal(store.db.prepare('SELECT normalized_at FROM strength_exercises LIMIT 1').get().normalized_at, '2026-03-07T12:00:00.000Z');
+  assert.equal(store.syncDb.prepare('SELECT normalized_at FROM strength_exercises LIMIT 1').get().normalized_at, '2026-03-07T12:00:00.000Z');
   store.close();
 });
 
 test('normalize: rerunning changes nothing and adds no rows; a dictionary change is picked up', async () => {
   const store = openOwnerStore(':memory:');
-  seed(store.db);
-  await normalizeAll(store.adb, DICT);
-  const first = columns(store.db);
-  const rows = (t) => store.db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n;
+  seed(store.syncDb);
+  await normalizeAll(store.db, DICT);
+  const first = columns(store.syncDb);
+  const rows = (t) => store.syncDb.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n;
   const before = [rows('strength_exercises'), rows('strength_sets')];
-  await normalizeAll(store.adb, DICT);
-  assert.deepEqual(columns(store.db), first);
+  await normalizeAll(store.db, DICT);
+  assert.deepEqual(columns(store.syncDb), first);
   assert.deepEqual([rows('strength_exercises'), rows('strength_sets')], before);
 
   const more = createDictionary({ version: 1, exercises: [...DICT.exercises,
     { id: 'cable-fly', name: 'Cable Fly', implement: 'cable', pattern: 'horizontal press', primary: false }] });
-  await normalizeAll(store.adb, more);
-  assert.equal(columns(store.db)[2].map_status, 'mapped');
+  await normalizeAll(store.db, more);
+  assert.equal(columns(store.syncDb)[2].map_status, 'mapped');
   store.close();
 });
 
 test('normalize: unmapped names are listed by variant group with set counts and years, most sets first', async () => {
   const store = openOwnerStore(':memory:');
-  seed(store.db);
-  store.db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2025, 9, '2025-05-01', 'Cable Flyes')").run();
-  await normalizeAll(store.adb, DICT);
-  assert.deepEqual((await unmappedNames(store.db)).map((g) => [g.spellings.sort(), g.status, g.sets, g.first, g.last]), [
+  seed(store.syncDb);
+  store.syncDb.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2025, 9, '2025-05-01', 'Cable Flyes')").run();
+  await normalizeAll(store.db, DICT);
+  assert.deepEqual((await unmappedNames(store.syncDb)).map((g) => [g.spellings.sort(), g.status, g.sets, g.first, g.last]), [
     [['Cable Fly', 'Cable Flyes'], 'inferred', 2, 2025, 2026],
     [['Zercher Thing'], 'unmapped', 1, 2026, 2026],
   ]);
@@ -93,7 +93,7 @@ test('normalize: sync rewrites the normalized columns after a Workout Log tab is
   assert.equal(first.counts.normalized.mappedPct, 100);
   data.workout_log[2026].push([serial('2026-03-04'), '', 'Dumbbell Row', 50, 8]);
   await sync();
-  assert.deepEqual(store.db.prepare('SELECT exercise, canonical_id FROM strength_exercises ORDER BY row_no').all(),
+  assert.deepEqual(store.syncDb.prepare('SELECT exercise, canonical_id FROM strength_exercises ORDER BY row_no').all(),
     [{ exercise: 'Squats', canonical_id: 'barbell-squat' }, { exercise: 'Dumbbell Row', canonical_id: 'dumbbell-row' }]);
   const unchanged = await sync();
   assert.equal(unchanged.counts.normalized, undefined, 'no tab replaced: nothing to rewrite');

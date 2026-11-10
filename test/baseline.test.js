@@ -8,7 +8,7 @@ import { baseline } from '../scripts/baseline.js';
 test('baseline: sizes, run durations and query timings, with no row content', async () => {
   const store = openHealthStore(':memory:');
   try {
-    const db = store.db;
+    const db = store.syncDb;
     const secret = 'made-up-note-that-must-not-appear';
     db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (?, '2026-10-30', 4321, '2026-10-31T00:00:00Z')").run(OWNER_ID);
     const run = db.prepare("INSERT INTO runs (name, meta, status, started_at, duration_ms, user_id) VALUES (?, ?, ?, ?, ?, ?)");

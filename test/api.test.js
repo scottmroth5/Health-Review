@@ -11,7 +11,7 @@ const TODAY = new Date(2026, 2, 9, 12, 0); // local 2026-03-09
 async function setup(services = {}) {
   const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, services, clock: () => TODAY });
-  return { store, app, db: store.db, adb: store.adb, done: async () => { await app.close(); store.close(); } };
+  return { store, app, db: store.syncDb, adb: store.db, done: async () => { await app.close(); store.close(); } };
 }
 
 const put = (app, url, payload) => app.inject({ method: 'PUT', url, payload });
@@ -459,9 +459,9 @@ test('program: the confirmed in-progress block with phase from the logged workou
   const app = await buildApp({ store, clock: () => TODAY, catalog });
   assert.deepEqual((await app.inject('/api/program')).json(), { program: null });
   const now = new Date().toISOString();
-  store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+  store.syncDb.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-03-01', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  const ex = store.db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, ?, ?, ?, ?)');
+  const ex = store.syncDb.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, ?, ?, ?, ?)');
   ex.run(2, '2026-03-01', 'Symmetry Foundation 1 - Phase 1', 'Squat');
   ex.run(3, '2026-03-06', 'Symmetry Foundation 1 - Phase 2', 'Squat');
   const { program } = (await app.inject('/api/program')).json(); // today is 2026-03-09
@@ -502,7 +502,7 @@ test('advisor: ranks the catalog without the program run last; goal weights chan
   const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, clock: () => TODAY, catalog, dictionary, substitutions: { avoid: [] } });
   const now = new Date().toISOString();
-  store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+  store.syncDb.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-03-01', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
 
   const equal = (await app.inject('/api/advisor')).json();
@@ -547,11 +547,11 @@ test('VO2 max: each view returns its points and tiles; unknown views are refused
 test("activity: runs newest first with counts and Claude calls; each job's last runs and the ingest posts, with no log files", async () => {
   const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, clock: () => TODAY });
-  const run = store.db.prepare(`INSERT INTO runs (user_id, name, meta, status, started_at, finished_at, duration_ms, calls, cost_usd, summary)
+  const run = store.syncDb.prepare(`INSERT INTO runs (user_id, name, meta, status, started_at, finished_at, duration_ms, calls, cost_usd, summary)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   run.run('sync', '{"backfill":false}', 'ok', '2026-03-08T12:00:00Z', '2026-03-08T12:00:03Z', 3000, 0, null, '{"counts":{"health_metrics":{"rowsRead":35}},"warnings":1}');
   const reviewId = run.run('review', '{"weekEnd":"2026-03-07"}', 'ok', '2026-03-09T13:00:00Z', '2026-03-09T13:02:00Z', 120000, 1, 0.37, '{"sections":9,"attempts":1}').lastInsertRowid;
-  store.db.prepare(`INSERT INTO run_calls (run_id, label, model, stop_reason, input_tokens, output_tokens, cost_usd, duration_ms, created_at)
+  store.syncDb.prepare(`INSERT INTO run_calls (run_id, label, model, stop_reason, input_tokens, output_tokens, cost_usd, duration_ms, created_at)
     VALUES (?, 'review', 'claude-opus-5-5', 'end_turn', 9000, 3000, 0.37, 110000, '2026-03-09T13:02:00Z')`).run(reviewId);
 
   const runs = (await app.inject('/api/runs')).json();
@@ -561,7 +561,7 @@ test("activity: runs newest first with counts and Claude calls; each job's last 
   assert.deepEqual([detail.meta, detail.summary, detail.calls.length, detail.calls[0].model], [{ weekEnd: '2026-03-07' }, { sections: 9, attempts: 1 }, 1, 'claude-opus-5-5']);
   assert.equal((await app.inject('/api/runs/999')).statusCode, 404);
 
-  store.db.prepare(`INSERT INTO ingest_log (user_id, id, received_at, route, result, counts, error)
+  store.syncDb.prepare(`INSERT INTO ingest_log (user_id, id, received_at, route, result, counts, error)
     VALUES (@uid, 'a', '2026-03-09T11:00:00Z', 'health', 'ok', '{"days":2}', NULL)`).run();
   const jobs = (await app.inject('/api/jobs')).json();
   assert.deepEqual(jobs.jobs.map((j) => [j.name, j.runs.length]), [['sync', 1], ['review', 1], ['backup', 0], ['restore-test', 0]]);

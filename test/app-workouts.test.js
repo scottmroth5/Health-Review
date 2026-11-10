@@ -18,8 +18,8 @@ async function setup() {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
-  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   let email;
   let nonce;
   const app = await buildApp({ store, authMode: 'google', clock: () => NOW, mailer: { send: async () => true }, log: { info() {}, warn() {}, error() {} },
@@ -50,11 +50,11 @@ test('save: rows at tab_year 0 parsed like the sheet; volume and lists see them;
   assert.equal(saved.statusCode, 200);
   assert.equal(saved.json().source, 'app');
   assert.deepEqual(saved.json().exercises.map((e) => e.sets.length), [2, 1, 1], 'blank sets dropped');
-  const rows = store.db.prepare("SELECT tab_year, workout, exercise, canonical_id FROM strength_exercises WHERE user_id = 'lee' ORDER BY row_no").all();
+  const rows = store.syncDb.prepare("SELECT tab_year, workout, exercise, canonical_id FROM strength_exercises WHERE user_id = 'lee' ORDER BY row_no").all();
   assert.ok(rows.every((r) => r.tab_year === 0));
   assert.equal(rows[0].workout, 'Garage 5x5 A');
   assert.ok(rows[0].canonical_id, 'the dictionary applied');
-  const sets = store.db.prepare("SELECT weight_lbs, bodyweight, reps, duration_sec FROM strength_sets WHERE user_id = 'lee' ORDER BY exercise_id, set_no").all();
+  const sets = store.syncDb.prepare("SELECT weight_lbs, bodyweight, reps, duration_sec FROM strength_sets WHERE user_id = 'lee' ORDER BY exercise_id, set_no").all();
   assert.deepEqual(sets, [
     { weight_lbs: 185, bodyweight: 0, reps: 5, duration_sec: null }, { weight_lbs: 185, bodyweight: 0, reps: 5, duration_sec: null },
     { weight_lbs: null, bodyweight: 1, reps: 8, duration_sec: null }, { weight_lbs: null, bodyweight: 0, reps: null, duration_sec: 30 },
@@ -67,9 +67,9 @@ test('save: rows at tab_year 0 parsed like the sheet; volume and lists see them;
   assert.equal(list[0].date, '2026-03-18');
   // Edit replaces the day; delete removes it.
   await lee.send('PUT', '/api/workouts/2026-03-18', { workout: null, exercises: [{ name: 'Barbell Bench Press', sets: [{ weight: '135', reps: '8' }] }] });
-  assert.deepEqual(store.db.prepare("SELECT exercise FROM strength_exercises WHERE user_id = 'lee'").pluck().all(), ['Barbell Bench Press']);
+  assert.deepEqual(store.syncDb.prepare("SELECT exercise FROM strength_exercises WHERE user_id = 'lee'").pluck().all(), ['Barbell Bench Press']);
   assert.equal((await lee.send('DELETE', '/api/workouts/2026-03-18')).statusCode, 200);
-  assert.equal(store.db.prepare("SELECT COUNT(*) FROM strength_sets WHERE user_id = 'lee'").pluck().get(), 0);
+  assert.equal(store.syncDb.prepare("SELECT COUNT(*) FROM strength_sets WHERE user_id = 'lee'").pluck().get(), 0);
   assert.equal((await lee.send('DELETE', '/api/workouts/2026-03-18')).statusCode, 404);
 });
 
@@ -95,7 +95,7 @@ test('a Workout Log sync never touches app workouts; another user never sees or 
   assert.deepEqual(days.map((d) => [d.date, d.source]), [['2026-03-19', 'sheet'], ['2026-03-18', 'app']]);
   assert.deepEqual((await kim.get('/api/workouts')).json(), []);
   assert.equal((await kim.send('DELETE', '/api/workouts/2026-03-18')).statusCode, 404);
-  assert.equal(store.db.prepare("SELECT COUNT(*) FROM strength_exercises WHERE user_id = 'lee' AND tab_year = 0").pluck().get(), 3);
+  assert.equal(store.syncDb.prepare("SELECT COUNT(*) FROM strength_exercises WHERE user_id = 'lee' AND tab_year = 0").pluck().get(), 3);
 });
 
 test('their own programs pre-fill a workout, and a logged program name makes a block', async () => {

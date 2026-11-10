@@ -21,13 +21,13 @@ async function setup() {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
-  store.db.prepare(`INSERT INTO users (id, email, name, role, status, created_at) VALUES
+  store.syncDb.prepare(`INSERT INTO users (id, email, name, role, status, created_at) VALUES
     ('lee', 'lee@example.com', 'Lee', 'user', 'approved', '2026-10-01T00:00:00Z'),
     ('kim', 'kim@example.com', 'Kim', 'user', 'pending', '2026-10-02T00:00:00Z')`).run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const mail = [];
   const mailer = { configured: true, send: async (m) => { mail.push(m); return true; } };
-  const ai = createAiAccess({ db: store.adb, mailer, adminEmail: async () => 'owner@example.com', appUrl: () => SITE, clock: () => NOW, log: { info() {} } });
+  const ai = createAiAccess({ db: store.db, mailer, adminEmail: async () => 'owner@example.com', appUrl: () => SITE, clock: () => NOW, log: { info() {} } });
   const services = { aiAccess: (uid) => ai.check(uid), hasAi: async (uid) => (await ai.check(uid)).source !== null, claude: () => ({}), sync: async () => ({ counts: {}, warnings: [] }) };
   let email;
   let nonce;
@@ -44,7 +44,7 @@ async function setup() {
     const cookie = cookies(res).split('; ').find((c) => c.startsWith('hr_session='));
     return { get: (u) => app.inject({ url: u, headers: { cookie } }), send: (method, u, payload) => app.inject({ method, url: u, headers: { cookie, origin: SITE }, ...(payload ? { payload } : {}) }) };
   };
-  const spend = (uid, cost, startedAt = NOW.toISOString()) => store.db.prepare("INSERT INTO runs (name, status, started_at, cost_usd, user_id) VALUES ('advisor-chat', 'ok', ?, ?, ?)").run(startedAt, cost, uid);
+  const spend = (uid, cost, startedAt = NOW.toISOString()) => store.syncDb.prepare("INSERT INTO runs (name, status, started_at, cost_usd, user_id) VALUES ('advisor-chat', 'ok', ?, ?, ?)").run(startedAt, cost, uid);
   return { app, store, mail, signIn, spend };
 }
 
@@ -66,14 +66,14 @@ test('spend counts this month in the owner\'s time zone', async () => {
   assert.equal(monthStartIso(NOW), '2026-10-01T04:00:00.000Z');
   assert.equal(monthStartIso(new Date('2026-11-01T02:00:00Z')), '2026-10-01T04:00:00.000Z', 'still October in New York');
   const store = openHealthStore(':memory:');
-  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
-  const add = (at, cost, uid = 'lee') => store.db.prepare("INSERT INTO runs (name, status, started_at, cost_usd, user_id) VALUES ('review', 'ok', ?, ?, ?)").run(at, cost, uid);
+  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  const add = (at, cost, uid = 'lee') => store.syncDb.prepare("INSERT INTO runs (name, status, started_at, cost_usd, user_id) VALUES ('review', 'ok', ?, ?, ?)").run(at, cost, uid);
   add('2026-10-01T03:59:00Z', 7); // September 30 in New York
   add('2026-10-01T04:00:00Z', 1.25);
   add('2026-10-20T12:00:00Z', 0.5);
   add('2026-10-20T12:00:00Z', 9, OWNER_ID);
-  assert.equal((await spentThisMonth(store.db, 'lee', NOW)), 1.75);
+  assert.equal((await spentThisMonth(store.syncDb, 'lee', NOW)), 1.75);
 });
 
 test('the owner\'s key: confirmed with the user\'s email and a cap; at the cap AI stops and both get one email a month', async () => {
@@ -89,7 +89,7 @@ test('the owner\'s key: confirmed with the user\'s email and a cap; at the cap A
   assert.equal((await turnOn('lee', { on: true, cap: 0, confirmEmail: 'lee@example.com' })).statusCode, 400, 'cap under the limit');
   assert.equal((await turnOn('kim', { on: true, cap: 10, confirmEmail: 'kim@example.com' })).statusCode, 409, 'not for a pending user');
   assert.equal((await turnOn(OWNER_ID, { on: true, cap: 10, confirmEmail: 'owner@example.com' })).statusCode, 409, 'not for the admin');
-  assert.equal((await getUser(store.db, 'lee')).uses_owner_key, 0);
+  assert.equal((await getUser(store.syncDb, 'lee')).uses_owner_key, 0);
 
   const on = await turnOn('lee', { on: true, cap: 10, confirmEmail: ' LEE@example.com ' });
   assert.equal(on.statusCode, 200);
@@ -165,12 +165,12 @@ test('pause: still signs in and sees their data; posts, syncs, AI and scheduled 
   assert.equal((await lee.get('/api/account')).json().aiReason, 'paused');
   assert.equal((await post()).statusCode, 401, 'posts refused');
   assert.equal((await lee.send('POST', '/api/sync')).statusCode, 403);
-  assert.ok(!(await activeUserIds(store.db)).includes('lee'), 'no scheduled sync or review');
+  assert.ok(!(await activeUserIds(store.syncDb)).includes('lee'), 'no scheduled sync or review');
 
   assert.equal((await owner.send('POST', '/api/admin/users/lee/resume')).json().status, 'approved');
   assert.equal((await post()).statusCode, 200);
   assert.equal((await lee.send('POST', '/api/sync')).statusCode, 200);
-  assert.ok((await activeUserIds(store.db)).includes('lee'));
+  assert.ok((await activeUserIds(store.syncDb)).includes('lee'));
 });
 
 test('the Users screen: feeds and counts as yes or no, never a key, token or sheet ID; admin routes are admins only', async () => {
@@ -181,8 +181,8 @@ test('the Users screen: feeds and counts as yes or no, never a key, token or she
   const token = (await lee.send('POST', '/api/account/ingest-token')).json().token;
   await app.inject({ method: 'POST', url: '/api/ingest/health', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, payload: health });
   const SHEET = 'made-up-sheet-id-0123456789abcdef';
-  store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES ('lee', 'workout_log_sheet_id', ?, 'x')").run(SHEET);
-  store.db.prepare("UPDATE users SET claude_key_enc = 'sealed-made-up-key', google_refresh_enc = 'sealed-made-up-refresh' WHERE id = 'lee'").run();
+  store.syncDb.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES ('lee', 'workout_log_sheet_id', ?, 'x')").run(SHEET);
+  store.syncDb.prepare("UPDATE users SET claude_key_enc = 'sealed-made-up-key', google_refresh_enc = 'sealed-made-up-refresh' WHERE id = 'lee'").run();
 
   const users = (await owner.get('/api/admin/users')).json();
   assert.equal(users[0].id, 'kim', 'pending first');
@@ -196,7 +196,7 @@ test('the Users screen: feeds and counts as yes or no, never a key, token or she
   assert.ok(row.health_days > 0);
   assert.equal(row.reviews, 0);
   const text = JSON.stringify(users);
-  for (const secret of [token, SHEET, 'sealed-made-up-key', 'sealed-made-up-refresh', (await getUser(store.db, 'lee')).ingest_token_hash]) {
+  for (const secret of [token, SHEET, 'sealed-made-up-key', 'sealed-made-up-refresh', (await getUser(store.syncDb, 'lee')).ingest_token_hash]) {
     assert.ok(!text.includes(secret), 'never on the admin screen');
   }
   assert.ok(!/claude_key_enc|ingest_token_hash|google_refresh_enc/.test(text));
@@ -216,26 +216,26 @@ test("revoking the owner's key: works beside the user's own key and for a reject
   assert.equal((await key('lee', { on: true, cap: 10, confirmEmail: 'lee@example.com' })).statusCode, 200);
 
   // Lee adds their own key: yours stays assigned as the fallback, and Revoke still takes it back.
-  store.db.prepare("UPDATE users SET claude_key_enc = 'sealed' WHERE id = 'lee'").run();
+  store.syncDb.prepare("UPDATE users SET claude_key_enc = 'sealed' WHERE id = 'lee'").run();
   const listed = (await owner.get('/api/admin/users')).json().find((u) => u.id === 'lee');
   assert.equal(listed.has_key, true);
   assert.equal(listed.uses_owner_key, true, 'the card shows the assignment, so it can be revoked');
   const off = await key('lee', { on: false });
   assert.equal(off.statusCode, 200);
-  assert.equal((await getUser(store.db, 'lee')).uses_owner_key, 0);
-  assert.equal((await getUser(store.db, 'lee')).owner_key_cap_usd, null);
+  assert.equal((await getUser(store.syncDb, 'lee')).uses_owner_key, 0);
+  assert.equal((await getUser(store.syncDb, 'lee')).owner_key_cap_usd, null);
   assert.match(mail.at(-1).subject, /AI allowance ended/);
 
   // Rejecting a user ends the assignment too, so approving them again never brings it back quietly.
-  store.db.prepare("UPDATE users SET claude_key_enc = NULL WHERE id = 'lee'").run();
+  store.syncDb.prepare("UPDATE users SET claude_key_enc = NULL WHERE id = 'lee'").run();
   assert.equal((await key('lee', { on: true, cap: 5, confirmEmail: 'lee@example.com' })).statusCode, 200);
   assert.equal((await owner.send('POST', '/api/admin/users/lee/reject')).statusCode, 200);
-  assert.equal((await getUser(store.db, 'lee')).uses_owner_key, 0);
+  assert.equal((await getUser(store.syncDb, 'lee')).uses_owner_key, 0);
 
   // A rejected user can still be revoked (an assignment left from before), but never put on the key.
-  store.db.prepare("UPDATE users SET uses_owner_key = 1, owner_key_cap_usd = 5 WHERE id = 'lee'").run();
+  store.syncDb.prepare("UPDATE users SET uses_owner_key = 1, owner_key_cap_usd = 5 WHERE id = 'lee'").run();
   assert.equal((await key('lee', { on: false })).statusCode, 200);
-  assert.equal((await getUser(store.db, 'lee')).uses_owner_key, 0);
+  assert.equal((await getUser(store.syncDb, 'lee')).uses_owner_key, 0);
   assert.equal((await key('lee', { on: true, cap: 5, confirmEmail: 'lee@example.com' })).statusCode, 409);
   await app.close();
   store.close();
@@ -243,7 +243,7 @@ test("revoking the owner's key: works beside the user's own key and for a reject
 
 test('usage by week: two users across a Saturday night in the owner\'s zone; active users, spend and feedback; counts only', async () => {
   const store = openHealthStore(':memory:');
-  const db = store.db;
+  const db = store.syncDb;
   db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
   const run = db.prepare('INSERT INTO runs (name, status, started_at, user_id, cost_usd) VALUES (?, ?, ?, ?, ?)');
   run.run('review', 'ok', '2026-11-01T03:30:00Z', OWNER_ID, 0.41); // Saturday 11:30 pm in New York: the week ending Oct 31

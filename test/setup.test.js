@@ -72,7 +72,7 @@ test('nextReviewDay: the coming Sunday, or today on a Sunday', async () => {
 
 test('hand entry only: no Apple Health warnings, the review runs on check-ins, and an empty week is never sent', async () => {
   const store = openOwnerStore(':memory:');
-  const db = store.db;
+  const db = store.syncDb;
   assert.deepEqual(await dataCheckWarnings(db, TODAY, { apple: 'rest', now: new Date(`${TODAY}T12:00:00Z`) }), []);
   const none = await reviewStatus(db, TODAY, new Date(`${TODAY}T12:00:00Z`));
   assert.equal(none.reason, 'no_data');
@@ -99,8 +99,8 @@ test('/api/home and PUT /api/account/setup: a new user sees the checklist; skipp
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: secret });
   const store = openHealthStore(':memory:');
   const KIM = '00000000-0000-4000-8000-0000000000c3';
-  store.db.prepare("INSERT INTO users (id, email, role, status, created_at, feeds) VALUES (?, 'kim@example.com', 'user', 'approved', 'x', '{\"manual\":true}')").run(KIM);
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at, feeds) VALUES (?, 'kim@example.com', 'user', 'approved', 'x', '{\"manual\":true}')").run(KIM);
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const app = await buildApp({ store, authMode: 'google', auth: { settings }, clock: () => new Date(`${TODAY}T16:00:00Z`), services: { hasAi: () => false } });
   const kim = { cookie: `hr_session=${sign({ email: 'kim@example.com', exp: Date.now() + 3_600_000, v: 1 }, sessionKey(secret))}`, origin: SITE };
 
@@ -112,7 +112,7 @@ test('/api/home and PUT /api/account/setup: a new user sees the checklist; skipp
   assert.deepEqual(home.summary.feeds.map((f) => f.feed), ['manual']);
 
   // A check-in completes the data and first result steps.
-  scopeDb(store.db, KIM).prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, ?, 'daily', 6, 'ui', 'x')").run(TODAY);
+  scopeDb(store.syncDb, KIM).prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, ?, 'daily', 6, 'ui', 'x')").run(TODAY);
   home = (await app.inject({ url: '/api/home', headers: kim })).json();
   assert.equal(home.setup.doneCount, 2);
   assert.equal(home.summary.checkin.done, true);

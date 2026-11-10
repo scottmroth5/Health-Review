@@ -21,15 +21,15 @@ async function setup({ claude = null, access = {} } = {}) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
-  store.db.prepare(`INSERT INTO users (id, email, name, role, status, created_at, claude_key_enc, google_refresh_enc) VALUES
+  store.syncDb.prepare(`INSERT INTO users (id, email, name, role, status, created_at, claude_key_enc, google_refresh_enc) VALUES
     ('lee', 'lee@example.com', 'Lee', 'user', 'approved', 'x', 'sealed-made-up-key', 'sealed-made-up-refresh'),
     ('kim', 'kim@example.com', 'Kim', 'user', 'approved', 'x', NULL, NULL)`).run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const mail = [];
   const services = {
     sync: async () => ({ counts: {}, warnings: [] }),
     ...(claude ? { claude: () => claude } : {}),
-    aiAccess: async (uid) => ((await getUser(store.db, uid))?.status === 'paused' ? { source: null, reason: 'paused' } : access[uid] ?? { source: 'own', reason: null }),
+    aiAccess: async (uid) => ((await getUser(store.syncDb, uid))?.status === 'paused' ? { source: null, reason: 'paused' } : access[uid] ?? { source: 'own', reason: null }),
   };
   let email;
   let nonce;
@@ -48,7 +48,7 @@ async function setup({ claude = null, access = {} } = {}) {
   };
   // A little made-up data in several tables for a user.
   const seed = (uid) => {
-    const db = scopeDb(store.db, uid);
+    const db = scopeDb(store.syncDb, uid);
     db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, '2026-03-19', 'daily', 7, 'ui', 'x')").run();
     db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'workout_log_sheet_id', 'made-up-sheet', 'x')").run();
     const med = db.prepare("INSERT INTO medications (user_id, name, kind, created_at) VALUES (@uid, 'Made-up Supplement', 'supplement', 'x')").run().lastInsertRowid;
@@ -56,12 +56,12 @@ async function setup({ claude = null, access = {} } = {}) {
     db.prepare("INSERT INTO medication_doses (user_id, date, medication_id, timing, taken, updated_at) VALUES (@uid, '2026-03-19', ?, 'morning', 1, 'x')").run(med);
     const ex = db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, 2, '2026-03-18', 'A', 'Barbell Squat')").run().lastInsertRowid;
     db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps) VALUES (@uid, ?, 1, 100, 5)").run(ex);
-    const run = store.db.prepare("INSERT INTO runs (name, status, started_at, user_id) VALUES ('sync', 'ok', 'x', ?)").run(uid).lastInsertRowid;
-    store.db.prepare("INSERT INTO run_calls (run_id, label, model, created_at) VALUES (?, 'made-up', 'm', 'x')").run(run);
+    const run = store.syncDb.prepare("INSERT INTO runs (name, status, started_at, user_id) VALUES ('sync', 'ok', 'x', ?)").run(uid).lastInsertRowid;
+    store.syncDb.prepare("INSERT INTO run_calls (run_id, label, model, created_at) VALUES (?, 'made-up', 'm', 'x')").run(run);
   };
-  const userTables = () => store.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").pluck().all()
-    .filter((t) => store.db.prepare(`PRAGMA table_info("${t}")`).all().some((c) => c.name === 'user_id'));
-  const rowsOf = (uid) => Object.fromEntries(userTables().map((t) => [t, store.db.prepare(`SELECT COUNT(*) FROM "${t}" WHERE user_id = ?`).pluck().get(uid)]));
+  const userTables = () => store.syncDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").pluck().all()
+    .filter((t) => store.syncDb.prepare(`PRAGMA table_info("${t}")`).all().some((c) => c.name === 'user_id'));
+  const rowsOf = (uid) => Object.fromEntries(userTables().map((t) => [t, store.syncDb.prepare(`SELECT COUNT(*) FROM "${t}" WHERE user_id = ?`).pluck().get(uid)]));
   return { app, store, mail, signIn, seed, rowsOf };
 }
 
@@ -84,7 +84,7 @@ test('export: every row of theirs, none of anyone else\'s, never a sealed key, t
   assert.ok(data.tables.user_programs, 'later tables are included too');
   const text = JSON.stringify(data);
   assert.ok(!text.includes('kim@example.com') && !text.includes('"kim"'), 'nothing of another user');
-  assert.ok(!text.includes('sealed-made-up') && !text.includes((await getUser(store.db, 'lee')).ingest_token_hash));
+  assert.ok(!text.includes('sealed-made-up') && !text.includes((await getUser(store.syncDb, 'lee')).ingest_token_hash));
 });
 
 test('delete: typed email, every table emptied for them, the other user untouched, admin emailed, signed out', async () => {
@@ -98,8 +98,8 @@ test('delete: typed email, every table emptied for them, the other user untouche
   assert.equal(res.statusCode, 200);
   assert.match([res.headers['set-cookie']].flat().join(';'), /hr_session=;/);
   assert.ok(Object.values(rowsOf('lee')).every((n) => n === 0), 'nothing of theirs left');
-  assert.equal((await getUser(store.db, 'lee')), null);
-  assert.equal(store.db.prepare('SELECT COUNT(*) FROM run_calls').pluck().get(), 1, "only kim's run call is left");
+  assert.equal((await getUser(store.syncDb, 'lee')), null);
+  assert.equal(store.syncDb.prepare('SELECT COUNT(*) FROM run_calls').pluck().get(), 1, "only kim's run call is left");
   assert.deepEqual(rowsOf('kim'), kimBefore, 'the other user untouched');
   assert.equal(mail.at(-1).to, 'owner@example.com');
   assert.match(mail.at(-1).text, /lee@example\.com/);
@@ -120,7 +120,7 @@ test('admin delete: confirmed with their email, only admins, never an admin', as
   assert.equal((await owner.send('POST', '/api/admin/users/lee/delete', { confirmEmail: 'kim@example.com' })).statusCode, 400);
   assert.equal((await owner.send('POST', `/api/admin/users/${OWNER_ID}/delete`, { confirmEmail: 'owner@example.com' })).statusCode, 409);
   assert.equal((await owner.send('POST', '/api/admin/users/lee/delete', { confirmEmail: 'lee@example.com' })).statusCode, 200);
-  assert.equal((await getUser(store.db, 'lee')), null);
+  assert.equal((await getUser(store.syncDb, 'lee')), null);
   assert.ok(Object.values(rowsOf('lee')).every((n) => n === 0));
   assert.ok(Object.values(rowsOf('kim')).some((n) => n > 0));
 });
@@ -135,7 +135,7 @@ test('pause yourself: posts and syncs stop; you can resume your own pause, never
   assert.equal(paused.pausedBySelf, true);
   assert.equal((await post()).statusCode, 401);
   assert.equal((await lee.send('POST', '/api/sync')).statusCode, 403);
-  assert.ok(!(await activeUserIds(store.db)).includes('lee'));
+  assert.ok(!(await activeUserIds(store.syncDb)).includes('lee'));
   assert.equal((await lee.send('POST', '/api/account/resume')).json().status, 'approved');
   assert.equal((await post()).statusCode, 200);
 
@@ -168,7 +168,7 @@ test('Ask: the guides and the question only, on the user\'s AI; refused without 
   assert.match(calls[0].system, /Create my Workout Log/, 'the guides are the context');
   const sent = JSON.stringify(calls[0]);
   for (const mine of ['Made-up Supplement', 'made-up-sheet', 'lee@example.com', 'Barbell Squat 100']) assert.ok(!sent.includes(mine), `never their data (${mine})`);
-  const runRow = store.db.prepare("SELECT * FROM runs WHERE name = 'help-ask'").get();
+  const runRow = store.syncDb.prepare("SELECT * FROM runs WHERE name = 'help-ask'").get();
   assert.equal(runRow.user_id, 'lee');
   assert.ok(!JSON.stringify(runRow).includes('Workout Log?'), 'the question is not in the run record');
 

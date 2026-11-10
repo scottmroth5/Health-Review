@@ -38,8 +38,8 @@ async function setup() {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
-  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   let email;
   let nonce;
   const app = await buildApp({ store, authMode: 'google', mailer: { send: async () => true }, log: { info() {}, warn() {}, error() {} },
@@ -73,7 +73,7 @@ test('saving goals and the tile order; bad values refused', async () => {
 
 test('the review summary and its instructions carry the goals (labels only); none when unset', async () => {
   const { store } = await setup();
-  const db = scopeDb(store.db, 'lee');
+  const db = scopeDb(store.syncDb, 'lee');
   const week = { weekEnd: '2026-03-14', today: '2026-03-16' };
   assert.equal((await prepareReview(db, week)).summary.goals, undefined);
   db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'goal_primary', 'cardio', 'x'), (@uid, 'goal_secondary', 'weight', 'x')").run();
@@ -93,8 +93,8 @@ test('arranged: a saved order wins over the goals; unknown names dropped, newer 
 
 test('saving a tab layout: known items only, per area, null resets; other users untouched', async () => {
   const { store, signIn } = await setup();
-  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const lee = await signIn('lee@example.com');
   assert.equal((await lee.send('PUT', '/api/account/layout', { area: 'training', order: ['advisor-card', 'bogus'] })).statusCode, 400);
   assert.equal((await lee.send('PUT', '/api/account/layout', { area: 'kitchen', order: [] })).statusCode, 400);

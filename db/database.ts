@@ -1,4 +1,4 @@
-// The one async database interface (v3 Phase 1A, docs/adr/0006). Code converted in Phase 1B awaits every statement:
+// The one async database interface (v3 Phase 1A, docs/adr/0006): the store's db and tx. Every caller awaits each statement:
 //   const row = await db.prepare('SELECT ... WHERE user_id = @uid AND id = ?').get(id);
 //   await db.tx(async () => { ... });
 // createSqliteDatabase wraps today's better-sqlite3 connection; the PostgreSQL adapter (1C) implements the same interface.
@@ -7,7 +7,7 @@
 // Transactions on one SQLite connection: an async transaction stays open across awaits, so statements from other
 // requests could land inside it. One transaction runs at a time (a promise-chain lock); an AsyncLocalStorage marks the
 // context that holds it. Its own statements run inside it, a nested tx is a SAVEPOINT, and statements from any other
-// context wait for the lock. Sync statements cannot wait, so during 1B the store's sync handle (guardSyncDatabase)
+// context wait for the lock. Sync statements cannot wait, so the store's sync handle (syncDb, guardSyncDatabase)
 // throws TransactionConflictError rather than join another context's transaction. Never hold a transaction across an
 // external call (Claude, Google): everything else on the connection waits for it.
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -164,8 +164,8 @@ const RUNS = new Set(['run', 'get', 'all', 'iterate']);
 const CHAINS = new Set(['pluck', 'raw', 'expand', 'safeIntegers', 'bind']);
 
 /**
- * The sync better-sqlite3 handle for code not yet converted (Phase 1B): the same connection, but every statement,
- * exec and transaction throws TransactionConflictError while another context holds an async transaction.
+ * The store's syncDb, the sync better-sqlite3 handle for the SQLite-only jobs left on it (backup and the restore test,
+ * until 1G) and for tests' seeding: the same connection, but every statement, exec and transaction throws TransactionConflictError while another context holds an async transaction.
  */
 export function guardSyncDatabase(raw: BetterSqlite3.Database): BetterSqlite3.Database {
   const c = connectionOf(raw);

@@ -18,7 +18,7 @@ async function assertValidHistory(adb, id) {
 test('two dose saves for one day at once leave one of the two sets, never a mix', async () => {
   const store = memoryStore();
   try {
-    const { adb } = store;
+    const { db: adb } = store;
     const { id } = await addMedication(adb, MED);
     const a = [{ medication_id: id, timing: 'morning', taken: true }];
     const b = [{ medication_id: id, timing: 'evening', taken: false }, { medication_id: id, timing: 'morning', taken: false }];
@@ -34,7 +34,7 @@ test('two dose saves for one day at once leave one of the two sets, never a mix'
 test('two dose changes on one medication at once never leave two open periods', async () => {
   const store = memoryStore();
   try {
-    const { adb } = store;
+    const { db: adb } = store;
     const { id } = await addMedication(adb, MED);
     const results = await Promise.allSettled([
       changeMedication(adb, id, { dose: '10 mg', timings: MED.timings, effective_on: '2026-03-10' }),
@@ -51,7 +51,7 @@ test('two dose changes on one medication at once never leave two open periods', 
 test('a stop racing a change leaves a valid history; the loser is refused, not half-applied', async () => {
   const store = memoryStore();
   try {
-    const { adb } = store;
+    const { db: adb } = store;
     const { id } = await addMedication(adb, MED);
     const [stop, change] = await Promise.allSettled([
       stopMedication(adb, id, { stopped_on: '2026-03-15', reason: 'made up' }),
@@ -70,7 +70,7 @@ test('a stop racing a change leaves a valid history; the loser is refused, not h
 test('a lab correction racing a delete leaves the result corrected or gone, never half-done', async () => {
   const store = memoryStore();
   try {
-    const { adb } = store;
+    const { db: adb } = store;
     const { id } = await addLabResult(adb, { name: 'Sample Marker', drawn_on: '2026-03-05', value: '5' });
     const [update, remove] = await Promise.allSettled([updateLabResult(adb, id, { value: '6' }), deleteLabResult(adb, id)]);
     const row = await adb.prepare('SELECT value_text, source FROM lab_results WHERE user_id = @uid AND id = ?').get(id);
@@ -91,7 +91,7 @@ test('a lab correction racing a delete leaves the result corrected or gone, neve
 test('two zone saves at once cannot pass the order check together', async () => {
   const store = memoryStore();
   try {
-    const { adb } = store;
+    const { db: adb } = store;
     await saveSettings(adb, { zone2_low_bpm: 110, zone2_high_bpm: 125, zone3_high_bpm: 140 });
     // Each is fine against the stored zones; together they would put Zone 2's top above Zone 3's.
     const ordered = (next) => { if (next.zone2_high_bpm >= next.zone3_high_bpm) throw Object.assign(new Error('out of order'), { statusCode: 400 }); };

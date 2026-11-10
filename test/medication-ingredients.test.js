@@ -11,7 +11,7 @@ const TODAY = new Date(2026, 2, 9, 12, 0); // 2026-03-09
 async function setup() {
   const store = openOwnerStore(':memory:');
   const app = await buildApp({ store, clock: () => TODAY });
-  return { app, db: store.db, done: async () => { await app.close(); store.close(); } };
+  return { app, db: store.syncDb, done: async () => { await app.close(); store.close(); } };
 }
 const post = (app, url, payload) => app.inject({ method: 'POST', url, payload });
 const add = async (app, body) => {

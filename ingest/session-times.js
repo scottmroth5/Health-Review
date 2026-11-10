@@ -22,7 +22,7 @@ export function moveHours(text, hours) {
  *   collisions: number, alreadyApplied: boolean, applied: boolean }}
  */
 export async function fixSessionTimes(store, { apply = false, logger = { info() {}, warn() {}, error() {} } } = {}) {
-  const db = store.adb;
+  const db = store.db;
   const alreadyApplied = Boolean(await db.prepare("SELECT 1 FROM runs WHERE user_id = @uid AND name = ? AND status = 'ok'").get(RUN_NAME));
   const stamps = new Set(await db.prepare("SELECT DISTINCT synced_at FROM drive_exports WHERE user_id = @uid AND kind = 'workouts'").pluck().all());
   const rows = await db.prepare('SELECT rowid AS id, type, start, end, updated_at FROM workout_sessions WHERE user_id = @uid').all();
@@ -60,7 +60,7 @@ export async function fixSessionTimes(store, { apply = false, logger = { info() 
   try {
     const del = db.prepare('DELETE FROM workout_sessions WHERE user_id = @uid AND rowid = ?');
     const upd = db.prepare('UPDATE workout_sessions SET start = ?, end = ? WHERE user_id = @uid AND rowid = ?');
-    await store.atx(async () => {
+    await store.tx(async () => {
       for (const r of lateTwins) await del.run(r.id);
       // Earliest first is not enough when moves chain into each other's old slots; move all to a temporary mark first.
       for (const m of toMove) await upd.run(`~${m.newStart}`, `~${m.newEnd}`, m.id);

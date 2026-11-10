@@ -25,7 +25,7 @@ for (let i = 0; i < rest.length; i++) {
 const today = localDate();
 const opts = { today };
 const store = openOwnerStore();
-const db = store.adb;
+const db = store.db;
 const catalog = await userCatalog(db);
 const shortDate = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 

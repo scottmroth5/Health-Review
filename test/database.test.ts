@@ -22,7 +22,7 @@ function scratch() {
 test('statements: get, all, run and pluck give what better-sqlite3 gives, as promises', async () => {
   const store = scratch();
   try {
-    const { adb, raw } = store;
+    const { db: adb, raw } = store;
     const inserted = await adb.prepare('INSERT INTO t (name, n) VALUES (?, ?) RETURNING id').get('a', 1);
     assert.deepEqual(inserted, { id: 1 });
     await adb.prepare('INSERT INTO t (name, n) VALUES (@name, @n)').run({ name: 'b', n: 2 });
@@ -35,7 +35,7 @@ test('statements: get, all, run and pluck give what better-sqlite3 gives, as pro
     await assert.rejects(adb.prepare('SELECT * FROM t WHERE id = ?').get(), /Too few parameter/);
     await adb.exec('DELETE FROM t');
     assert.equal(raw.prepare('SELECT COUNT(*) FROM t').pluck().get(), 0);
-    assert.equal(createSqliteDatabase(raw), store.shared.adb, 'one interface per connection');
+    assert.equal(createSqliteDatabase(raw), store.shared.db, 'one interface per connection');
   } finally {
     store.close();
   }
@@ -44,7 +44,7 @@ test('statements: get, all, run and pluck give what better-sqlite3 gives, as pro
 test('tx: commits on resolve, rolls back on throw, and a nested tx is a savepoint that rolls back alone', async () => {
   const store = scratch();
   try {
-    const { adb } = store;
+    const { db: adb } = store;
     const insert = (name: string) => adb.prepare('INSERT INTO t (name) VALUES (?)').run(name);
     const names = () => adb.prepare('SELECT name FROM t ORDER BY id').pluck().all();
 
@@ -67,7 +67,7 @@ test('tx: commits on resolve, rolls back on throw, and a nested tx is a savepoin
 test('tx: concurrent transactions never interleave, so read then write loses no update', async () => {
   const store = scratch();
   try {
-    const { adb } = store;
+    const { db: adb } = store;
     await adb.prepare("INSERT INTO t (id, name, n) VALUES (1, 'counter', 0)").run();
     const bump = () => adb.tx(async () => {
       const n = await adb.prepare('SELECT n FROM t WHERE id = 1').pluck().get();
@@ -84,7 +84,7 @@ test('tx: concurrent transactions never interleave, so read then write loses no 
 test('tx: a statement from outside waits for the open transaction and never sees its uncommitted rows', async () => {
   const store = scratch();
   try {
-    const { adb } = store;
+    const { db: adb } = store;
     const opened = deferred();
     const finish = deferred();
     const order: string[] = [];
@@ -110,7 +110,7 @@ test('tx: a statement from outside waits for the open transaction and never sees
 test('tx: the lock is released when the body throws and when the transaction is already gone', async () => {
   const store = scratch();
   try {
-    const { adb, raw } = store;
+    const { db: adb, raw } = store;
     await assert.rejects(adb.tx(async () => { raw.exec('ROLLBACK'); throw new Error('ended early'); }), /ended early/);
     await assert.rejects(adb.tx(async () => { raw.exec('COMMIT'); }), /no transaction is active/);
     assert.equal(raw.inTransaction, false);
@@ -124,7 +124,7 @@ test('tx: the lock is released when the body throws and when the transaction is 
 test('the sync handle throws during another context\'s transaction, and works inside its own', async () => {
   const store = scratch();
   try {
-    const { adb, db } = store;
+    const { db: adb, syncDb: db } = store;
     const opened = deferred();
     const finish = deferred();
     const writer = adb.tx(async () => {
@@ -135,7 +135,7 @@ test('the sync handle throws during another context\'s transaction, and works in
     await opened.promise;
     assert.throws(() => db.prepare('SELECT COUNT(*) FROM t').pluck().get(), TransactionConflictError);
     assert.throws(() => db.prepare("INSERT INTO t (name) VALUES ('x')").run(), TransactionConflictError);
-    assert.throws(() => store.tx(() => {}), TransactionConflictError);
+    assert.throws(() => store.syncDb.transaction(() => {})(), TransactionConflictError);
     assert.throws(() => db.exec('DELETE FROM t'), TransactionConflictError);
     finish.resolve();
     await writer;
@@ -151,7 +151,7 @@ test('the sync handle throws during another context\'s transaction, and works in
 test('a transaction that awaits only statements finishes before a sync-handle read queued beside it', async () => {
   const store = scratch();
   try {
-    const { adb, db } = store;
+    const { db: adb, syncDb: db } = store;
     const seen: unknown[] = [];
     const reader = new Promise<void>((resolve, reject) => {
       setImmediate(() => {
@@ -172,9 +172,9 @@ test('a transaction that awaits only statements finishes before a sync-handle re
 test('scopeDatabase binds @uid, never reads another user\'s rows, and fails unscoped', async () => {
   const store = memoryStore({ uid: 'user-b' });
   try {
-    const owner = store.shared.adb;
+    const owner = store.shared.db;
     await owner.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (?, 'k', 'owner', 'x')").run(OWNER_ID);
-    const b = store.adb;
+    const b = store.db;
     await b.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run('k', 'mine');
     assert.deepEqual(await b.prepare('SELECT value FROM settings WHERE user_id = @uid').pluck().all(), ['mine']);
     assert.deepEqual(await b.prepare('SELECT ? AS a, @x AS x, @uid AS u').get(7, { x: 8 }), { a: 7, x: 8, u: 'user-b' });

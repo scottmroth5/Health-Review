@@ -26,8 +26,8 @@ const substitutions = { equipment: { have: ['barbell', 'band'], lack: ['machine'
 
 function seeded() {
   const store = openOwnerStore(':memory:');
-  store.db.prepare("INSERT INTO medications (user_id, name, kind, created_at) VALUES (@uid, 'Sample Statin', 'medication', 'x')").run();
-  store.db.prepare("INSERT INTO lab_tests (user_id, name, panel, unit, position, created_at) VALUES (@uid, 'Sample Glucose', 'Panel', 'mg/dL', 1, 'x')").run();
+  store.syncDb.prepare("INSERT INTO medications (user_id, name, kind, created_at) VALUES (@uid, 'Sample Statin', 'medication', 'x')").run();
+  store.syncDb.prepare("INSERT INTO lab_tests (user_id, name, panel, unit, position, created_at) VALUES (@uid, 'Sample Glucose', 'Panel', 'mg/dL', 1, 'x')").run();
   return store;
 }
 const response = (r) => ({ id: 'msg_test', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(r) }], usage: { input_tokens: 800, output_tokens: 300 } });
@@ -35,7 +35,7 @@ const fakeClaude = (drafts, prompts = []) => createReviewClaude({ client: fakeCl
 
 test('chat context: computed training facts only; no medications, labs or blueprint focus text', async () => {
   const store = seeded();
-  const ctx = await chatContext(store.db, '2026-03-09', { catalog, dictionary, substitutions, weights: { strength: 3 } });
+  const ctx = await chatContext(store.syncDb, '2026-03-09', { catalog, dictionary, substitutions, weights: { strength: 3 } });
   const text = JSON.stringify(ctx);
   assert.deepEqual(ctx.advisor.ranking.map((r) => r.program), ['MAPS Powerlift', 'HIIT']); // strength 3x: (3 + 0.2 + 1) / 6 = 0.7 vs 2.5 / 6
   assert.deepEqual(ctx.advisor.weights, { strength: 3, joint: 1, time: 1, vo2: 1 });
@@ -65,9 +65,9 @@ test('chat: a reply with an ungrounded number and symptom wording is retried; th
   assert.doesNotMatch(prompts[0].messages[0].content, /Sample Statin|Sample Glucose/);
   assert.deepEqual(r.reply.warnings, []);
   assert.deepEqual(r.reply.physician, [drafts[1].physicianDiscussion[0]]);
-  const rows = store.db.prepare('SELECT role, text FROM advisor_notes ORDER BY created_at, rowid').all();
+  const rows = store.syncDb.prepare('SELECT role, text FROM advisor_notes ORDER BY created_at, rowid').all();
   assert.deepEqual(rows.map((x) => x.role), ['owner', 'claude']);
-  const run = store.db.prepare("SELECT status, meta, summary FROM runs WHERE name = 'advisor-chat'").get();
+  const run = store.syncDb.prepare("SELECT status, meta, summary FROM runs WHERE name = 'advisor-chat'").get();
   assert.equal(run.status, 'ok');
   assert.doesNotMatch(run.meta + run.summary, /shoulder|HIIT leads/i, 'no note or reply text in the run record');
   store.close();
@@ -126,7 +126,7 @@ test('chat with supplement suggestions on: their facts, rules and schema field; 
   assert.equal(prompts[0].output_config.format.schema.properties.supplementSuggestions, undefined);
   assert.ok(!off.reply.text.includes(SUPPLEMENT_DISCLAIMER));
 
-  store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', '2026-03-01T12:00:00.000Z', 'x')").run();
+  store.syncDb.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', '2026-03-01T12:00:00.000Z', 'x')").run();
   const on = await ask();
   const sent = prompts[1];
   assert.match(sent.messages[0].content, /"supplementFacts":\{"supplements":\[\],"medicationNames":\["Sample Statin"\]/);

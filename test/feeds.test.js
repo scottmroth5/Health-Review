@@ -20,8 +20,8 @@ async function setup() {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
-  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'pending', 'x')").run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'pending', 'x')").run();
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const keyBox = boxKey('test-user-key-secret-long-enough-32+');
   let email;
   let nonce;
@@ -40,7 +40,7 @@ async function setup() {
     return { cookie, get: (u) => app.inject({ url: u, headers: { cookie } }), send: (method, u, payload) => app.inject({ method, url: u, headers: { cookie, origin: SITE }, ...(payload ? { payload } : {}) }) };
   };
   const post = (token, body = health) => app.inject({ method: 'POST', url: '/api/ingest/health', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, payload: body });
-  const days = (uid) => store.db.prepare('SELECT COUNT(*) FROM daily_metrics WHERE user_id = ?').pluck().get(uid);
+  const days = (uid) => store.syncDb.prepare('SELECT COUNT(*) FROM daily_metrics WHERE user_id = ?').pluck().get(uid);
   return { app, store, keyBox, signIn, post, days, cookies };
 }
 
@@ -51,7 +51,7 @@ test('ingest tokens: a user\'s posts are theirs; shown once, only the hash kept;
   assert.ok(typeof made.token === 'string' && made.token.length > 30 && made.urls.health.endsWith('/api/ingest/health'));
   const acct = JSON.stringify((await lee.get('/api/account')).json());
   assert.ok(!acct.includes(made.token), 'shown only once');
-  assert.ok(!JSON.stringify(store.db.prepare("SELECT * FROM users WHERE id = 'lee'").get()).includes(made.token), 'only the hash is stored');
+  assert.ok(!JSON.stringify(store.syncDb.prepare("SELECT * FROM users WHERE id = 'lee'").get()).includes(made.token), 'only the hash is stored');
 
   assert.equal((await post(made.token)).statusCode, 200);
   assert.ok(days('lee') > 0);
@@ -62,7 +62,7 @@ test('ingest tokens: a user\'s posts are theirs; shown once, only the hash kept;
   const replaced = (await lee.send('POST', '/api/account/ingest-token')).json().token;
   assert.equal((await post(made.token)).statusCode, 401, 'the old token stops working');
   assert.equal((await post(replaced)).statusCode, 200);
-  store.db.prepare("UPDATE users SET status = 'paused' WHERE id = 'lee'").run();
+  store.syncDb.prepare("UPDATE users SET status = 'paused' WHERE id = 'lee'").run();
   assert.equal((await post(replaced)).statusCode, 401, "a paused user's token is refused");
   const owner = await signIn('owner@example.com');
   assert.equal((await owner.send('POST', '/api/account/ingest-token')).statusCode, 409);
@@ -80,7 +80,7 @@ test('google sheets: consent stores a sealed refresh token; the sheet is checked
   assert.equal(url.searchParams.get('access_type'), 'offline');
   const back = await app.inject({ url: `${SHEETS_CALLBACK_PATH}?state=${url.searchParams.get('state')}&code=c`, headers: { cookie: `${lee.cookie}; ${cookies(start)}` } });
   assert.equal(back.headers.location, '/#settings/sheets-connected');
-  const sealed = store.db.prepare("SELECT google_refresh_enc FROM users WHERE id = 'lee'").pluck().get();
+  const sealed = store.syncDb.prepare("SELECT google_refresh_enc FROM users WHERE id = 'lee'").pluck().get();
   assert.equal(open(sealed, 'lee', keyBox), 'made-up-refresh');
   assert.ok(!(await lee.get('/api/account')).body.includes('made-up-refresh'));
 
@@ -93,7 +93,7 @@ test('google sheets: consent stores a sealed refresh token; the sheet is checked
   assert.ok(!JSON.stringify(users).includes('good-sheet-id'), 'the sheet ID is never on the admin screen');
 
   await lee.send('DELETE', '/api/account/google');
-  assert.equal(store.db.prepare("SELECT google_refresh_enc FROM users WHERE id = 'lee'").pluck().get(), null);
+  assert.equal(store.syncDb.prepare("SELECT google_refresh_enc FROM users WHERE id = 'lee'").pluck().get(), null);
   assert.equal((await lee.get('/api/account')).json().feeds.workoutLog.sheetSet, false);
   // Without a session the consent cannot start; a pending user cannot either.
   assert.equal((await app.inject('/auth/google/sheets')).headers.location, '/auth/login');
@@ -105,8 +105,8 @@ test('google sheets: consent stores a sealed refresh token; the sheet is checked
 
 test("sync: another user's sync reads only their sheet and writes only their rows; without one it reads nothing", async () => {
   const store = openHealthStore(':memory:');
-  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const asked = [];
   const source = {
     has: (s) => s === 'workout_log',
@@ -118,8 +118,8 @@ test("sync: another user's sync reads only their sheet and writes only their row
   const r = await syncJob({ store: lee, source, userFeed: { sheetId: 'x', catalog: null }, logger: { info() {}, warn() {}, error() {} } });
   assert.equal(r.counts.workout_log.exercises, 1);
   assert.deepEqual([...new Set(asked.map((a) => a.split(':')[0]))], ['workout_log'], 'only the Workout Log');
-  assert.equal(store.db.prepare("SELECT COUNT(*) FROM strength_exercises WHERE user_id = 'lee'").pluck().get(), 1);
-  assert.equal(store.db.prepare('SELECT COUNT(*) FROM strength_exercises WHERE user_id <> ?').pluck().get('lee'), 0);
+  assert.equal(store.syncDb.prepare("SELECT COUNT(*) FROM strength_exercises WHERE user_id = 'lee'").pluck().get(), 1);
+  assert.equal(store.syncDb.prepare('SELECT COUNT(*) FROM strength_exercises WHERE user_id <> ?').pluck().get('lee'), 0);
   store.close();
 });
 

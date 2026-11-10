@@ -128,12 +128,12 @@ test('a session expires after its days; rejecting a user locks them out at once;
 
   // A second, approved user is locked out the moment the admin rejects them (the users row is read on every request).
   const sam = await setup({ claims: { email: 'sam@example.com' } });
-  sam.store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('sam', 'sam@example.com', 'user', 'approved', 'x')").run();
-  sam.store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  sam.store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('sam', 'sam@example.com', 'user', 'approved', 'x')").run();
+  sam.store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const samSession = (await sam.signIn()).session;
   const samStatus = () => sam.app.inject({ url: '/api/status', headers: { cookie: samSession } }).then((r) => r.statusCode);
   assert.equal(await samStatus(), 200);
-  sam.store.db.prepare("UPDATE users SET status = 'rejected' WHERE id = 'sam'").run();
+  sam.store.syncDb.prepare("UPDATE users SET status = 'rejected' WHERE id = 'sam'").run();
   assert.equal(await samStatus(), 403, 'rejected');
   await sam.done();
 

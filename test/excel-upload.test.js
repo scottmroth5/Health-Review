@@ -26,8 +26,8 @@ async function setup({ authMode = 'google', instance = 'main' } = {}) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
-  store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const lines = [];
   let email;
   let nonce;
@@ -48,7 +48,7 @@ async function setup({ authMode = 'google', instance = 'main' } = {}) {
         headers: { cookie, origin: SITE, 'content-type': type, 'x-file-name': encodeURIComponent(name) }, payload: buf }),
     };
   };
-  const count = (uid, year) => store.db.prepare('SELECT COUNT(*) FROM strength_exercises WHERE user_id = ? AND tab_year = ?').pluck().get(uid, year);
+  const count = (uid, year) => store.syncDb.prepare('SELECT COUNT(*) FROM strength_exercises WHERE user_id = ? AND tab_year = ?').pluck().get(uid, year);
   return { app, store, signIn, count, lines };
 }
 
@@ -86,10 +86,10 @@ test('upload: year tabs replace those years; other years and app workouts stay; 
   await lee.upload(book({ 2026: [row(46090, 'Garage 5x5 Phase 1 B', 'Barbell Deadlift', 225, 5)] }));
   assert.equal(count('lee', 2026), 1);
   assert.equal(count('lee', 2025), 1);
-  assert.deepEqual(store.db.prepare("SELECT exercise FROM strength_exercises WHERE user_id = 'lee' AND tab_year = 2026").pluck().all(), ['Barbell Deadlift']);
+  assert.deepEqual(store.syncDb.prepare("SELECT exercise FROM strength_exercises WHERE user_id = 'lee' AND tab_year = 2026").pluck().all(), ['Barbell Deadlift']);
   assert.equal(count('kim', 2026), 0, 'never another user');
 
-  const run = store.db.prepare("SELECT * FROM runs WHERE name = 'workout-upload' AND user_id = 'lee' ORDER BY id DESC").get();
+  const run = store.syncDb.prepare("SELECT * FROM runs WHERE name = 'workout-upload' AND user_id = 'lee' ORDER BY id DESC").get();
   assert.equal(run.status, 'ok');
   const traces = JSON.stringify(run) + lines.join('\n');
   assert.ok(!/Deadlift|Garage|Squat/.test(traces), 'no file content in the run or the log');
@@ -126,7 +126,7 @@ test('refused for the owner, paused users, users syncing a Google Sheet, past 10
   const owner = await signIn('owner@example.com');
   assert.equal((await owner.upload(good)).statusCode, 409);
   const kim = await signIn('kim@example.com');
-  store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES ('kim', 'workout_log_sheet_id', 'made-up-sheet-id', 'x')").run();
+  store.syncDb.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES ('kim', 'workout_log_sheet_id', 'made-up-sheet-id', 'x')").run();
   assert.match((await kim.upload(good)).json().error, /Google Sheet/);
   const lee = await signIn('lee@example.com');
   await lee.send('POST', '/api/account/pause');

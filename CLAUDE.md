@@ -36,23 +36,19 @@ Health specific logic stays in this repo; never add it to agent-core.
                     pendingMigrations runs the migrations on a throwaway temp copy (npm run db:pending: exit 0 none, 10 some)
                     Async interface (v3 Phase 1, docs/adr/0006): database.ts (the first TypeScript; prepare gives get, all,
                     run ({ changes } only; inserts use RETURNING id, never lastInsertRowid) and pluck, as promises; tx(async fn),
-                    one at a time behind a lock, nested as a savepoint), scope.js scopeDatabase (the same @uid binding). Until
-                    Phase 1B converts every caller the store has both: db and tx (sync, guarded: a statement throws
-                    TransactionConflictError while another request holds an async transaction) and adb and atx (async); raw is
-                    the unguarded handle (agent-core's run tracer, the SQLite-only tools). Never hold an async transaction across
-                    an external call (Claude, Google). Converted code awaits every statement, so it runs on either handle
-                    (callers pass db until their entry point flips to adb); converted so far: metrics/load.js, agent/,
-                    ingest/, jobs/ (the review job on adb; backup and the restore test stay on the sync handle until 1G,
-                    startUserRun until 1D) and server/ with db/users.js: every request runs on the async handle (app.js's
-                    db and adb are the same scoped handle; the preHandler awaits the user's time zone, auth awaits
-                    findUser, the AI access check and the scheduler's run lookup are async). Read-then-write sequences
-                    run in one db.tx: medication, lab, prompt section and settings writes (test/queries-concurrency.test.js),
-                    account deletion, the AI cap and alert emails, pause and resume, registration
-                    (test/server-concurrency.test.js). syncOwnerEmail stays sync (it runs as the store opens, until 1C).
-                    A function that opens a transaction takes adb (db.tx; better-sqlite3 refuses an async body),
-                    so its callers pass adb already: the routes, the sync,
-                    the program and log scripts and the demo build (one atx). A transaction awaits only statements, so on
-                    SQLite it ends before another request can run (test/database.test.ts) Tests: memoryStore in test/helpers.js (both handles, owner or a second user)
+                    one at a time behind a lock, nested as a savepoint), scope.js scopeDatabase (the same @uid binding).
+                    The store is { db, tx, syncDb, raw } (Phase 1B done 2026-11-10): db and tx are the async interface and
+                    every caller awaits each statement; syncDb is the guarded sync handle (a statement throws
+                    TransactionConflictError while another request holds an async transaction), used only by the backup
+                    and the restore test until 1G, and by tests to seed rows; raw is unguarded: agent-core's run tracer and
+                    startUserRun (until 1D), syncOwnerEmail as the store opens (until 1C), SQLite's own tables and pragmas
+                    (demo refresh, scripts/baseline.js). The review eval runner keeps its own sync case store until 1C
+                    (harness-gated). Never hold an async transaction across an external call (Claude, Google); a
+                    transaction awaits only statements, so on SQLite it ends before another request can run
+                    (test/database.test.ts). Read-then-write sequences run in one db.tx: medication, lab, prompt section and
+                    settings writes (test/queries-concurrency.test.js), account deletion, the AI cap and alert emails, pause
+                    and resume, registration (test/server-concurrency.test.js). Tests: memoryStore in test/helpers.js (db
+                    and syncDb, owner or a second user)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status

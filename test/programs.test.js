@@ -31,9 +31,9 @@ async function setup({ claude } = {}) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
-  store.db.prepare(`INSERT INTO users (id, email, role, status, created_at, maps_shared) VALUES
+  store.syncDb.prepare(`INSERT INTO users (id, email, role, status, created_at, maps_shared) VALUES
     ('lee', 'lee@example.com', 'user', 'approved', 'x', 0), ('kim', 'kim@example.com', 'user', 'approved', 'x', 1)`).run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const access = { lee: { source: 'own', reason: null }, kim: { source: null, reason: 'no_key' } };
   const services = { claude: () => claude, aiAccess: (uid) => access[uid] ?? { source: 'owner', reason: null } };
   let email;
@@ -52,7 +52,7 @@ async function setup({ claude } = {}) {
   };
   // Workout Log days for a user: one set per day of a named workout.
   const lift = (uid, days) => {
-    const db = scopeDb(store.db, uid);
+    const db = scopeDb(store.syncDb, uid);
     const ex = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, ?, ?, ?, ?)');
     const set = db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, 100, 5, '5')");
     days.forEach(([date, workout], i) => set.run(ex.run(i + 2, date, workout, 'Barbell Squat').lastInsertRowid));
@@ -199,7 +199,7 @@ test('PDF: Claude drafts with the user\'s AI; nothing is saved, the file is neve
   assert.equal(calls[0].messages[0].content[0].type, 'document');
   assert.equal(calls[0].schema, DRAFT_SCHEMA);
   assert.equal((await lee.get('/api/programs')).json().programs.length, 0, 'nothing saved');
-  const runRow = store.db.prepare("SELECT * FROM runs WHERE name = 'program-extract'").get();
+  const runRow = store.syncDb.prepare("SELECT * FROM runs WHERE name = 'program-extract'").get();
   assert.equal(runRow.user_id, 'lee');
   assert.ok(!JSON.stringify(runRow).includes('made-up test file'), 'the file is not in the run record');
 

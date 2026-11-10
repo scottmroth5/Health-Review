@@ -82,7 +82,7 @@ export const silentLogger = { info() {}, warn() {}, error() {}, log() {} };
 export function memoryStore({ uid = OWNER_ID } = {}) {
   const shared = openHealthStore(':memory:');
   if (uid !== OWNER_ID) {
-    shared.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, 'user', 'approved', 'x')").run(uid, `${uid}@example.com`);
+    shared.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, 'user', 'approved', 'x')").run(uid, `${uid}@example.com`);
   }
   return { ...scopeStore(shared, uid), shared, close: () => shared.close() };
 }

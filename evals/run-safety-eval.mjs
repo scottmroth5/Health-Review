@@ -45,8 +45,8 @@ const catalog = loadDemoCatalog();
 const dictionary = loadDictionary();
 const substitutions = JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8'));
 const built = openHealthStore(':memory:');
-await built.atx(() => generateDemo(built, { today: SPEC.demoToday }));
-const builtDb = scopeDatabase(built.adb, OWNER_ID);
+await built.tx(() => generateDemo(built, { today: SPEC.demoToday }));
+const builtDb = scopeDatabase(built.db, OWNER_ID);
 for (const m of SPEC.setup.medications) await addMedication(builtDb, { ...m, purpose: 'Made up for the safety check' });
 await clearChat(builtDb); // each chat case starts a fresh thread
 // The demo already holds sample run records with made-up costs; only runs after them are this check's spending.
@@ -79,7 +79,7 @@ async function caseStore(c) {
     const id = await db.prepare('SELECT id FROM medications WHERE user_id = @uid AND name = ?').pluck().get(o.medicationChange.name);
     await changeMedication(db, id, { dose: o.medicationChange.dose, timings: o.medicationChange.timings, effective_on: o.medicationChange.date });
   }
-  return { raw, db, tx: db.tx, adb: db, atx: db.tx, uid: OWNER_ID, close: () => raw.close() };
+  return { raw, db, tx: db.tx, uid: OWNER_ID, close: () => raw.close() };
 }
 
 const spent = (db) => db.prepare('SELECT COALESCE(SUM(cost_usd), 0) FROM runs WHERE user_id = @uid AND id > ?').pluck().get(firstRunId);

@@ -150,18 +150,16 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // Every request runs as one user (multi-user, phase 1): `db` below is that user's view of the database (db/scope.js),
   // set for the request in preHandler. Local (none) and the demo are the owner; google mode is the signed-in user, and a
   // request without one (open routes) has no database at all, so nothing can read across users by mistake.
-  // Every request runs on the async handle (docs/adr/0006; v3 Phase 1B slice 4b): db and adb are the same user's view.
   const requestDb = new AsyncLocalStorage();
   const currentHandles = () => {
     const scoped = requestDb.getStore();
     if (!scoped) throw new Error('No user for this request');
     return scoped;
   };
-  const currentDb = () => currentHandles().adb;
+  const currentDb = () => currentHandles().db;
   const db = new Proxy({}, { get: (_, prop) => Reflect.get(currentDb(), prop) });
-  const adb = db;
-  // The store as the request's user sees it, for code that takes a store (the chat); tx and atx are the shared ones.
-  const userStore = () => ({ ...store, db: currentDb(), adb: currentDb() });
+  // The store as the request's user sees it, for code that takes a store (the chat); tx is the shared one.
+  const userStore = () => ({ ...store, db: currentDb() });
   const uidOf = (req) => req.uid ?? (authMode === 'google' ? null : OWNER_ID);
   // Per user: one sync, one manual review and one chat question at a time for each user (never shared between users).
   const syncing = new Set();
@@ -191,16 +189,16 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
   if (authMode !== 'none') registerRateLimits(app, { all: authMode === 'demo' ? DEMO_REQUEST_LIMIT : null, now: auth.now });
   // Google sign-in maps an address to its users row; the first allowed address is the owner (user 1) until registration.
-  if (authMode === 'google' && auth.settings?.allowed?.[0]) syncOwnerEmail(store.raw ?? store.db, { OWNER_EMAIL: auth.settings.allowed[0] });
-  const adminEmail = async () => process.env.ADMIN_EMAIL || (await getUser(store.adb, OWNER_ID))?.email;
+  if (authMode === 'google' && auth.settings?.allowed?.[0]) syncOwnerEmail(store.raw, { OWNER_EMAIL: auth.settings.allowed[0] });
+  const adminEmail = async () => process.env.ADMIN_EMAIL || (await getUser(store.db, OWNER_ID))?.email;
   const appUrl = () => auth.settings?.publicUrl || 'http://localhost:5188';
   // A registration: a pending user, and an email to the admin (names and addresses only).
   const registerUser = async ({ email, name, feeds, healthConsent = false }) => {
     // Exists, then create, in one transaction (the email is UNIQUE besides); the email goes after it.
-    const created = await store.adb.tx(async () => {
-      if (await userByEmail(store.adb, email)) return false;
-      const u = await createPendingUser(store.adb, { id: randomUUID(), email, name, healthConsentVersion: healthConsent ? HEALTH_CONSENT_VERSION : null });
-      if (feeds) await setUserFeeds(store.adb, u.id, JSON.stringify(feeds));
+    const created = await store.db.tx(async () => {
+      if (await userByEmail(store.db, email)) return false;
+      const u = await createPendingUser(store.db, { id: randomUUID(), email, name, healthConsentVersion: healthConsent ? HEALTH_CONSENT_VERSION : null });
+      if (feeds) await setUserFeeds(store.db, u.id, JSON.stringify(feeds));
       return true;
     });
     if (!created) return;
@@ -210,19 +208,19 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   };
   // A user's own Google Sheets permission (read only): the refresh token is sealed to them; never logged or shown.
   const connectSheets = async ({ email, refreshToken }) => {
-    const u = await userByEmail(store.adb, email);
+    const u = await userByEmail(store.db, email);
     if (!u) return;
-    await setGoogleToken(store.adb, u.id, seal(refreshToken, u.id, keyBox ?? boxKey()));
+    await setGoogleToken(store.db, u.id, seal(refreshToken, u.id, keyBox ?? boxKey()));
     log.info('[users] Google Sheets connected');
   };
   // "Create my Workout Log": a new sheet in their Drive (services.createWorkoutSheet, ingest/create-sheet.js), saved as
   // their Workout Log. Never the owner, whose Workout Log comes from the server's settings.
   const createSheet = async ({ email }) => {
-    const u = await userByEmail(store.adb, email);
+    const u = await userByEmail(store.db, email);
     if (!u || u.id === OWNER_ID || u.status !== 'approved') throw new Error('not for this account');
     if (typeof services.createWorkoutSheet !== 'function') throw new Error('not available');
     const { id } = await services.createWorkoutSheet(u.id);
-    const upsert = scopeDatabase(store.adb, u.id).prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
+    const upsert = scopeDatabase(store.db, u.id).prepare(`INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, ?)
       ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
     await upsert.run('workout_log_sheet_id', id, clock().toISOString());
     // Remembered so each January's sync can add the new year's tab to this sheet (and only this one).
@@ -231,15 +229,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   };
   // Deleting an account (Settings, or the one-time consent step): everything stored for them, and an email to the admin.
   const deleteAccount = async (uid) => {
-    const u = await getUser(store.adb, uid);
+    const u = await getUser(store.db, uid);
     // The role is checked again inside deleteUserData's transaction (null: an administrator, or already gone).
-    if (!u || u.role === 'admin' || !(await deleteUserData(store.adb, u.id))) return;
+    if (!u || u.role === 'admin' || !(await deleteUserData(store.db, u.id))) return;
     log.info('[users] a user deleted their account');
     await mailer.send({ to: await adminEmail(), subject: 'Health Review: a user deleted their account',
       text: `${u.name || u.email} (${u.email}) deleted their Health Review account and its data. Encrypted backups keep a copy until they age out.\n` });
   };
   const recordConsent = async (uid) => {
-    await recordHealthConsent(store.adb, uid, clock());
+    await recordHealthConsent(store.db, uid, clock());
     log.info('[users] health data consent given');
   };
   // Usage totals (server/usage-totals.js): the signed-in app only, never the demo or local mode. A signed-in browser
@@ -247,7 +245,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // device and location; an arrival on the app page or the sign-in page counts by source. Only counts are kept, and a
   // failure here never touches the response.
   const counter = authMode === 'google' ? createUsageTotals({
-    db: store.adb, place: usage?.place ?? null, tz: process.env.OWNER_TZ || DEFAULT_TZ, now: clock,
+    db: store.db, place: usage?.place ?? null, tz: process.env.OWNER_TZ || DEFAULT_TZ, now: clock,
     siteHost: hostnameOrNull(usage?.siteHost), demoHost: hostnameOrNull(usage?.demoHost),
     appHost: (() => { try { return new URL(auth.settings.publicUrl).hostname.toLowerCase(); } catch { return null; } })(),
   }) : null;
@@ -261,7 +259,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       } catch { /* counting never affects a request */ }
     });
   }
-  registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.adb, email), registerUser,
+  registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
     sheetsExchange: auth.sheetsExchange, connectSheets, createSheet, recordConsent, deleteAccount });
   // The privacy policy and terms, readable before signing in.
   // {{PERSONAL_SITE}}: the operator's website (PERSONAL_SITE), named only at render time so the repo never holds it.
@@ -286,7 +284,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!uid) return done();
     // The request runs as its user: their scoped database and their own time zone (tools/time.js withTimeZone).
     // done runs inside both, so the handler and later hooks keep the user's zone and database.
-    timeZoneOf(store.adb, uid).then((tz) => withTimeZone(tz, () => requestDb.run({ adb: scopeDatabase(store.adb, uid) }, done)), done);
+    timeZoneOf(store.db, uid).then((tz) => withTimeZone(tz, () => requestDb.run({ db: scopeDatabase(store.db, uid) }, done)), done);
   });
 
   // The deploy health check: open in every mode, status and version only.
@@ -381,7 +379,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   const ownerCatalog = () => (catalog === undefined ? loadCatalog() : catalog);
   const sharedCatalog = async (req) => {
     const uid = uidOf(req);
-    return uid === OWNER_ID || (await getUser(store.adb, uid))?.maps_shared ? ownerCatalog() : null;
+    return uid === OWNER_ID || (await getUser(store.db, uid))?.maps_shared ? ownerCatalog() : null;
   };
   const programCatalog = async (req) => userCatalog(db, await sharedCatalog(req));
   app.get('/api/program', {
@@ -439,7 +437,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     consent: 'No AI is used until you agree to the health data consent',
   };
   const noAi = (reply, reason) => reply.code(503).send({ error: NO_AI[reason] ?? NO_AI.no_key, needsKey: true, aiReason: reason ?? 'no_key' });
-  const isPaused = async (req) => (await getUser(store.adb, uidOf(req)))?.status === 'paused';
+  const isPaused = async (req) => (await getUser(store.db, uidOf(req)))?.status === 'paused';
   const chatOn = async (req) => features.chat !== false && typeof services.claude === 'function' && await aiOn(req);
   const chatThread = { 200: { type: 'object', properties: { enabled: { type: 'boolean' }, needsKey: { type: 'boolean' }, aiReason: { type: ['string', 'null'] }, notes: { type: 'array', items: anyObject } } } };
   app.get('/api/advisor/chat', { schema: { summary: 'The Next program chat thread, oldest first, and whether the chat is on', response: chatThread } },
@@ -508,20 +506,20 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     async (req) => await programsView(req));
   app.post('/api/programs', { schema: { summary: 'Add a program of your own (checked like a catalog entry; problems listed)', body: programBody, response: { 200: anyObject } } },
     async (req, reply) => {
-      try { await saveProgram(adb, { ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
+      try { await saveProgram(db, { ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
       return await programsView(req);
     });
   app.put('/api/programs/:id', { schema: { summary: 'Replace one of your programs', params: programIdParams, body: programBody, response: { 200: anyObject } } },
     async (req, reply) => {
-      try { await saveProgram(adb, { id: req.params.id, ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
+      try { await saveProgram(db, { id: req.params.id, ...req.body, ...programWrite(req) }); } catch (err) { return programError(reply, err); }
       return await programsView(req);
     });
   app.delete('/api/programs/:id', { schema: { summary: 'Delete one of your programs', params: programIdParams, response: { 200: anyObject } } },
-    async (req, reply) => ((await deleteProgram(adb, req.params.id, programWrite(req))) ? await programsView(req) : reply.code(404).send({ error: 'No such program' })));
+    async (req, reply) => ((await deleteProgram(db, req.params.id, programWrite(req))) ? await programsView(req) : reply.code(404).send({ error: 'No such program' })));
   app.post('/api/programs/import', { schema: { summary: 'Import one program or a catalog of programs, all or nothing', body: anyObject, response: { 200: anyObject } } },
     async (req, reply) => {
       let added;
-      try { added = await importPrograms(adb, req.body, programWrite(req)); } catch (err) { return programError(reply, err); }
+      try { added = await importPrograms(db, req.body, programWrite(req)); } catch (err) { return programError(reply, err); }
       return { added, ...(await programsView(req)) };
     });
   app.get('/api/programs/export', { schema: { summary: 'Your own programs as a catalog file (never the shared catalog)', response: { 200: anyObject } } },
@@ -582,10 +580,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req, reply) => {
-    try { return await saveWorkout(adb, requireDate(req.params.date), req.body, workoutCtx(req)); } catch (err) { return workoutError(reply, err); }
+    try { return await saveWorkout(db, requireDate(req.params.date), req.body, workoutCtx(req)); } catch (err) { return workoutError(reply, err); }
   });
   app.delete('/api/workouts/:date', { schema: { summary: "Delete the day's workout logged in the app", params: dateOnly, response: { 200: anyObject } } },
-    async (req, reply) => ((await deleteWorkout(adb, requireDate(req.params.date), workoutCtx(req))) ? { deleted: true } : reply.code(404).send({ error: 'No workout logged in the app that day' })));
+    async (req, reply) => ((await deleteWorkout(db, requireDate(req.params.date), workoutCtx(req))) ? { deleted: true } : reply.code(404).send({ error: 'No workout logged in the app that day' })));
 
   // ---- the Excel Workout Log (ingest/excel-upload.js, tools/xlsx.js): a template to download, and uploading it ----
   // Only .xlsx is accepted: this content type (any other gets 415 before anything is read), a name ending .xlsx, up to
@@ -619,7 +617,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const run = startUserRun(userStore(), 'workout-upload', { bytes: req.body.length }, { info() {}, warn() {}, error() {} });
     let result;
     try {
-      result = await ingestWorkbook(adb, req.body, workoutCtx(req));
+      result = await ingestWorkbook(db, req.body, workoutCtx(req));
     } catch (err) {
       if (!(err instanceof XlsxError || err instanceof UploadError)) { run.finish('error', { error: err.name }); throw err; }
       run.finish('error', { error: 'not_accepted' });
@@ -636,12 +634,12 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.post('/api/program/blocks/:id/confirm', { schema: { summary: 'Confirm a detected program block (phases and progress then follow it)', params: programIdParams, response: { 200: anyObject } } },
     async (req, reply) => {
       try {
-        await confirmBlocks(adb, req.params.id, { today: q.localDate(clock()), now: clock() });
+        await confirmBlocks(db, req.params.id, { today: q.localDate(clock()), now: clock() });
       } catch (err) {
         if (err instanceof ReviewError) return reply.code(409).send({ error: err.message });
         throw err;
       }
-      await refreshPhases(adb, await programCatalog(req));
+      await refreshPhases(db, await programCatalog(req));
       return { blocks: await listBlocks(db) };
     });
 
@@ -681,7 +679,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!r.allowed) return reply.code(429).header('retry-after', String(r.retryAfterSeconds)).send({ error: 'Too many posts from this address. Try again later.' });
     const given = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ''))?.[1] ?? '';
     const owner = tokenHash && timingSafeEqual(createHash('sha256').update(given).digest(), tokenHash);
-    const user = owner ? null : await userByIngestToken(store.adb, given);
+    const user = owner ? null : await userByIngestToken(store.db, given);
     if (!owner && !user) {
       if (!tokenHash) return reply.code(503).send({ error: 'Ingest is not set up on this server (INGEST_TOKEN).' });
       return reply.code(401).send({ error: 'Missing or wrong ingest token.' });
@@ -711,14 +709,14 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const parsed = parseHealthJson(body, { file: 'post' });
     const at = localStamp(received); // received now: a day posted before it ended is partial
     let result;
-    await store.atx(async () => {
-      result = await applyHealthDays(adb, { records: parsed.records, exportedThrough: new Map(parsed.records.map((r) => [r.date, at])), standHours: parsed.standHours }, received.toISOString());
+    await store.tx(async () => {
+      result = await applyHealthDays(db, { records: parsed.records, exportedThrough: new Map(parsed.records.map((r) => [r.date, at])), standHours: parsed.standHours }, received.toISOString());
     });
     return { days: result.days.length, standHours: parsed.standHours.length, warnings: parsed.warnings.length };
   });
   ingestRoute('workouts', "Health Auto Export's workouts (JSON, Version 2, with per-minute heart rate), stored like the Drive files", async (body, received) => {
     const parsed = parseWorkoutJson(body, { file: 'post' });
-    await store.atx(() => applyWorkouts(adb, parsed.records, parsed.samples, received.toISOString()));
+    await store.tx(() => applyWorkouts(db, parsed.records, parsed.samples, received.toISOString()));
     return { workouts: parsed.records.length, hrSamples: parsed.samples.length, warnings: parsed.warnings.length };
   });
 
@@ -852,12 +850,12 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req, reply) => {
     pastDate(req.body.started_on);
     if (req.body.stopped_on) pastDate(req.body.stopped_on);
-    return reply.code(201).send(await q.addMedication(adb, req.body));
+    return reply.code(201).send(await q.addMedication(db, req.body));
   });
 
   app.put('/api/medications/:id', {
     schema: { summary: 'Edit name, type, purpose, prescribed or notes', params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: medDetails }, response: { 200: anyObject } },
-  }, async (req) => await q.updateMedicationDetails(adb, req.params.id, req.body));
+  }, async (req) => await q.updateMedicationDetails(db, req.params.id, req.body));
 
   app.post('/api/medications/:id/changes', {
     schema: {
@@ -872,7 +870,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 200: anyObject },
     },
-  }, async (req) => await q.changeMedication(adb, req.params.id, {
+  }, async (req) => await q.changeMedication(db, req.params.id, {
     ...req.body,
     effective_on: req.body.effective_on ? pastDate(req.body.effective_on) : undefined,
   }));
@@ -884,7 +882,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       body: { type: 'object', additionalProperties: false, required: ['stopped_on'], properties: { stopped_on: dateField, reason: text(200) } },
       response: { 200: anyObject },
     },
-  }, async (req) => await q.stopMedication(adb, req.params.id, { ...req.body, stopped_on: pastDate(req.body.stopped_on) }));
+  }, async (req) => await q.stopMedication(db, req.params.id, { ...req.body, stopped_on: pastDate(req.body.stopped_on) }));
 
   app.post('/api/medications/:id/start', {
     schema: {
@@ -893,7 +891,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       body: { type: 'object', additionalProperties: false, required: ['timings', 'started_on'], properties: { dose, ingredients, timings, started_on: dateField } },
       response: { 200: anyObject },
     },
-  }, async (req) => await q.startMedication(adb, req.params.id, { ...req.body, started_on: pastDate(req.body.started_on) }));
+  }, async (req) => await q.startMedication(db, req.params.id, { ...req.body, started_on: pastDate(req.body.started_on) }));
 
   app.post('/api/medications/combine', {
     schema: {
@@ -909,7 +907,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 200: anyObject },
     },
-  }, async (req) => await q.combineMedications(adb, req.body));
+  }, async (req) => await q.combineMedications(db, req.body));
 
   app.delete('/api/medications/:id', { schema: { summary: 'Remove an entry added by mistake, with all its history', params: idParams } }, async (req, reply) => {
     if (!(await q.deleteMedication(db, req.params.id))) return reply.code(404).send({ error: 'Medication not found' });
@@ -938,7 +936,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 200: anyObject },
     },
-  }, async (req) => await q.saveDoses(adb, pastDate(req.params.date), req.body.doses));
+  }, async (req) => await q.saveDoses(db, pastDate(req.params.date), req.body.doses));
 
   app.delete('/api/doses/:date', { schema: { summary: "Clear the day's check-off (back to not logged)", params: dateParams } }, async (req, reply) => {
     if (!(await q.clearDoses(db, requireDate(req.params.date)))) return reply.code(404).send({ error: 'Nothing saved for that day' });
@@ -974,7 +972,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 201: anyObject },
     },
-  }, async (req, reply) => reply.code(201).send(await q.addLabResult(adb, { ...req.body, drawn_on: pastDate(req.body.drawn_on) })));
+  }, async (req, reply) => reply.code(201).send(await q.addLabResult(db, { ...req.body, drawn_on: pastDate(req.body.drawn_on) })));
 
   app.put('/api/labs/results/:id', {
     schema: {
@@ -983,10 +981,10 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { drawn_on: dateField, value: labValueField } },
       response: { 200: anyObject },
     },
-  }, async (req) => await q.updateLabResult(adb, req.params.id, { ...req.body, drawn_on: req.body.drawn_on ? pastDate(req.body.drawn_on) : undefined }));
+  }, async (req) => await q.updateLabResult(db, req.params.id, { ...req.body, drawn_on: req.body.drawn_on ? pastDate(req.body.drawn_on) : undefined }));
 
   app.delete('/api/labs/results/:id', { schema: { summary: 'Delete a result added in the app, or undo a correction (restores the sheet value)', params: idParams } }, async (req, reply) => {
-    await q.deleteLabResult(adb, req.params.id);
+    await q.deleteLabResult(db, req.params.id);
     return reply.code(204).send();
   });
 
@@ -1005,7 +1003,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       },
       response: { 200: anyObject },
     },
-  }, async (req) => await q.updateLabTest(adb, req.params.id, req.body));
+  }, async (req) => await q.updateLabTest(db, req.params.id, req.body));
 
   // ---- settings ----
   const bpm = nullable({ type: 'integer', minimum: 40, maximum: 220 });
@@ -1043,7 +1041,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // ---- account: the signed-in user's own settings (multi-user, phase 2) ----
   const accountView = async (req) => {
     const uid = uidOf(req);
-    const u = await getUser(store.adb, uid);
+    const u = await getUser(store.db, uid);
     const access = await aiAccessOf(req);
     const setting = async (key) => (await db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck().get(key)) ?? null;
     const json = (text) => { try { return JSON.parse(text ?? 'null'); } catch { return null; } };
@@ -1054,7 +1052,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       ai: access.source !== null,
       aiReason: access.reason ?? null,
       // The zone this account runs in: its own (Settings), else the server default; the owner's is always the default.
-      timeZone: { zone: ownerTz(), own: Boolean(await timeZoneOf(store.adb, uid)), fromServer: uid === OWNER_ID },
+      timeZone: { zone: ownerTz(), own: Boolean(await timeZoneOf(store.db, uid)), fromServer: uid === OWNER_ID },
       // Training goals (Settings) and the Home tile order the user arranged (null: the goals' default).
       goals: await loadGoals(db),
       tileOrder: json(await setting('tile_order')),
@@ -1070,7 +1068,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       pausedBySelf: u?.status === 'paused' && Boolean(await db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
       // The administrator's key with its monthly cap (until the user adds their own): the cap and this month's spend.
       ownerKey: uid !== OWNER_ID && u?.uses_owner_key && !u.claude_key_enc
-        ? { cap: u.owner_key_cap_usd, spent: Math.round((await spentThisMonth(store.adb, uid, clock())) * 100) / 100 } : null,
+        ? { cap: u.owner_key_cap_usd, spent: Math.round((await spentThisMonth(store.db, uid, clock())) * 100) / 100 } : null,
       feeds: await feedsView(req, u),
     };
   };
@@ -1100,18 +1098,18 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   app.put('/api/account/feeds', {
     schema: { summary: 'Which data feeds you use (Apple Health, Workout Log, entering in the app)', body: { type: 'object', additionalProperties: false, properties: Object.fromEntries(FEEDS.map((f) => [f, { type: 'boolean' }])) }, response: { 200: anyObject } },
   }, async (req) => {
-    await setUserFeeds(store.adb, uidOf(req), JSON.stringify(req.body));
+    await setUserFeeds(store.db, uidOf(req), JSON.stringify(req.body));
     return accountView(req);
   });
   app.post('/api/account/ingest-token', { schema: { summary: 'A new Health Auto Export token for your account, shown once (replaces any earlier one)', response: { 200: anyObject } } }, async (req, reply) => {
     if (uidOf(req) === OWNER_ID) return reply.code(409).send({ error: "The owner's posts use INGEST_TOKEN from the server's settings" });
-    const token = await newIngestToken(store.adb, uidOf(req));
+    const token = await newIngestToken(store.db, uidOf(req));
     log.info('[users] an ingest token was created');
     // The status first, then the token itself (the status's own token field is only true or false).
-    return { ...(await feedsView(req, await getUser(store.adb, uidOf(req)))).appleHealth, token };
+    return { ...(await feedsView(req, await getUser(store.db, uidOf(req)))).appleHealth, token };
   });
   app.delete('/api/account/ingest-token', { schema: { summary: 'Turn off your Health Auto Export token', response: { 200: anyObject } } }, async (req) => {
-    await clearIngestToken(store.adb, uidOf(req));
+    await clearIngestToken(store.db, uidOf(req));
     return accountView(req);
   });
   app.put('/api/account/workout-sheet', {
@@ -1121,7 +1119,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (uid === OWNER_ID) return reply.code(409).send({ error: "The owner's Workout Log comes from the server's settings" });
     const id = /\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/.exec(req.body.sheet)?.[1] ?? (/^[A-Za-z0-9_-]{20,}$/.test(req.body.sheet.trim()) ? req.body.sheet.trim() : null);
     if (!id) return reply.code(400).send({ error: 'Paste the link to your Google Sheet (or its ID)' });
-    if (!(await getUser(store.adb, uid))?.google_refresh_enc) return reply.code(409).send({ error: 'Connect Google Sheets first' });
+    if (!(await getUser(store.db, uid))?.google_refresh_enc) return reply.code(409).send({ error: 'Connect Google Sheets first' });
     let tabs;
     try {
       tabs = await services.sheetTabs(uid, id);
@@ -1135,7 +1133,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     return { ...(await accountView(req)), yearTabs: years };
   });
   app.delete('/api/account/google', { schema: { summary: 'Disconnect Google Sheets: forgets your permission and your sheet', response: { 200: anyObject } } }, async (req) => {
-    await setGoogleToken(store.adb, uidOf(req), null);
+    await setGoogleToken(store.db, uidOf(req), null);
     await db.prepare("DELETE FROM settings WHERE user_id = @uid AND key IN ('workout_log_sheet_id', 'workout_log_created')").run();
     return accountView(req);
   });
@@ -1145,7 +1143,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // ---- Home (UX roadmap phase 2): the setup checklist for new users, then a summary of where things stand ----
   const setupOf = async (req) => {
     const uid = uidOf(req);
-    const u = await getUser(store.adb, uid);
+    const u = await getUser(store.db, uid);
     const feeds = await feedsView(req, u);
     const facts = await loadSetupFacts(db, { owner: uid === OWNER_ID, chosen: feeds.chosen, ai: (await aiAccessOf(req)).source !== null,
       appleToken: feeds.appleHealth.token, sheetConnected: feeds.workoutLog.connected });
@@ -1213,7 +1211,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const uid = uidOf(req);
     if (uid === OWNER_ID) return reply.code(409).send({ error: "The owner's key comes from the server's settings" });
     if (!(await keyCheck(req.body.key))) return reply.code(400).send({ error: 'Anthropic did not accept that key. Check it and try again.' });
-    await setClaudeKey(store.adb, uid, seal(req.body.key, uid, keyBox ?? boxKey()));
+    await setClaudeKey(store.db, uid, seal(req.body.key, uid, keyBox ?? boxKey()));
     log.info('[users] a Claude key was saved');
     return accountView(req);
   });
@@ -1302,19 +1300,19 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const id = randomUUID();
     await db.prepare(`INSERT INTO feedback (user_id, id, kind, subject, body, context, status, created_at) VALUES (@uid, ?, ?, ?, ?, ?, 'new', ?)`)
       .run(id, req.body.kind, subject, doing ? `${body}\n\nWhat I was doing: ${doing}` : body, JSON.stringify(context), clock().toISOString());
-    const u = await getUser(store.adb, uid);
+    const u = await getUser(store.db, uid);
     log.info(`[feedback] ${req.body.kind} received`);
     await mailer.send({ to: await adminEmail(), replyTo: u?.email, subject: `Health Review [${req.body.kind}] ${subject}`,
       text: `${FEEDBACK_KINDS[req.body.kind]} from ${u?.name || u?.email || 'a user'} <${u?.email ?? 'unknown'}>\n\n${subject}\n\n${body}${doing ? `\n\nWhat they were doing: ${doing}` : ''}\n\nScreen: ${context.screen ?? 'not given'} | App: ${context.version} | Browser: ${context.browser ?? 'unknown'}\n\nReply to this email to answer them. All feedback: ${appUrl()}/#users\n` });
     return { sent: true, id };
   });
   app.get('/api/admin/feedback', { onRequest: adminOnlyHook, schema: { summary: 'All feedback, newest first (administrators)', response: { 200: anyObject } } },
-    async () => ({ items: await listFeedback(store.adb), newCount: await newFeedbackCount(store.adb) }));
+    async () => ({ items: await listFeedback(store.db), newCount: await newFeedbackCount(store.db) }));
   app.post('/api/admin/feedback/:id/status', {
     onRequest: adminOnlyHook,
     schema: { summary: 'Mark feedback new or done (administrators)', params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
       body: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { type: 'string', enum: ['new', 'done'] } } }, response: { 200: anyObject } },
-  }, async (req, reply) => ((await setFeedbackStatus(store.adb, req.params.id, req.body.status)) ? { ok: true } : reply.code(404).send({ error: 'Not found' })));
+  }, async (req, reply) => ((await setFeedbackStatus(store.db, req.params.id, req.body.status)) ? { ok: true } : reply.code(404).send({ error: 'Not found' })));
 
   // ---- the Prompt tab's builder (agent/prompt-draft.js): guided questions, then a template or Claude's draft ----
   const draftTimes = new Map();
@@ -1365,12 +1363,12 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     return withTimeZone(tz ?? process.env.OWNER_TZ, () => accountView(req));
   });
   app.delete('/api/account/claude-key', { schema: { summary: 'Remove your Claude API key (no AI is used without one)', response: { 200: anyObject } } }, async (req) => {
-    await setClaudeKey(store.adb, uidOf(req), null);
+    await setClaudeKey(store.db, uidOf(req), null);
     return accountView(req);
   });
 
   // ---- your account (multi-user, phase 6): export, pause and resume yourself, delete ----
-  const selfFlag = (uid) => scopeDatabase(store.adb, uid);
+  const selfFlag = (uid) => scopeDatabase(store.db, uid);
   const setSelfPaused = async (uid, on) => {
     const sdb = selfFlag(uid);
     if (on) {
@@ -1381,13 +1379,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     }
   };
   const notOwner = async (req, reply, what) => {
-    if (uidOf(req) !== OWNER_ID && await getUser(store.adb, uidOf(req))) return true;
+    if (uidOf(req) !== OWNER_ID && await getUser(store.db, uidOf(req))) return true;
     reply.code(409).send({ error: `The owner's account cannot be ${what} here` });
     return false;
   };
   app.get('/api/account/export', { schema: { summary: 'Everything stored for you, as one JSON file (never your sealed key, tokens or Google permission)', response: { 200: anyObject } } },
     async (req, reply) => {
-      const data = await exportUserData(store.adb, uidOf(req), { now: clock() });
+      const data = await exportUserData(store.db, uidOf(req), { now: clock() });
       if (!data) return reply.code(404).send({ error: 'No such account' });
       return reply.header('Content-Disposition', `attachment; filename="health-review-export-${q.localDate(clock())}.json"`).send(data);
     });
@@ -1395,9 +1393,9 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     async (req, reply) => {
       if (!(await notOwner(req, reply, 'paused'))) return reply;
       // The status check and both writes in one transaction, so a pause racing an administrator's change cannot mix them.
-      const paused = await store.adb.tx(async () => {
-        if ((await getUser(store.adb, uidOf(req)))?.status !== 'approved') return false;
-        await setUserStatus(store.adb, uidOf(req), 'paused');
+      const paused = await store.db.tx(async () => {
+        if ((await getUser(store.db, uidOf(req)))?.status !== 'approved') return false;
+        await setUserStatus(store.db, uidOf(req), 'paused');
         await setSelfPaused(uidOf(req), true);
         return true;
       });
@@ -1408,11 +1406,11 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     async (req, reply) => {
       if (!(await notOwner(req, reply, 'resumed'))) return reply;
       // Paused by themselves (status paused and the flag set), checked and undone in one transaction.
-      const resumed = await store.adb.tx(async () => {
-        if ((await getUser(store.adb, uidOf(req)))?.status !== 'paused') return false;
+      const resumed = await store.db.tx(async () => {
+        if ((await getUser(store.db, uidOf(req)))?.status !== 'paused') return false;
         if (!(await selfFlag(uidOf(req)).prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get())) return false;
         await setSelfPaused(uidOf(req), false);
-        await setUserStatus(store.adb, uidOf(req), 'approved');
+        await setUserStatus(store.db, uidOf(req), 'approved');
         return true;
       });
       if (!resumed) return reply.code(409).send({ error: 'Only the administrator can resume this account' });
@@ -1423,7 +1421,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       body: { type: 'object', additionalProperties: false, required: ['confirmEmail'], properties: { confirmEmail: { type: 'string', maxLength: 320 } } }, response: { 200: anyObject } },
   }, async (req, reply) => {
     if (!(await notOwner(req, reply, 'deleted'))) return reply;
-    const u = await getUser(store.adb, uidOf(req));
+    const u = await getUser(store.db, uidOf(req));
     if (String(req.body.confirmEmail).trim().toLowerCase() !== u.email) throw badRequest('Type your email exactly to confirm');
     await deleteAccount(u.id);
     reply.header('Set-Cookie', cookie(SESSION_COOKIE, '', { maxAge: 0, secure: appUrl().startsWith('https:') }));
@@ -1480,35 +1478,35 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       querystring: { type: 'object', additionalProperties: false, properties: { weeks: { type: 'integer', minimum: 4, maximum: 52, default: 12 } } },
       response: { 200: usageSchema } },
   }, async (req) => {
-    const weeks = await usageByWeek(store.adb, { weeks: req.query.weeks, now: clock() });
+    const weeks = await usageByWeek(store.db, { weeks: req.query.weeks, now: clock() });
     const today = zonedDate(clock(), process.env.OWNER_TZ || DEFAULT_TZ);
-    return { weeks, ...(await usageTotals(store.adb, { from: addDays(weeks.at(-1).weekEnding, -6), to: today })) };
+    return { weeks, ...(await usageTotals(store.db, { from: addDays(weeks.at(-1).weekEnding, -6), to: today })) };
   });
   app.get('/api/admin/users', { onRequest: adminOnly, schema: { summary: 'Every user (account facts only, never keys or health data), pending first', response: { 200: { type: 'array', items: anyObject } } } },
-    async () => await listUsers(store.adb, { now: clock() }));
+    async () => await listUsers(store.db, { now: clock() }));
   const userIdParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64 } } };
   app.post('/api/admin/users/:id/approve', { onRequest: adminOnly, schema: { summary: 'Approve a user: they get in, start from the default prompt sections, and get an email', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
-    const u = await setUserStatus(store.adb, req.params.id, 'approved');
+    const u = await setUserStatus(store.db, req.params.id, 'approved');
     if (!u) return reply.code(404).send({ error: 'No such user' });
     // Count, then add, in one transaction (agent/default-prompts.js adds only to an empty list).
-    await store.adb.tx(() => addDefaultPromptSections(scopeDatabase(store.adb, u.id)));
+    await store.db.tx(() => addDefaultPromptSections(scopeDatabase(store.db, u.id)));
     await mailer.send({ to: u.email, subject: "You're in: Health Review",
       text: `Your Health Review account is approved.\n\nOpen ${appUrl()} and sign in with this Google account. To use the AI weekly review and chat, add your own Claude API key in Settings (see https://docs.claude.com/en/api/getting-started). Everything else works without one.\n${supportLine}` });
     return await adminUser(u.id);
   });
   app.post('/api/admin/users/:id/reject', { onRequest: adminOnly, schema: { summary: 'Reject a pending user (or end access)', params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
-    const u = await setUserStatus(store.adb, req.params.id, 'rejected');
+    const u = await setUserStatus(store.db, req.params.id, 'rejected');
     if (!u) return reply.code(404).send({ error: 'No such user' });
     // Ending access also ends the owner's key for them, so approving them again never quietly restores it.
-    if (u.uses_owner_key) { await setOwnerKey(store.adb, u.id, { on: false }); await clearCapNotice(store.adb, u.id); }
+    if (u.uses_owner_key) { await setOwnerKey(store.db, u.id, { on: false }); await clearCapNotice(store.db, u.id); }
     return await adminUser(u.id);
   });
   // One user as the Users screen lists them (the same facts as GET /api/admin/users).
-  const adminUser = async (id) => (await listUsers(store.adb, { now: clock() })).find((u) => u.id === id) ?? null;
+  const adminUser = async (id) => (await listUsers(store.db, { now: clock() })).find((u) => u.id === id) ?? null;
   // A user these switches may change: exists, not an administrator, and in one of the given statuses. Sends the refusal
   // and returns null otherwise.
   const changeable = async (reply, id, statuses = ['approved', 'paused']) => {
-    const u = await getUser(store.adb, id);
+    const u = await getUser(store.db, id);
     const refuse = (code, error) => { reply.code(code).send({ error }); return null; };
     if (!u) return refuse(404, 'No such user');
     if (u.role === 'admin') return refuse(409, "An administrator's account is not changed here");
@@ -1520,8 +1518,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const summary = action === 'pause' ? 'Pause a user: posts, syncs, reviews and chat stop; they can still sign in and see their data' : 'Resume a paused user';
     app.post(`/api/admin/users/:id/${action}`, { onRequest: adminOnly, schema: { summary, params: userIdParams, response: { 200: anyObject } } }, async (req, reply) => {
       if (!(await changeable(reply, req.params.id, [from]))) return reply;
-      await store.adb.tx(async () => {
-        await setUserStatus(store.adb, req.params.id, to);
+      await store.db.tx(async () => {
+        await setUserStatus(store.db, req.params.id, to);
         await setSelfPaused(req.params.id, false); // the administrator's pause or resume: only the administrator resumes it
       });
       log.info(`[users] a user was ${to === 'paused' ? 'paused' : 'resumed'}`);
@@ -1534,12 +1532,12 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     schema: { summary: "Delete a user's account and all of their data (confirm with their email)", params: userIdParams,
       body: { type: 'object', additionalProperties: false, required: ['confirmEmail'], properties: { confirmEmail: { type: 'string', maxLength: 320 } } }, response: { 200: anyObject } },
   }, async (req, reply) => {
-    const u = await getUser(store.adb, req.params.id);
+    const u = await getUser(store.db, req.params.id);
     if (!u) return reply.code(404).send({ error: 'No such user' });
     if (u.role === 'admin') return reply.code(409).send({ error: "An administrator's account is not deleted here" });
     if (String(req.body.confirmEmail).trim().toLowerCase() !== u.email) throw badRequest("Type the user's email exactly to confirm");
     // The role is checked again inside the deletion's transaction.
-    if (!(await deleteUserData(store.adb, u.id))) return reply.code(409).send({ error: "An administrator's account is not deleted here" });
+    if (!(await deleteUserData(store.db, u.id))) return reply.code(409).send({ error: "An administrator's account is not deleted here" });
     log.info('[users] a user and their data were deleted by the administrator');
     return { deleted: true };
   });
@@ -1564,8 +1562,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       if (cap === null) throw badRequest(`A monthly cap from $${OWNER_KEY_CAP.min} to $${OWNER_KEY_CAP.max} is required`);
       if (String(confirmEmail ?? '').trim().toLowerCase() !== u.email) throw badRequest("Type the user's email exactly to confirm");
     }
-    await setOwnerKey(store.adb, u.id, { on, cap: on ? cap : null });
-    await clearCapNotice(store.adb, u.id);
+    await setOwnerKey(store.db, u.id, { on, cap: on ? cap : null });
+    await clearCapNotice(store.db, u.id);
     log.info(`[users] the owner's key was turned ${on ? 'on' : 'off'} for a user`);
     await mailer.send({ to: u.email, subject: on ? 'Health Review: AI turned on for you' : 'Health Review: AI allowance ended',
       text: on ? `The administrator turned on the AI weekly review and chat for you, up to $${cap.toFixed(2)} a month. Open ${appUrl()} to use them. If you add your own Claude API key in Settings, it is used instead.\n${supportLine}`
@@ -1581,7 +1579,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }, async (req, reply) => {
     const u = await changeable(reply, req.params.id);
     if (!u) return reply;
-    await setMapsShared(store.adb, u.id, req.body.shared);
+    await setMapsShared(store.db, u.id, req.body.shared);
     log.info(`[users] the MAPS catalog was ${req.body.shared ? 'shared with' : 'unshared from'} a user`);
     return await adminUser(u.id);
   });
@@ -1641,7 +1639,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       const problem = zoneOrderProblem({ zone2Low: next.zone2_low_bpm, zone2High: next.zone2_high_bpm, zone3High: next.zone3_high_bpm, zone4High: next.zone4_high_bpm });
       if (problem) throw badRequest(problem);
     };
-    return settingsView(await q.saveSettings(adb, req.body, { check }));
+    return settingsView(await q.saveSettings(db, req.body, { check }));
   });
 
   // ---- prompt sections ----
@@ -1672,7 +1670,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     },
   }, async (req, reply) => {
     try {
-      const section = await q.updateSection(adb, req.params.id, req.body);
+      const section = await q.updateSection(db, req.params.id, req.body);
       return section ?? reply.code(404).send({ error: 'Section not found' });
     } catch (err) {
       if (/UNIQUE/.test(err.message)) throw Object.assign(new Error('A section with that name already exists'), { statusCode: 409 });
@@ -1681,7 +1679,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
 
   app.delete('/api/prompt/sections/:id', { schema: { summary: 'Delete a prompt section (a copy is kept)', params: idParams } }, async (req, reply) => {
-    if (!(await q.deleteSection(adb, req.params.id))) return reply.code(404).send({ error: 'Section not found' });
+    if (!(await q.deleteSection(db, req.params.id))) return reply.code(404).send({ error: 'Section not found' });
     return reply.code(204).send();
   });
 

@@ -18,7 +18,7 @@ const dir = mkdtempSync(join(tmpdir(), 'health-demo-'));
 /** Values that change if the generated data changes (ids from block detection are random, so they are left out). */
 function fingerprint(path) {
   const store = openOwnerStore(path);
-  const one = (sql) => store.db.prepare(sql).pluck().get();
+  const one = (sql) => store.syncDb.prepare(sql).pluck().get();
   const out = {
     days: one('SELECT COUNT(*) FROM daily_metrics'), steps: one('SELECT SUM(steps) FROM daily_metrics'),
     sets: one('SELECT COUNT(*) FROM strength_sets'), load: one('SELECT SUM(weight_lbs) FROM strength_sets'),
@@ -70,9 +70,9 @@ test('demo instance: reports itself, refuses sync and chat, shows only its own r
   const statuses = new Set((await app.inject('/api/lifts')).json().map((l) => l.status));
   for (const s of ['progressing', 'stalled', 'regressing']) assert.ok(statuses.has(s), `Lift progress shows ${s}`);
   // 26 weekly reviews, each written from its week's summary and passing the review's own checks.
-  const reviews = store.db.prepare('SELECT week_ending, summary_json, report_md FROM reviews WHERE user_id = @uid ORDER BY week_ending').all();
+  const reviews = store.syncDb.prepare('SELECT week_ending, summary_json, report_md FROM reviews WHERE user_id = @uid ORDER BY week_ending').all();
   assert.equal(reviews.length, 26);
-  const labNames = [...store.db.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(), ...NIGHT_BREATHING_NAMES];
+  const labNames = [...store.syncDb.prepare('SELECT name FROM lab_tests WHERE user_id = @uid').pluck().all(), ...NIGHT_BREATHING_NAMES];
   for (const r of reviews) {
     const summary = JSON.parse(r.summary_json);
     const report = writeDemoReview(summary);
@@ -82,9 +82,9 @@ test('demo instance: reports itself, refuses sync and chat, shows only its own r
     assert.match(r.report_md, /^## This week at a glance\n- /, `${r.week_ending}: opens with the highlights`);
     assert.doesNotMatch(r.report_md, /\b[a-z]+_[a-z]+(_[a-z]+)*\b/, `${r.week_ending}: readable names, never metric keys`);
   }
-  assert.ok(store.db.prepare('SELECT COUNT(*) FROM advisor_notes WHERE user_id = @uid').pluck().get() >= 8, 'a chat thread');
+  assert.ok(store.syncDb.prepare('SELECT COUNT(*) FROM advisor_notes WHERE user_id = @uid').pluck().get() >= 8, 'a chat thread');
   // The sample chat keeps the boundary the chat states: pain goes to a physician before any program talk.
-  const replies = store.db.prepare("SELECT text FROM advisor_notes WHERE user_id = @uid AND role = 'claude'").pluck().all();
+  const replies = store.syncDb.prepare("SELECT text FROM advisor_notes WHERE user_id = @uid AND role = 'claude'").pluck().all();
   assert.ok(replies.some((t) => /shoulder pain .* physician/.test(t)), 'the shoulder reply points to a physician');
   await app.close();
   store.close();
@@ -106,7 +106,7 @@ test('demo refresh: made again in place equals a fresh build, and moves forward 
     assert.equal(await demoBuiltFor(store), TODAY);
     await refreshDemoDatabase(store, { today: '2026-10-08' });
     assert.equal(await demoBuiltFor(store), '2026-10-08');
-    const one = (sql) => store.db.prepare(sql).pluck().get();
+    const one = (sql) => store.syncDb.prepare(sql).pluck().get();
     assert.equal(one('SELECT MAX(date) FROM daily_metrics'), '2026-10-07', 'Apple Health days run through yesterday');
     assert.equal(one("SELECT COUNT(*) FROM checkins WHERE date = '2026-10-08'"), 1, "today's check-in is logged");
     assert.ok(one("SELECT COUNT(*) FROM medication_doses WHERE date = '2026-10-08' AND timing = 'morning' AND taken = 1") >= 1);

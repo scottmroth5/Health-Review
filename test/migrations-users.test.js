@@ -40,14 +40,14 @@ test('024 and 025: rows kept and given to the owner, children intact, user_id re
 
     const store = openHealthStore(path);
     for (const t of rebuilt) {
-      assert.equal(count(store.db, t), counts[t], `${t} keeps its rows`);
-      assert.equal(store.db.prepare(`SELECT COUNT(*) FROM "${t}" WHERE user_id <> ?`).pluck().get(OWNER_ID), 0, `${t} rows are the owner's`);
+      assert.equal(count(store.syncDb, t), counts[t], `${t} keeps its rows`);
+      assert.equal(store.syncDb.prepare(`SELECT COUNT(*) FROM "${t}" WHERE user_id <> ?`).pluck().get(OWNER_ID), 0, `${t} rows are the owner's`);
     }
-    assert.equal(store.db.prepare('SELECT user_id FROM runs').pluck().get(), OWNER_ID);
-    assert.equal(store.db.prepare("SELECT role || '/' || status FROM users WHERE id = ?").pluck().get(OWNER_ID), 'admin/approved');
-    assert.equal(store.db.pragma('integrity_check', { simple: true }), 'ok');
-    assert.deepEqual(store.db.pragma('foreign_key_check'), []);
-    assert.throws(() => store.db.prepare("INSERT INTO checkins (date, cadence, source, updated_at) VALUES ('2026-02-01', 'daily', 'ui', 'x')").run(), /NOT NULL/);
+    assert.equal(store.syncDb.prepare('SELECT user_id FROM runs').pluck().get(), OWNER_ID);
+    assert.equal(store.syncDb.prepare("SELECT role || '/' || status FROM users WHERE id = ?").pluck().get(OWNER_ID), 'admin/approved');
+    assert.equal(store.syncDb.pragma('integrity_check', { simple: true }), 'ok');
+    assert.deepEqual(store.syncDb.pragma('foreign_key_check'), []);
+    assert.throws(() => store.syncDb.prepare("INSERT INTO checkins (date, cadence, source, updated_at) VALUES ('2026-02-01', 'daily', 'ui', 'x')").run(), /NOT NULL/);
     store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -68,7 +68,7 @@ test('030: skips saved before the check-off recorded only what was marked become
     old.close();
 
     const store = openHealthStore(path);
-    const rows = store.db.prepare('SELECT date, timing, taken FROM medication_doses ORDER BY date, timing').all();
+    const rows = store.syncDb.prepare('SELECT date, timing, taken FROM medication_doses ORDER BY date, timing').all();
     assert.deepEqual(rows.map((r) => `${r.date} ${r.timing} ${r.taken}`), ['2026-10-28 morning 1', '2026-10-30 before_bed 0']);
     store.close();
   } finally {

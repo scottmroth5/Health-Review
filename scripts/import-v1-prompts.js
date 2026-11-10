@@ -17,7 +17,7 @@ async function main() {
   const replace = process.argv.includes('--replace');
   const store = openOwnerStore();
   try {
-    const existing = new Map((await listSections(store.adb)).map((s) => [s.name, s]));
+    const existing = new Map((await listSections(store.db)).map((s) => [s.name, s]));
     for (const file of readdirSync(DIR).sort()) {
       const m = FILE.exec(file);
       if (!m) continue;
@@ -32,10 +32,10 @@ async function main() {
       if (current && !replace) {
         console.log(`skipped ${label}: already exists (use --replace to overwrite; the old text is kept as a version)`);
       } else if (current) {
-        await updateSection(store.adb, current.id, section);
+        await updateSection(store.db, current.id, section);
         console.log(`replaced ${label}`);
       } else {
-        await createSection(store.adb, section);
+        await createSection(store.db, section);
         console.log(`imported ${label}`);
       }
     }

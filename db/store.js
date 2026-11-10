@@ -81,16 +81,15 @@ export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_
 }
 
 /**
- * The store with both handles on its one connection (v3 Phase 1, docs/adr/0006): db, the sync better-sqlite3 handle for
- * code not yet converted, guarded so a statement throws while another request holds an async transaction; adb and atx,
- * the async interface (db/database.ts); raw, the unguarded handle for agent-core's run tracer and the SQLite-only tools.
- * adb replaces db once Phase 1B has converted every caller.
+ * The store's handles on its one connection (v3 Phase 1, docs/adr/0006): db and tx, the async interface
+ * (db/database.ts) every caller uses; syncDb, the better-sqlite3 handle for the few SQLite-only jobs left on it (the
+ * backup and the restore test, until 1G), guarded so a statement throws while another request holds an async
+ * transaction; raw, the unguarded handle for agent-core's run tracer, the migrations and SQLite's own tables and pragmas.
  */
 function withAsyncDatabase(store) {
   const raw = store.db;
-  const db = guardSyncDatabase(raw);
-  const adb = createSqliteDatabase(raw);
-  return { ...store, raw, db, tx: (fn) => db.transaction(fn)(), adb, atx: adb.tx };
+  const db = createSqliteDatabase(raw);
+  return { ...store, raw, db, tx: db.tx, syncDb: guardSyncDatabase(raw) };
 }
 
 /** Keeps the newest KEEP_MIGRATION_COPIES pre-migration copies in a folder; other files are never touched. */
@@ -111,7 +110,7 @@ export function pendingMigrations(path, tempDir) {
     const before = appliedIn(path);
     copyDatabase(path, to);
     const store = openHealthStore(to, { snapshot: false });
-    const after = appliedIds(store.db);
+    const after = appliedIds(store.raw);
     store.close();
     return { pending: after.filter((id) => !before.includes(id)) };
   } finally {

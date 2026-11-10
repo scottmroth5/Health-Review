@@ -24,7 +24,7 @@ async function server({ token = TOKEN, authMode = 'none', auth = {} } = {}) {
     method: 'POST', url: `/api/ingest/${route}`, payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers },
   });
-  return { store, db: store.db, app, post, done: async () => { await app.close(); store.close(); } };
+  return { store, db: store.syncDb, app, post, done: async () => { await app.close(); store.close(); } };
 }
 
 test('health JSON: each metric to its column, steps whole, a metric the app does not store skipped; Day-grouped stand hours ignored', async () => {
@@ -55,8 +55,8 @@ test('stand hours: hour-grouped entries counted per day (0 does not count); part
   const { standHours } = parseHealthJson(fixture('stand'));
   assert.deepEqual(standHours, [{ date: '2026-03-01', hour: 8 }, { date: '2026-03-01', hour: 9 }, { date: '2026-03-01', hour: 14 }, { date: '2026-03-02', hour: 7 }]);
   const store = openOwnerStore(':memory:');
-  const { db, adb } = store;
-  const apply = (p) => store.atx(() => applyHealthDays(adb, p, 'x'));
+  const { syncDb: db, db: adb } = store;
+  const apply = (p) => store.tx(() => applyHealthDays(adb, p, 'x'));
   await apply({ records: parseHealthJson(fixture('health')).records }); // the days exist
   await apply({ records: [], standHours: standHours.slice(0, 2) }); // the morning
   assert.equal(rowOf(db, '2026-03-01').stand_hours, 2);
@@ -75,8 +75,8 @@ test('stand hours: hour-grouped entries counted per day (0 does not count); part
 
 test('a day without steps never erases stored steps; a fuller day replaces a partial one', async () => {
   const store = openOwnerStore(':memory:');
-  const { db, adb } = store;
-  const apply = (records) => store.atx(() => applyHealthDays(adb, { records }, 'x'));
+  const { syncDb: db, db: adb } = store;
+  const apply = (records) => store.tx(() => applyHealthDays(adb, { records }, 'x'));
   await apply([{ date: '2026-03-01', steps: 9000, hrv_ms: 40 }]);
   await apply([{ date: '2026-03-01', hrv_ms: 45 }]); // a past-range export without the day's totals
   assert.deepEqual([rowOf(db, '2026-03-01').steps, rowOf(db, '2026-03-01').hrv_ms], [9000, 40], 'the fuller stored day wins; its gaps fill from the new');
@@ -108,7 +108,7 @@ test('the REST posts store exactly what the Drive files store; posting the same 
     stand: db.prepare('SELECT * FROM stand_hour_samples ORDER BY date, hour').all(),
   });
   const viaRest = snapshot(rest.db);
-  assert.deepEqual(viaRest, snapshot(drive.db));
+  assert.deepEqual(viaRest, snapshot(drive.syncDb));
   assert.equal(viaRest.days.find((d) => d.date === '2026-03-01').stand_hours, 3);
   assert.equal(viaRest.hr.length, 3);
 

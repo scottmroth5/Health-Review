@@ -15,7 +15,7 @@ try {
 
 const store = openOwnerStore();
 try {
-  const c = await normalizeAll(store.adb, dictionary);
+  const c = await normalizeAll(store.db, dictionary);
   console.log(`Sets mapped to a canonical exercise and implement: ${c.mappedSets} of ${c.sets} (${c.mappedPct}%)`);
   for (const [status, n] of Object.entries(c.byStatus)) console.log(`  ${status.padEnd(9)} ${n.sets} sets, ${n.exercises} exercise rows`);
   console.log('Run npm run log:unmapped to see the names still needing an entry.');

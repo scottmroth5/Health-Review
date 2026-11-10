@@ -62,7 +62,7 @@ function seed(db) {
 
 test('api: called for vs logged for the block in progress by default, another block by id', async () => {
   const store = openOwnerStore(':memory:');
-  seed(store.db);
+  seed(store.syncDb);
   const app = await buildApp({ store, clock: () => TODAY, catalog, dictionary, substitutions: { swaps: [] } });
 
   const a = (await app.inject('/api/program/adherence')).json();

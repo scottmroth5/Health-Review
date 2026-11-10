@@ -34,7 +34,7 @@ function evalFolder() {
 
 test('spend: runs by kind, month and year, plus evals dated by their results file', async () => {
   const store = openOwnerStore(':memory:');
-  const { db } = store;
+  const { syncDb: db } = store;
   addRun(db, 'review', '2026-10-04T12:00:00.000Z', 0.3);
   addRun(db, 'review', '2026-10-11T12:00:00.000Z', 0.32);
   addRun(db, 'advisor-chat', '2026-10-07T15:00:00.000Z', 0.1);
@@ -71,7 +71,7 @@ test('spend: no eval folder (the demo) counts runs only, and an empty database i
 
 test('api: /api/spend reads the eval folder the server was given', async () => {
   const store = openOwnerStore(':memory:');
-  addRun(store.db, 'review', '2026-10-04T12:00:00.000Z', 0.3);
+  addRun(store.syncDb, 'review', '2026-10-04T12:00:00.000Z', 0.3);
   const dir = evalFolder();
   const app = await buildApp({ store, clock: () => TODAY, evalDir: dir, price });
   const res = await app.inject('/api/spend');

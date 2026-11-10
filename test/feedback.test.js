@@ -16,8 +16,8 @@ async function setup({ claude = null, ai = true } = {}) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
   const store = openHealthStore(':memory:');
-  store.db.prepare("INSERT INTO users (id, email, name, role, status, created_at) VALUES ('lee', 'lee@example.com', 'Lee', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'Kim', 'user', 'approved', 'x')").run();
-  store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  store.syncDb.prepare("INSERT INTO users (id, email, name, role, status, created_at) VALUES ('lee', 'lee@example.com', 'Lee', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'Kim', 'user', 'approved', 'x')").run();
+  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const mail = [];
   const services = claude ? { claude: () => claude, aiAccess: () => (ai ? { source: 'own', reason: null } : { source: null, reason: 'no_key' }) } : {};
   let email;
@@ -66,7 +66,7 @@ test('feedback: stored, emailed to the admin with the sender as reply-to; the ad
   // Export carries it; deleting the account removes it.
   assert.equal((await lee.get('/api/account/export')).json().tables.feedback.length, 1);
   await lee.send('POST', '/api/account/delete', { confirmEmail: 'lee@example.com' });
-  assert.equal(store.db.prepare('SELECT COUNT(*) FROM feedback').pluck().get(), 0);
+  assert.equal(store.syncDb.prepare('SELECT COUNT(*) FROM feedback').pluck().get(), 0);
 });
 
 test('a subject can never add an email header: line breaks and control characters become spaces', async () => {
@@ -104,7 +104,7 @@ test('prompt builder: a template without AI; Claude gets only the answers and gu
   const calls = [];
   const claude = { send: async (opts) => { calls.push(opts); return { text: 'I lift 4 days a week -- mornings.', model: opts.model }; } };
   const { store, signIn } = await setup({ claude });
-  const db = scopeDb(store.db, 'lee');
+  const db = scopeDb(store.syncDb, 'lee');
   db.prepare("INSERT INTO medications (user_id, name, kind, created_at) VALUES (@uid, 'Made-up Pill', 'medication', 'x')").run();
   db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'goal_primary', 'strength', 'x')").run();
   const lee = await signIn('lee@example.com');
