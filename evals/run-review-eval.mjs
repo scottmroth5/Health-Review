@@ -68,7 +68,7 @@ async function loadCases() {
 async function caseStore(input) {
   if (!snapshot) {
     const real = openHealthStore();
-    snapshot = Buffer.from(real.db.serialize());
+    snapshot = Buffer.from(real.raw.serialize()); // raw: the store's db is the async interface since Phase 1B
     real.close();
     // The real database runs in WAL mode, which an in-memory copy cannot use: opening it then fails
     // intermittently with "unable to open database file". Mark the copy as a rollback-journal database.
