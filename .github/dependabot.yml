@@ -11,6 +11,11 @@ updates:
       time: "06:00"
       timezone: America/New_York
     open-pull-requests-limit: 10
+    ignore:
+      # typescript-eslint supports TypeScript below 6.1 only (its peer range), so a newer TypeScript fails npm ci.
+      # Lift this when typescript-eslint's peer range allows it; 6.0.x patches still come.
+      - dependency-name: typescript
+        versions: [">=6.1.0"]
     groups:
       patches:
         update-types: [patch]
