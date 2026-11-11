@@ -614,16 +614,16 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (recent.length >= UPLOADS_PER_HOUR) return reply.code(429).send({ error: `At most ${UPLOADS_PER_HOUR} uploads an hour; try again later` });
     uploadTimes.set(uid, [...recent, clock().getTime()]);
     if (!Buffer.isBuffer(req.body) || !req.body.length) return reply.code(400).send({ error: 'The file is empty' });
-    const run = startUserRun(userStore(), 'workout-upload', { bytes: req.body.length }, { info() {}, warn() {}, error() {} });
+    const run = await startUserRun(userStore(), 'workout-upload', { bytes: req.body.length }, { info() {}, warn() {}, error() {} });
     let result;
     try {
       result = await ingestWorkbook(db, req.body, workoutCtx(req));
     } catch (err) {
-      if (!(err instanceof XlsxError || err instanceof UploadError)) { run.finish('error', { error: err.name }); throw err; }
-      run.finish('error', { error: 'not_accepted' });
+      if (!(err instanceof XlsxError || err instanceof UploadError)) { await run.finish('error', { error: err.name }); throw err; }
+      await run.finish('error', { error: 'not_accepted' });
       return reply.code(400).send({ error: err.message });
     }
-    run.finish('ok', { years: result.years.length, exercises: result.exercises, sets: result.sets, notes: result.notes });
+    await run.finish('ok', { years: result.years.length, exercises: result.exercises, sets: result.sets, notes: result.notes });
     log.info(`[upload] workout log ok years=${result.years.length} exercises=${result.exercises} sets=${result.sets}`);
     return result;
   });

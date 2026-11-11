@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
-import { openStore } from '@scottmroth5/agent-core';
+import { openSqliteStore } from './migrate.js';
 import { dataPath } from '../tools/paths.js';
 import { createSqliteDatabase, guardSyncDatabase } from './database.ts';
 import { MIGRATIONS } from './migrations.js';
@@ -51,7 +51,7 @@ function appliedIn(path) {
 }
 
 /**
- * Opens the health database (agent-core's runs tables plus this app's tables), applying any new migrations.
+ * Opens the health database (the runs tables plus this app's tables; db/migrate.js), applying any new migrations.
  * Before any migration changes an existing file, a checked copy is taken (owner's rule, 2026-10-24: back up before every
  * database change): data/backups/pre-migration-<UTC stamp>.db next to the database, kept only when something migrated
  * (the newest KEEP_MIGRATION_COPIES stay), so the database is never changed without a copy to go back to.
@@ -66,7 +66,7 @@ export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_
     const stamp = new Date().toISOString().replace(/[-:.]/g, ''); // 20261024T153012123Z: milliseconds keep names apart
     copy = copyDatabase(path, join(dirname(path), 'backups', `pre-migration-${stamp}.db`));
   }
-  const store = openStore(path, { app: 'health-review', migrations: MIGRATIONS });
+  const store = openSqliteStore(path, { app: 'health-review', migrations: MIGRATIONS });
   if (copy) {
     const added = appliedIds(store.db).filter((id) => !before.includes(id));
     if (!added.length) {
@@ -84,7 +84,7 @@ export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_
  * The store's handles on its one connection (v3 Phase 1, docs/adr/0006): db and tx, the async interface
  * (db/database.ts) every caller uses; syncDb, the better-sqlite3 handle for the few SQLite-only jobs left on it (the
  * backup and the restore test, until 1G), guarded so a statement throws while another request holds an async
- * transaction; raw, the unguarded handle for agent-core's run tracer, the migrations and SQLite's own tables and pragmas.
+ * transaction; raw, the unguarded handle for the migrations and SQLite's own tables and pragmas.
  */
 function withAsyncDatabase(store) {
   const raw = store.db;

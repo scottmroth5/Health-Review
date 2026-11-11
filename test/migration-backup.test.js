@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { openStore } from '@scottmroth5/agent-core';
+import { openSqliteStore as openStore } from '../db/migrate.js';
 import { MIGRATIONS } from '../db/migrations.js';
 import { openHealthStore, pendingMigrations, pruneMigrationCopies } from '../db/store.js';
 import { repoPath } from '../tools/paths.js';

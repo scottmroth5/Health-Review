@@ -18,7 +18,7 @@ flowchart LR
       I["Ingest routes<br/>bearer token per user"]
       S["Scheduler in the web process<br/>sync, review, backup,<br/>restore test"]
       AI["Claude calls<br/>review, chat, help,<br/>program extraction"]
-      T["agent-core tracer<br/>runs, run_calls"]
+      T["run tracer (db/runs.js)<br/>runs, run_calls"]
     end
     D["demo container<br/>made-up data, read-only root,<br/>no secrets, no sign-in"]
     DB[("SQLite file<br/>one database, user_id on<br/>every user table")]
@@ -65,7 +65,7 @@ flowchart LR
   - In-memory sets keep sync, review and chat to one at a time per user. A 30-minute stale check on `runs` stops a job overlapping itself.
   - Failures email the admin (`server/alerts.js`).
 - **AI:** each Claude call happens in the request or job that needs it, on that user's AI access (their own key, or the owner's with a monthly cap).
-  - agent-core's tracer records metadata, tokens and cost in `runs` and `run_calls`. The monthly caps are computed from those.
+  - The run tracer (`db/runs.js`) records metadata, tokens and cost in `runs` and `run_calls`. The monthly caps are computed from those.
   - Prompts and replies are never logged.
 - **Data:** one SQLite file.
   - Every user table carries `user_id`. Every query binds it through `db/scope.js`, checked by a static guard and a route-by-route isolation test.

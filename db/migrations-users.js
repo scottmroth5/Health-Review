@@ -5,8 +5,8 @@
 // on the owner) and per-user keys. Migrations run inside a transaction with foreign keys on, where SQLite's usual
 // "foreign_keys = OFF" rebuild is not possible and dropping a parent would cascade into its children. So every table is
 // first copied to a temp table, then dropped children first, created again parents first, and refilled with the owner's
-// id. agent-core's runs table gets a nullable user_id instead (its tracer inserts without one; db/users.js
-// startUserRun sets it); run_calls is reached through runs.
+// id. The runs table (agent-core's when this ran; db/migrate.js since 1D) gets a nullable user_id instead (db/runs.js
+// startUserRun inserts it); run_calls is reached through runs.
 import { OWNER_ID, ownerEmailFromEnv } from './users.js';
 
 // Final shapes, parents before children. Column names match the old tables plus user_id, so rows copy by name.

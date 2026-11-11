@@ -2,7 +2,8 @@
 // Every user table carries user_id (migration 025); every query on one is scoped to a user, and only
 // server/admin-queries.js reads across users (test/user-scope.test.js checks both).
 import { createHash, randomBytes } from 'node:crypto';
-import { createTracer } from '@scottmroth5/agent-core';
+// The run tracer lives in db/runs.js; re-exported here, where its callers have always imported it.
+export { startUserRun } from './runs.js';
 
 export const OWNER_ID = '00000000-0000-4000-8000-000000000001';
 
@@ -83,22 +84,6 @@ export async function setUserFeeds(db, uid, json) {
 export async function setGoogleToken(db, uid, sealed) {
   await (db.unscoped ?? db).prepare('UPDATE users SET google_refresh_enc = ?, google_connected_at = ? WHERE id = ?')
     .run(sealed, sealed ? new Date().toISOString() : null, uid);
-}
-
-/**
- * agent-core's tracer for one user's run: the run row gets the user of the scoped store (db/scope.js scopeStore) as its
- * user_id (the tracer itself knows nothing of users).
- * @returns the tracer run ({ id, recordCall, log, finish })
- */
-export function startUserRun(store, name, meta = {}, logger) {
-  const uid = store.db.uid;
-  if (!uid) throw new TypeError(`startUserRun(${name}): the store is not scoped to a user`);
-  // The raw handle: a run record never fails a job over another request's open transaction (db/database.ts).
-  const run = createTracer({ store: { db: store.raw ?? store.db }, logger }).startRun(name, meta);
-  // Sync until 1D replaces the tracer: on the raw handle like the tracer's insert (the uid is bound explicitly), so a
-  // store whose db is the async handle works too.
-  if (run.id != null) (store.raw ?? store.db).prepare('UPDATE runs SET user_id = ? WHERE id = ?').run(uid, run.id);
-  return run;
 }
 
 /** A user's own time zone (their settings row time_zone, set in Settings), or null for OWNER_TZ. Never for the owner. */

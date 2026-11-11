@@ -3,7 +3,7 @@
 ## Purpose
 Weekly health review agent built on the shared agent-core package.
 agent-core comes from the public Agent-Core repo as a git dependency pinned to a version tag
-("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.3.0"). Upgrade with npm install "github:scottmroth5/Agent-Core#semver:^<x.y.z>" (a caret on 0.x never crosses a minor version, so npm update will not); test unreleased changes with npm link ../Agent-Core.
+("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.4.0"). Upgrade with npm install "github:scottmroth5/Agent-Core#semver:^<x.y.z>" (a caret on 0.x never crosses a minor version, so npm update will not); test unreleased changes with npm link ../Agent-Core.
 Health specific logic stays in this repo; never add it to agent-core.
 
 
@@ -27,8 +27,12 @@ Health specific logic stays in this repo; never add it to agent-core.
                     supplement-limits.json: adult tolerable upper intake levels (NIH ODS) checked on supplement suggestions
 /db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides; the data folder
                     is DATA_DIR when set, tools/paths.js dataPath, which the container mounts at /app/data).
+                    This repo owns its whole schema (v3 Phase 1D, 2026-11-11): migrate.js openSqliteStore (the migration
+                    runner taken over from agent-core's openStore; runs and run_calls keep their old name, agent-core:001-runs)
+                    and runs.js startUserRun, the async run tracer (agent-core 0.4.0's columns, totals and log line; the run
+                    row carries user_id from its insert; never start or finish a run inside a db.tx).
                     Users (multi-user, phase 1 of 6, plan 2026-10-24): users.js (OWNER_ID, the owner as user 1 and admin;
-                    startUserRun stamps runs.user_id), migrations-users.js (024 users; 025 rebuilt every user table with
+                    re-exports startUserRun), migrations-users.js (024 users; 025 rebuilt every user table with
                     user_id NOT NULL, no default, and per-user keys; USER_TABLES), scope.js (scopeDb/scopeStore: one user's
                     view, binding @uid into every statement that names it), openOwnerStore (the scripts act as the owner).
                     openHealthStore copies an existing database file before opening it (VACUUM INTO, integrity checked) and
@@ -40,9 +44,9 @@ Health specific logic stays in this repo; never add it to agent-core.
                     The store is { db, tx, syncDb, raw } (Phase 1B done 2026-11-10): db and tx are the async interface and
                     every caller awaits each statement; syncDb is the guarded sync handle (a statement throws
                     TransactionConflictError while another request holds an async transaction), used only by the backup
-                    and the restore test until 1G, and by tests to seed rows; raw is unguarded: agent-core's run tracer and
-                    startUserRun (until 1D), syncOwnerEmail as the store opens (until 1C), SQLite's own tables and pragmas
-                    (demo refresh, scripts/baseline.js). The review eval runner keeps its own sync case store until 1C
+                    and the restore test until 1G, and by tests to seed rows; raw is unguarded: the migrations,
+                    syncOwnerEmail as the store opens (until 1C), SQLite's own tables and pragmas (demo refresh,
+                    scripts/baseline.js). The review eval runner keeps its own sync case store until 1C
                     (harness-gated). Never hold an async transaction across an external call (Claude, Google); a
                     transaction awaits only statements, so on SQLite it ends before another request can run
                     (test/database.test.ts). Read-then-write sequences run in one db.tx: medication, lab, prompt section and
@@ -485,7 +489,7 @@ sensitive sections are included in the weekly review (WEEKLY_INCLUDES_SENSITIVE 
 buildInstructions leaves them out unless a caller opts in.
 The Activity tab opens with Status (each feed's latest data from GET /api/home, each scheduled job's last result and next
 run, the data issue count), then Claude API spend, then a collapsed "Run history and technical details": the runs (GET
-/api/runs, /api/runs/:id: the tracer's runs and run_calls, metadata only), each job's earlier runs (sync, review, backup,
+/api/runs, /api/runs/:id: db/runs.js's runs and run_calls, metadata only), each job's earlier runs (sync, review, backup,
 restore-test) and the last Health Auto Export posts (GET /api/jobs, queries.js jobsActivity: runs and ingest_log only). It reads no log files (the Windows tasks still write
 data/logs until the move, but nothing serves them). The server logs one line per event to stdout through buildApp's log
 (console by default): [sync] ok with counts, [review] ok or failed with the week, [ingest] route ok or error; counts and

@@ -89,14 +89,14 @@ export async function claudeDraft({ store, claude, kind, answers, goals = [], lo
   const s = SECTION_KINDS[kind];
   const a = clean(answers);
   const prompt = `Section: ${s.name || a.topic || 'their own topic'}\nWhat this section is for: ${s.guidance}\n${goals.length ? `Their training goals: ${goals.join(', ')}\n` : ''}\nTheir answers:\n${s.questions.map((x) => (a[x.key] ? `- ${x.label}: ${a[x.key]}` : null)).filter(Boolean).join('\n') || '(none)'}`;
-  const run = startUserRun(store, 'prompt-draft', { model: DRAFT_MODEL, kind, answerChars: Object.values(a).join('').length }, logger);
+  const run = await startUserRun(store, 'prompt-draft', { model: DRAFT_MODEL, kind, answerChars: Object.values(a).join('').length }, logger);
   try {
     const result = await claude.send({ model: DRAFT_MODEL, maxTokens: MAX_TOKENS, system: SYSTEM, prompt, trace: run, label: 'prompt-draft' });
     const text = tidy(String(result.text ?? '').trim());
-    run.finish('ok', { model: result.model, draftChars: text.length });
+    await run.finish('ok', { model: result.model, draftChars: text.length });
     return { name: s.name || a.topic || 'My section', text };
   } catch (err) {
-    run.finish('error', { error: err.name });
+    await run.finish('error', { error: err.name });
     throw err;
   }
 }

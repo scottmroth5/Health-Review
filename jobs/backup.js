@@ -20,7 +20,7 @@ const quiet = { info() {}, warn() {}, error() {}, log() {} };
  */
 export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, toDir, drive, date = localDate() }) {
   checkPassphrase(passphrase);
-  const run = startUserRun(store, 'backup', { to: toDir ? 'folder' : 'google-drive' }, quiet);
+  const run = await startUserRun(store, 'backup', { to: toDir ? 'folder' : 'google-drive' }, quiet);
   try {
     const r = await runBackup({
       db: store.syncDb, // the guarded sync handle until 1G (better-sqlite3's backup API): it throws rather than copy another request's open transaction
@@ -30,10 +30,10 @@ export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_
       toDir,
       date,
     });
-    run.finish('ok', { file: r.name, bytes: r.bytes, contents: r.files, ...(toDir ? { savedTo: r.savedTo } : { kept: r.kept, deleted: r.deleted }) });
+    await run.finish('ok', { file: r.name, bytes: r.bytes, contents: r.files, ...(toDir ? { savedTo: r.savedTo } : { kept: r.kept, deleted: r.deleted }) });
     return r;
   } catch (err) {
-    run.finish('error', { error: err.message });
+    await run.finish('error', { error: err.message });
     throw err;
   }
 }

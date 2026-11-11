@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore } from '@scottmroth5/agent-core';
+import { openSqliteStore as openStore } from '../db/migrate.js';
 import { MIGRATIONS } from '../db/migrations.js';
 import { openHealthStore } from '../db/store.js';
 import { OWNER_ID } from '../db/users.js';

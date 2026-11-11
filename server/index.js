@@ -182,7 +182,7 @@ if (demo) {
       // No AI (no key, or the owner's key past its cap): the week is skipped for that user and recorded with its reason.
       const { reason } = await ai.check(uid);
       if (reason) {
-        startUserRun(forUser(uid), 'review', { gate: true, reason }, quiet).finish('skipped', { reason });
+        await (await startUserRun(forUser(uid), 'review', { gate: true, reason }, quiet)).finish('skipped', { reason });
         return;
       }
       const r = await weeklyReview({ store: forUser(uid), claude: () => claudeFor(uid), catalog: await catalogFor(uid), sync: () => services.sync({ uid }), scheduled: true });

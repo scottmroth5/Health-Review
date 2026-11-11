@@ -43,7 +43,7 @@ const HELP_SCHEMA = {
 export async function askHelp({ store, claude, question, site, model = HELP_MODEL, logger }) {
   // Supplement suggestions (Settings, off by default): general recommendations only, as Help never sees the user's data.
   const supplements = Boolean(await supplementAdviceSince(store.db));
-  const run = startUserRun(store, 'help-ask', { model, questionChars: question.length, supplements }, logger);
+  const run = await startUserRun(store, 'help-ask', { model, questionChars: question.length, supplements }, logger);
   try {
     const result = await claude.send({ model, maxTokens: MAX_TOKENS, system: SYSTEM(helpText(site), supplements), prompt: question, trace: run, label: 'help-ask',
       ...(supplements ? { schema: HELP_SCHEMA } : {}) });
@@ -51,10 +51,10 @@ export async function askHelp({ store, claude, question, site, model = HELP_MODE
     const answer = stripDashes({ sections: [{ title: '', body: String(text ?? '').trim() }], physicianDiscussion: [] }).sections[0].body;
     // The statement also follows any answer naming supplements, should the model not flag it.
     const advised = supplements && (result.data.supplementAdvice === true || /\bsupplements?\b/i.test(answer) || Boolean(limitEntry(answer)));
-    run.finish('ok', { model: result.model, answerChars: answer.length, supplementAdvice: advised });
+    await run.finish('ok', { model: result.model, answerChars: answer.length, supplementAdvice: advised });
     return advised ? { answer, statement: SUPPLEMENT_DISCLAIMER } : { answer };
   } catch (err) {
-    run.finish('error', { error: err.name });
+    await run.finish('error', { error: err.name });
     throw err;
   }
 }

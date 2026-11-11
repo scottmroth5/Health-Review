@@ -56,7 +56,7 @@ export async function fixSessionTimes(store, { apply = false, logger = { info() 
   if (alreadyApplied) throw new Error('The workout time fix was already applied; nothing changed.');
   if (collisions) throw new Error(`${collisions} moved workouts would land on stored ones; nothing changed.`);
 
-  const run = startUserRun(store, RUN_NAME, { hours: -SHEET_LATE_HOURS }, logger);
+  const run = await startUserRun(store, RUN_NAME, { hours: -SHEET_LATE_HOURS }, logger);
   try {
     const del = db.prepare('DELETE FROM workout_sessions WHERE user_id = @uid AND rowid = ?');
     const upd = db.prepare('UPDATE workout_sessions SET start = ?, end = ? WHERE user_id = @uid AND rowid = ?');
@@ -66,9 +66,9 @@ export async function fixSessionTimes(store, { apply = false, logger = { info() 
       for (const m of toMove) await upd.run(`~${m.newStart}`, `~${m.newEnd}`, m.id);
       for (const m of toMove) await upd.run(m.newStart, m.newEnd, m.id);
     });
-    run.finish('ok', { deleted: lateTwins.length, moved: toMove.length });
+    await run.finish('ok', { deleted: lateTwins.length, moved: toMove.length });
   } catch (err) {
-    run.finish('error', { error: err.name });
+    await run.finish('error', { error: err.name });
     throw err;
   }
   return { ...plan, applied: true };

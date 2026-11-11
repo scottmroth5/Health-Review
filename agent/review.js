@@ -73,7 +73,7 @@ export async function prepareReview(db, { weekEnd, today, catalog }) {
 export async function runReview({ store, claude, weekEnd, today, catalog, model = DEFAULT_REVIEW_MODEL, effort = DEFAULT_REVIEW_EFFORT, logger = console }) {
   const { db } = store;
   const prep = await prepareReview(db, { weekEnd, today, catalog });
-  const run = startUserRun(store, 'review', { weekEnd, model, effort, sensitiveSections: prep.sensitiveSent, supplements: prep.supplements }, logger);
+  const run = await startUserRun(store, 'review', { weekEnd, model, effort, sensitiveSections: prep.sensitiveSent, supplements: prep.supplements }, logger);
 
   try {
     const ask = (problems) => claude.send({
@@ -118,10 +118,10 @@ export async function runReview({ store, claude, weekEnd, today, catalog, model 
       warnings: problems.length ? JSON.stringify(problems) : null,
       sensitive: JSON.stringify(prep.sensitiveSent),
     });
-    const totals = run.finish('ok', { weekEnd, attempts, warnings: problems.length, model: result.model });
+    const totals = await run.finish('ok', { weekEnd, attempts, warnings: problems.length, model: result.model });
     return { weekEnd, attempts, warnings: problems, model: result.model, costUsd: totals.costUsd, highlights: report.highlights.length, nextSteps: report.nextSteps.length, sections: report.sections.length, physicianItems: report.physicianDiscussion.length, supplementSuggestions: report.supplementSuggestions?.length ?? 0 };
   } catch (err) {
-    run.finish('error', { weekEnd, error: err.name });
+    await run.finish('error', { weekEnd, error: err.name });
     throw err;
   }
 }

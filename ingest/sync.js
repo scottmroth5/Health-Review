@@ -57,7 +57,7 @@ const hash = (value) => createHash('sha256').update(JSON.stringify(value)).diges
  */
 export async function runSync({ store, source, backfill = false, now = new Date(), logger = console, dictionary, catalog,
   apple = appleSource(), exportFolders = { health: process.env.HEALTH_EXPORT_FOLDER_ID || null, workouts: process.env.WORKOUT_JSON_FOLDER_ID || null, stand: process.env.STAND_EXPORT_FOLDER_ID || null } }) {
-  const run = startUserRun(store, 'sync', { backfill }, logger);
+  const run = await startUserRun(store, 'sync', { backfill }, logger);
   const counts = {};
   const warnings = [];
   const stamp = now.toISOString();
@@ -96,10 +96,10 @@ export async function runSync({ store, source, backfill = false, now = new Date(
     counts.data_checks = { warn: checks.filter((c) => c.severity === 'warn').length, info: checks.filter((c) => c.severity === 'info').length };
     const typos = await typoCount(store.db, dictionary);
     if (typos) warnings.push({ source: 'exercise_names', kind: 'likely typos', detail: `${typos === 1 ? '1 exercise name looks like a typo' : `${typos} exercise names look like typos`}; see npm run log:typos`, severity: 'info' });
-    run.finish('ok', { counts, warnings: warnings.length });
+    await run.finish('ok', { counts, warnings: warnings.length });
     return { counts, warnings };
   } catch (err) {
-    run.finish('error', { counts, error: err.message });
+    await run.finish('error', { counts, error: err.message });
     throw err;
   }
 }

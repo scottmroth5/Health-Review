@@ -137,7 +137,7 @@ export async function askAdvisor({ store, claude, text, today, catalog, dictiona
   };
   const asReport = (d) => ({ sections: [{ title: 'Reply', body: d.reply }], physicianDiscussion: d.physicianDiscussion,
     ...(supplements ? { supplementSuggestions: d.supplementSuggestions ?? [] } : {}) });
-  const run = startUserRun(store, 'advisor-chat', { model, effort, turns: earlier.length, supplements }, logger);
+  const run = await startUserRun(store, 'advisor-chat', { model, effort, turns: earlier.length, supplements }, logger);
   try {
     const ask = (problems) => claude.send({
       model, maxTokens: MAX_TOKENS, system: supplements ? `${CHAT_CONTRACT}
@@ -166,10 +166,10 @@ ${SUPPLEMENT_RULES}` : CHAT_CONTRACT,
 ${suggestions}` : report.sections[0].body,
       physician: JSON.stringify(report.physicianDiscussion), weights: null, model: result.model, warnings: problems.length ? JSON.stringify(problems) : null };
     await insert.run(reply);
-    run.finish('ok', { attempts, warnings: problems.length, model: result.model });
+    await run.finish('ok', { attempts, warnings: problems.length, model: result.model });
     return { note: parse(note), reply: parse(reply) };
   } catch (err) {
-    run.finish('error', { error: err.name });
+    await run.finish('error', { error: err.name });
     throw err;
   }
 }

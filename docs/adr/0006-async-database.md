@@ -33,11 +33,11 @@ What the code actually uses:
   - `db`, the sync handle for code not yet converted;
   - `adb` and `atx`, the async ones.
 
-  A sync statement can't wait, so the sync handle throws `TransactionConflictError` if it's used while another context holds an async transaction, rather than silently joining it. agent-core's run tracer gets the unguarded handle (`raw`), so a run record never fails a job. Its write could be lost only if that other transaction rolled back, and Phase 1D replaces the tracer. When the last slice is converted, `adb` becomes `db`.
+  A sync statement can't wait, so the sync handle throws `TransactionConflictError` if it's used while another context holds an async transaction, rather than silently joining it. agent-core's run tracer got the unguarded handle (`raw`), so a run record never failed a job, but its write joined that other transaction and could roll back with it. Phase 1D (2026-11-11) replaced it with `db/runs.js`, which writes through the async interface and so waits for the lock instead. When the last slice is converted, `adb` becomes `db`.
 - **After Phase 1B (slice 5, 2026-11-10) the store is `{ db, tx, syncDb, raw }`:**
   - `db` and `tx` are the async interface, and every caller uses them; `adb` and `atx` are gone.
   - `syncDb` is the guarded sync handle, kept for the SQLite-only jobs until 1G: the backup (better-sqlite3's backup API) and the restore test (`sqlite_master` row counts). Tests seed and check rows on it too, unchanged.
-  - `raw` stays for agent-core's run tracer and `startUserRun` (until 1D), `syncOwnerEmail` as the store opens (until 1C), and SQLite's own tables and pragmas (the demo refresh and the baseline, until 1G).
+  - `raw` stays for `syncOwnerEmail` as the store opens (until 1C), and SQLite's own tables and pragmas (the demo refresh and the baseline, until 1G).
   - The review eval runner (`evals/run-review-eval.mjs`, harness-gated) still builds its own case store on the sync handle; 1C converts it, as PostgreSQL requires.
 - **A transaction never spans an external call** (Claude, Google): everything else on the connection waits for it.
 

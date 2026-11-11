@@ -65,7 +65,7 @@ export const isPdf = (buf) => buf.length > 4 && buf.subarray(0, 5).toString('lat
  * @returns {Promise<{ program: object, problems: string[], notes: string[] }>}
  */
 export async function extractProgram({ store, claude, pdf, model = EXTRACT_MODEL, logger }) {
-  const run = startUserRun(store, 'program-extract', { model, bytes: pdf.length }, logger);
+  const run = await startUserRun(store, 'program-extract', { model, bytes: pdf.length }, logger);
   try {
     const result = await claude.send({
       model, maxTokens: MAX_TOKENS, system: SYSTEM, schema: DRAFT_SCHEMA, effort: 'medium', trace: run, label: 'program-extract',
@@ -76,10 +76,10 @@ export async function extractProgram({ store, claude, pdf, model = EXTRACT_MODEL
     });
     const program = draftToProgram(result.data);
     const problems = programProblems(program);
-    run.finish('ok', { model: result.model, phases: program.phases.length, problems: problems.length });
+    await run.finish('ok', { model: result.model, phases: program.phases.length, problems: problems.length });
     return { program, problems, notes: (result.data.notes ?? []).map(String) };
   } catch (err) {
-    run.finish('error', { error: err.name });
+    await run.finish('error', { error: err.name });
     throw err;
   }
 }

@@ -33,7 +33,7 @@ export async function weeklyReview({ store, claude, sync = null, weekEnd, catalo
   // reviewStatus works from today's last week; for an explicit week it is asked as of the Sunday after that week.
   const gate = await reviewStatus(db, weekEnd ? addDays(week, 1) : today);
   if (!gate.ready && !force) {
-    startUserRun(store, 'review', { weekEnd: week, gate: true }, quiet)
+    await (await startUserRun(store, 'review', { weekEnd: week, gate: true }, quiet))
       .finish('skipped', { weekEnd: week, reason: gate.reason, missingDays: gate.missingDays, partialDays: gate.partialDays });
     return { status: 'skipped', weekEnd: week, reason: gate.reason, missingDays: gate.missingDays, partialDays: gate.partialDays, syncError };
   }

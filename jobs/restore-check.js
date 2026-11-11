@@ -18,7 +18,7 @@ const quiet = { info() {}, warn() {}, error() {}, log() {} };
  * @param {string} [o.fromFile]  test this backup file instead of the newest one in Drive
  */
 export async function restoreTestJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, drive, fromFile }) {
-  const run = startUserRun(store, 'restore-test', { from: fromFile ? 'file' : 'google-drive' }, quiet);
+  const run = await startUserRun(store, 'restore-test', { from: fromFile ? 'file' : 'google-drive' }, quiet);
   try {
     let name;
     let file;
@@ -34,10 +34,10 @@ export async function restoreTestJob({ store, passphrase = process.env.HEALTH_BA
     }
     const r = restoreTest({ file, passphrase, live: store.syncDb }); // the guarded sync handle until 1G (sqlite_master row counts)
     const summary = { file: name, tables: r.tables, rowsBackup: r.rowsBackup, rowsLive: r.rowsLive, differences: r.differences.length, problems: r.problems };
-    run.finish(r.ok ? 'ok' : 'error', summary);
+    await run.finish(r.ok ? 'ok' : 'error', summary);
     return { ...r, file: name };
   } catch (err) {
-    run.finish('error', { error: err.message });
+    await run.finish('error', { error: err.message });
     throw err;
   }
 }
