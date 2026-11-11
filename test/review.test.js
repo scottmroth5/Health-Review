@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ClaudeTruncatedError } from '@scottmroth5/agent-core';
+import { ClaudeTruncatedError } from '@scottmroth5/agent-core/claude';
 import { openOwnerStore } from '../db/store.js';
 import { addDays } from '../metrics/stats.js';
 import { findDashes, stripDashes, allowedNumbers, ungroundedNumbers, misroutedTopics } from '../agent/validate.js';

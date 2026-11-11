@@ -92,7 +92,7 @@ test('prompt: names without a numeric prefix are not sections', () => {
 
 // ---- Claude call ----
 const claudeCall = golden('claude-call');
-const { createClaude, ClaudeTruncatedError } = await import('@scottmroth5/agent-core');
+const { createClaude, ClaudeTruncatedError } = await import('@scottmroth5/agent-core/claude');
 const viaAgentCore = (response) => createClaude({ client: { messages: { create: async () => ({ model: 'claude-haiku-4-5', usage: {}, ...response }) } } })
   .send({ model: 'claude-haiku-4-5', maxTokens: 100, prompt: 'PROMPT' });
 

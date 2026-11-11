@@ -3,7 +3,10 @@
 ## Purpose
 Weekly health review agent built on the shared agent-core package.
 agent-core comes from the public Agent-Core repo as a git dependency pinned to a version tag
-("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.4.0"). Upgrade with npm install "github:scottmroth5/Agent-Core#semver:^<x.y.z>" (a caret on 0.x never crosses a minor version, so npm update will not); test unreleased changes with npm link ../Agent-Core.
+("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.4.1"). Upgrade with npm install "github:scottmroth5/Agent-Core#semver:^<x.y.z>" (a caret on 0.x never crosses a minor version, so npm update will not); test unreleased changes with npm link ../Agent-Core.
+Only two entry points are imported (v3 Phase 1D): @scottmroth5/agent-core/claude (createClaude and its errors, which never
+loads agent-core's SQLite store) and @scottmroth5/agent-core/pricing (costFromUsage); the tracer and the migration runner
+are this repo's (db/runs.js, db/migrate.js).
 Health specific logic stays in this repo; never add it to agent-core.
 
 
@@ -495,8 +498,8 @@ data/logs until the move, but nothing serves them). The server logs one line per
 (console by default): [sync] ok with counts, [review] ok or failed with the week, [ingest] route ok or error; counts and
 names only, never health, prompt or report text, so docker compose logs shows what ran.
 GET /api/spend (queries.js spend) totals estimated Claude API cost by month and year: runs.cost_usd by kind (review, advisor-chat,
-other) plus the review eval's results.jsonl usage priced with agent-core's pricing.js (imported by path until agent-core
-exports it), dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
+other) plus the review eval's results.jsonl usage priced with agent-core's costFromUsage (@scottmroth5/agent-core/pricing),
+dated by each results file's last write; only model and usage are read. The demo passes no eval folder.
 
 ## Hard rules
 Guided setup and Home summary (UX roadmap phase 2, 2026-10-26; data/handoff/ux-roadmap-2026-10-26.md): server/setup.js

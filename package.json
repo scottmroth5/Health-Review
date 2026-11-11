@@ -49,12 +49,12 @@
     "@fastify/static": "^10.1.10",
     "@fastify/swagger": "^9.9.3",
     "@googleapis/sheets": "^18.1.2",
-    "@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.4.0",
+    "@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.4.1",
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.12.8",
     "google-auth-library": "^11.3.3",
     "maxmind": "^5.0.8",
-    "nodemailer": "^10.3.1"
+    "nodemailer": "^10.4.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

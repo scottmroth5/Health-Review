@@ -26,8 +26,7 @@ import { WorkoutError, deleteWorkout, listWorkouts, saveWorkout, workoutSuggesti
 import { MAX_UPLOAD_BYTES, TEMPLATE_NAME, UploadError, ingestWorkbook, workoutTemplate } from '../ingest/excel-upload.js';
 import { XLSX_TYPE, XlsxError } from '../tools/xlsx.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../agent/advisor-chat.js';
-// agent-core prices calls but does not export its price table yet; import it by path until a release exports it.
-import { costFromUsage } from '../node_modules/@scottmroth5/agent-core/src/pricing.js';
+import { costFromUsage } from '@scottmroth5/agent-core/pricing';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createRateLimiter } from './security.js';
 import { parseHealthJson } from '../ingest/health-json.js';

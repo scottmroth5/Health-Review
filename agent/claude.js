@@ -2,7 +2,7 @@
 // stop_reason checks, cost, tracing) with server-side refusal fallbacks on models that support them,
 // so a declined request is retried on a fallback model in the same call (agent-core sends it to the
 // beta endpoint when betas are given).
-import { createClaude } from '@scottmroth5/agent-core';
+import { createClaude } from '@scottmroth5/agent-core/claude';
 
 export const DEFAULT_REVIEW_MODEL = 'claude-opus-5-5';
 export const DEFAULT_REVIEW_EFFORT = 'high';
