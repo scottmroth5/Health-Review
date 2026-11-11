@@ -54,7 +54,7 @@
     "fastify": "^5.12.8",
     "google-auth-library": "^11.3.3",
     "maxmind": "^5.0.8",
-    "nodemailer": "^10.3.1"
+    "nodemailer": "^10.4.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
