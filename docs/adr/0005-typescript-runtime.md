@@ -8,6 +8,8 @@ TypeScript becomes the core language in v3 (the AI service is Python). The code 
 
 Node 22.18 and later remove TypeScript types natively when they load a `.ts` file. The image uses Node 22 (`node:22-bookworm-slim`), and the PC has Node 22.22 (`process.features.typescript` is `strip`).
 
+Update, 2026-11-11: the image, CI and the PC moved to Node 26 (`node:26-bookworm-slim`), where type stripping is the same and still needs no flag. The decision below is unchanged.
+
 ## What the spike showed (Node 22.22, scratchpad, nothing shipped)
 - **Imports work both ways:** a `.js` module imports a `.ts` module, and that imports a `.js` one. Imports must name the real file, `./a.ts`. Without an extension the import fails, as it does for `.js` today.
 - **`node --test` runs `.ts` tests,** both named and found by the default discovery that `npm test` uses.

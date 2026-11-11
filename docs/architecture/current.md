@@ -13,7 +13,7 @@ flowchart LR
 
   subgraph Server["One cloud server (Docker Compose)"]
     C["Caddy<br/>TLS, two sites"]
-    subgraph App["app container (Node 22, Fastify)"]
+    subgraph App["app container (Node 26, Fastify)"]
       W["Web UI and API<br/>Google sign-in, sessions,<br/>US-only check, rate limits"]
       I["Ingest routes<br/>bearer token per user"]
       S["Scheduler in the web process<br/>sync, review, backup,<br/>restore test"]
