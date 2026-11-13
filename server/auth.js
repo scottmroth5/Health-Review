@@ -180,7 +180,10 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     // No row yet: request access first; pending or rejected: their page. Approved and paused users get in.
     const user = await findUser(session.email);
     const where = !user ? '/auth/register' : user.status === 'pending' ? '/auth/waiting' : user.status === 'rejected' ? '/auth/not-approved' : null;
-    if (where) {
+    // A pending or ended account may still download its own data (its page links here; deleting is a form on that page,
+    // /auth/account/delete). Nothing else of the app or the API.
+    const exportOnly = Boolean(where && user) && req.method === 'GET' && path === '/api/account/export';
+    if (where && !exportOnly) {
       if (path.startsWith('/api/')) return reply.code(403).send({ error: user ? 'This account is not approved yet.' : 'Request access first.' });
       return reply.redirect(where);
     }
@@ -194,7 +197,8 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
     req.role = user.role;
     req.userName = typeof session.name === 'string' ? session.name : null;
     // A signed-in browser request that passed every gate: the usage totals may count it as a visit (server/usage-totals.js).
-    req.browserSession = true;
+    // A pending or ended account's export is not a visit.
+    req.browserSession = !where;
   });
 
   app.get('/auth/login', { schema: { hide: true } }, async (req, reply) => {
@@ -349,6 +353,7 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
         <p><label>Type your email (${escapeHtml(email)}) to confirm<br><input name="confirmEmail" type="email" autocomplete="off" required></label></p>
         <p><button type="submit">Delete my account</button></p>
       </form>${POLICY_LINKS}${contact}${signOut}`);
+  const deletedPage = page('Your account was deleted', `<p>Your account and everything stored for you were deleted. Copies in encrypted backups age out within about two months.</p>${contact}`);
   // Who the consent step is for: a signed-in, approved or paused user who has not given it.
   const consentUser = async (req) => {
     const session = sessionOf(req);
@@ -375,17 +380,56 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
       if (String(req.body?.confirmEmail ?? '').trim().toLowerCase() !== user.email) return reply.type('text/html').send(consentPage(session.email, 'Type your email exactly to confirm.'));
       await deleteAccount(user.id);
       reply.header('Set-Cookie', cookie(SESSION_COOKIE, '', { maxAge: 0, secure }));
-      return reply.type('text/html').send(page('Your account was deleted', `<p>Your account and everything stored for you were deleted. Copies in encrypted backups age out within about two months.</p>${contact}`));
+      return reply.type('text/html').send(deletedPage);
     }
     return reply.redirect('/auth/consent');
   });
+
+  // ---- Pending and ended accounts: their page, with their data to download and their account to delete ----
+  // They never reach Settings (the gate above), so these pages carry the same two rights: the export (the gate lets
+  // GET /api/account/export through for them) and deleting the account with the typed email.
+  const leaveForm = (email, error) => `
+      <h2 style="font-size:17px">Your data</h2>
+      ${error ? `<p role="alert"><strong>${escapeHtml(error)}</strong></p>` : ''}
+      <p><a href="/api/account/export">Download my data</a> (everything stored for you, as one file).</p>
+      <form method="post" action="/auth/account/delete">
+        <p>Delete my account and everything stored for me, at once.</p>
+        <p><label>Type your email (${escapeHtml(email)}) to confirm<br><input name="confirmEmail" type="email" autocomplete="off" required></label></p>
+        <p><button type="submit">Delete my account</button></p>
+      </form>`;
+  const waitingPage = (email, error = '') => page('Thanks, your request is in', `<p>Your request to use Health Review is waiting for the owner's approval, usually within 24 hours.</p>
+      <p>You'll get an email${email ? ` at <strong>${escapeHtml(email)}</strong>` : ''} when you're in; then just open the app again and sign in with the same Google account.</p>
+      ${email ? leaveForm(email, error) : ''}${contact}${signOut}`);
+  const notApprovedPage = (email, error = '') => page('Access was not approved', `<p>This account can't use Health Review.</p>
+      ${email ? `<p>If you used it before, you can still download your data or delete your account.</p>${leaveForm(email, error)}` : ''}${contact}${signOut}`);
+  // The pages show the form only to the signed-in account they belong to.
+  const leaving = async (req) => {
+    const session = sessionOf(req);
+    const user = session ? await findUser(session.email) : null;
+    return { session, user, ok: Boolean(user) && ['pending', 'rejected'].includes(user.status) };
+  };
   app.get('/auth/waiting', { schema: { hide: true } }, async (req, reply) => {
-    const email = sessionOf(req)?.email;
-    return reply.type('text/html').send(page('Thanks, your request is in', `<p>Your request to use Health Review is waiting for the owner's approval, usually within 24 hours.</p>
-      <p>You'll get an email${email ? ` at <strong>${escapeHtml(email)}</strong>` : ''} when you're in; then just open the app again and sign in with the same Google account.</p>${contact}${signOut}`));
+    const { session, user, ok } = await leaving(req);
+    return reply.type('text/html').send(waitingPage(ok && user.status === 'pending' ? session.email : null));
   });
-  app.get('/auth/not-approved', { schema: { hide: true } }, async (req, reply) =>
-    reply.type('text/html').send(page('Access was not approved', `<p>This account can't use Health Review.</p>${contact}${signOut}`)));
+  app.get('/auth/not-approved', { schema: { hide: true } }, async (req, reply) => {
+    const { session, user, ok } = await leaving(req);
+    return reply.type('text/html').send(notApprovedPage(ok && user.status === 'rejected' ? session.email : null));
+  });
+  app.post('/auth/account/delete', { schema: { hide: true } }, async (req, reply) => {
+    if (req.headers.origin !== origin) return reply.code(403).send({ error: 'Requests that change data must come from this site.' });
+    const { session, user, ok } = await leaving(req);
+    if (!session) return reply.redirect('/auth/login');
+    // Approved and paused users delete from Settings; anyone else goes where they belong.
+    if (!ok) return reply.redirect(statusPage(user) ?? '/auth/register');
+    if (String(req.body?.confirmEmail ?? '').trim().toLowerCase() !== user.email) {
+      const again = user.status === 'pending' ? waitingPage : notApprovedPage;
+      return reply.type('text/html').send(again(session.email, 'Type your email exactly to confirm.'));
+    }
+    await deleteAccount(user.id);
+    reply.header('Set-Cookie', cookie(SESSION_COOKIE, '', { maxAge: 0, secure }));
+    return reply.type('text/html').send(deletedPage);
+  });
 
   app.post('/auth/logout', { schema: { hide: true } }, async (req, reply) => {
     if (req.headers.origin && req.headers.origin !== origin) return reply.code(403).send({ error: 'Requests that change data must come from this site.' });

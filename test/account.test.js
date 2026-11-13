@@ -46,7 +46,7 @@ async function setup({ claude = null, access = {} } = {}) {
     nonce = url.searchParams.get('nonce');
     const res = await app.inject({ url: `/auth/google/callback?state=${url.searchParams.get('state')}&code=c`, headers: { cookie: cookies(login) } });
     const cookie = cookies(res).split('; ').find((c) => c.startsWith('hr_session='));
-    return { get: (u) => app.inject({ url: u, headers: { cookie } }), send: (method, u, payload) => app.inject({ method, url: u, headers: { cookie, origin: SITE }, ...(payload ? { payload } : {}) }) };
+    return { cookie, get: (u) => app.inject({ url: u, headers: { cookie } }), send: (method, u, payload) => app.inject({ method, url: u, headers: { cookie, origin: SITE }, ...(payload ? { payload } : {}) }) };
   };
   // A little made-up data in several tables for a user.
   const seed = async (uid) => {
@@ -129,6 +129,65 @@ test('admin delete: confirmed with their email, only admins, never an admin', as
   assert.equal((await getUser(store.db, 'lee')), null);
   assert.ok(Object.values((await rowsOf('lee'))).every((n) => n === 0));
   assert.ok(Object.values((await rowsOf('kim'))).some((n) => n > 0));
+});
+
+test('delete: their scheduled-job alerts on the owner\'s settings go too; the owner\'s and another user\'s stay', async () => {
+  const { store, signIn, seed } = await setup();
+  await seed('lee');
+  const alert = store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (?, ?, '2026-03-19', 'x')");
+  for (const k of ['alert:sync:lee', 'alert:review:lee', 'alert:sync:kim', 'alert:backup', `alert:sync:${OWNER_ID}`, 'alert:review-week:2026-03-14']) await alert.run(OWNER_ID, k);
+  const lee = await signIn('lee@example.com');
+  assert.equal((await lee.send('POST', '/api/account/delete', { confirmEmail: 'lee@example.com' })).statusCode, 200);
+  const keys = await store.db.prepare("SELECT key FROM settings WHERE user_id = ? AND key LIKE 'alert:%' ORDER BY key").pluck().all(OWNER_ID);
+  assert.deepEqual(keys, ['alert:backup', 'alert:review-week:2026-03-14', `alert:sync:${OWNER_ID}`, 'alert:sync:kim']);
+});
+
+test('ended and pending accounts: download their own data and delete their account from their page, nothing else', async () => {
+  const { app, store, mail, signIn, seed, rowsOf } = await setup();
+  await seed('lee');
+  await seed('kim');
+  await store.db.prepare("UPDATE users SET status = 'rejected' WHERE id = 'lee'").run();
+  const lee = await signIn('lee@example.com');
+  // Their page offers both; the rest of the app and the API stay closed.
+  assert.equal((await lee.get('/')).headers.location, '/auth/not-approved');
+  const pageHtml = (await lee.get('/auth/not-approved')).body;
+  assert.match(pageHtml, /href="\/api\/account\/export"/);
+  assert.match(pageHtml, /action="\/auth\/account\/delete"/);
+  for (const url of ['/api/status', '/api/home', '/api/history', '/api/account']) assert.equal((await lee.get(url)).statusCode, 403, url);
+  assert.equal((await lee.send('POST', '/api/account/delete', { confirmEmail: 'lee@example.com' })).statusCode, 403, 'not the app\'s route');
+  const exported = await lee.get('/api/account/export');
+  assert.equal(exported.statusCode, 200);
+  const data = exported.json();
+  assert.equal(data.account.email, 'lee@example.com');
+  assert.equal(data.tables.checkins.length, 1);
+  assert.ok(!JSON.stringify(data).includes('kim@example.com'), 'only their own rows');
+  // Delete: same-origin, the email typed exactly.
+  assert.equal((await app.inject({ method: 'POST', url: '/auth/account/delete', headers: { cookie: lee.cookie, origin: 'https://evil.example' }, payload: { confirmEmail: 'lee@example.com' } })).statusCode, 403);
+  assert.match((await lee.send('POST', '/auth/account/delete', { confirmEmail: 'kim@example.com' })).body, /Type your email exactly/);
+  assert.ok(await getUser(store.db, 'lee'), 'nothing deleted yet');
+  const kimBefore = await rowsOf('kim');
+  const res = await lee.send('POST', '/auth/account/delete', { confirmEmail: ' LEE@example.com ' });
+  assert.match(res.body, /Your account was deleted/);
+  assert.match([res.headers['set-cookie']].flat().join(';'), /hr_session=;/);
+  assert.equal(await getUser(store.db, 'lee'), null);
+  assert.ok(Object.values(await rowsOf('lee')).every((n) => n === 0), 'nothing of theirs left');
+  assert.deepEqual(await rowsOf('kim'), kimBefore, 'the other user untouched');
+  assert.equal(mail.at(-1).to, 'owner@example.com');
+
+  // A pending request: the same two, on the waiting page.
+  await store.db.prepare("UPDATE users SET status = 'pending' WHERE id = 'kim'").run();
+  const kim = await signIn('kim@example.com');
+  assert.match((await kim.get('/auth/waiting')).body, /action="\/auth\/account\/delete"/);
+  assert.equal((await kim.get('/api/account/export')).statusCode, 200);
+  assert.match((await kim.send('POST', '/auth/account/delete', { confirmEmail: 'kim@example.com' })).body, /Your account was deleted/);
+  assert.equal(await getUser(store.db, 'kim'), null);
+
+  // Approved users and the owner delete from Settings, never here.
+  const owner = await signIn('owner@example.com');
+  assert.doesNotMatch((await owner.get('/auth/not-approved')).body, /action="\/auth\/account\/delete"/);
+  const r = await owner.send('POST', '/auth/account/delete', { confirmEmail: 'owner@example.com' });
+  assert.equal(r.statusCode, 302);
+  assert.ok(await getUser(store.db, OWNER_ID), 'the owner is never deleted');
 });
 
 test('pause yourself: posts and syncs stop; you can resume your own pause, never the administrator\'s', async () => {

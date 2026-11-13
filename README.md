@@ -31,7 +31,8 @@ The server's addresses, users and keys live only on the server and in GitHub's s
 **Database changes are backed up first.** Before starting an image, the server runs that image's migrations on a
 throwaway copy of the database. If any would run, it first makes the encrypted Drive backup with the image that is
 running now, and stops the deploy if that backup fails. The new app then keeps a checked copy of the database as it was
-in `data/backups/pre-migration-<time>.db` before migrating (the newest 5 are kept). If the new image then fails its
+in `data/backups/pre-migration-<time>.db` before migrating (the newest 5 are kept, none older than 14 days, so a deleted
+account ages out of them; the app prunes them each time it starts and after each nightly backup). If the new image then fails its
 health check, that copy goes back before the old image starts. The same copy is taken on this PC whenever the app or a
 script migrates the local database.
 

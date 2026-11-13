@@ -39,7 +39,9 @@ Health specific logic stays in this repo; never add it to agent-core.
                     user_id NOT NULL, no default, and per-user keys; USER_TABLES), scope.js (scopeDb/scopeStore: one user's
                     view, binding @uid into every statement that names it), openOwnerStore (the scripts act as the owner).
                     openHealthStore copies an existing database file before opening it (VACUUM INTO, integrity checked) and
-                    keeps the copy as data/backups/pre-migration-<stamp>.db only when a migration ran (newest 5 kept);
+                    keeps the copy as data/backups/pre-migration-<stamp>.db only when a migration ran (newest 5 kept, none
+                    older than MAX_COPY_AGE_DAYS 14 by the name's stamp, pruned on every open of a file and after each
+                    nightly backup, so a deleted account ages out of these unencrypted copies; 2026-11-13);
                     pendingMigrations runs the migrations on a throwaway temp copy (npm run db:pending: exit 0 none, 10 some)
                     Async interface (v3 Phase 1, docs/adr/0006): database.ts (the first TypeScript; prepare gives get, all,
                     run ({ changes } only; inserts use RETURNING id, never lastInsertRowid) and pluck, as promises; tx(async fn),
@@ -502,7 +504,10 @@ rebinding). AUTH_MODE=google: Google sign-in with GOOGLE_WEB_CLIENT_ID and GOOGL
 Google account gets a session; the users row is looked up on every request: none goes to /auth/register (Request access,
 terms checkbox and the separate health data consent checkbox, both required; POST creates a pending user with
 health_consent_at and health_consent_version, and emails the admin), pending to /auth/waiting, rejected to
-/auth/not-approved; approved and paused get in (req.uid, req.role). AUTH_ALLOWED_EMAILS's first address is the owner
+/auth/not-approved, whose pages (for that signed-in account only) link Download my data (the gate lets them through
+for GET /api/account/export and nothing else, never counted as a visit) and Delete my account (POST
+/auth/account/delete: same origin, the typed email, deleteAccount; 2026-11-13, so "export or delete at any time" holds
+after access ends); approved and paused get in (req.uid, req.role). AUTH_ALLOWED_EMAILS's first address is the owner
 (user 1, admin; syncOwnerEmail). /auth/login is a sign-in page (the three policy links, Continue with Google to
 /auth/login?go=1, which does the Google redirect). Health data consent (PostHog guide section 7, 2026-11-03; migration
 031 users.health_consent_at and health_consent_version, HEALTH_CONSENT_VERSION in db/users.js; text in auth.js

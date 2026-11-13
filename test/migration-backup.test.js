@@ -3,13 +3,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { openSqliteStore as openStore } from '../db/migrate.js';
 import { MIGRATIONS } from '../db/migrations.js';
-import { openHealthStore, pendingMigrations, pruneMigrationCopies } from '../db/store.js';
+import { migrationCopiesDir, openHealthStore, pendingMigrations, pruneMigrationCopies } from '../db/store.js';
 import { repoPath } from '../tools/paths.js';
 
 const quiet = { info() {} };
@@ -55,8 +55,47 @@ test('only the newest 5 pre-migration copies are kept; other files are never tou
   try {
     for (let i = 1; i <= 7; i++) writeFileSync(join(dir, `pre-migration-2026010${i}T000000Z.db`), '');
     writeFileSync(join(dir, 'health-2026-01-01.hrbk'), '');
-    pruneMigrationCopies(dir);
+    pruneMigrationCopies(dir, { now: new Date('2026-01-08T00:00:00Z') });
     assert.deepEqual(readdirSync(dir).sort(), ['health-2026-01-01.hrbk', ...[3, 4, 5, 6, 7].map((i) => `pre-migration-2026010${i}T000000Z.db`)]);
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* Windows may hold a just-closed file a moment */ }
+  }
+});
+
+test('no pre-migration copy is kept past 14 days, by the stamp in its name; other files are never touched', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hr-prune-age-'));
+  try {
+    const names = ['pre-migration-20261029T223637015Z.db', 'pre-migration-20261030T000000Z.db', 'pre-migration-20261031T120000500Z.db',
+      'pre-migration-20261102T205044305Z.db', 'pre-prompt-trim-20261030T131442187Z.db', 'notes.txt'];
+    for (const n of names) writeFileSync(join(dir, n), '');
+    // 14 days before 2026-11-13T12:00Z is 2026-10-30T12:00Z: the two copies before it go, the two after it stay.
+    const removed = pruneMigrationCopies(dir, { now: new Date('2026-11-13T12:00:00Z') });
+    assert.deepEqual(removed.sort(), ['pre-migration-20261029T223637015Z.db', 'pre-migration-20261030T000000Z.db']);
+    assert.deepEqual(readdirSync(dir).sort(), ['notes.txt', 'pre-migration-20261031T120000500Z.db', 'pre-migration-20261102T205044305Z.db',
+      'pre-prompt-trim-20261030T131442187Z.db']);
+    // The count limit still applies to young copies.
+    assert.deepEqual(pruneMigrationCopies(dir, { keep: 1, now: new Date('2026-11-13T12:00:00Z') }), ['pre-migration-20261031T120000500Z.db']);
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* Windows may hold a just-closed file a moment */ }
+  }
+});
+
+test('opening a database file prunes old copies even when nothing migrates; the folder follows HEALTH_DB_PATH', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hr-prune-open-'));
+  try {
+    const path = join(dir, 'h.db');
+    openHealthStore(path, { log: quiet }).close(); // a new, current file
+    assert.equal(migrationCopiesDir(path), join(dir, 'backups'));
+    const before = process.env.HEALTH_DB_PATH;
+    process.env.HEALTH_DB_PATH = path;
+    try { assert.equal(migrationCopiesDir(), join(dir, 'backups')); } finally { if (before === undefined) delete process.env.HEALTH_DB_PATH; else process.env.HEALTH_DB_PATH = before; }
+    const stale = 'pre-migration-20200101T000000Z.db';
+    const fresh = `pre-migration-${new Date().toISOString().replace(/[-:.]/g, '')}.db`;
+    mkdirSync(join(dir, 'backups'));
+    writeFileSync(join(dir, 'backups', stale), '');
+    writeFileSync(join(dir, 'backups', fresh), '');
+    openHealthStore(path, { log: quiet }).close();
+    assert.deepEqual(copies(dir), [fresh], 'the stale copy is gone, the fresh one stays');
   } finally {
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* Windows may hold a just-closed file a moment */ }
   }

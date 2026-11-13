@@ -10,6 +10,7 @@ import { listTables, primaryKey, tableColumns } from '../db/dialect.js';
 import { setupSteps } from './setup.js';
 import { DEFAULT_TZ, localDate } from '../tools/time.js';
 import { addDays } from '../metrics/stats.js';
+import { OWNER_ID } from '../db/users.js';
 
 /**
  * When each job last ran and whether one is running now, for any user (a scheduled job runs for every user in turn, so
@@ -161,6 +162,14 @@ export async function deleteUserData(db, uid) {
     if (!user || user.role === 'admin') return null;
     const counts = {};
     for (const t of (await userIdTables(raw)).reverse()) counts[t] = (await raw.prepare(`DELETE FROM "${t}" WHERE user_id = ?`).run(uid)).changes;
+    // Their scheduled-job alerts live on the owner's settings row as alert:<job>:<their id> (server/alerts.js); matched
+    // exactly here, never by a LIKE pattern built from the id.
+    const alertKeys = (await raw.prepare("SELECT key FROM settings WHERE user_id = ? AND key LIKE 'alert:%'").pluck().all(OWNER_ID))
+      .filter((k) => {
+        const job = k.endsWith(`:${uid}`) ? k.slice('alert:'.length, k.length - uid.length - 1) : '';
+        return /^[a-z-]+$/.test(job); // alert:sync:<id>, alert:review:<id>
+      });
+    for (const k of alertKeys) await raw.prepare('DELETE FROM settings WHERE user_id = ? AND key = ?').run(OWNER_ID, k);
     await raw.prepare('DELETE FROM users WHERE id = ?').run(uid);
     return counts;
   });

@@ -11,6 +11,15 @@ import { OWNER_ID, syncOwnerEmail } from './users.js';
 export const DEFAULT_DB_PATH = dataPath('health.db');
 /** How many pre-migration copies are kept in data/backups (newest first). */
 export const KEEP_MIGRATION_COPIES = 5;
+/**
+ * The oldest a pre-migration copy may get, in days (2026-11-13): the copies hold every user's data unencrypted, so a
+ * deleted account must age out of them as it does from the encrypted backups. Far past a deploy's rollback window
+ * (deploy.sh uses the copy taken minutes before); after it, the nightly encrypted backups are the way back.
+ */
+export const MAX_COPY_AGE_DAYS = 14;
+
+/** The folder that holds a database's pre-migration copies (HEALTH_DB_PATH, else data/health.db). */
+export const migrationCopiesDir = (path = process.env.HEALTH_DB_PATH || DEFAULT_DB_PATH) => join(dirname(path), 'backups');
 
 const appliedIds = (db) => db.prepare("SELECT app || ':' || id FROM schema_migrations ORDER BY app, id").pluck().all();
 
@@ -54,7 +63,8 @@ function appliedIn(path) {
  * Opens the health database (the runs tables plus this app's tables; db/migrate.js), applying any new migrations.
  * Before any migration changes an existing file, a checked copy is taken (owner's rule, 2026-10-24: back up before every
  * database change): data/backups/pre-migration-<UTC stamp>.db next to the database, kept only when something migrated
- * (the newest KEEP_MIGRATION_COPIES stay), so the database is never changed without a copy to go back to.
+ * (the newest KEEP_MIGRATION_COPIES stay, none older than MAX_COPY_AGE_DAYS; old ones are pruned on every open), so the
+ * database is never changed without a copy to go back to.
  * @param {string} [path]  HEALTH_DB_PATH, else data/health.db; ':memory:' for tests
  * @param {{ snapshot?: boolean, log?: { info: Function } }} [options]  snapshot false: no copy (a throwaway copy itself)
  */
@@ -64,7 +74,7 @@ export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_
   if (snapshot && path !== ':memory:' && existsSync(path)) {
     before = appliedIn(path);
     const stamp = new Date().toISOString().replace(/[-:.]/g, ''); // 20261024T153012123Z: milliseconds keep names apart
-    copy = copyDatabase(path, join(dirname(path), 'backups', `pre-migration-${stamp}.db`));
+    copy = copyDatabase(path, join(migrationCopiesDir(path), `pre-migration-${stamp}.db`));
   }
   const store = openSqliteStore(path, { app: 'health-review', migrations: MIGRATIONS });
   if (copy) {
@@ -73,9 +83,10 @@ export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_
       rmSync(copy, { force: true });
     } else {
       log.info?.(`[migrate] applied ${added.join(', ')}; the database before them is ${copy}`);
-      pruneMigrationCopies(dirname(copy));
     }
   }
+  // Every open of a file prunes, so a restart ages old copies out even when nothing migrates.
+  if (snapshot && path !== ':memory:' && existsSync(migrationCopiesDir(path))) pruneMigrationCopies(migrationCopiesDir(path));
   return withAsyncDatabase(store);
 }
 
@@ -109,10 +120,22 @@ function withAsyncDatabase(store) {
   return { ...store, raw, db, tx: db.tx, syncDb: guardSyncDatabase(raw) };
 }
 
-/** Keeps the newest KEEP_MIGRATION_COPIES pre-migration copies in a folder; other files are never touched. */
-export function pruneMigrationCopies(dir, keep = KEEP_MIGRATION_COPIES) {
-  const copies = readdirSync(dir).filter((n) => /^pre-migration-\d{8}T\d{6,9}Z\.db$/.test(n)).sort().reverse();
-  for (const name of copies.slice(keep)) rmSync(join(dir, name), { force: true });
+const COPY_NAME = /^pre-migration-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{0,3})Z\.db$/;
+
+/**
+ * Keeps the newest `keep` pre-migration copies in a folder, and none older than `maxAgeDays` (by the UTC stamp in the
+ * name, so a copied file keeps its age). Other files are never touched. Returns the names removed.
+ */
+export function pruneMigrationCopies(dir, { keep = KEEP_MIGRATION_COPIES, maxAgeDays = MAX_COPY_AGE_DAYS, now = new Date() } = {}) {
+  const copies = readdirSync(dir).filter((n) => COPY_NAME.test(n)).sort().reverse();
+  const oldest = now.getTime() - maxAgeDays * 86_400_000;
+  const stampOf = (n) => {
+    const [, y, mo, d, h, mi, s, ms] = COPY_NAME.exec(n);
+    return Date.UTC(+y, +mo - 1, +d, +h, +mi, +s, Number(ms.padEnd(3, '0')));
+  };
+  const removed = copies.filter((n, i) => i >= keep || stampOf(n) < oldest);
+  for (const name of removed) rmSync(join(dir, name), { force: true });
+  return removed;
 }
 
 /**
