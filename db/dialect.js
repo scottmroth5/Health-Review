@@ -39,6 +39,36 @@ export async function tableColumns(db, table) {
     : (await db.prepare(`PRAGMA table_info("${table}")`).all()).map((c) => c.name);
 }
 
+/**
+ * A table's columns in order with their kind (integer, real or text, by SQLite's affinity rules or PostgreSQL's type)
+ * and NOT NULL: what db/transfer.js normalizes and audits by.
+ * @returns {Promise<Array<{ name: string, kind: 'integer'|'real'|'text', notNull: boolean }>>}
+ */
+export async function columnKinds(db, table) {
+  ident(table);
+  if (db.engine === 'postgres') {
+    const rows = await db.prepare(`SELECT attname AS name, format_type(atttypid, atttypmod) AS type, CASE WHEN attnotnull THEN 1 ELSE 0 END AS nn
+        FROM pg_attribute WHERE attrelid = ?::regclass AND attnum > 0 AND NOT attisdropped ORDER BY attnum`).all(`public.${table}`);
+    const kind = (t) => (['bigint', 'integer', 'smallint'].includes(t) ? 'integer' : ['double precision', 'real', 'numeric'].includes(t) ? 'real' : 'text');
+    return rows.map((r) => ({ name: r.name, kind: kind(r.type), notNull: r.nn === 1 }));
+  }
+  const kind = (declared) => {
+    const t = String(declared).toUpperCase();
+    return t.includes('INT') ? 'integer' : /REAL|FLOA|DOUB/.test(t) ? 'real' : 'text';
+  };
+  return (await db.prepare(`PRAGMA table_info("${table}")`).all()).map((c) => ({ name: c.name, kind: kind(c.type), notNull: c.notnull === 1 || c.pk > 0 }));
+}
+
+/** The tables a table's foreign keys point at (itself left out), by name. */
+export async function foreignKeyParents(db, table) {
+  ident(table);
+  const parents = db.engine === 'postgres'
+    ? await db.prepare(`SELECT p.relname FROM pg_constraint c JOIN pg_class p ON p.oid = c.confrelid
+        WHERE c.conrelid = ?::regclass AND c.contype = 'f' ORDER BY p.relname`).pluck().all(`public.${table}`)
+    : (await db.prepare(`PRAGMA foreign_key_list("${table}")`).all()).map((f) => f.table);
+  return [...new Set(parents)].filter((p) => p !== table);
+}
+
 /** A table's primary key columns, in key order. */
 export async function primaryKey(db, table) {
   ident(table);

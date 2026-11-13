@@ -1,5 +1,5 @@
 // The same data on both engines answers every GET route byte for byte the same (v3 Phase 1C slice 4): the demo's made-up
-// database is built on SQLite, copied row for row into PostgreSQL (test/copy-rows.js), and each route's status and body
+// database is built on SQLite, copied row for row into PostgreSQL (db/transfer.js copyAll), and each route's status and body
 // compared. This is the proof the shared SQL means the same on both, including the order of rows (NULLs sort first on
 // SQLite and last on PostgreSQL unless a query says otherwise). Made-up data only; needs DATABASE_URL.
 import { test } from 'node:test';
@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { loadDemoCatalog, refreshDemoDatabase } from '../demo/generate.js';
-import { copyRows } from './copy-rows.js';
+import { copyAll } from '../db/transfer.js';
 import { freshPgStore, pgSkip } from './pg.js';
 
 const TODAY = '2026-10-07';
@@ -47,7 +47,7 @@ test('every GET route answers the same on SQLite and on PostgreSQL, given the sa
   const pg = await freshPgStore();
   try {
     await refreshDemoDatabase(sqlite, { today: TODAY });
-    const copied = await copyRows(sqlite, pg);
+    const copied = await copyAll(sqlite, pg);
     assert.ok(copied.daily_metrics > 300 && copied.strength_sets > 1000, 'the demo data is there to compare');
     const [a, b] = [await answers(sqlite), await answers(pg)];
     assert.deepEqual(Object.keys(b), Object.keys(a));

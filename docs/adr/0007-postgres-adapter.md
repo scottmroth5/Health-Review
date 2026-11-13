@@ -48,7 +48,7 @@ PostgreSQL takes only `$1..$n`. Its driver returns `bigint` and `numeric` as str
   - `TEST_DB=postgres` makes every test store a fresh PostgreSQL database. Each is a copy of a migrated template database, built once per schema version (its name carries a hash of the baseline and the runner), because copying takes milliseconds where migrating takes about a second. A store is dropped when closed, and any left open are closed at exit.
   - Tests seed through the async interface, as the app writes, so one test text serves both engines. Tests of SQLite itself (its migrations, the sync guard, backup, restore, the demo refresh) keep a SQLite store on either run.
   - CI runs time zone × engine: four jobs.
-  - test/cross-engine.test.js builds the demo's made-up data on SQLite, copies it row for row into PostgreSQL (test/copy-rows.js, the start of 1E's migration script), and requires every GET route and view to answer byte for byte the same. This catches what no single-engine test can: rows that come back in a different order.
+  - test/cross-engine.test.js builds the demo's made-up data on SQLite, copies it row for row into PostgreSQL (test/copy-rows.js then; db/transfer.js copyAll since 1E, docs/adr/0008), and requires every GET route and view to answer byte for byte the same. This catches what no single-engine test can: rows that come back in a different order.
 
 ## Alternatives considered
 - **Writing SQL per engine:** two texts per query would double the review surface, and they would drift.

@@ -58,7 +58,7 @@ Health specific logic stays in this repo; never add it to agent-core.
                     and resume, registration (test/server-concurrency.test.js). Tests (slice 4: the whole suite runs on
                     either engine, TEST_DB=postgres for PostgreSQL): test/helpers.js openTestStore (unscoped, like
                     openHealthStore(':memory:')), ownerStore, memoryStore (owner or a second user) and demoStore (the
-                    demo's made-up data, copied row for row into PostgreSQL by test/copy-rows.js), all async; a test
+                    demo's made-up data, copied row for row into PostgreSQL by db/transfer.js copyAll), all async; a test
                     seeds through await store.db, never syncDb, and awaits close(). Tests of SQLite itself (its
                     migrations, the sync guard, backup, restore, demo refresh, the one-off session-times fix) open
                     openHealthStore(':memory:') or a file directly. test/cross-engine.test.js answers every GET route
@@ -94,6 +94,14 @@ Health specific logic stays in this repo; never add it to agent-core.
                     syncOwnerEmail (async, on db); the server keeps openHealthStore until 1H and calls syncOwnerEmail
                     itself, so a stray DATABASE_URL never moves production. The account export lists rows in primary key
                     order
+                    Moving the data (v3 Phase 1E, docs/adr/0008): transfer.js on the async interface for both directions:
+                    tableOrder (parents first, dialect.js foreignKeyParents), checkSameSchema (tables, columns and order,
+                    same migration), copyAll (only into a freshly migrated database, its owner row replaced; one
+                    transaction; resetSequences), audit (SQLite typeof() per column: text, real or blob in INTEGER, past
+                    2^53, NUL or blob in TEXT, NULL in required columns fail; numbers in TEXT warn), fingerprint (row
+                    counts and a SHA-256 per table and user, values normalized by dialect.js columnKinds, user ids hashed)
+                    and compare. Reports carry table and column names, counts and PASS or FAIL only, never a value, id,
+                    email or connection string. test/transfer.test.js rehearses the demo data to PostgreSQL and back
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status
@@ -157,6 +165,11 @@ DATABASE_URL=postgres://postgres:<pw>@127.0.0.1:55432/postgres npm test   also r
                                   --tmpfs /var/lib/postgresql postgres:18 (made-up rows only; gone when removed)
 TEST_DB=postgres DATABASE_URL=... npm test   the whole suite on PostgreSQL: each store a copy of a migrated template
                                   database (hr_tpl_<schema hash>, kept on the server), dropped when closed or at exit
+node scripts/migrate-to-postgres.js --audit [--from <file>]   what PostgreSQL would refuse in the SQLite file, counts
+                                  only (exit 0 clean, 2 failures); without --audit and with DATABASE_URL (a new, empty
+                                  database) it copies a checked temp copy of the file there and verifies it: PASS or FAIL
+DATABASE_URL=... node scripts/export-to-sqlite.js --out <new file>   PostgreSQL back to a new SQLite file (the rollback
+                                  path), verified; never over an existing file, and deleted if verification fails
 npm run typecheck                 tsc, checking only (tsconfig.json: db/ for now, a folder at a time; TypeScript 6.0.x, as
                                   typescript-eslint supports below 6.1; .ts runs through Node's type stripping, docs/adr/0005)
 npm run lint                      eslint, promise rules only (no-floating-promises, no-misused-promises) with type information

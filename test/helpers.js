@@ -108,17 +108,17 @@ export async function memoryStore({ uid = OWNER_ID } = {}) {
 
 /**
  * A store holding the demo's made-up data for today (demo/generate.js), unscoped, on the test engine: built on SQLite,
- * then copied row for row into PostgreSQL when the suite runs there (test/copy-rows.js).
+ * then copied row for row into PostgreSQL when the suite runs there (db/transfer.js copyAll).
  */
 export async function demoStore({ today } = {}) {
   const { refreshDemoDatabase } = await import('../demo/generate.js');
   const built = openHealthStore(':memory:');
   await refreshDemoDatabase(built, { today });
   if (TEST_ENGINE === 'sqlite') return built;
-  const { copyRows } = await import('./copy-rows.js');
+  const { copyAll } = await import('../db/transfer.js');
   const store = await openTestStore();
   try {
-    await copyRows(built, store);
+    await copyAll(built, store);
   } finally {
     built.close();
   }
