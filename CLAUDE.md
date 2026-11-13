@@ -56,6 +56,14 @@ Health specific logic stays in this repo; never add it to agent-core.
                     settings writes (test/queries-concurrency.test.js), account deletion, the AI cap and alert emails, pause
                     and resume, registration (test/server-concurrency.test.js). Tests: memoryStore in test/helpers.js (db
                     and syncDb, owner or a second user)
+                    PostgreSQL (v3 Phase 1C, docs/adr/0007; production stays on SQLite until 1H): postgres.ts
+                    createPostgresDatabase, the same interface over a pg pool (createPostgresPool: UTC sessions, int8 and
+                    numeric as numbers, a bigint past 2^53 throws; tx on one client through AsyncLocalStorage, nested as a
+                    savepoint, every transaction behind one advisory lock so writers run one at a time as on SQLite; a
+                    failed statement aborts its transaction, so never catch a statement error inside a tx and carry on);
+                    placeholders.ts toPositional rewrites ? and @name to $n with better-sqlite3's binding rules and
+                    errors. One SQL text serves both engines. Tests needing a server use test/pg.js (a fresh C-collation
+                    database each, skipped without DATABASE_URL)
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status
@@ -112,6 +120,10 @@ npm test                          run unit tests, including metric fixtures (CI 
 npm run check:personal -- --all   personal-data and secrets check of every tracked file (the pre-commit hook checks staged
                                   files; npm install turns the hook on; private terms go in data/private-terms.txt)
 node --test test/google.test.js   run one suite
+DATABASE_URL=postgres://postgres:<pw>@127.0.0.1:55432/postgres npm test   also run the PostgreSQL tests (CI's postgres:18
+                                  service does this); locally: docker run -d --name hr-pg -p 127.0.0.1:55432:5432
+                                  -e POSTGRES_PASSWORD=<pw> -e POSTGRES_INITDB_ARGS="--locale=C --encoding=UTF8"
+                                  --tmpfs /var/lib/postgresql postgres:18 (made-up rows only; gone when removed)
 npm run typecheck                 tsc, checking only (tsconfig.json: db/ for now, a folder at a time; TypeScript 6.0.x, as
                                   typescript-eslint supports below 6.1; .ts runs through Node's type stripping, docs/adr/0005)
 npm run lint                      eslint, promise rules only (no-floating-promises, no-misused-promises) with type information

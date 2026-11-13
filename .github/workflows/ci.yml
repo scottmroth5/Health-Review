@@ -23,8 +23,20 @@ jobs:
       fail-fast: false
       matrix:
         tz: [America/New_York, UTC]
+    # A throwaway PostgreSQL for the tests that need a server (test/pg.js; v3 Phase 1C). It lives only for this job, holds
+    # made-up rows only, and its password is not a secret. Without DATABASE_URL those tests skip.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
     env:
       TZ: ${{ matrix.tz }}
+      DATABASE_URL: postgres://postgres:ci-only@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

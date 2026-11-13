@@ -27,9 +27,9 @@ export interface Statement {
 }
 
 export interface Database {
-  readonly engine: 'sqlite';
-  /** The better-sqlite3 handle, for the SQLite-only tools (backup, copies, pragmas) until 1C and 1G replace them. */
-  readonly raw: BetterSqlite3.Database;
+  readonly engine: 'sqlite' | 'postgres';
+  /** The better-sqlite3 handle, for the SQLite-only tools (backup, copies, pragmas) until 1G replaces them; null on PostgreSQL. */
+  readonly raw: BetterSqlite3.Database | null;
   prepare(sql: string): Statement;
   exec(sql: string): Promise<void>;
   /** Runs fn in a transaction: committed when it resolves, rolled back when it throws. Nested, a savepoint. */
