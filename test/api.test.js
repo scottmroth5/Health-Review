@@ -5,13 +5,15 @@ import { buildApp } from '../server/app.js';
 import { assertSafeBinding } from '../server/auth.js';
 import { normalizeAll } from '../ingest/normalize.js';
 import { loadDictionary } from '../metrics/dictionary.js';
+import { ownerStore } from './helpers.js';
+import { isUniqueViolation } from '../db/dialect.js';
 
 const TODAY = new Date(2026, 2, 9, 12, 0); // local 2026-03-09
 
 async function setup(services = {}) {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, services, clock: () => TODAY });
-  return { store, app, db: store.syncDb, adb: store.db, done: async () => { await app.close(); store.close(); } };
+  return { store, app, db: store.db, adb: store.db, done: async () => { await app.close(); await store.close(); } };
 }
 
 const put = (app, url, payload) => app.inject({ method: 'PUT', url, payload });
@@ -55,9 +57,9 @@ test('check-in: scales are 1 to 10, empty saves and future dates are refused', a
 
 test('check-in: saving over a v1 weekly row makes it a daily UI row', async () => {
   const { app, db, done } = await setup();
-  db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, '2026-03-07', 'weekly', 5, 'v1-sheet', 'x')").run();
+  await db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, '2026-03-07', 'weekly', 5, 'v1-sheet', 'x')").run();
   await put(app, '/api/checkins/2026-03-07', { readiness: 8 });
-  assert.deepEqual(db.prepare("SELECT cadence, readiness, source FROM checkins WHERE date = '2026-03-07'").get(), { cadence: 'daily', readiness: 8, source: 'ui' });
+  assert.deepEqual((await db.prepare("SELECT cadence, readiness, source FROM checkins WHERE date = '2026-03-07'").get()), { cadence: 'daily', readiness: 8, source: 'ui' });
   await done();
 });
 
@@ -86,7 +88,7 @@ test('drinking: counts are validated and days can be deleted', async () => {
 
 test('history returns metrics, check-ins and drinks in the range', async () => {
   const { app, db, done } = await setup();
-  db.prepare(`INSERT INTO daily_metrics (user_id, date, hrv_ms, resting_hr, sleep_total_hr, steps, exercise_min, cardio_recovery_bpm, walking_hr_avg,
+  await db.prepare(`INSERT INTO daily_metrics (user_id, date, hrv_ms, resting_hr, sleep_total_hr, steps, exercise_min, cardio_recovery_bpm, walking_hr_avg,
     walking_speed_mph, walking_asymmetry_pct, wrist_temp_f, spo2_pct, breathing_disturbances, updated_at)
     VALUES (@uid, '2026-03-02', 48, 55, 7.2, 8000, 35, 24, 98, 3.1, 4.2, 96.4, 95.5, 2, 'x'), (@uid, '2026-01-01', 40, 60, 6, 5000, 20, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'x')`).run();
   const h = (await app.inject('/api/history?from=2026-03-01&to=2026-03-09')).json();
@@ -104,9 +106,9 @@ test('history returns metrics, check-ins and drinks in the range', async () => {
 test('history lists likely partial Apple Health days (steps under a quarter of the 28 days before)', async () => {
   const { app, db, done } = await setup();
   const ins = db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, ?, 'x')");
-  for (let d = 1; d <= 12; d += 1) ins.run(`2026-02-${String(d).padStart(2, '0')}`, 8000);
-  ins.run('2026-02-13', 1500); // under 2,000, a quarter of the 8,000 median
-  ins.run('2026-02-14', 7000);
+  for (let d = 1; d <= 12; d += 1) (await ins.run(`2026-02-${String(d).padStart(2, '0')}`, 8000));
+  await ins.run('2026-02-13', 1500); // under 2,000, a quarter of the 8,000 median
+  await ins.run('2026-02-14', 7000);
   const h = (await app.inject('/api/history?from=2026-02-10&to=2026-02-14')).json();
   assert.deepEqual(h.partialDays, ['2026-02-13']);
   await done();
@@ -121,10 +123,10 @@ test('prompt sections: create, edit keeps the previous version, delete keeps a c
 
   const edited = (await put(app, `/api/prompt/sections/${id}`, { text: 'Profile v2 on {{TODAY}}.' })).json();
   assert.equal(edited.text, 'Profile v2 on {{TODAY}}.');
-  assert.deepEqual(db.prepare('SELECT text FROM prompt_section_versions WHERE section_id = ?').all(id), [{ text: 'Profile on {{TODAY}}.' }]);
+  assert.deepEqual((await db.prepare('SELECT text FROM prompt_section_versions WHERE section_id = ?').all(id)), [{ text: 'Profile on {{TODAY}}.' }]);
 
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/prompt/sections/${id}` })).statusCode, 204);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prompt_section_versions WHERE section_id = ?').get(id).n, 2);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM prompt_section_versions WHERE section_id = ?').get(id)).n, 2);
   assert.equal((await put(app, `/api/prompt/sections/${id}`, { text: 'x' })).statusCode, 404);
   await done();
 });
@@ -276,7 +278,7 @@ test('medications: duplicates, overlaps, bad dates and unknown timings are refus
 test('medications: at most one open period per medication, enforced by the database', async () => {
   const { app, db, done } = await setup();
   const { id } = (await post(app, '/api/medications', MAG)).json();
-  assert.throws(() => db.prepare("INSERT INTO medication_periods (user_id, medication_id, timings, started_on, created_at) VALUES (@uid, ?, '[\"daily\"]', '2026-02-01', 'x')").run(id), /UNIQUE/);
+  await assert.rejects(db.prepare("INSERT INTO medication_periods (user_id, medication_id, timings, started_on, created_at) VALUES (@uid, ?, '[\"daily\"]', '2026-02-01', 'x')").run(id), (err) => isUniqueViolation(err));
   await done();
 });
 
@@ -293,7 +295,7 @@ test('medications: details edit, delete removes all history, impact lists events
   assert.equal(impact[0].impact.overlapsWith.length, 1);
 
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/medications/${id}` })).statusCode, 204);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM medication_periods').get().n, 0);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM medication_periods').get()).n, 0);
   assert.equal((await post(app, `/api/medications/${id}/stop`, { stopped_on: '2026-03-01' })).statusCode, 404);
   await done();
 });
@@ -344,22 +346,22 @@ test('daily check-off records only what is marked: a morning save leaves the eve
   const { app, db, done } = await setup();
   const mag = (await post(app, '/api/medications', { ...MAG, timings: ['morning', 'before_bed'] })).json();
   const { medicationsWeek } = await import('../metrics/medications.js');
-  const week = () => medicationsWeek(db.prepare('SELECT * FROM medications').all(), db.prepare('SELECT * FROM medication_periods').all(), [], [], '2026-03-14',
-    db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses').all()).current.map((m) => [m.week.dosesTaken, m.week.dosesLogged]);
+  const week = async () => medicationsWeek((await db.prepare('SELECT * FROM medications').all()), (await db.prepare('SELECT * FROM medication_periods').all()), [], [], '2026-03-14',
+    (await db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses').all())).current.map((m) => [m.week.dosesTaken, m.week.dosesLogged]);
 
   // 7am: only the morning dose is marked.
   let day = (await put(app, '/api/doses/2026-03-09', { doses: [{ medication_id: mag.id, timing: 'morning', taken: true }] })).json();
   assert.deepEqual(day.items[0].slots.map((s) => [s.timing, s.taken]), [['morning', true], ['before_bed', null]], 'before bed stays not logged');
-  assert.deepEqual(week(), [[1, 1]], 'not logged counts neither way');
+  assert.deepEqual((await week()), [[1, 1]], 'not logged counts neither way');
 
   // That night: the before-bed dose is checked and the day saved again.
   day = (await put(app, '/api/doses/2026-03-09', { doses: [{ medication_id: mag.id, timing: 'morning', taken: true }, { medication_id: mag.id, timing: 'before_bed', taken: true }] })).json();
   assert.deepEqual(day.items[0].slots.map((s) => s.taken), [true, true]);
-  assert.deepEqual(week(), [[2, 2]]);
+  assert.deepEqual((await week()), [[2, 2]]);
 
   // A deliberate skip is recorded and counted as logged, not taken.
   assert.equal((await put(app, '/api/doses/2026-03-08', { doses: [{ medication_id: mag.id, timing: 'morning', taken: false }] })).statusCode, 200);
-  assert.deepEqual(week(), [[2, 3]]);
+  assert.deepEqual((await week()), [[2, 3]]);
   await done();
 });
 
@@ -379,16 +381,16 @@ test('daily check-off: one-day dose and slot adjustments are saved for that day 
 
   // The weekly review counts taken or skipped only, so an adjustment changes nothing there.
   const { medicationsWeek } = await import('../metrics/medications.js');
-  const meds = db.prepare('SELECT * FROM medications').all();
-  const periods = db.prepare('SELECT * FROM medication_periods').all();
-  const doses = db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses').all();
+  const meds = (await db.prepare('SELECT * FROM medications').all());
+  const periods = (await db.prepare('SELECT * FROM medication_periods').all());
+  const doses = (await db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses').all());
   assert.deepEqual(medicationsWeek(meds, periods, [], [], '2026-03-14', doses).current.map((m) => [m.week.dosesTaken, m.week.dosesLogged]), [[2, 2]]);
 
   const bad = (d) => put(app, '/api/doses/2026-03-09', { doses: [{ medication_id: mag.id, timing: 'morning', taken: true, ...d }] });
   assert.equal((await bad({ moved_to: 'lunch' })).statusCode, 400);
   assert.equal((await bad({ dose: 'x'.repeat(101) })).statusCode, 400);
   assert.equal((await app.inject({ method: 'DELETE', url: '/api/doses/2026-03-09' })).statusCode, 204);
-  assert.equal(db.prepare('SELECT COUNT(*) FROM medication_doses').pluck().get(), 0, 'clearing the day removes its adjustments');
+  assert.equal((await db.prepare('SELECT COUNT(*) FROM medication_doses').pluck().get()), 0, 'clearing the day removes its adjustments');
   await done();
 });
 
@@ -407,8 +409,8 @@ test('labs: add results in the app (new and existing tests), edit, delete; sheet
   assert.equal((await put(app, `/api/labs/results/${text.id}`, { value: '6.1' })).json().value, 6.1);
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/labs/results/${text.id}` })).statusCode, 204);
 
-  db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, '2025-12-01', 8, '8', 'sheet', 'x')").run(testId);
-  const sheetId = db.prepare("SELECT id FROM lab_results WHERE source = 'sheet'").get().id;
+  await db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, '2025-12-01', 8, '8', 'sheet', 'x')").run(testId);
+  const sheetId = (await db.prepare("SELECT id FROM lab_results WHERE source = 'sheet'").get()).id;
   assert.match((await app.inject({ method: 'DELETE', url: `/api/labs/results/${sheetId}` })).json().error, /return on the next sync/);
   assert.equal((await post(app, '/api/labs/results', { test_id: testId, drawn_on: '2025-12-01', value: '1' })).json().error.includes('Google Sheet'), true);
   const corrected = (await put(app, `/api/labs/results/${sheetId}`, { value: '7.5' })).json();
@@ -416,7 +418,7 @@ test('labs: add results in the app (new and existing tests), edit, delete; sheet
   const again = (await put(app, `/api/labs/results/${sheetId}`, { value: '7.6' })).json();
   assert.equal(again.corrected_from, '8', 'a second correction keeps the original sheet value');
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/labs/results/${sheetId}` })).statusCode, 204, 'undo the correction');
-  assert.deepEqual(db.prepare('SELECT value_text, source, corrected_from FROM lab_results WHERE id = ?').get(sheetId), { value_text: '8', source: 'sheet', corrected_from: null });
+  assert.deepEqual((await db.prepare('SELECT value_text, source, corrected_from FROM lab_results WHERE id = ?').get(sheetId)), { value_text: '8', source: 'sheet', corrected_from: null });
 
   assert.equal((await put(app, `/api/labs/tests/${testId}`, { unit: 'µmol/L' })).json().unit, 'µmol/L');
   const labs = (await app.inject('/api/labs')).json();
@@ -427,11 +429,11 @@ test('labs: add results in the app (new and existing tests), edit, delete; sheet
 
 test('training: each view returns its bars, totals and breakdowns; planned sets are left out; unknown views are refused', async () => {
   const { app, db, adb, done } = await setup();
-  const ex = db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2026, ?, ?, ?)");
+  const ex = db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2026, ?, ?, ?) RETURNING id");
   const set = db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, per_hand, reps, reps_text) VALUES (@uid, ?, 1, ?, ?, ?, ?)');
-  set.run(ex.run(2, '2026-03-09', 'Squat').lastInsertRowid, 100, 0, 5, '5'); // today
-  set.run(ex.run(3, '2026-03-05', 'DB Press').lastInsertRowid, 50, 1, 10, '10');
-  set.run(ex.run(4, '2026-03-10', 'Squat').lastInsertRowid, 120, 0, null, null); // planned, after today
+  set.run((await ex.get(2, '2026-03-09', 'Squat')).id, 100, 0, 5, '5'); // today
+  set.run((await ex.get(3, '2026-03-05', 'DB Press')).id, 50, 1, 10, '10');
+  set.run((await ex.get(4, '2026-03-10', 'Squat')).id, 120, 0, null, null); // planned, after today
   await normalizeAll(adb, loadDictionary()); // the real dictionary: Squat is Barbell Squat; DB Press has no entry
 
   const week = (await app.inject('/api/training?view=week')).json();
@@ -455,31 +457,31 @@ test('program: the confirmed in-progress block with phase from the logged workou
   const { createCatalog } = await import('../metrics/catalog.js');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 3, phases: [
     { name: 'Phase 1', weeks: [1, 1] }, { name: 'Phase 2', weeks: [2, 3], special_weeks: { failure: [2] } }] }] }, { programs: ['MAPS Symmetry'] });
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, clock: () => TODAY, catalog });
   assert.deepEqual((await app.inject('/api/program')).json(), { program: null });
   const now = new Date().toISOString();
-  store.syncDb.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+  await store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-03-01', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  const ex = store.syncDb.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, ?, ?, ?, ?)');
-  ex.run(2, '2026-03-01', 'Symmetry Foundation 1 - Phase 1', 'Squat');
-  ex.run(3, '2026-03-06', 'Symmetry Foundation 1 - Phase 2', 'Squat');
+  const ex = store.db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, ?, ?, ?, ?) RETURNING id');
+  await ex.get(2, '2026-03-01', 'Symmetry Foundation 1 - Phase 1', 'Squat');
+  await ex.get(3, '2026-03-06', 'Symmetry Foundation 1 - Phase 2', 'Squat');
   const { program } = (await app.inject('/api/program')).json(); // today is 2026-03-09
   assert.deepEqual([program.phase, program.phase_started, program.phase_week, program.week, program.failure_week, program.earliest_finish, program.days_left, program.estimated],
     ['Phase 2', '2026-03-06', 1, 2, true, '2026-03-19', 10, false]);
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('status: data check warnings as of today; none when Apple Health data is current', async () => {
   const { app, db, done } = await setup(); // today is 2026-03-09
   const add = db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, 8000, 'x')");
-  for (let d = 1; d <= 6; d++) add.run(`2026-03-0${d}`);
+  for (let d = 1; d <= 6; d++) (await add.run(`2026-03-0${d}`));
   const stale = (await app.inject('/api/status')).json().dataChecks;
   assert.deepEqual(stale.map((c) => [c.kind, c.dates]), [['health_stale', ['2026-03-06']]]);
   assert.equal(stale[0].message, 'No Apple Health data after Mar 6 (2 days missing so far). Check the Health Auto Export automation.');
-  add.run('2026-03-07');
-  add.run('2026-03-08');
+  await add.run('2026-03-07');
+  await add.run('2026-03-08');
   assert.deepEqual((await app.inject('/api/status')).json().dataChecks, []);
   await done();
 });
@@ -499,10 +501,10 @@ test('advisor: ranks the catalog without the program run last; goal weights chan
   const dictionary = createDictionary({ version: 1, exercises: [
     { id: 'squat', name: 'Squat', implement: 'barbell', pattern: 'squat', primary: true },
     { id: 'sprints', name: 'Sprints', implement: 'other', pattern: 'other', primary: false }] });
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, clock: () => TODAY, catalog, dictionary, substitutions: { avoid: [] } });
   const now = new Date().toISOString();
-  store.syncDb.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+  await store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-03-01', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
 
   const equal = (await app.inject('/api/advisor')).json();
@@ -517,9 +519,9 @@ test('advisor: ranks the catalog without the program run last; goal weights chan
   assert.deepEqual(strength.ranking.map((r) => [r.program, r.total]), [['MAPS Powerlift', 0.35], ['HIIT', 0.21]]);
   for (const bad of ['time=4', 'vo2=-1', 'joint=x']) assert.equal((await app.inject(`/api/advisor?${bad}`)).statusCode, 400, bad);
   await app.close();
-  store.close();
+  await store.close();
 
-  const bare = openOwnerStore(':memory:');
+  const bare = await ownerStore();
   const noCatalog = await buildApp({ store: bare, clock: () => TODAY, catalog: null });
   assert.deepEqual((await noCatalog.inject('/api/advisor')).json(), { available: false });
   await noCatalog.close();
@@ -529,8 +531,8 @@ test('advisor: ranks the catalog without the program run last; goal weights chan
 test('VO2 max: each view returns its points and tiles; unknown views are refused', async () => {
   const { app, db, done } = await setup();
   const add = db.prepare("INSERT INTO daily_metrics (user_id, date, vo2max, updated_at) VALUES (@uid, ?, ?, 'x')");
-  add.run('2025-03-05', 40); add.run('2026-03-01', 44); add.run('2026-03-02', 45); add.run('2026-03-10', 99); // last is after today
-  db.prepare("INSERT INTO daily_metrics (user_id, date, hrv_ms, updated_at) VALUES (@uid, '2026-03-03', 50, 'x')").run(); // no VO2 that day
+  await add.run('2025-03-05', 40); (await add.run('2026-03-01', 44)); (await add.run('2026-03-02', 45)); (await add.run('2026-03-10', 99)); // last is after today
+  await db.prepare("INSERT INTO daily_metrics (user_id, date, hrv_ms, updated_at) VALUES (@uid, '2026-03-03', 50, 'x')").run(); // no VO2 that day
 
   const y1 = (await app.inject('/api/vo2max?view=1y')).json();
   assert.deepEqual([y1.bucket, y1.points.length, y1.latest, y1.best.value], ['reading', 2, { date: '2026-03-02', value: 45 }, 45]);
@@ -545,13 +547,13 @@ test('VO2 max: each view returns its points and tiles; unknown views are refused
 });
 
 test("activity: runs newest first with counts and Claude calls; each job's last runs and the ingest posts, with no log files", async () => {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, clock: () => TODAY });
-  const run = store.syncDb.prepare(`INSERT INTO runs (user_id, name, meta, status, started_at, finished_at, duration_ms, calls, cost_usd, summary)
-    VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  run.run('sync', '{"backfill":false}', 'ok', '2026-03-08T12:00:00Z', '2026-03-08T12:00:03Z', 3000, 0, null, '{"counts":{"health_metrics":{"rowsRead":35}},"warnings":1}');
-  const reviewId = run.run('review', '{"weekEnd":"2026-03-07"}', 'ok', '2026-03-09T13:00:00Z', '2026-03-09T13:02:00Z', 120000, 1, 0.37, '{"sections":9,"attempts":1}').lastInsertRowid;
-  store.syncDb.prepare(`INSERT INTO run_calls (run_id, label, model, stop_reason, input_tokens, output_tokens, cost_usd, duration_ms, created_at)
+  const run = store.db.prepare(`INSERT INTO runs (user_id, name, meta, status, started_at, finished_at, duration_ms, calls, cost_usd, summary)
+    VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`);
+  await run.get('sync', '{"backfill":false}', 'ok', '2026-03-08T12:00:00Z', '2026-03-08T12:00:03Z', 3000, 0, null, '{"counts":{"health_metrics":{"rowsRead":35}},"warnings":1}');
+  const reviewId = (await run.get('review', '{"weekEnd":"2026-03-07"}', 'ok', '2026-03-09T13:00:00Z', '2026-03-09T13:02:00Z', 120000, 1, 0.37, '{"sections":9,"attempts":1}')).id;
+  await store.db.prepare(`INSERT INTO run_calls (run_id, label, model, stop_reason, input_tokens, output_tokens, cost_usd, duration_ms, created_at)
     VALUES (?, 'review', 'claude-opus-5-5', 'end_turn', 9000, 3000, 0.37, 110000, '2026-03-09T13:02:00Z')`).run(reviewId);
 
   const runs = (await app.inject('/api/runs')).json();
@@ -561,7 +563,7 @@ test("activity: runs newest first with counts and Claude calls; each job's last 
   assert.deepEqual([detail.meta, detail.summary, detail.calls.length, detail.calls[0].model], [{ weekEnd: '2026-03-07' }, { sections: 9, attempts: 1 }, 1, 'claude-opus-5-5']);
   assert.equal((await app.inject('/api/runs/999')).statusCode, 404);
 
-  store.syncDb.prepare(`INSERT INTO ingest_log (user_id, id, received_at, route, result, counts, error)
+  await store.db.prepare(`INSERT INTO ingest_log (user_id, id, received_at, route, result, counts, error)
     VALUES (@uid, 'a', '2026-03-09T11:00:00Z', 'health', 'ok', '{"days":2}', NULL)`).run();
   const jobs = (await app.inject('/api/jobs')).json();
   assert.deepEqual(jobs.jobs.map((j) => [j.name, j.runs.length]), [['sync', 1], ['review', 1], ['backup', 0], ['restore-test', 0]]);
@@ -569,23 +571,23 @@ test("activity: runs newest first with counts and Claude calls; each job's last 
   assert.deepEqual(jobs.ingest, [{ received_at: '2026-03-09T11:00:00Z', route: 'health', result: 'ok', counts: { days: 2 }, error: null }]);
   assert.equal((await app.inject('/api/logs/sync')).statusCode, 404, 'log files are no longer served');
   await app.close();
-  store.close();
+  await store.close();
 });
 
-function seedLifts(db) {
+async function seedLifts(db) {
   const ex = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise, canonical_id, implement, is_primary, map_status)
-    VALUES (@uid, ?, ?, ?, ?, ?, 'barbell', 1, 'mapped')`);
+    VALUES (@uid, ?, ?, ?, ?, ?, 'barbell', 1, 'mapped') RETURNING id`);
   const set = db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, ?, 5, '5')");
   let row = 2;
-  const add = (date, id, name, weight) => set.run(ex.run(Number(date.slice(0, 4)), row++, date, name, id).lastInsertRowid, weight);
-  for (const d of ['2025-12-20', '2026-01-03', '2026-01-17']) add(d, 'barbell-squat', 'Barbell Squat', 200);
-  for (const d of ['2026-01-31', '2026-02-07', '2026-02-14', '2026-02-21']) add(d, 'barbell-squat', 'Barbell Squat', 210);
-  add('2025-06-01', 'military-press', 'Military Press', 95);
+  const add = async (date, id, name, weight) => set.run((await ex.get(Number(date.slice(0, 4)), row++, date, name, id)).id, weight);
+  for (const d of ['2025-12-20', '2026-01-03', '2026-01-17']) await add(d, 'barbell-squat', 'Barbell Squat', 200);
+  for (const d of ['2026-01-31', '2026-02-07', '2026-02-14', '2026-02-21']) await add(d, 'barbell-squat', 'Barbell Squat', 210);
+  await add('2025-06-01', 'military-press', 'Military Press', 95);
 }
 
 test('lifts: each primary lift with its plateau status, most urgent first, untrained ones last', async () => {
   const { app, db, done } = await setup(); // today is 2026-03-09
-  seedLifts(db);
+  await seedLifts(db);
   const lifts = (await app.inject('/api/lifts')).json();
   assert.deepEqual(lifts.map((l) => [l.id, l.status]), [['barbell-squat', 'progressing'], ['military-press', 'not_trained']]);
   assert.deepEqual([lifts[0].range, lifts[0].recentBest, lifts[0].baselineBest, lifts[0].changePct], ['1-5', 245, 233, 5.2]);
@@ -595,7 +597,7 @@ test('lifts: each primary lift with its plateau status, most urgent first, untra
 
 test('status reports today and the last sync run', async () => {
   const { app, db, done } = await setup();
-  db.prepare("INSERT INTO runs (user_id, name, status, started_at, finished_at, summary) VALUES (@uid, 'sync', 'ok', '2026-03-09T12:00:00Z', '2026-03-09T12:00:03Z', '{\"counts\":{}}')").run();
+  await db.prepare("INSERT INTO runs (user_id, name, status, started_at, finished_at, summary) VALUES (@uid, 'sync', 'ok', '2026-03-09T12:00:00Z', '2026-03-09T12:00:03Z', '{\"counts\":{}}')").run();
   const status = (await app.inject('/api/status')).json();
   assert.equal(status.today, '2026-03-09');
   assert.equal(status.lastSync.status, 'ok');
@@ -604,11 +606,11 @@ test('status reports today and the last sync run', async () => {
 
 test('cardio zones: minutes per zone from per-minute heart rate, gaps as no detail; bounds need Zone 2 and a birth year', async () => {
   const { app, db, done } = await setup();
-  db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, updated_at) VALUES
+  await db.prepare(`INSERT INTO workout_sessions (user_id, type, start, "end", duration_sec, updated_at) VALUES
     (@uid, 'Elliptical', '2026-03-02T10:00:00', '2026-03-02T10:10:00', 600, 'x'),
     (@uid, 'Functional Strength Training', '2026-03-02T11:00:00', '2026-03-02T11:30:00', 1800, 'x')`).run();
   const ins = db.prepare("INSERT INTO workout_hr_samples (user_id, type, start, t, avg_bpm) VALUES (@uid, 'Elliptical', '2026-03-02T10:00:00', ?, ?)");
-  [100, 115, 118, 130, 160].forEach((bpm, i) => ins.run(`2026-03-02T10:0${i}`, bpm));
+  for (const [i, bpm] of [100, 115, 118, 130, 160].entries()) await ins.run(`2026-03-02T10:0${i}`, bpm);
   const day = async () => (await app.inject('/api/cardio-zones?view=30d')).json();
 
   let r = await day();

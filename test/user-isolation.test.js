@@ -8,9 +8,11 @@ import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { sign, sessionKey } from '../server/session.js';
-import { refreshDemoDatabase, loadDemoCatalog } from '../demo/generate.js';
+import { loadDemoCatalog } from '../demo/generate.js';
 import { USER_TABLES } from '../db/migrations-users.js';
 import { OWNER_ID } from '../db/users.js';
+import { primaryKey } from '../db/dialect.js';
+import { demoStore, openTestStore } from './helpers.js';
 
 const TODAY = '2026-10-07';
 const SITE = 'http://localhost:5188';
@@ -32,17 +34,24 @@ async function setup() {
     AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'client.apps.example', GOOGLE_WEB_CLIENT_SECRET: 'secret',
     AUTH_ALLOWED_EMAILS: 'a@example.com, b@example.com', SESSION_SECRET: secret,
   });
-  const store = openHealthStore(':memory:');
-  await refreshDemoDatabase(store, { today: TODAY }); // user A (the owner) gets the demo's made-up data
-  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, 'b@example.com', 'user', 'approved', 'x')").run(B);
-  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  const store = await demoStore({ today: TODAY }); // user A (the owner) gets the demo's made-up data
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, 'b@example.com', 'user', 'approved', 'x')").run(B);
+  await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const app = await buildApp({ store, authMode: 'google', auth: { settings }, clock: () => new Date(`${TODAY}T16:00:00Z`), catalog: loadDemoCatalog() });
   const cookie = (email) => `hr_session=${sign({ email, exp: Date.now() + 3_600_000, v: 1 }, sessionKey(secret))}`;
   return { store, app, asA: cookie('a@example.com'), asB: cookie('b@example.com') };
 }
 
 const fill = (url) => url.replace(/:(\w+)/g, (_, k) => PARAMS[k] ?? '1');
-const snapshot = (db, uid) => JSON.stringify(USER_TABLES.map((t) => db.prepare(`SELECT * FROM "${t}" WHERE user_id = ? ORDER BY rowid`).all(uid)));
+// Every row of the user's, table by table in primary key order (one order on both engines).
+const snapshot = async (db, uid) => {
+  const rows = [];
+  for (const t of USER_TABLES) {
+    const order = (await primaryKey(db, t)).map((c) => `"${c}"`).join(', ');
+    rows.push(await db.prepare(`SELECT * FROM "${t}" WHERE user_id = ? ORDER BY ${order}`).all(uid));
+  }
+  return JSON.stringify(rows);
+};
 
 test('isolation: B sees none of A\'s data on any GET route; A sees it', async () => {
   const { store, app, asA, asB } = await setup();
@@ -59,12 +68,12 @@ test('isolation: B sees none of A\'s data on any GET route; A sees it', async ()
   }
   assert.ok(seenByA.size >= 6, `A sees their own data (${[...seenByA].join(', ')})`);
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('isolation: no write route sent by B changes any of A\'s rows', async () => {
   const { store, app, asB } = await setup();
-  const before = snapshot(store.syncDb, OWNER_ID);
+  const before = (await snapshot(store.db, OWNER_ID));
   const writes = app.routeList.filter((r) => ['PUT', 'POST', 'DELETE'].includes(r.method) && r.url.startsWith('/api/') && !r.url.startsWith('/api/ingest/'));
   assert.ok(writes.length >= 20);
   // Plausible bodies for the routes that edit an existing row, so they get past validation and try A's row.
@@ -87,10 +96,10 @@ test('isolation: no write route sent by B changes any of A\'s rows', async () =>
     const body = BODIES[`${r.method} ${r.url}`] ?? (r.method === 'DELETE' ? undefined : {});
     await app.inject({ method: r.method, url: fill(r.url), headers: { cookie: asB, origin: SITE }, ...(body ? { payload: body } : {}) });
   }
-  assert.equal(snapshot(store.syncDb, OWNER_ID), before, "A's rows are unchanged");
-  assert.equal(store.syncDb.prepare("SELECT COUNT(*) FROM users WHERE email = 'b@example.com'").pluck().get(), 0, 'B deleted only themself');
+  assert.equal((await snapshot(store.db, OWNER_ID)), before, "A's rows are unchanged");
+  assert.equal((await store.db.prepare("SELECT COUNT(*) FROM users WHERE email = 'b@example.com'").pluck().get()), 0, 'B deleted only themself');
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('isolation: the usage totals are the administrator\'s only, and carry counts, never who or what', async () => {
@@ -103,11 +112,11 @@ test('isolation: the usage totals are the administrator\'s only, and carry count
   assert.equal(res.json().weeks.length, 4);
   for (const leak of ['a@example.com', 'b@example.com', OWNER_ID, B, 'user_id']) assert.ok(!res.body.includes(leak), leak);
   await app.close();
-  store.close();
+  await store.close();
   // The demo has no administrator: refused.
-  const demoStore = openHealthStore(':memory:');
-  const demo = await buildApp({ store: demoStore, authMode: 'demo', instance: 'demo', features: { chat: false } });
+  const empty = await openTestStore();
+  const demo = await buildApp({ store: empty, authMode: 'demo', instance: 'demo', features: { chat: false } });
   assert.equal((await demo.inject('/api/admin/usage')).statusCode, 403);
   await demo.close();
-  demoStore.close();
+  await empty.close();
 });

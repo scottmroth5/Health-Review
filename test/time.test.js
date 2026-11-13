@@ -8,6 +8,7 @@ import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { parseWorkoutJson, localStamp as fileStamp } from '../ingest/parsers.js';
 import { partialDays } from '../metrics/dataquality.js';
+import { ownerStore } from './helpers.js';
 
 const NY = 'America/New_York';
 
@@ -38,7 +39,7 @@ test('a Saturday 11:30 pm New York event lands in that review week on a host run
   assert.equal(lastWeekEnd(localDate(new Date('2026-10-25T13:00:00Z'), NY)), '2026-10-24', 'Sunday morning reviews the week that just ended');
 
   // The server's "today" follows the owner's zone, not the host's.
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, clock: () => instant });
   assert.equal((await app.inject('/api/status')).json().today, '2026-10-24');
   await app.close();
@@ -48,5 +49,5 @@ test('a Saturday 11:30 pm New York event lands in that review week on a host run
   assert.equal(records[0].start, '2026-10-24T23:30:00');
   assert.equal(fileStamp('2026-10-25T03:30:00Z'), '2026-10-24T23:30');
   assert.deepEqual(partialDays([{ date: '2026-10-24', steps: 9000, exported_through: fileStamp('2026-10-25T03:30:00Z') }], '2026-10-24', '2026-10-24'), ['2026-10-24']);
-  store.close();
+  await store.close();
 });

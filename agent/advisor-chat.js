@@ -88,9 +88,9 @@ export async function chatContext(db, today, { catalog, dictionary, substitution
 const parse = (row) => ({ ...row, physician: row.physician ? JSON.parse(row.physician) : [], weights: row.weights ? JSON.parse(row.weights) : null,
   warnings: row.warnings ? JSON.parse(row.warnings) : [] });
 
-/** The thread, oldest first. */
+/** The thread, oldest first: a reply is written after its note, and on a tie (a frozen clock) the owner's note comes first. */
 export async function listChat(db) {
-  return (await db.prepare('SELECT * FROM advisor_notes WHERE user_id = @uid ORDER BY created_at, rowid').all()).map(parse);
+  return (await db.prepare("SELECT * FROM advisor_notes WHERE user_id = @uid ORDER BY created_at, role = 'owner' DESC").all()).map(parse);
 }
 
 export async function deleteChatNote(db, id) {

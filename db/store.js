@@ -76,8 +76,25 @@ export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_
       pruneMigrationCopies(dirname(copy));
     }
   }
-  syncOwnerEmail(store.db);
   return withAsyncDatabase(store);
+}
+
+/**
+ * Opens the health database on either engine (v3 Phase 1C): PostgreSQL when url (DATABASE_URL) is set
+ * (db/pg/migrate.js), else SQLite (openHealthStore), then brings the owner's email in step with the environment. The
+ * server keeps openHealthStore until 1H, so a stray DATABASE_URL never moves production; tests and dev tools use this.
+ * @param {{ url?: string, path?: string, snapshot?: boolean, log?: { info: Function } }} [options]
+ */
+export async function openStore({ url = process.env.DATABASE_URL, path, ...options } = {}) {
+  let store;
+  if (url) {
+    const { openPostgresStore } = await import('./pg/migrate.js');
+    store = await openPostgresStore(url);
+  } else {
+    store = openHealthStore(path, options);
+  }
+  await syncOwnerEmail(store.db);
+  return store;
 }
 
 /**

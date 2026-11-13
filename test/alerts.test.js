@@ -4,9 +4,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
 import { createAlerts } from '../server/alerts.js';
+import { openTestStore } from './helpers.js';
 
-function setup() {
-  const store = openHealthStore(':memory:');
+async function setup() {
+  const store = await openTestStore();
   const mail = [];
   let now = new Date('2026-10-25T16:00:00Z');
   const alerts = createAlerts({ db: store.db, mailer: { send: async (m) => { mail.push(m); return true; } }, adminEmail: async () => 'owner@example.com',
@@ -15,7 +16,7 @@ function setup() {
 }
 
 test('a job failure emails once a day, and again after it recovers', async () => {
-  const { alerts, mail, later } = setup();
+  const { alerts, mail, later } = (await setup());
   assert.equal(await alerts.alert('backup', 'the backup failed', 'The scheduled backup failed (Error).'), true);
   assert.equal(await alerts.alert('backup', 'the backup failed', 'again'), false, 'once a day');
   assert.equal(mail.length, 1);
@@ -30,7 +31,7 @@ test('a job failure emails once a day, and again after it recovers', async () =>
 });
 
 test('data checks: the owner\'s stale export emails once until it clears; info checks and others never', async () => {
-  const { alerts, mail, later } = setup();
+  const { alerts, mail, later } = (await setup());
   const stale = [{ source: 'data_check', kind: 'export_stale', severity: 'warn', detail: 'No health export since 2026-10-23' },
     { source: 'data_check', kind: 'partial_day', severity: 'warn', detail: 'x' }, { source: 'data_check', kind: 'workouts_missing', severity: 'info', detail: 'y' }];
   await alerts.dataChecks(stale);

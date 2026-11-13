@@ -3,7 +3,7 @@
 // behind Caddy (TRUST_PROXY). Google sign-in for the sync loads on the first sync.
 import { openHealthStore } from '../db/store.js';
 import { scopeStore } from '../db/scope.js';
-import { OWNER_ID, getUser, startUserRun, timeZoneOf } from '../db/users.js';
+import { OWNER_ID, getUser, startUserRun, syncOwnerEmail, timeZoneOf } from '../db/users.js';
 import { open } from '../tools/secret-box.js';
 import { OAuth2Client } from 'google-auth-library';
 import { createSheetsSource } from '../ingest/sheets.js';
@@ -89,6 +89,7 @@ if (demo) {
   });
 } else {
   store = openHealthStore();
+  await syncOwnerEmail(store.db);
   // Each user's view of the database (db/scope.js); the command-line scripts and these jobs act as one user at a time.
   const forUser = (uid) => scopeStore(store, uid);
   // Claude per user (multi-user, phases 2 and 4; server/ai-access.js decides): the owner's client from ANTHROPIC_API_KEY

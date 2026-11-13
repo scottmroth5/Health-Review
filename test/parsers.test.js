@@ -14,7 +14,7 @@ import {
 } from '../ingest/parsers.js';
 import { openOwnerStore } from '../db/store.js';
 import { MIGRATIONS } from '../db/migrations.js';
-import { serial } from './helpers.js';
+import { serial, ownerStore } from './helpers.js';
 
 const at = (header, rows) => ({ header, rows, firstRowNumber: 2, tab: 'Sheet1' });
 
@@ -89,18 +89,18 @@ test('session duration: the 3-hour shift is removed, a paused workout stays shor
   assert.equal(records[0].duration_sec, 2250);
 });
 
-test('migration 012 repairs stored session durations with the same rule', () => {
-  const store = openOwnerStore(':memory:');
+test('migration 012 repairs stored session durations with the same rule', async () => {
+  const store = openOwnerStore(':memory:'); // SQLite's own migration 012, so a SQLite store
   try {
-    const add = store.syncDb.prepare("INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, updated_at) VALUES (@uid, ?, ?, ?, ?, 'x')");
-    add.run('Outdoor Walk', '2026-03-02T06:00:00', '2026-03-02T07:00:00', 2250 + 10800);
-    add.run('Outdoor Run', '2026-03-03T06:00:00', '2026-03-03T06:30:00', 1790);
-    add.run('Hiking', '2026-03-04T06:00:00', '2026-03-04T06:30:00', 9 * 3600);
-    store.syncDb.exec(MIGRATIONS.find((m) => m.id === '012-session-duration-fix').up);
-    const got = store.syncDb.prepare('SELECT type, duration_sec FROM workout_sessions ORDER BY start').all();
+    const add = store.db.prepare("INSERT INTO workout_sessions (user_id, type, start, \"end\", duration_sec, updated_at) VALUES (@uid, ?, ?, ?, ?, 'x')");
+    await add.run('Outdoor Walk', '2026-03-02T06:00:00', '2026-03-02T07:00:00', 2250 + 10800);
+    await add.run('Outdoor Run', '2026-03-03T06:00:00', '2026-03-03T06:30:00', 1790);
+    await add.run('Hiking', '2026-03-04T06:00:00', '2026-03-04T06:30:00', 9 * 3600);
+    store.db.exec(MIGRATIONS.find((m) => m.id === '012-session-duration-fix').up);
+    const got = (await store.db.prepare('SELECT type, duration_sec FROM workout_sessions ORDER BY start').all());
     assert.deepEqual(got.map((r) => r.duration_sec), [2250, 1790, null]);
   } finally {
-    store.close();
+    await store.close();
   }
 });
 

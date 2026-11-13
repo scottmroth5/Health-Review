@@ -7,6 +7,7 @@ import { buildApp } from '../server/app.js';
 import { createCatalog } from '../metrics/catalog.js';
 import { createDictionary } from '../metrics/dictionary.js';
 import { workoutNumber, isFocusSession } from '../metrics/adherence.js';
+import { ownerStore } from './helpers.js';
 
 test('workoutNumber: the number in logged and catalog workout names', () => {
   assert.deepEqual(workoutNumber('Symmetry Foundation 2 - Phase 4'), { from: 2, to: 2 });
@@ -36,33 +37,33 @@ const dictionary = createDictionary({ version: 1, exercises: [
 ] });
 const TODAY = new Date(2026, 2, 9, 12, 0);
 
-function seed(db) {
+async function seed(db) {
   const now = new Date().toISOString();
   const block = db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES (@uid, ?, 'MAPS Symmetry', ?, ?, ?, 'confirmed', ?, ?)`);
-  block.run('b-old', '2026-01-05', '2026-01-20', 'completed', now, now);
-  block.run('b-now', '2026-03-02', null, 'in_progress', now, now);
+  await block.run('b-old', '2026-01-05', '2026-01-20', 'completed', now, now);
+  await block.run('b-now', '2026-03-02', null, 'in_progress', now, now);
   const session = db.prepare(`INSERT INTO log_sessions (user_id, id, date, block_id, assignment, program, week, source, updated_at, phase)
     VALUES (@uid, ?, ?, ?, 'block', 'MAPS Symmetry', ?, 'forward', ?, 'Phase 1')`);
-  session.run('s1', '2026-03-02', 'b-now', 1, now);
-  session.run('s2', '2026-03-12', 'b-now', 2, now); // after today: left out
-  session.run('s3', '2026-01-06', 'b-old', 1, now);
+  await session.run('s1', '2026-03-02', 'b-now', 1, now);
+  await session.run('s2', '2026-03-12', 'b-now', 2, now); // after today: left out
+  await session.run('s3', '2026-01-06', 'b-old', 1, now);
   const ex = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, canonical_id, implement, movement_pattern)
-    VALUES (@uid, 2026, ?, ?, ?, ?, ?, ?, ?)`);
+    VALUES (@uid, 2026, ?, ?, ?, ?, ?, ?, ?) RETURNING id`);
   const set = db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps) VALUES (@uid, ?, ?, 100, ?)');
-  const add = (row, date, workout, name, id, implement, pattern, reps) => {
-    const { lastInsertRowid } = ex.run(row, date, workout, name, id, implement, pattern);
-    reps.forEach((r, i) => set.run(lastInsertRowid, i + 1, r));
+  const add = async (row, date, workout, name, id, implement, pattern, reps) => {
+    const { id: lastInsertRowid } = (await ex.get(row, date, workout, name, id, implement, pattern));
+    for (const [i, r] of reps.entries()) await set.run(lastInsertRowid, i + 1, r);
   };
-  add(1, '2026-03-02', 'Symmetry Foundation 1 - Phase 1', 'Squats', 'squat', 'barbell', 'squat', [5, 5, 5]);
-  add(2, '2026-03-02', null, 'Row', 'row', 'dumbbell', 'horizontal pull', [5, 5]);
-  add(3, '2026-03-12', 'Symmetry Foundation 2 - Phase 1', 'Press', 'press', 'barbell', 'vertical press', [5, 5, 5]);
-  add(4, '2026-01-06', 'Symmetry Foundation 2 - Phase 1', 'Press', 'press', 'barbell', 'vertical press', [5, 5, 5]);
+  await add(1, '2026-03-02', 'Symmetry Foundation 1 - Phase 1', 'Squats', 'squat', 'barbell', 'squat', [5, 5, 5]);
+  await add(2, '2026-03-02', null, 'Row', 'row', 'dumbbell', 'horizontal pull', [5, 5]);
+  await add(3, '2026-03-12', 'Symmetry Foundation 2 - Phase 1', 'Press', 'press', 'barbell', 'vertical press', [5, 5, 5]);
+  await add(4, '2026-01-06', 'Symmetry Foundation 2 - Phase 1', 'Press', 'press', 'barbell', 'vertical press', [5, 5, 5]);
 }
 
 test('api: called for vs logged for the block in progress by default, another block by id', async () => {
-  const store = openOwnerStore(':memory:');
-  seed(store.syncDb);
+  const store = await ownerStore();
+  await seed(store.db);
   const app = await buildApp({ store, clock: () => TODAY, catalog, dictionary, substitutions: { swaps: [] } });
 
   const a = (await app.inject('/api/program/adherence')).json();
@@ -81,16 +82,16 @@ test('api: called for vs logged for the block in progress by default, another bl
 
   assert.equal((await app.inject('/api/program/adherence?block=nope')).statusCode, 404);
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('api: called for vs logged without a catalog, and with no confirmed block', async () => {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const none = await buildApp({ store, clock: () => TODAY, catalog: null });
   assert.deepEqual((await none.inject('/api/program/adherence')).json(), { available: false });
   await none.close();
   const empty = await buildApp({ store, clock: () => TODAY, catalog, dictionary, substitutions: { swaps: [] } });
   assert.deepEqual((await empty.inject('/api/program/adherence')).json(), { available: true, blocks: [], block: null });
   await empty.close();
-  store.close();
+  await store.close();
 });

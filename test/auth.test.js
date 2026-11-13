@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { assertSafeBinding, authSettings, CALLBACK_PATH, DEMO_REFUSAL, SESSION_DAYS } from '../server/auth.js';
+import { ownerStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';
 const settings = authSettings({
@@ -18,7 +19,7 @@ const settings = authSettings({
 });
 
 async function setup({ claims = {}, exchangeError = null, now } = {}) {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const seen = [];
   let currentNonce = null;
   const exchange = async (req) => {
@@ -40,7 +41,7 @@ async function setup({ claims = {}, exchangeError = null, now } = {}) {
     const res = await app.inject({ url: `${CALLBACK_PATH}?state=${state}&code=abc`, headers: { cookie: loginCookie } });
     return { res, session: cookiesFrom(res).split('; ').find((c) => c.startsWith('hr_session=')) };
   };
-  const done = async () => { await app.close(); store.close(); };
+  const done = async () => { await app.close(); await store.close(); };
   return { app, store, seen, clock, startLogin, signIn, done };
 }
 
@@ -128,12 +129,12 @@ test('a session expires after its days; rejecting a user locks them out at once;
 
   // A second, approved user is locked out the moment the admin rejects them (the users row is read on every request).
   const sam = await setup({ claims: { email: 'sam@example.com' } });
-  sam.store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('sam', 'sam@example.com', 'user', 'approved', 'x')").run();
-  sam.store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  await sam.store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('sam', 'sam@example.com', 'user', 'approved', 'x')").run();
+  await sam.store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const samSession = (await sam.signIn()).session;
   const samStatus = () => sam.app.inject({ url: '/api/status', headers: { cookie: samSession } }).then((r) => r.statusCode);
   assert.equal(await samStatus(), 200);
-  sam.store.syncDb.prepare("UPDATE users SET status = 'rejected' WHERE id = 'sam'").run();
+  await sam.store.db.prepare("UPDATE users SET status = 'rejected' WHERE id = 'sam'").run();
   assert.equal(await samStatus(), 403, 'rejected');
   await sam.done();
 
@@ -169,7 +170,7 @@ test('binding rules: none stays on localhost; google needs complete settings and
 });
 
 test('demo mode refuses every route that would change data, generated from the route table; reads work without sign-in', async () => {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, authMode: 'demo', instance: 'demo', features: { chat: false } });
   await app.ready();
   const fill = (url) => url.replace(/:date/g, '2026-03-02').replace(/:metric/g, 'steps').replace(/:[a-z]+/gi, '1');
@@ -185,11 +186,11 @@ test('demo mode refuses every route that would change data, generated from the r
   assert.equal(status.json().readOnly, true);
   assert.deepEqual((await app.inject('/api/me')).json(), { authMode: 'demo', email: null, name: null, demo: true });
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('open local mode: no login, only localhost; security headers on every response', async () => {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store });
   assert.deepEqual((await app.inject('/api/me')).json(), { authMode: 'none', email: null, name: null });
   const res = await app.inject('/api/status');
@@ -200,7 +201,7 @@ test('open local mode: no login, only localhost; security headers on every respo
   assert.equal(res.headers['strict-transport-security'], undefined, 'no HSTS without https');
   assert.equal((await app.inject({ url: '/api/status', headers: { host: 'evil.example' } })).statusCode, 403);
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('the first name from Google rides in the signed session and /api/me; the icon and manifest open without a session', async () => {

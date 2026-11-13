@@ -6,6 +6,7 @@ import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { analyticsConfig, siteHostname, CONTENT_SECURITY_POLICY } from '../server/security.js';
 import { analyticsEvent, createTracker, trafficSource, APP, SECTIONS, SOURCES } from '../server/public/analytics.js';
+import { ownerStore } from './helpers.js';
 
 const ids = { token: 'phc_TestToken1234567890', distinctId: '00000000-0000-4000-8000-000000000000' };
 const CONFIG = { token: ids.token, host: 'https://us.i.posthog.com' };
@@ -48,12 +49,12 @@ test('analyticsConfig: an https origin and a phc_ token, else off', () => {
 });
 
 async function statusFor(opts) {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, ...opts });
   await app.ready();
   const res = await app.inject('/api/status');
   await app.close();
-  store.close();
+  await store.close();
   return { body: res.json(), csp: res.headers['content-security-policy'] };
 }
 
@@ -162,12 +163,12 @@ test('the site name: a bare hostname or nothing; the demo sends it, the privacy 
   assert.equal(body.analytics.site, SITE);
   assert.equal((await statusFor({ analytics: CONFIG, personalSite: SITE })).body.analytics, undefined, 'never outside the demo');
   for (const [personalSite, shown] of [[SITE, SITE], [null, "the operator&#39;s website"]]) {
-    const store = openOwnerStore(':memory:');
+    const store = await ownerStore();
     const app = await buildApp({ store, personalSite });
     const page = (await app.inject('/privacy')).body;
     assert.ok(page.includes(`(LinkedIn, GitHub, ${shown}, other, or direct)`), shown);
     assert.ok(!page.includes('{{'));
     await app.close();
-    store.close();
+    await store.close();
   }
 });

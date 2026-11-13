@@ -8,6 +8,7 @@ import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { localDate, withTimeZone, isTimeZone } from '../tools/time.js';
+import { openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';
 // 1:00 am Friday March 20 in New York; still Thursday March 19 (10:00 pm) in Los Angeles.
@@ -26,9 +27,9 @@ test('withTimeZone sets every default zone inside it; outside, OWNER_TZ', async 
 async function setup({ services = {} } = {}) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
-  const store = openHealthStore(':memory:');
-  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
-  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  const store = await openTestStore();
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
+  await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   let email;
   let nonce;
   const app = await buildApp({ store, authMode: 'google', services, clock: () => NOW, mailer: { send: async () => true }, log: { info() {}, warn() {}, error() {} },
@@ -62,7 +63,7 @@ test('a user\'s own time zone: their today, their receipt times; the owner keeps
   // Their Health Auto Export posts are stamped in their zone.
   const token = (await lee.send('POST', '/api/account/ingest-token')).json().token;
   await app.inject({ method: 'POST', url: '/api/ingest/health', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, payload: health });
-  const stamp = store.syncDb.prepare("SELECT MAX(exported_through) FROM daily_metrics WHERE user_id = 'lee'").pluck().get();
+  const stamp = (await store.db.prepare("SELECT MAX(exported_through) FROM daily_metrics WHERE user_id = 'lee'").pluck().get());
   assert.equal(stamp, '2026-03-19T22:00');
   assert.equal((await lee.send('PUT', '/api/account/time-zone', { timeZone: null })).json().timeZone.own, false);
   assert.equal((await lee.get('/api/status')).json().today, '2026-03-20');
@@ -80,7 +81,7 @@ test('one user\'s running review or sync never blocks or shows for another', asy
   const { store, signIn } = await setup({ services });
   // A full week for both, so the review is not gated on missing days.
   for (const uid of ['lee', 'kim']) {
-    for (let d = 8; d <= 14; d++) store.syncDb.prepare("INSERT INTO daily_metrics (user_id, date, steps, exported_through, updated_at) VALUES (?, ?, 9000, '2026-03-20T00:30', 'x')").run(uid, `2026-03-${String(d).padStart(2, '0')}`);
+    for (let d = 8; d <= 14; d++) (await store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, exported_through, updated_at) VALUES (?, ?, 9000, '2026-03-20T00:30', 'x')").run(uid, `2026-03-${String(d).padStart(2, '0')}`));
   }
   const lee = await signIn('lee@example.com');
   const kim = await signIn('kim@example.com');

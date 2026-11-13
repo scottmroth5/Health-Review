@@ -4,11 +4,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
+import { ownerStore } from './helpers.js';
 
 const TODAY = new Date(2026, 2, 9, 12, 0);
 
 test('lab ranges: typical until you set your own; results marked below, within or above; reset and validation', async () => {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, clock: () => TODAY });
   const req = (method, url, payload) => app.inject({ method, url, payload });
   await req('POST', '/api/labs/results', { name: 'Hemoglobin', panel: 'CBC', drawn_on: '2026-03-02', value: '12.9' });
@@ -35,5 +36,5 @@ test('lab ranges: typical until you set your own; results marked below, within o
   assert.equal((await req('PUT', `/api/labs/tests/${hgb.id}`, { ref_low: 20, ref_high: 10 })).statusCode, 400);
   assert.equal((await req('PUT', `/api/labs/tests/${hgb.id}`, { ref_low: 'x' })).statusCode, 400);
   await app.close();
-  store.close();
+  await store.close();
 });

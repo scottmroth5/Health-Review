@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { countryLookup, geoAllowFromEnv, geoBlocker, isPrivateAddress, parseRelayRanges } from '../server/geo.js';
+import { openTestStore } from './helpers.js';
 
 const COUNTRY = { '8.8.8.8': 'US', '81.2.69.142': 'GB', '203.0.113.9': null };
 const lookup = (ip) => COUNTRY[ip] ?? null;
@@ -27,14 +28,14 @@ test('settings and private addresses', () => {
 const TRUST_PROXY = /TRUST_PROXY: (\S+)/.exec(readFileSync(new URL('../deploy/compose.yml', import.meta.url), 'utf8'))[1];
 
 async function appFrom(ip, { allow = ['US'], authMode = 'none', look = lookup } = {}) {
-  const store = openHealthStore(':memory:');
+  const store = await openTestStore();
   const app = await buildApp({ store, authMode, trustProxy: TRUST_PROXY, geo: { allow, lookup: look }, ingest: { token: 'made-up-ingest-token-0123456789', apple: 'rest' } });
   return (url, opts = {}) => app.inject({ url, remoteAddress: '172.18.0.4', ...opts, headers: { 'x-forwarded-for': ip, ...(opts.headers ?? {}) } });
 }
 
 test('production TRUST_PROXY: the app sees the visitor, never Caddy, so the block and rate limits work per visitor', async () => {
   assert.ok(!/^\d+$/.test(TRUST_PROXY), 'not a hop count: Fastify would then report the proxy itself');
-  const app = await buildApp({ store: openHealthStore(':memory:'), trustProxy: TRUST_PROXY });
+  const app = await buildApp({ store: await openTestStore(), trustProxy: TRUST_PROXY });
   app.get('/__ip', async (req) => ({ ip: req.ip }));
   const seen = (await app.inject({ url: '/__ip', remoteAddress: '172.18.0.4', headers: { 'x-forwarded-for': '81.2.69.142' } })).json().ip;
   assert.equal(seen, '81.2.69.142');

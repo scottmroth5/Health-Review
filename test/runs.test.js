@@ -13,7 +13,7 @@ const call = (over = {}) => ({ label: 'x', model: 'claude-sonnet-5-5', stopReaso
   cacheReadTokens: 5, cacheWriteTokens: 7, costUsd: 0.25, durationMs: 40, error: null, ...over });
 
 test('a run row belongs to the store user, with its calls and totals', async () => {
-  const store = memoryStore({ uid: SECOND });
+  const store = await memoryStore({ uid: SECOND });
   const run = await startUserRun(store, 'help-ask', { model: 'm' }, quiet);
   assert.equal(typeof run.id, 'number');
   await run.recordCall(call());
@@ -22,7 +22,7 @@ test('a run row belongs to the store user, with its calls and totals', async () 
   assert.deepEqual({ ...totals, durationMs: 0 }, { status: 'ok', calls: 2, errors: 1, inputTokens: 200, outputTokens: 40,
     cacheReadTokens: 10, cacheWriteTokens: 14, costUsd: 0.25, unpricedCalls: 1, durationMs: 0 });
 
-  const row = store.shared.syncDb.prepare('SELECT * FROM runs WHERE id = ?').get(run.id);
+  const row = (await store.shared.db.prepare('SELECT * FROM runs WHERE id = ?').get(run.id));
   assert.equal(row.user_id, SECOND);
   assert.equal(row.name, 'help-ask');
   assert.deepEqual(JSON.parse(row.meta), { model: 'm' });
@@ -32,49 +32,49 @@ test('a run row belongs to the store user, with its calls and totals', async () 
   assert.equal(row.cost_usd, 0.25);
   assert.deepEqual(JSON.parse(row.summary), { answerChars: 3 });
   assert.ok(row.finished_at);
-  const calls = store.shared.syncDb.prepare('SELECT * FROM run_calls WHERE run_id = ? ORDER BY id').all(run.id);
+  const calls = (await store.shared.db.prepare('SELECT * FROM run_calls WHERE run_id = ? ORDER BY id').all(run.id));
   assert.equal(calls.length, 2);
   assert.equal(calls[0].label, 'x');
   assert.equal(calls[0].cost_usd, 0.25);
   assert.equal(calls[1].label, null);
   assert.equal(calls[1].cost_usd, null);
   assert.equal(calls[1].error_name, 'Boom');
-  store.close();
+  await store.close();
 });
 
 test('finish is idempotent, even when called twice before either settles', async () => {
-  const store = memoryStore();
+  const store = await memoryStore();
   const run = await startUserRun(store, 'sync', {}, quiet);
   const [a, b] = await Promise.all([run.finish('ok', { n: 1 }), run.finish('error', { n: 2 })]);
   assert.equal(a, b);
   assert.equal(a.status, 'ok');
-  const row = store.syncDb.prepare('SELECT status, summary, user_id FROM runs WHERE id = ?').get(run.id);
+  const row = (await store.db.prepare('SELECT status, summary, user_id FROM runs WHERE id = ?').get(run.id));
   assert.deepEqual(row, { status: 'ok', summary: '{"n":1}', user_id: OWNER_ID });
   assert.equal(await run.finish('skipped'), a);
-  store.close();
+  await store.close();
 });
 
 test('finish writes no summary when none is given, and logs one line', async () => {
-  const store = memoryStore();
+  const store = await memoryStore();
   const lines = [];
   const run = await startUserRun(store, 'backup', {}, { info: (m) => lines.push(['info', m]), warn: (m) => lines.push(['warn', m]) });
   await run.finish('skipped');
-  assert.equal(store.syncDb.prepare('SELECT summary FROM runs WHERE id = ?').pluck().get(run.id), null);
+  assert.equal((await store.db.prepare('SELECT summary FROM runs WHERE id = ?').pluck().get(run.id)), null);
   assert.equal(lines.length, 1);
   assert.equal(lines[0][0], 'warn');
   assert.match(lines[0][1], /^\[backup\] skipped: 0 calls, 0 errors, 0 in \/ 0 out, 0 cache read \/ 0 cache write, \$0\.0000, \d+ ms$/);
-  store.close();
+  await store.close();
 });
 
 test('an unscoped store is refused', async () => {
-  const store = memoryStore();
+  const store = await memoryStore();
   await assert.rejects(startUserRun({ db: store.shared.db }, 'sync', {}, quiet), /not scoped to a user/);
   await assert.rejects(startUserRun(store, '', {}, quiet), /name is required/);
-  store.close();
+  await store.close();
 });
 
 test("a run started during another request's transaction waits for it and is not rolled back with it", async () => {
-  const store = memoryStore();
+  const store = await memoryStore();
   let release;
   const held = new Promise((resolve) => { release = resolve; });
   let entered;
@@ -95,7 +95,7 @@ test("a run started during another request's transaction waits for it and is not
   await assert.rejects(other, /rolled back/);
   const run = await starting;
   await run.finish('ok');
-  assert.equal(store.syncDb.prepare("SELECT COUNT(*) FROM settings WHERE key = 'k'").pluck().get(), 0);
-  assert.equal(store.syncDb.prepare('SELECT status FROM runs WHERE id = ?').pluck().get(run.id), 'ok');
-  store.close();
+  assert.equal((await store.db.prepare("SELECT COUNT(*) FROM settings WHERE key = 'k'").pluck().get()), 0);
+  assert.equal((await store.db.prepare('SELECT status FROM runs WHERE id = ?').pluck().get(run.id)), 'ok');
+  await store.close();
 });

@@ -12,6 +12,8 @@ import { SOURCES, browserOf, deviceOf, locationOf, sourceOf, hostnameOrNull } fr
 import { MIGRATIONS } from '../db/migrations.js';
 import { USER_TABLES } from '../db/migrations-users.js';
 import { usageTotals } from '../server/admin-queries.js';
+import { openTestStore } from './helpers.js';
+import { tableColumns } from '../db/dialect.js';
 
 const SITE = 'http://localhost:5188';
 const PUBLIC = fileURLToPath(new URL('../server/public', import.meta.url));
@@ -62,9 +64,9 @@ test('browserOf: the browser and its main version only, most specific first', ()
 });
 
 test('migration 033: the usage totals keep their rows and accept browser', () => {
-  // The table as migration 032 made it, with a row, then 033 on top.
+  // The table as migration 032 made it, with a row, then 033 on top: SQLite's own migration, on a SQLite store.
   const store = openHealthStore(':memory:');
-  const db = store.syncDb;
+  const db = store.raw;
   db.exec(`DROP TABLE usage_totals;
     CREATE TABLE usage_totals (day TEXT NOT NULL, dimension TEXT NOT NULL CHECK (dimension IN ('device', 'location', 'source')),
       value TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, dimension, value));`);
@@ -120,8 +122,8 @@ test('sourceOf: each value, utm_source first, whole hostnames only', () => {
 async function setup({ clock }) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
-  const store = openHealthStore(':memory:');
-  store.syncDb.prepare(`INSERT INTO users (id, email, role, status, created_at, health_consent_at) VALUES
+  const store = await openTestStore();
+  await store.db.prepare(`INSERT INTO users (id, email, role, status, created_at, health_consent_at) VALUES
     ('lee', 'lee@example.com', 'user', 'approved', 'x', 'x'), ('kim', 'kim@example.com', 'user', 'pending', 'x', 'x')`).run();
   let email;
   let nonce;
@@ -137,10 +139,14 @@ async function setup({ clock }) {
     nonce = url.searchParams.get('nonce');
     const res = await app.inject({ url: `/auth/google/callback?state=${url.searchParams.get('state')}&code=c`, headers: { cookie: cookies(login) } });
     const cookie = cookies(res).split('; ').find((c) => c.startsWith('hr_session='));
-    return (url2, headers = {}, remoteAddress = '192.0.2.10') => app.inject({ url: url2, remoteAddress, headers: { cookie, 'user-agent': IPHONE, ...headers } });
+    return async (url2, headers = {}, remoteAddress = '192.0.2.10') => {
+      const r = await app.inject({ url: url2, remoteAddress, headers: { cookie, 'user-agent': IPHONE, ...headers } });
+      await app.usageIdle(); // the counts are written after the response
+      return r;
+    };
   };
-  const table = () => store.syncDb.prepare('SELECT * FROM usage_totals ORDER BY dimension, value').all();
-  const totals = (dimension) => Object.fromEntries(table().filter((r) => r.dimension === dimension).map((r) => [r.value, r.count]));
+  const table = async () => (await app.usageIdle(), await store.db.prepare('SELECT * FROM usage_totals ORDER BY dimension, value').all());
+  const totals = async (dimension) => Object.fromEntries((await table()).filter((r) => r.dimension === dimension).map((r) => [r.value, r.count]));
   return { app, store, signIn, table, totals };
 }
 
@@ -151,37 +157,37 @@ test('visits: once per account per owner day, by device and location; nothing el
   // Files, the sign-in steps and the health check never count as visits.
   await lee('/app.js');
   await app.inject('/api/health');
-  assert.deepEqual(totals('device'), {});
+  assert.deepEqual((await totals('device')), {});
   // The first API call of the day counts; more the same day do not.
   assert.equal((await lee('/api/status')).statusCode, 200);
   await lee('/api/status', { 'user-agent': DESKTOP }, '203.0.113.9');
   await lee('/api/home');
-  assert.deepEqual(totals('device'), { phone: 1 });
-  assert.deepEqual(totals('browser'), { 'Safari 18': 1 }, 'the later desktop request the same day is not counted');
-  assert.deepEqual(totals('location'), { 'Springfield, Ohio, United States': 1 });
+  assert.deepEqual((await totals('device')), { phone: 1 });
+  assert.deepEqual((await totals('browser')), { 'Safari 18': 1 }, 'the later desktop request the same day is not counted');
+  assert.deepEqual((await totals('location')), { 'Springfield, Ohio, United States': 1 });
   // Another account counts on its own; a failed lookup is unknown.
   const owner = await signIn('owner@example.com');
   await owner('/api/status', { 'user-agent': DESKTOP }, '203.0.113.9');
-  assert.deepEqual(totals('device'), { computer: 1, phone: 1 });
-  assert.deepEqual(totals('browser'), { 'Chrome 130': 1, 'Safari 18': 1 });
-  assert.deepEqual(totals('location'), { 'Springfield, Ohio, United States': 1, unknown: 1 });
+  assert.deepEqual((await totals('device')), { computer: 1, phone: 1 });
+  assert.deepEqual((await totals('browser')), { 'Chrome 130': 1, 'Safari 18': 1 });
+  assert.deepEqual((await totals('location')), { 'Springfield, Ohio, United States': 1, unknown: 1 });
   // A refused request (a pending account) and ingest posts never count.
   const kim = await signIn('kim@example.com');
   assert.equal((await kim('/api/status')).statusCode, 403);
   const posted = await app.inject({ method: 'POST', url: '/api/ingest/health', remoteAddress: '192.0.2.50',
     headers: { authorization: 'Bearer owner-ingest-token-made-up-0123456789', 'content-type': 'application/json', 'user-agent': ANDROID_TABLET }, payload: { data: { metrics: [] } } });
   assert.equal(posted.statusCode, 200);
-  assert.deepEqual(totals('device'), { computer: 1, phone: 1 });
+  assert.deepEqual((await totals('device')), { computer: 1, phone: 1 });
   // The next day in the owner's zone (midnight in New York is 05:00 UTC) counts again.
   clock.now = new Date('2026-11-04T04:59:00Z');
   await lee('/api/status');
-  assert.deepEqual(totals('device'), { computer: 1, phone: 1 });
+  assert.deepEqual((await totals('device')), { computer: 1, phone: 1 });
   clock.now = new Date('2026-11-04T05:01:00Z');
   await lee('/api/status');
-  assert.deepEqual(table().filter((r) => r.dimension === 'device').map((r) => [r.day, r.value, r.count]),
+  assert.deepEqual((await table()).filter((r) => r.dimension === 'device').map((r) => [r.day, r.value, r.count]),
     [['2026-11-03', 'computer', 1], ['2026-11-03', 'phone', 1], ['2026-11-04', 'phone', 1]]);
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('arrivals: the sign-in page and the app page only, by source; the table holds no address, browser, referrer or user', async () => {
@@ -203,55 +209,55 @@ test('arrivals: the sign-in page and the app page only, by source; the table hol
   const lee = await signIn('lee@example.com');
   assert.equal((await lee('/', { referer: 'https://accounts.google.com/', 'sec-fetch-dest': 'document', 'sec-fetch-site': 'cross-site' })).statusCode, 200);
   assert.equal((await lee('/', { referer: 'https://github.com/someone' })).statusCode, 200);
-  assert.deepEqual(totals('source'), { demo: 1, direct: 1, github: 1, google_signin_return: 1, linkedin: 1, other: 1, site: 1 });
-  const period = (await usageTotals(store.syncDb, { from: '2026-11-01', to: '2026-11-03' }));
+  assert.deepEqual((await totals('source')), { demo: 1, direct: 1, github: 1, google_signin_return: 1, linkedin: 1, other: 1, site: 1 });
+  const period = (await usageTotals(store.db, { from: '2026-11-01', to: '2026-11-03' }));
   assert.ok(!period.arrivals.some((r) => r.value === 'google_signin_return'));
   assert.equal(period.arrivals.reduce((n, r) => n + r.count, 0), 6);
   // The whole table: only day, dimension, value and count, and nothing that points back to a request or a person.
-  const rows = table();
+  const rows = (await table());
   for (const r of rows) assert.deepEqual(Object.keys(r).sort(), ['count', 'day', 'dimension', 'value']);
   const text = JSON.stringify(rows);
   for (const leak of ['192.0.2', 'Mozilla', 'iPhone', 'http', 'example.test', 'made-up-campaign', 'utm', 'lee', '@', 'someone']) assert.ok(!text.includes(leak), leak);
   assert.ok(!USER_TABLES.includes('usage_totals'), 'not a user table: not exported or deleted with an account');
-  assert.equal(store.syncDb.prepare("SELECT COUNT(*) FROM pragma_table_info('usage_totals') WHERE name = 'user_id'").pluck().get(), 0);
+  assert.ok(!(await tableColumns(store.db, 'usage_totals')).includes('user_id'));
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('the demo and local mode count nothing', async () => {
   for (const authMode of ['demo', 'none']) {
-    const store = openHealthStore(':memory:');
+    const store = await openTestStore();
     const app = await buildApp({ store, authMode, instance: authMode === 'demo' ? 'demo' : 'main', features: { chat: false }, publicDir: PUBLIC,
       usage: { place: fakePlace, siteHost: 'example.test', demoHost: 'demo.example.test' } });
     await app.inject({ url: '/', headers: { host: 'localhost', referer: 'https://github.com/x', 'user-agent': IPHONE } });
     await app.inject({ url: '/api/status', headers: { host: 'localhost' } });
-    assert.equal(store.syncDb.prepare('SELECT COUNT(*) FROM usage_totals').pluck().get(), 0, authMode);
+    assert.equal((await store.db.prepare('SELECT COUNT(*) FROM usage_totals').pluck().get()), 0, authMode);
     await app.close();
-    store.close();
+    await store.close();
   }
 });
 
 test('the period totals: devices, locations rolled up to countries and states with the top cities, sources', async () => {
-  const store = openHealthStore(':memory:');
-  const add = store.syncDb.prepare('INSERT INTO usage_totals (day, dimension, value, count) VALUES (?, ?, ?, ?)');
-  add.run('2026-11-02', 'device', 'phone', 3);
-  add.run('2026-11-03', 'device', 'phone', 1);
-  add.run('2026-11-03', 'device', 'computer', 2);
-  add.run('2026-10-01', 'device', 'tablet', 9); // outside the period
-  add.run('2026-11-03', 'browser', 'Safari 18', 2);
-  add.run('2026-11-02', 'browser', 'Chrome 130', 1);
-  add.run('2026-11-02', 'location', 'Springfield, Ohio, United States', 2);
-  add.run('2026-11-03', 'location', 'Dayton, Ohio, United States', 1);
-  add.run('2026-11-03', 'location', 'Austin, Texas, United States', 1);
-  add.run('2026-11-03', 'location', 'unknown', 1);
-  add.run('2026-11-03', 'source', 'linkedin', 2);
-  add.run('2026-11-03', 'source', 'google_signin_return', 5);
-  const t = (await usageTotals(store.syncDb, { from: '2026-10-27', to: '2026-11-03' }));
+  const store = await openTestStore();
+  const add = store.db.prepare('INSERT INTO usage_totals (day, dimension, value, count) VALUES (?, ?, ?, ?)');
+  await add.run('2026-11-02', 'device', 'phone', 3);
+  await add.run('2026-11-03', 'device', 'phone', 1);
+  await add.run('2026-11-03', 'device', 'computer', 2);
+  await add.run('2026-10-01', 'device', 'tablet', 9); // outside the period
+  await add.run('2026-11-03', 'browser', 'Safari 18', 2);
+  await add.run('2026-11-02', 'browser', 'Chrome 130', 1);
+  await add.run('2026-11-02', 'location', 'Springfield, Ohio, United States', 2);
+  await add.run('2026-11-03', 'location', 'Dayton, Ohio, United States', 1);
+  await add.run('2026-11-03', 'location', 'Austin, Texas, United States', 1);
+  await add.run('2026-11-03', 'location', 'unknown', 1);
+  await add.run('2026-11-03', 'source', 'linkedin', 2);
+  await add.run('2026-11-03', 'source', 'google_signin_return', 5);
+  const t = (await usageTotals(store.db, { from: '2026-10-27', to: '2026-11-03' }));
   assert.deepEqual(t.visits.device, [{ value: 'phone', count: 4 }, { value: 'computer', count: 2 }]);
   assert.deepEqual(t.visits.browser, [{ value: 'Safari 18', count: 2 }, { value: 'Chrome 130', count: 1 }]);
   assert.deepEqual(t.visits.location.countries, [{ value: 'United States', count: 4 }, { value: 'Unknown', count: 1 }]);
   assert.deepEqual(t.visits.location.states, [{ value: 'Ohio, United States', count: 3 }, { value: 'Texas, United States', count: 1 }, { value: 'Unknown', count: 1 }]);
   assert.deepEqual(t.visits.location.cities[0], { value: 'Springfield, Ohio, United States', count: 2 });
   assert.deepEqual(t.arrivals, [{ value: 'linkedin', count: 2 }]);
-  store.close();
+  await store.close();
 });

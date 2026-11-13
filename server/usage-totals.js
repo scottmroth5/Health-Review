@@ -97,25 +97,37 @@ const header = (req, name) => {
 /**
  * The counters. visit(req) counts a signed-in browser visit once per account per owner day (an in-memory set of user
  * ids, replaced each day and never written anywhere; a restart may count someone twice); arrival(req) counts a page
- * arrival's source. Both keep only +1 on a (day, dimension, value) row.
+ * arrival's source. Both keep only +1 on a (day, dimension, value) row. idle() settles once the counts in flight are
+ * written (they run after the response is sent; the tests wait on it).
  * @param {{ db: object, place?: Function|null, tz: string, siteHost?: string|null, demoHost?: string|null, appHost?: string|null, now?: () => Date }} opts
  */
 export function createUsageTotals({ db, place = null, tz, siteHost = null, demoHost = null, appHost = null, now = () => new Date() }) {
   const add = db.prepare(`INSERT INTO usage_totals (day, dimension, value, count) VALUES (?, ?, ?, 1)
-    ON CONFLICT (day, dimension, value) DO UPDATE SET count = count + 1`);
+    ON CONFLICT (day, dimension, value) DO UPDATE SET count = usage_totals.count + 1`);
   let seenDay = null;
   let seen = new Set();
   const today = () => localDate(now(), tz);
+  const inFlight = new Set();
+  const track = (promise) => {
+    inFlight.add(promise);
+    return promise.finally(() => inFlight.delete(promise));
+  };
   return {
     /** A signed-in browser visit by uid (the auth hook marked it); counted once a day per account. */
-    async visit(req, uid) {
+    visit(req, uid) {
       const day = today();
       if (day !== seenDay) { seenDay = day; seen = new Set(); }
-      if (!uid || seen.has(uid)) return;
+      if (!uid || seen.has(uid)) return Promise.resolve();
       seen.add(uid);
-      await add.run(day, 'device', deviceOf(header(req, 'user-agent'), header(req, 'sec-ch-ua-mobile')));
-      await add.run(day, 'browser', browserOf(header(req, 'user-agent')));
-      await add.run(day, 'location', locationOf(place, req.ip));
+      return track((async () => {
+        await add.run(day, 'device', deviceOf(header(req, 'user-agent'), header(req, 'sec-ch-ua-mobile')));
+        await add.run(day, 'browser', browserOf(header(req, 'user-agent')));
+        await add.run(day, 'location', locationOf(place, req.ip));
+      })());
+    },
+    /** Settles when every count started so far is written (or failed). */
+    async idle() {
+      await Promise.allSettled([...inFlight]);
     },
     /** A page arrival (the sign-in page or the app page): its source only. Internal navigation is not an arrival. */
     async arrival(req) {
@@ -127,7 +139,7 @@ export function createUsageTotals({ db, place = null, tz, siteHost = null, demoH
         try { if (new URL(referer).hostname.toLowerCase() === appHost) return; } catch { /* other */ }
       }
       const query = String(req.url ?? '').split('?')[1] ?? '';
-      await add.run(today(), 'source', sourceOf({ query, referer, siteHost, demoHost }));
+      await track(add.run(today(), 'source', sourceOf({ query, referer, siteHost, demoHost })));
     },
   };
 }

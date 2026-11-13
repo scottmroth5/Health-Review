@@ -6,6 +6,7 @@ import { openOwnerStore } from '../db/store.js';
 import { createScheduler, lastRun, nextRun, parseSchedule, schedulesFromEnv, CATCH_UP_HOURS } from '../server/scheduler.js';
 import { jobRunsLookup as runsLookup } from '../server/admin-queries.js';
 import { weeklyReview } from '../jobs/review.js';
+import { ownerStore } from './helpers.js';
 
 const NY = 'America/New_York';
 const ny = (iso) => new Date(`${iso}-04:00`); // a New York wall-clock time in daylight saving time
@@ -93,11 +94,11 @@ test('scheduler: runs a due job once, catches up a recently missed run, skips on
 });
 
 test('scheduler: a job never overlaps itself, here or with a run marked running in the runs table', async () => {
-  const store = openOwnerStore(':memory:');
-  const lookup = runsLookup(store.syncDb);
+  const store = await ownerStore();
+  const lookup = runsLookup(store.db);
   const now = ny('2026-10-25T07:00:10');
   // A sync started 5 minutes ago (Sync now) is still running: the scheduled one is skipped.
-  store.syncDb.prepare("INSERT INTO runs (user_id, name, meta, status, started_at) VALUES (@uid, 'sync', '{}', 'running', ?)").run(new Date(now - 5 * 60_000).toISOString());
+  await store.db.prepare("INSERT INTO runs (user_id, name, meta, status, started_at) VALUES (@uid, 'sync', '{}', 'running', ?)").run(new Date(now - 5 * 60_000).toISOString());
   assert.equal(await lookup.isRunning('sync', now), true);
   assert.equal(await lookup.isRunning('sync', new Date(now.getTime() + 40 * 60_000)), false, 'a run left marked running for 30+ minutes never blocks the job');
   const ran = [];
@@ -114,13 +115,13 @@ test('scheduler: a job never overlaps itself, here or with a run marked running 
   await tick();
   assert.equal(slow.length, 1);
   release();
-  store.close();
+  await store.close();
 });
 
 test('weekly review job: a scheduled catch-up does nothing once the review exists; an incomplete week is skipped with dates only', async () => {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const claude = () => { throw new Error('no Claude call expected'); };
-  store.syncDb.prepare("INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at) VALUES (@uid, '2026-10-24', '{}', 'x', 'x')").run();
+  await store.db.prepare("INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at) VALUES (@uid, '2026-10-24', '{}', 'x', 'x')").run();
   const exists = await weeklyReview({ store, claude, today: '2026-10-26', scheduled: true, sync: async () => { throw new Error('no sync expected'); } });
   assert.deepEqual(exists, { status: 'exists', weekEnd: '2026-10-24' });
 
@@ -132,13 +133,13 @@ test('weekly review job: a scheduled catch-up does nothing once the review exist
   assert.deepEqual(empty.missingDays, []);
 
   // With Apple Health days, the missing ones are skipped by date.
-  for (const d of ['2026-10-11', '2026-10-12', '2026-10-13']) store.syncDb.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, 8000, 'x')").run(d);
+  for (const d of ['2026-10-11', '2026-10-12', '2026-10-13']) (await store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, 8000, 'x')").run(d));
   const skipped = await weeklyReview({ store, claude, today: '2026-10-19', scheduled: true });
   assert.equal(skipped.status, 'skipped');
   assert.equal(skipped.reason, 'incomplete');
   assert.deepEqual(skipped.missingDays, ['2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17']);
-  const run = store.syncDb.prepare("SELECT status, summary FROM runs WHERE name = 'review' ORDER BY id DESC").get();
+  const run = (await store.db.prepare("SELECT status, summary FROM runs WHERE name = 'review' ORDER BY id DESC").get());
   assert.equal(run.status, 'skipped');
   assert.deepEqual(Object.keys(JSON.parse(run.summary)).sort(), ['missingDays', 'partialDays', 'reason', 'weekEnd']);
-  store.close();
+  await store.close();
 });

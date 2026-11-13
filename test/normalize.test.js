@@ -5,7 +5,7 @@ import { openOwnerStore } from '../db/store.js';
 import { createDictionary } from '../metrics/dictionary.js';
 import { normalizeAll, unmappedNames } from '../ingest/normalize.js';
 import { runSync } from '../ingest/sync.js';
-import { fakeSource, serial, silentLogger } from './helpers.js';
+import { fakeSource, serial, silentLogger, ownerStore } from './helpers.js';
 
 const DICT = createDictionary({
   version: 1,
@@ -16,29 +16,29 @@ const DICT = createDictionary({
   ignore: ['superset'],
 });
 
-function seed(db) {
-  const ex = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, ?, ?, ?, ?)');
+async function seed(db) {
+  const ex = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, ?, ?, ?, ?) RETURNING id');
   const set = db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps) VALUES (@uid, ?, ?, 100, 5)');
-  const add = (row, date, name, sets) => {
-    const id = ex.run(2026, row, date, name).lastInsertRowid;
-    for (let i = 1; i <= sets; i++) set.run(id, i);
+  const add = async (row, date, name, sets) => {
+    const id = (await ex.get(2026, row, date, name)).id;
+    for (let i = 1; i <= sets; i++) (await set.run(id, i));
   };
-  add(2, '2026-03-02', 'Squats', 3);
-  add(3, '2026-03-02', 'Dumbell Rows', 2);
-  add(4, '2026-03-04', 'Cable Fly', 2); // implement word, no entry
-  add(5, '2026-03-04', 'Zercher Thing', 1); // nothing to go on
-  add(6, '2026-03-04', 'superset', 0);
-  add(7, '2026-03-06', 'Barbell Squat', 2);
+  await add(2, '2026-03-02', 'Squats', 3);
+  await add(3, '2026-03-02', 'Dumbell Rows', 2);
+  await add(4, '2026-03-04', 'Cable Fly', 2); // implement word, no entry
+  await add(5, '2026-03-04', 'Zercher Thing', 1); // nothing to go on
+  await add(6, '2026-03-04', 'superset', 0);
+  await add(7, '2026-03-06', 'Barbell Squat', 2);
 }
 
-const columns = (db) => db.prepare(`SELECT exercise, canonical_id, implement, movement_pattern, is_primary, map_status
-  FROM strength_exercises ORDER BY row_no`).all();
+const columns = async (db) => (await db.prepare(`SELECT exercise, canonical_id, implement, movement_pattern, is_primary, map_status
+  FROM strength_exercises ORDER BY row_no`).all());
 
 test('normalize: writes canonical exercise, implement, pattern and status next to the raw name', async () => {
-  const store = openOwnerStore(':memory:');
-  seed(store.syncDb);
+  const store = await ownerStore();
+  await seed(store.db);
   const c = await normalizeAll(store.db, DICT, { now: new Date('2026-03-07T12:00:00Z') });
-  assert.deepEqual(columns(store.syncDb), [
+  assert.deepEqual((await columns(store.db)), [
     { exercise: 'Squats', canonical_id: 'barbell-squat', implement: 'barbell', movement_pattern: 'squat', is_primary: 1, map_status: 'mapped' },
     { exercise: 'Dumbell Rows', canonical_id: 'dumbbell-row', implement: 'dumbbell', movement_pattern: 'horizontal pull', is_primary: 0, map_status: 'mapped' },
     { exercise: 'Cable Fly', canonical_id: null, implement: 'cable', movement_pattern: null, is_primary: 0, map_status: 'inferred' },
@@ -47,42 +47,42 @@ test('normalize: writes canonical exercise, implement, pattern and status next t
     { exercise: 'Barbell Squat', canonical_id: 'barbell-squat', implement: 'barbell', movement_pattern: 'squat', is_primary: 1, map_status: 'mapped' },
   ]);
   assert.deepEqual([c.sets, c.mappedSets, c.mappedPct], [10, 7, 70]);
-  assert.equal(store.syncDb.prepare('SELECT normalized_at FROM strength_exercises LIMIT 1').get().normalized_at, '2026-03-07T12:00:00.000Z');
-  store.close();
+  assert.equal((await store.db.prepare('SELECT normalized_at FROM strength_exercises LIMIT 1').get()).normalized_at, '2026-03-07T12:00:00.000Z');
+  await store.close();
 });
 
 test('normalize: rerunning changes nothing and adds no rows; a dictionary change is picked up', async () => {
-  const store = openOwnerStore(':memory:');
-  seed(store.syncDb);
+  const store = await ownerStore();
+  await seed(store.db);
   await normalizeAll(store.db, DICT);
-  const first = columns(store.syncDb);
-  const rows = (t) => store.syncDb.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n;
-  const before = [rows('strength_exercises'), rows('strength_sets')];
+  const first = (await columns(store.db));
+  const rows = async (t) => (await store.db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get()).n;
+  const before = [(await rows('strength_exercises')), (await rows('strength_sets'))];
   await normalizeAll(store.db, DICT);
-  assert.deepEqual(columns(store.syncDb), first);
-  assert.deepEqual([rows('strength_exercises'), rows('strength_sets')], before);
+  assert.deepEqual((await columns(store.db)), first);
+  assert.deepEqual([(await rows('strength_exercises')), (await rows('strength_sets'))], before);
 
   const more = createDictionary({ version: 1, exercises: [...DICT.exercises,
     { id: 'cable-fly', name: 'Cable Fly', implement: 'cable', pattern: 'horizontal press', primary: false }] });
   await normalizeAll(store.db, more);
-  assert.equal(columns(store.syncDb)[2].map_status, 'mapped');
-  store.close();
+  assert.equal((await columns(store.db))[2].map_status, 'mapped');
+  await store.close();
 });
 
 test('normalize: unmapped names are listed by variant group with set counts and years, most sets first', async () => {
-  const store = openOwnerStore(':memory:');
-  seed(store.syncDb);
-  store.syncDb.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2025, 9, '2025-05-01', 'Cable Flyes')").run();
+  const store = await ownerStore();
+  await seed(store.db);
+  await store.db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2025, 9, '2025-05-01', 'Cable Flyes')").run();
   await normalizeAll(store.db, DICT);
-  assert.deepEqual((await unmappedNames(store.syncDb)).map((g) => [g.spellings.sort(), g.status, g.sets, g.first, g.last]), [
+  assert.deepEqual((await unmappedNames(store.db)).map((g) => [g.spellings.sort(), g.status, g.sets, g.first, g.last]), [
     [['Cable Fly', 'Cable Flyes'], 'inferred', 2, 2025, 2026],
     [['Zercher Thing'], 'unmapped', 1, 2026, 2026],
   ]);
-  store.close();
+  await store.close();
 });
 
 test('normalize: sync rewrites the normalized columns after a Workout Log tab is replaced', async () => {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const LOG = ['Date', 'Prime', 'Exercise', 'Weight 1', 'Set 1'];
   const data = {
     workout_log: { 2026: [LOG, [serial('2026-03-02'), '', 'Squats', 100, 5]] },
@@ -93,9 +93,9 @@ test('normalize: sync rewrites the normalized columns after a Workout Log tab is
   assert.equal(first.counts.normalized.mappedPct, 100);
   data.workout_log[2026].push([serial('2026-03-04'), '', 'Dumbbell Row', 50, 8]);
   await sync();
-  assert.deepEqual(store.syncDb.prepare('SELECT exercise, canonical_id FROM strength_exercises ORDER BY row_no').all(),
+  assert.deepEqual((await store.db.prepare('SELECT exercise, canonical_id FROM strength_exercises ORDER BY row_no').all()),
     [{ exercise: 'Squats', canonical_id: 'barbell-squat' }, { exercise: 'Dumbbell Row', canonical_id: 'dumbbell-row' }]);
   const unchanged = await sync();
   assert.equal(unchanged.counts.normalized, undefined, 'no tab replaced: nothing to rewrite');
-  store.close();
+  await store.close();
 });

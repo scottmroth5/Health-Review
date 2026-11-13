@@ -14,13 +14,14 @@ export function ownerEmailFromEnv(env = process.env) {
 }
 
 /**
- * Keeps the owner row's email in step with the environment (the migration ran with whatever it had then). Sync: it runs
- * when the store opens, beside the migrations (db/store.js), and moves with store opening in v3 Phase 1C.
+ * Keeps the owner row's email in step with the environment (the migration ran with whatever it had then). The server
+ * runs it after opening the store (server/index.js, and buildApp in Google mode), as does openStore (db/store.js).
+ * @param {import('./database.ts').Database} db  the async handle, unscoped
  */
-export function syncOwnerEmail(db, env = process.env) {
+export async function syncOwnerEmail(db, env = process.env) {
   const email = ownerEmailFromEnv(env);
   if (email === 'owner@localhost') return;
-  db.prepare("UPDATE users SET email = ? WHERE id = ? AND email <> ? AND NOT EXISTS (SELECT 1 FROM users WHERE email = ? AND id <> ?)")
+  await db.prepare("UPDATE users SET email = ? WHERE id = ? AND email <> ? AND NOT EXISTS (SELECT 1 FROM users WHERE email = ? AND id <> ?)")
     .run(email, OWNER_ID, email, email, OWNER_ID);
 }
 

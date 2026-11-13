@@ -37,7 +37,7 @@ export async function programForWeek(db, weekEnd, catalog) {
 
 /** A user's own programs (user_programs, phase 5), by name: [{ id, name, match, source, program, created_at, updated_at }]. */
 export async function loadUserPrograms(db) {
-  return (await db.prepare('SELECT id, name, match, source, program, created_at, updated_at FROM user_programs WHERE user_id = @uid ORDER BY name COLLATE NOCASE')
+  return (await db.prepare('SELECT id, name, match, source, program, created_at, updated_at FROM user_programs WHERE user_id = @uid ORDER BY LOWER(name), name')
     .all()).map((r) => ({ ...r, program: JSON.parse(r.program) }));
 }
 
@@ -217,7 +217,8 @@ export async function loadAdvisorInput(db, asOf, catalog) {
     vo2: await db.prepare('SELECT date, vo2max AS value FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date').all(asOf),
     watchMinutes: await db.prepare(`SELECT ls.program, w.minutes FROM log_sessions ls
       JOIN (SELECT substr(start, 1, 10) AS day, SUM(duration_sec) / 60.0 AS minutes FROM workout_sessions
-        WHERE user_id = @uid AND (type LIKE '%Strength%' OR type LIKE '%High Intensity%') AND duration_sec IS NOT NULL GROUP BY day) w ON w.day = ls.date
+        WHERE user_id = @uid AND (LOWER(type) LIKE '%strength%' OR LOWER(type) LIKE '%high intensity%') AND duration_sec IS NOT NULL
+        GROUP BY substr(start, 1, 10)) w ON w.day = ls.date
       WHERE ls.user_id = @uid AND ls.program IS NOT NULL AND ls.date <= ?`).all(asOf),
     lifts: liftProgress(sets, asOf, { phases: new Map(Object.entries(await loadSessionPhases(db))) }),
     lastProgram: (blocks.filter((b) => b.status === 'in_progress').at(-1) ?? blocks.at(-1))?.program ?? null,
@@ -248,7 +249,7 @@ export async function loadDataCheckInput(db, today, { lookedAt, workoutsLookedAt
     workoutExports: apple === 'rest' ? await lastPost('workouts') : await newest(['workouts'], 'workout_exports', workoutsLookedAt),
     daily: await db.prepare(`SELECT date, steps, resting_hr, sleep_total_hr, exercise_min, exported_through FROM daily_metrics
       WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`).all(addDays(today, -45), today),
-    sessions: await db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? ORDER BY start').all(addDays(today, -30)),
+    sessions: await db.prepare('SELECT type, start, "end", duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? ORDER BY start').all(addDays(today, -30)),
     liftingDays: (await db.prepare(`SELECT DISTINCT e.date FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
       WHERE e.user_id = @uid AND e.date BETWEEN ? AND ? AND (s.reps IS NOT NULL OR s.duration_sec IS NOT NULL OR s.distance_yd IS NOT NULL OR COALESCE(s.reps_text, '') <> '')`)
       .all(addDays(today, -14), today)).map((r) => r.date),

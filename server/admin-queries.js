@@ -6,6 +6,7 @@
 import { RUNNING_STALE_MINUTES } from './scheduler.js';
 import { monthStartIso } from './ai-access.js';
 import { USER_TABLES } from '../db/migrations-users.js';
+import { listTables, primaryKey, tableColumns } from '../db/dialect.js';
 import { setupSteps } from './setup.js';
 import { DEFAULT_TZ, localDate } from '../tools/time.js';
 import { addDays } from '../metrics/stats.js';
@@ -32,9 +33,10 @@ export function jobRunsLookup(db) {
 export async function listUsers(db, { now = new Date() } = {}) {
   const raw = db.unscoped ?? db;
   return (await raw.prepare(`SELECT u.id, u.email, u.name, u.role, u.status, u.created_at, u.approved_at, u.last_seen_at,
-      u.claude_key_enc IS NOT NULL AS has_key, u.uses_owner_key, u.owner_key_cap_usd, u.maps_shared, u.feeds,
-      u.ingest_token_hash IS NOT NULL AS has_token, u.google_refresh_enc IS NOT NULL AS google_connected,
-      EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'workout_log_sheet_id') AS sheet_set,
+      CASE WHEN u.claude_key_enc IS NOT NULL THEN 1 ELSE 0 END AS has_key, u.uses_owner_key, u.owner_key_cap_usd, u.maps_shared, u.feeds,
+      CASE WHEN u.ingest_token_hash IS NOT NULL THEN 1 ELSE 0 END AS has_token,
+      CASE WHEN u.google_refresh_enc IS NOT NULL THEN 1 ELSE 0 END AS google_connected,
+      CASE WHEN EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'workout_log_sheet_id') THEN 1 ELSE 0 END AS sheet_set,
       (SELECT MAX(received_at) FROM ingest_log i WHERE i.user_id = u.id AND i.result = 'ok') AS last_post,
       (SELECT MAX(finished_at) FROM runs r WHERE r.user_id = u.id AND r.name = 'sync' AND r.status = 'ok') AS last_sync,
       (SELECT COALESCE(SUM(cost_usd), 0) FROM runs r WHERE r.user_id = u.id AND r.started_at >= @since) AS spent_month,
@@ -43,7 +45,7 @@ export async function listUsers(db, { now = new Date() } = {}) {
       (SELECT COUNT(*) FROM reviews v WHERE v.user_id = u.id) AS reviews,
       (SELECT COUNT(*) FROM user_programs p WHERE p.user_id = u.id) AS programs,
       -- Setup progress (server/setup.js): counts and flags only.
-      EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'goal_primary') AS goals_set,
+      CASE WHEN EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'goal_primary') THEN 1 ELSE 0 END AS goals_set,
       (SELECT COUNT(*) FROM settings s WHERE s.user_id = u.id AND s.key IN ('birth_year', 'sex', 'height_in')) AS profile_keys,
       (SELECT COUNT(*) FROM workout_sessions w WHERE w.user_id = u.id) AS workouts,
       (SELECT COUNT(DISTINCT date) FROM strength_exercises e WHERE e.user_id = u.id AND e.tab_year <> 0) AS sheet_days,
@@ -53,7 +55,7 @@ export async function listUsers(db, { now = new Date() } = {}) {
       (SELECT COUNT(*) FROM lab_results r WHERE r.user_id = u.id) AS labs,
       (SELECT COUNT(*) FROM drinking_days d WHERE d.user_id = u.id) AS drinks,
       (SELECT value FROM settings s WHERE s.user_id = u.id AND s.key = 'setup_dismissed') AS setup_dismissed,
-      EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'setup_hidden') AS setup_hidden
+      CASE WHEN EXISTS (SELECT 1 FROM settings s WHERE s.user_id = u.id AND s.key = 'setup_hidden') THEN 1 ELSE 0 END AS setup_hidden
     FROM users u ORDER BY u.status = 'pending' DESC, u.role = 'admin' DESC, u.created_at DESC`).all({ since: monthStartIso(now) }))
     .map(({ feeds, goals_set, profile_keys, workouts, sheet_days, app_workouts, checkins, meds, labs, drinks, setup_dismissed, setup_hidden, ...u }) => {
       let chosen = {};
@@ -117,8 +119,8 @@ export async function setMapsShared(db, id, shared) {
 /** Every table with a user_id column, read from the schema (so a new user table is never missed), parents first. */
 async function userIdTables(raw) {
   const tables = [];
-  for (const t of await raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").pluck().all()) {
-    if ((await raw.prepare(`PRAGMA table_info("${t}")`).all()).some((c) => c.name === 'user_id')) tables.push(t);
+  for (const t of await listTables(raw)) {
+    if ((await tableColumns(raw, t)).includes('user_id')) tables.push(t);
   }
   const order = new Map(USER_TABLES.map((t, i) => [t, i]));
   return tables.sort((a, b) => (order.get(a) ?? -1) - (order.get(b) ?? -1));
@@ -137,7 +139,11 @@ export async function exportUserData(db, uid, { now = new Date() } = {}) {
   if (!user) return null;
   for (const c of SECRET_USER_COLUMNS) delete user[c];
   const tables = {};
-  for (const t of await userIdTables(raw)) tables[t] = await raw.prepare(`SELECT * FROM "${t}" WHERE user_id = ? ORDER BY rowid`).all(uid);
+  // Rows in primary key order (the same on both engines; SQLite's rowid order is insertion order and has no PostgreSQL twin).
+  for (const t of await userIdTables(raw)) {
+    const order = (await primaryKey(raw, t)).map((c) => `"${c}"`).join(', ');
+    tables[t] = await raw.prepare(`SELECT * FROM "${t}" WHERE user_id = ? ORDER BY ${order}`).all(uid);
+  }
   tables.run_calls = await raw.prepare('SELECT c.* FROM run_calls c JOIN runs r ON r.id = c.run_id WHERE r.user_id = ? ORDER BY c.id').all(uid);
   return { exportedAt: now.toISOString(), format: 'health-review-export-1', account: user, tables };
 }

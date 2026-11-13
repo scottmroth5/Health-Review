@@ -8,13 +8,14 @@ import { join } from 'node:path';
 import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { spend } from '../server/queries.js';
+import { ownerStore } from './helpers.js';
 
 const TODAY = new Date(2026, 9, 13, 12, 0);
 // $1 per 1,000 input tokens for 'fake-model'; any other model has no price.
 const price = (model, usage) => (model === 'fake-model' ? usage.input_tokens / 1000 : null);
 
-function addRun(db, name, startedAt, cost) {
-  db.prepare("INSERT INTO runs (user_id, name, status, started_at, cost_usd) VALUES (@uid, ?, 'ok', ?, ?)").run(name, startedAt, cost);
+async function addRun(db, name, startedAt, cost) {
+  await db.prepare("INSERT INTO runs (user_id, name, status, started_at, cost_usd) VALUES (@uid, ?, 'ok', ?, ?)").run(name, startedAt, cost);
 }
 
 function evalFolder() {
@@ -33,14 +34,14 @@ function evalFolder() {
 }
 
 test('spend: runs by kind, month and year, plus evals dated by their results file', async () => {
-  const store = openOwnerStore(':memory:');
-  const { syncDb: db } = store;
-  addRun(db, 'review', '2026-10-04T12:00:00.000Z', 0.3);
-  addRun(db, 'review', '2026-10-11T12:00:00.000Z', 0.32);
-  addRun(db, 'advisor-chat', '2026-10-07T15:00:00.000Z', 0.1);
-  addRun(db, 'review', '2025-12-07T12:00:00.000Z', 0.25);
-  addRun(db, 'sync', '2026-10-12T11:00:00.000Z', 0);
-  addRun(db, 'other-thing', '2026-10-12T11:00:00.000Z', 0.05);
+  const store = await ownerStore();
+  const { db } = store;
+  await addRun(db, 'review', '2026-10-04T12:00:00.000Z', 0.3);
+  await addRun(db, 'review', '2026-10-11T12:00:00.000Z', 0.32);
+  await addRun(db, 'advisor-chat', '2026-10-07T15:00:00.000Z', 0.1);
+  await addRun(db, 'review', '2025-12-07T12:00:00.000Z', 0.25);
+  await addRun(db, 'sync', '2026-10-12T11:00:00.000Z', 0);
+  await addRun(db, 'other-thing', '2026-10-12T11:00:00.000Z', 0.05);
   const dir = evalFolder();
 
   const s = await spend(db, { evalDir: dir, price, today: '2026-10-13' });
@@ -55,23 +56,23 @@ test('spend: runs by kind, month and year, plus evals dated by their results fil
   assert.deepEqual(s.years.map((y) => [y.year, y.total]), [['2026', 1.12], ['2025', 0.25]]);
 
   rmSync(dir, { recursive: true, force: true });
-  store.close();
+  await store.close();
 });
 
 test('spend: no eval folder (the demo) counts runs only, and an empty database is all zeros', async () => {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, clock: () => TODAY, instance: 'demo' });
   const s = (await app.inject('/api/spend')).json();
   assert.equal(s.allTime, 0);
   assert.deepEqual(s.years, []);
   assert.equal(s.months[0].month, '2026-10');
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('api: /api/spend reads the eval folder the server was given', async () => {
-  const store = openOwnerStore(':memory:');
-  addRun(store.syncDb, 'review', '2026-10-04T12:00:00.000Z', 0.3);
+  const store = await ownerStore();
+  await addRun(store.db, 'review', '2026-10-04T12:00:00.000Z', 0.3);
   const dir = evalFolder();
   const app = await buildApp({ store, clock: () => TODAY, evalDir: dir, price });
   const res = await app.inject('/api/spend');
@@ -79,5 +80,5 @@ test('api: /api/spend reads the eval folder the server was given', async () => {
   assert.equal(res.json().thisYear, 0.65);
   await app.close();
   rmSync(dir, { recursive: true, force: true });
-  store.close();
+  await store.close();
 });

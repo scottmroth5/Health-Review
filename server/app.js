@@ -35,6 +35,7 @@ import { applyHealthDays, applyWorkouts } from '../ingest/apply.js';
 import { DEFAULT_TZ, isTimeZone, localDate as zonedDate, localStamp, ownerTz, withTimeZone } from '../tools/time.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { scopeDatabase } from '../db/scope.js';
+import { isUniqueViolation } from '../db/dialect.js';
 import { HEALTH_CONSENT_VERSION, OWNER_ID, clearIngestToken, getUser, newIngestToken, recordHealthConsent, setClaudeKey, setGoogleToken, setUserFeeds, startUserRun, syncOwnerEmail, timeZoneOf, userByEmail, userByIngestToken } from '../db/users.js';
 import { createPendingUser, deleteUserData, exportUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus, usageByWeek, usageTotals } from './admin-queries.js';
 import { createUsageTotals, hostnameOrNull } from './usage-totals.js';
@@ -188,7 +189,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   });
   if (authMode !== 'none') registerRateLimits(app, { all: authMode === 'demo' ? DEMO_REQUEST_LIMIT : null, now: auth.now });
   // Google sign-in maps an address to its users row; the first allowed address is the owner (user 1) until registration.
-  if (authMode === 'google' && auth.settings?.allowed?.[0]) syncOwnerEmail(store.raw, { OWNER_EMAIL: auth.settings.allowed[0] });
+  if (authMode === 'google' && auth.settings?.allowed?.[0]) await syncOwnerEmail(store.db, { OWNER_EMAIL: auth.settings.allowed[0] });
   const adminEmail = async () => process.env.ADMIN_EMAIL || (await getUser(store.db, OWNER_ID))?.email;
   const appUrl = () => auth.settings?.publicUrl || 'http://localhost:5188';
   // A registration: a pending user, and an email to the admin (names and addresses only).
@@ -258,6 +259,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       } catch { /* counting never affects a request */ }
     });
   }
+  // Settles once the usage counts in flight are written: they run after the response is sent (the tests wait on it).
+  app.decorate('usageIdle', async () => { await counter?.idle(); });
   registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
     sheetsExchange: auth.sheetsExchange, connectSheets, createSheet, recordConsent, deleteAccount });
   // The privacy policy and terms, readable before signing in.
@@ -1655,7 +1658,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     try {
       return reply.code(201).send(await q.createSection(db, req.body));
     } catch (err) {
-      if (/UNIQUE/.test(err.message)) throw Object.assign(new Error('A section with that name already exists'), { statusCode: 409 });
+      if (isUniqueViolation(err)) throw Object.assign(new Error('A section with that name already exists'), { statusCode: 409 });
       throw err;
     }
   });
@@ -1672,7 +1675,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       const section = await q.updateSection(db, req.params.id, req.body);
       return section ?? reply.code(404).send({ error: 'Section not found' });
     } catch (err) {
-      if (/UNIQUE/.test(err.message)) throw Object.assign(new Error('A section with that name already exists'), { statusCode: 409 });
+      if (isUniqueViolation(err)) throw Object.assign(new Error('A section with that name already exists'), { statusCode: 409 });
       throw err;
     }
   });

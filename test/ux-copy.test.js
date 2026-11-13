@@ -8,6 +8,7 @@ import { openHealthStore, openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { repoPath } from '../tools/paths.js';
 import { OWNER_ID } from '../db/users.js';
+import { ownerStore, openTestStore } from './helpers.js';
 
 const page = readFileSync(repoPath('server', 'public', 'index.html'), 'utf8');
 const script = readFileSync(repoPath('server', 'public', 'app.js'), 'utf8');
@@ -40,11 +41,11 @@ test('every check-in scale names its ends', () => {
 });
 
 test('Activity lists runs newest first by start time, whatever order they were written in', async () => {
-  const store = openOwnerStore(':memory:');
-  const insert = store.syncDb.prepare("INSERT INTO runs (user_id, name, status, started_at) VALUES (?, ?, 'ok', ?)");
-  insert.run(OWNER_ID, 'review', '2026-10-01T08:00:00.000Z');
-  insert.run(OWNER_ID, 'sync', '2026-10-20T07:00:00.000Z');
-  insert.run(OWNER_ID, 'review', '2026-09-01T08:00:00.000Z');
+  const store = await ownerStore();
+  const insert = store.db.prepare("INSERT INTO runs (user_id, name, status, started_at) VALUES (?, ?, 'ok', ?)");
+  await insert.run(OWNER_ID, 'review', '2026-10-01T08:00:00.000Z');
+  await insert.run(OWNER_ID, 'sync', '2026-10-20T07:00:00.000Z');
+  await insert.run(OWNER_ID, 'review', '2026-09-01T08:00:00.000Z');
   const app = await buildApp({ store });
   const runs = (await app.inject('/api/runs')).json();
   const list = runs.runs ?? runs;
@@ -54,7 +55,7 @@ test('Activity lists runs newest first by start time, whatever order they were w
 
 test("the demo's guides say they are the demo's copy and show the main app's address; the main app's guides do not", async () => {
   const MAIN = 'https://main.example.com';
-  const demo = await buildApp({ store: openHealthStore(':memory:'), instance: 'demo', requestAccessUrl: `${MAIN}/auth/login` });
+  const demo = await buildApp({ store: await openTestStore(), instance: 'demo', requestAccessUrl: `${MAIN}/auth/login` });
   const body = (await demo.inject('/guides/health-auto-export')).body;
   assert.match(body, /the demo(&#39;|')s copy of the guide/);
   // The banner's link and the guide's first ingest address, compared whole.
@@ -62,10 +63,10 @@ test("the demo's guides say they are the demo's copy and show the main app's add
   assert.equal(/<code>([^<]*\/api\/ingest\/health)<\/code>/.exec(body)?.[1], `${MAIN}/api/ingest/health`, "the main app's address in the steps");
   await demo.close();
   // A request access link that is not http(s) never becomes a link.
-  const odd = await buildApp({ store: openHealthStore(':memory:'), instance: 'demo', requestAccessUrl: 'javascript:alert(1)' });
+  const odd = await buildApp({ store: await openTestStore(), instance: 'demo', requestAccessUrl: 'javascript:alert(1)' });
   assert.doesNotMatch((await odd.inject('/guides/health-auto-export')).body, /javascript:/);
   await odd.close();
-  const main = await buildApp({ store: openHealthStore(':memory:') });
+  const main = await buildApp({ store: await openTestStore() });
   assert.doesNotMatch((await main.inject('/guides/health-auto-export')).body, /the demo(&#39;|')s copy/);
   await main.close();
 });

@@ -109,7 +109,7 @@ export async function deleteWorkout(db, date, ctx) {
  * programs' workouts to start from (never a shared catalog's contents).
  */
 export async function workoutSuggestions(db, { dictionary, ownPrograms }) {
-  const history = (await db.prepare(`SELECT exercise, COUNT(*) AS n FROM strength_exercises WHERE user_id = @uid GROUP BY exercise ORDER BY n DESC LIMIT 300`).all()).map((r) => r.exercise);
+  const history = (await db.prepare(`SELECT exercise, COUNT(*) AS n FROM strength_exercises WHERE user_id = @uid GROUP BY exercise ORDER BY n DESC, exercise LIMIT 300`).all()).map((r) => r.exercise);
   const names = [...new Set([...history, ...dictionary.exercises.map((e) => e.name)])];
   const templates = ownPrograms.flatMap((p) => p.phases.flatMap((ph) => (ph.workouts ?? []).map((wo) => ({
     label: `${p.name}, ${ph.name}, ${wo.name}`,

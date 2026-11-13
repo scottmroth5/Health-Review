@@ -114,7 +114,7 @@ export async function generateDemo(store, { today, seed = DEFAULT_SEED, catalog 
   }
 
   // ---- Apple Watch workouts: lifting days and walks ----
-  const insertSession = db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, active_energy_kcal, avg_hr, max_hr, distance_mi, step_count, updated_at)
+  const insertSession = db.prepare(`INSERT INTO workout_sessions (user_id, type, start, "end", duration_sec, active_energy_kcal, avg_hr, max_hr, distance_mi, step_count, updated_at)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const at = (d, h, m) => `${d}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
   const r7 = random(seed + 6);

@@ -10,6 +10,7 @@ import { boxKey } from '../tools/secret-box.js';
 import { OWNER_ID } from '../db/users.js';
 import { createWorkoutSheet, workoutSheetBody, WORKOUT_LOG_HEADER, WORKOUT_LOG_TITLE } from '../ingest/create-sheet.js';
 import { parseWorkoutLogTab } from '../ingest/parsers.js';
+import { openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';
 
@@ -51,9 +52,9 @@ test('the sheet: a year tab whose row 1 the Workout Log parser reads, a How to u
 async function setup({ granted }) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
-  const store = openHealthStore(':memory:');
-  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
-  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  const store = await openTestStore();
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const created = [];
   const services = { createWorkoutSheet: async (uid) => { created.push(uid); return { id: `made-up-sheet-for-${uid}-000000` }; } };
   let email;
@@ -76,7 +77,7 @@ async function setup({ granted }) {
     const back = await app.inject({ url: `${SHEETS_CALLBACK_PATH}?state=${url.searchParams.get('state')}&code=c`, headers: { cookie: `${cookie}; ${cookies(start)}` } });
     return { scope: url.searchParams.get('scope'), location: back.headers.location };
   };
-  const sheetOf = (uid) => store.syncDb.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'workout_log_sheet_id'").pluck().get(uid) ?? null;
+  const sheetOf = async (uid) => (await store.db.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'workout_log_sheet_id'").pluck().get(uid)) ?? null;
   return { app, created, signIn, consent, sheetOf };
 }
 
@@ -87,7 +88,7 @@ test('Create my Workout Log: asks for read-only Sheets plus drive.file, creates 
   assert.equal(r.scope, `${SHEETS_SCOPE} ${DRIVE_FILE_SCOPE}`);
   assert.equal(r.location, '/#settings/sheets-created');
   assert.deepEqual(created, ['lee']);
-  assert.equal(sheetOf('lee'), 'made-up-sheet-for-lee-000000');
+  assert.equal((await sheetOf('lee')), 'made-up-sheet-for-lee-000000');
   const wl = (await app.inject({ url: '/api/account', headers: { cookie: lee } })).json().feeds.workoutLog;
   assert.equal(wl.sheetSet, true);
   assert.equal(wl.canCreate, true);
@@ -104,13 +105,13 @@ test('Create my Workout Log: refused when drive.file is not granted, and never f
   const lee = await a.signIn('lee@example.com');
   assert.equal((await a.consent(lee, '/auth/google/sheets?create=1')).location, '/#settings/sheets-incomplete');
   assert.equal(a.created.length, 0);
-  assert.equal(a.sheetOf('lee'), null);
+  assert.equal(await a.sheetOf('lee'), null);
 
   const b = await setup({ granted: `${SHEETS_SCOPE} ${DRIVE_FILE_SCOPE}` });
   const owner = await b.signIn('owner@example.com');
   assert.equal((await b.consent(owner, '/auth/google/sheets?create=1')).location, '/#settings/sheets-create-failed');
   assert.equal(b.created.length, 0);
-  assert.equal(b.sheetOf(OWNER_ID), null);
+  assert.equal(await b.sheetOf(OWNER_ID), null);
 });
 
 test('each new year: a created sheet gets its year tab with the column row; a present tab is left alone', async () => {
@@ -133,9 +134,9 @@ test('each new year: a created sheet gets its year tab with the column row; a pr
 test('sync: the year tab is checked first for a created sheet only; a failure is a warning, the sync goes on', async () => {
   const { syncJob } = await import('../jobs/sync.js');
   const { scopeStore } = await import('../db/scope.js');
-  const store = openHealthStore(':memory:');
-  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
-  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  const store = await openTestStore();
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const { fakeSource } = await import('./helpers.js');
   const source = fakeSource({ workout_log: { 2026: [WORKOUT_LOG_HEADER] } });
   let checked = 0;

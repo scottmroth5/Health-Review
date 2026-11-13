@@ -297,7 +297,10 @@ async function syncLabs({ store, source, warnings, stamp }) {
     // (found by its original date, since a correction may have moved it).
     const fromApp = db.prepare(`SELECT value_text, corrected_from_date FROM lab_results WHERE user_id = @uid AND test_id = @test AND source = 'ui'
       AND (drawn_on = @date OR corrected_from_date = @date)`);
-    const insert = db.prepare("INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'sheet', ?)");
+    // A correction may have moved another result onto a date the sheet has: the app's row stays (ON CONFLICT, not a
+    // caught error, since a failed statement ends a PostgreSQL transaction).
+    const insert = db.prepare(`INSERT INTO lab_results (user_id, test_id, drawn_on, value, value_text, source, updated_at) VALUES (@uid, ?, ?, ?, ?, 'sheet', ?)
+      ON CONFLICT (test_id, drawn_on) DO NOTHING`);
     for (const r of results) {
       const testId = ids.get(r.test.toLowerCase());
       const app = await fromApp.get({ test: testId, date: r.drawn_on });
@@ -309,13 +312,7 @@ async function syncLabs({ store, source, warnings, stamp }) {
         }
         continue;
       }
-      try {
-        await insert.run(testId, r.drawn_on, r.value, r.value_text, stamp);
-      } catch (err) {
-        // A correction moved another result onto this date; the app's row stays.
-        if (!/UNIQUE/.test(err.message)) throw err;
-        keptFromApp += 1;
-      }
+      if (!(await insert.run(testId, r.drawn_on, r.value, r.value_text, stamp)).changes) keptFromApp += 1;
     }
     await setState(db, 'lab_results', tab, { rowCount: data.firstRowNumber - 1 + data.rows.length, contentHash });
   });

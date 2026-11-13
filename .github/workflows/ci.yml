@@ -1,6 +1,8 @@
 # Tests on every push to main and every pull request. No secrets and no real data: the tests use synthetic fixtures only.
 # The suite runs in New York time and in UTC, so a calendar-day bug that only shows on a UTC server fails here
-# (tools/time.js, OWNER_TZ). The personal-data check runs its always-on part here (forbidden paths, secret shapes);
+# (tools/time.js, OWNER_TZ), and on each engine: SQLite in memory, and PostgreSQL 18 (TEST_DB=postgres, v3 Phase 1C: every
+# test's store is a fresh PostgreSQL database), so a query that means something else on PostgreSQL fails here before
+# production moves (1H). The personal-data check runs its always-on part here (forbidden paths, secret shapes);
 # the .env and private-terms part runs in the pre-commit hook on the owner's computer. Security on every push: npm audit, the
 # static security check (scripts/security-check.js), and CodeQL, whose open high or critical alerts fail CI and so stop
 # the deploy (deploy.yml runs only after CI passes).
@@ -16,15 +18,17 @@ permissions:
 
 jobs:
   test:
-    name: Tests (${{ matrix.tz }})
+    name: Tests (${{ matrix.tz }}, ${{ matrix.engine }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         tz: [America/New_York, UTC]
-    # A throwaway PostgreSQL for the tests that need a server (test/pg.js; v3 Phase 1C). It lives only for this job, holds
-    # made-up rows only, and its password is not a secret. Without DATABASE_URL those tests skip.
+        engine: [sqlite, postgres]
+    # A throwaway PostgreSQL (test/pg.js; v3 Phase 1C): the whole suite on the postgres jobs, and the PostgreSQL-only tests
+    # (the adapter, the schema parity, the cross-engine routes) on all four. It lives only for this job, holds made-up
+    # rows only, and its password is not a secret.
     services:
       postgres:
         image: postgres:18
@@ -36,6 +40,7 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
     env:
       TZ: ${{ matrix.tz }}
+      TEST_DB: ${{ matrix.engine }}
       DATABASE_URL: postgres://postgres:ci-only@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v7
@@ -44,15 +49,21 @@ jobs:
           node-version: 26
           cache: npm
       - run: npm ci
+      - run: npm test
+      # The checks below do not depend on the engine, so they run on the SQLite jobs only.
       # Known vulnerabilities in what the app ships (dev tools excluded); high or critical fails the build.
       - run: npm audit --omit=dev --audit-level=high
-      - run: npm test
+        if: matrix.engine == 'sqlite'
       - run: npm run check:personal -- --all
+        if: matrix.engine == 'sqlite'
       - run: npm run check:security
+        if: matrix.engine == 'sqlite'
       # Types (tsconfig.json: db/ for now, growing a folder at a time) and promise lint (eslint.config.js: no floating
       # promises), the net for the move to an async database.
       - run: npm run typecheck
+        if: matrix.engine == 'sqlite'
       - run: npm run lint
+        if: matrix.engine == 'sqlite'
 
   codeql:
     name: CodeQL (security)

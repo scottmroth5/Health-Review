@@ -23,9 +23,11 @@ export function moveHours(text, hours) {
  */
 export async function fixSessionTimes(store, { apply = false, logger = { info() {}, warn() {}, error() {} } } = {}) {
   const db = store.db;
+  // Already applied (2026-10-15) and keyed on SQLite's rowid: SQLite only, never run on PostgreSQL.
+  if (db.engine !== 'sqlite') throw new Error('The workout time fix runs on SQLite only; it was applied before the move.');
   const alreadyApplied = Boolean(await db.prepare("SELECT 1 FROM runs WHERE user_id = @uid AND name = ? AND status = 'ok'").get(RUN_NAME));
   const stamps = new Set(await db.prepare("SELECT DISTINCT synced_at FROM drive_exports WHERE user_id = @uid AND kind = 'workouts'").pluck().all());
-  const rows = await db.prepare('SELECT rowid AS id, type, start, end, updated_at FROM workout_sessions WHERE user_id = @uid').all();
+  const rows = await db.prepare('SELECT rowid AS id, type, start, "end", updated_at FROM workout_sessions WHERE user_id = @uid').all();
   const key = (type, start, end) => `${type}|${start}|${end}`;
   const fromExports = new Set(rows.filter((r) => stamps.has(r.updated_at)).map((r) => key(r.type, r.start, r.end)));
   const sheetRows = rows.filter((r) => !stamps.has(r.updated_at));
@@ -59,7 +61,7 @@ export async function fixSessionTimes(store, { apply = false, logger = { info() 
   const run = await startUserRun(store, RUN_NAME, { hours: -SHEET_LATE_HOURS }, logger);
   try {
     const del = db.prepare('DELETE FROM workout_sessions WHERE user_id = @uid AND rowid = ?');
-    const upd = db.prepare('UPDATE workout_sessions SET start = ?, end = ? WHERE user_id = @uid AND rowid = ?');
+    const upd = db.prepare('UPDATE workout_sessions SET start = ?, "end" = ? WHERE user_id = @uid AND rowid = ?');
     await store.tx(async () => {
       for (const r of lateTwins) await del.run(r.id);
       // Earliest first is not enough when moves chain into each other's old slots; move all to a temporary mark first.

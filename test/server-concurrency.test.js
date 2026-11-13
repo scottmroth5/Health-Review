@@ -10,12 +10,13 @@ import { deleteUserData } from '../server/admin-queries.js';
 import { createAiAccess } from '../server/ai-access.js';
 import { createAlerts } from '../server/alerts.js';
 import { saveCheckin } from '../server/queries.js';
+import { openTestStore } from './helpers.js';
 
 const NOW = new Date('2026-10-24T16:00:00Z');
 
-function storeWithLee({ cap = null } = {}) {
-  const store = openHealthStore(':memory:');
-  store.syncDb.prepare(`INSERT INTO users (id, email, name, role, status, created_at, health_consent_at, uses_owner_key, owner_key_cap_usd)
+async function storeWithLee({ cap = null } = {}) {
+  const store = await openTestStore();
+  await store.db.prepare(`INSERT INTO users (id, email, name, role, status, created_at, health_consent_at, uses_owner_key, owner_key_cap_usd)
     VALUES ('lee', 'lee@example.com', 'Lee', 'user', 'approved', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', ?, ?)`).run(cap ? 1 : 0, cap);
   return store;
 }
@@ -29,7 +30,7 @@ async function leftovers(adb, uid) {
 
 test('an account deletion racing a check-in save leaves nothing of theirs, whichever starts first', async () => {
   for (const deleteFirst of [true, false]) {
-    const store = storeWithLee();
+    const store = (await storeWithLee());
     try {
       const lee = scopeDatabase(store.db, 'lee');
       await saveCheckin(lee, '2026-10-20', { energy: 6 });
@@ -42,18 +43,18 @@ test('an account deletion racing a check-in save leaves nothing of theirs, which
       // Whichever statement runs first, a save that lands before the deletion is deleted with the rest.
       assert.equal(await leftovers(store.db, 'lee'), 0, `nothing left (delete called first: ${deleteFirst})`);
       // One that arrives after it fails on the users foreign key, never left behind.
-      await assert.rejects(save(), /FOREIGN KEY/);
+      await assert.rejects(save(), /foreign key/i);
       assert.equal(await leftovers(store.db, 'lee'), 0);
     } finally {
-      store.close();
+      await store.close();
     }
   }
 });
 
 test('two requests at the AI cap at once send one pair of emails', async () => {
-  const store = storeWithLee({ cap: 1 });
+  const store = (await storeWithLee({ cap: 1 }));
   try {
-    store.syncDb.prepare("INSERT INTO runs (name, status, started_at, cost_usd, user_id) VALUES ('advisor-chat', 'ok', ?, 1.5, 'lee')").run(NOW.toISOString());
+    await store.db.prepare("INSERT INTO runs (name, status, started_at, cost_usd, user_id) VALUES ('advisor-chat', 'ok', ?, 1.5, 'lee')").run(NOW.toISOString());
     const mail = [];
     const ai = createAiAccess({ db: store.db, mailer: { send: async (m) => { mail.push(m.to); return true; } }, adminEmail: async () => 'owner@example.com',
       appUrl: () => 'http://localhost:5188', clock: () => NOW, log: { info() {} } });
@@ -62,12 +63,12 @@ test('two requests at the AI cap at once send one pair of emails', async () => {
     await new Promise((r) => setImmediate(r));
     assert.deepEqual(mail.sort(), ['lee@example.com', 'owner@example.com'], 'the user and the administrator, once each');
   } finally {
-    store.close();
+    await store.close();
   }
 });
 
 test('two alerts of one kind on one day at once send one email', async () => {
-  const store = openHealthStore(':memory:');
+  const store = await openTestStore();
   try {
     const mail = [];
     const alerts = createAlerts({ db: store.db, mailer: { send: async (m) => { mail.push(m.subject); return true; } }, adminEmail: async () => 'owner@example.com',
@@ -76,6 +77,6 @@ test('two alerts of one kind on one day at once send one email', async () => {
     assert.deepEqual(sent.sort(), [false, true]);
     assert.equal(mail.length, 1);
   } finally {
-    store.close();
+    await store.close();
   }
 });

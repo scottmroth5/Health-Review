@@ -5,6 +5,7 @@ import { detectBlocks, phaseOf, weekOf } from '../metrics/blocks.js';
 import { openOwnerStore } from '../db/store.js';
 import { detect, writeDetected, sessionCoverage, uuidV5, sessionId } from '../ingest/program-blocks.js';
 import { addDays } from '../metrics/stats.js';
+import { ownerStore } from './helpers.js';
 
 // Lifting every other day from start for n sessions; the first day of each week carries the name.
 function run(start, n, name) {
@@ -76,38 +77,38 @@ test('blocks: a run whose last session is within 14 days of today is in progress
   assert.deepEqual([b.status, b.end_date, b.last_session], ['in_progress', null, '2026-03-10']);
 });
 
-function seedLog(db, rows) {
-  const ex = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, ?, ?, ?, ?, ?)');
+async function seedLog(db, rows) {
+  const ex = db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, ?, ?, ?, ?, ?) RETURNING id');
   const set = db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, 100, 5, '5')");
-  rows.forEach((r, i) => set.run(ex.run(Number(r.date.slice(0, 4)), i + 2, r.date, r.workout, 'Squat').lastInsertRowid));
+  for (const [i, r] of rows.entries()) await set.run((await ex.get(Number(r.date.slice(0, 4)), i + 2, r.date, r.workout, 'Squat')).id);
 }
 
 test('blocks: saving a detection twice adds nothing; confirmed blocks and their sessions survive re-detection', async () => {
-  const store = openOwnerStore(':memory:');
-  const db = store.syncDb;
+  const store = await ownerStore();
+  const db = store.db;
   const adb = store.db;
-  seedLog(db, [...run('2025-01-06', 6, 'Symmetry Foundation 1 - Phase 1'), ...run('2025-03-03', 6, 'Anabolic Foundation 1 - Phase 1'),
+  await seedLog(db, [...run('2025-01-06', 6, 'Symmetry Foundation 1 - Phase 1'), ...run('2025-03-03', 6, 'Anabolic Foundation 1 - Phase 1'),
     { date: '2025-06-01', workout: 'Getting back at it' }]);
   const today = '2025-12-31';
   await writeDetected(adb, await detect(adb, today));
   await writeDetected(adb, await detect(adb, today));
-  const count = (t) => db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n;
-  assert.deepEqual([count('program_blocks'), count('log_sessions')], [2, 13]);
+  const count = async (t) => (await db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get()).n;
+  assert.deepEqual([(await count('program_blocks')), (await count('log_sessions'))], [2, 13]);
   assert.deepEqual(await sessionCoverage(adb, today), { liftingDays: 13, confirmed: 0, unassigned: 1, detected: 12, missing: 0 });
-  assert.equal(db.prepare("SELECT id FROM log_sessions WHERE date = '2025-01-06'").get().id, sessionId('2025-01-06'));
+  assert.equal((await db.prepare("SELECT id FROM log_sessions WHERE date = '2025-01-06'").get()).id, sessionId('2025-01-06'));
 
   // The owner confirms the first block (the review command does this in the next step).
-  const first = db.prepare("SELECT id FROM program_blocks WHERE program = 'MAPS Symmetry'").get().id;
-  db.prepare("UPDATE program_blocks SET source = 'confirmed', notes = 'kept' WHERE id = ?").run(first);
-  db.prepare("UPDATE log_sessions SET source = 'confirmed' WHERE block_id = ?").run(first);
+  const first = (await db.prepare("SELECT id FROM program_blocks WHERE program = 'MAPS Symmetry'").get()).id;
+  await db.prepare("UPDATE program_blocks SET source = 'confirmed', notes = 'kept' WHERE id = ?").run(first);
+  await db.prepare("UPDATE log_sessions SET source = 'confirmed' WHERE block_id = ?").run(first);
   await writeDetected(adb, await detect(adb, today));
-  assert.deepEqual(db.prepare('SELECT program, source, notes FROM program_blocks ORDER BY start_date').all(), [
+  assert.deepEqual((await db.prepare('SELECT program, source, notes FROM program_blocks ORDER BY start_date').all()), [
     { program: 'MAPS Symmetry', source: 'confirmed', notes: 'kept' },
     { program: 'MAPS Anabolic', source: 'detected', notes: null },
   ]);
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM log_sessions WHERE block_id = ?").get(first).n, 6);
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM log_sessions WHERE block_id = ?").get(first)).n, 6);
   assert.deepEqual(await sessionCoverage(adb, today), { liftingDays: 13, confirmed: 6, unassigned: 1, detected: 6, missing: 0 });
-  store.close();
+  await store.close();
 });
 
 test('blocks: session ids are UUID v5, stable for a date and distinct across dates', async () => {

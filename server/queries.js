@@ -1,6 +1,7 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isUniqueViolation, jsonText } from '../db/dialect.js';
 import { localDate as ownerDate, zonedParts } from '../tools/time.js';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact, doseText, ingredientsOf, weeklyCheckoffs } from '../metrics/medications.js';
@@ -290,7 +291,7 @@ export async function reviewStatus(db, today, now = new Date()) {
   try { gaps = saved ? JSON.parse(saved.summary_json).dataQuality ?? null : null; } catch { gaps = null; }
   const writtenWithGaps = gaps ? { missingDays: gaps.missingDays ?? [], partialDays: gaps.suspectedPartialDays ?? [] } : null;
   const run = await db.prepare(`SELECT status, started_at, finished_at, summary FROM runs
-    WHERE user_id = @uid AND name = 'review' AND json_extract(meta, '$.weekEnd') = ? ORDER BY id DESC LIMIT 1`).get(weekEnd);
+    WHERE user_id = @uid AND name = 'review' AND ${jsonText(db, 'meta', 'weekEnd')} = ? ORDER BY id DESC LIMIT 1`).get(weekEnd);
   const lastRun = run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
   const due = today > addDays(weekEnd, 1) || zonedParts(now).hour >= REVIEW_DUE_HOUR;
   return {
@@ -370,7 +371,7 @@ export async function cardioZoneView(db, view, today, group = CARDIO_ZONE_VIEWS[
   const to = buckets.at(-1).to;
   const { zone2, zones } = await loadMetricSettings(db);
   const bounds = zoneBounds({ zone2Low: zone2?.low, zone2High: zone2?.high, ...zones, birthYear: (await loadProfile(db, today)).birthYear, year: Number(today.slice(0, 4)) });
-  const sessions = await db.prepare('SELECT type, start, end, duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
+  const sessions = await db.prepare('SELECT type, start, "end", duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
     .all(from, `${addDays(to, 1)}`);
   const samples = await db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${addDays(to, 1)}`);
   return { view, bucket: group, bounds, buckets: cardioZones({ sessions, samples, bounds, buckets }) };
@@ -575,7 +576,7 @@ export async function updateMedicationDetails(db, id, changes) {
     try {
       await db.prepare(`UPDATE medications SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE user_id = @uid AND id = @id`).run(values);
     } catch (err) {
-      if (/UNIQUE/.test(err.message)) throw fail(409, 'Another entry already has that name');
+      if (isUniqueViolation(err)) throw fail(409, 'Another entry already has that name');
       throw err;
     }
     return getMedication(db, id);
@@ -778,7 +779,7 @@ export async function updateLabResult(db, id, { drawn_on, value }) {
           corrected_from = ?, corrected_from_date = ? WHERE user_id = @uid AND id = ?`)
         .run(date, v.value, v.value_text, now(), fromSheet ? r.value_text : r.corrected_from, fromSheet ? r.drawn_on : r.corrected_from_date, id);
     } catch (err) {
-      if (/UNIQUE/.test(err.message)) throw fail(409, 'That test already has a result on that date');
+      if (isUniqueViolation(err)) throw fail(409, 'That test already has a result on that date');
       throw err;
     }
     return db.prepare('SELECT * FROM lab_results WHERE user_id = @uid AND id = ?').get(id);
@@ -799,7 +800,7 @@ export async function deleteLabResult(db, id) {
         await db.prepare(`UPDATE lab_results SET drawn_on = ?, value = ?, value_text = ?, source = 'sheet', corrected_from = NULL,
             corrected_from_date = NULL, updated_at = ? WHERE user_id = @uid AND id = ?`).run(r.corrected_from_date, original.value, original.value_text, now(), id);
       } catch (err) {
-        if (/UNIQUE/.test(err.message)) throw fail(409, 'Another result already sits on the original date; move or delete it first');
+        if (isUniqueViolation(err)) throw fail(409, 'Another result already sits on the original date; move or delete it first');
         throw err;
       }
       return { restored: true };

@@ -9,7 +9,7 @@ import { buildSummary } from '../agent/summary.js';
 import { createReviewClaude } from '../agent/claude.js';
 import { runReview, prepareReview } from '../agent/review.js';
 import { computeWeek } from '../metrics/index.js';
-import { fakeClaudeClient, silentLogger } from './helpers.js';
+import { fakeClaudeClient, silentLogger, ownerStore } from './helpers.js';
 import { weeklyReview } from '../jobs/review.js';
 import { OWNER_ID } from '../db/users.js';
 
@@ -110,12 +110,12 @@ test('summary: nightBreathing is passed to the review only when there is data', 
 
 test('summary: health targets reach the review (metrics with data only; a band metric as its usual range), and their numbers are grounded', async () => {
   const { loadWeekData } = await import('../metrics/load.js');
-  const store = openOwnerStore(':memory:');
-  const add = store.syncDb.prepare("INSERT INTO daily_metrics (user_id, date, steps, wrist_temp_f, updated_at) VALUES (@uid, ?, 6500, 97.1, 'x')");
-  for (let d = '2026-07-01'; d <= '2026-09-26'; d = addDays(d, 1)) add.run(d);
-  for (const [k, v] of [['birth_year', '1975'], ['sex', 'male']]) store.syncDb.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run(k, v);
-  store.syncDb.prepare("INSERT INTO health_targets (user_id, metric, target, updated_at) VALUES (@uid, 'resting_hr', 58, 'x')").run(); // no resting HR data: left out
-  const s = buildSummary(computeWeek(await loadWeekData(store.syncDb, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  const store = await ownerStore();
+  const add = store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, wrist_temp_f, updated_at) VALUES (@uid, ?, 6500, 97.1, 'x')");
+  for (let d = '2026-07-01'; d <= '2026-09-26'; d = addDays(d, 1)) (await add.run(d));
+  for (const [k, v] of [['birth_year', '1975'], ['sex', 'male']]) (await store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run(k, v));
+  await store.db.prepare("INSERT INTO health_targets (user_id, metric, target, updated_at) VALUES (@uid, 'resting_hr', 58, 'x')").run(); // no resting HR data: left out
+  const s = buildSummary(computeWeek(await loadWeekData(store.db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
   assert.deepEqual(s.targets, [
     { metric: 'Steps', target: 7500, setBy: 'suggested', current90d: 6500, basis: 'norm', healthyLow: 8000 },
     // A band metric carries the usual range (90-day average 97.1, plus or minus 0.5), never a target.
@@ -123,7 +123,7 @@ test('summary: health targets reach the review (metrics with data only; a band m
   ]);
   assert.deepEqual(ungroundedNumbers(report([['Patterns Noticed', 'Steps averaged 6,500 against a target of 7,500 (healthy is 8,000 or more).']]), allowedNumbers(s, '')), []);
   assert.ok(CONTRACT.includes('"targets"'));
-  store.close();
+  await store.close();
 });
 
 test('grounding: calendar dates and numbers marked as targets are exempt; ratios are not', async () => {
@@ -188,14 +188,14 @@ test('fallbacks: on for supported models via the beta endpoint, plain call other
 });
 
 // ---- the run ----
-function seededStore() {
-  const store = openOwnerStore(':memory:');
-  const { syncDb: db } = store;
+async function seededStore() {
+  const store = await ownerStore();
+  const { db } = store;
   const now = 'x';
-  db.prepare("INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, 1, 'profile', 'Coach. Today is {{TODAY}}.', 0, ?), (@uid, 2, 'genetics', 'Gene notes.', 1, ?)").run(now, now);
-  db.prepare("INSERT INTO daily_metrics (user_id, date, hrv_ms, updated_at) VALUES (@uid, '2026-09-22', 48, 'x'), (@uid, '2026-09-23', 50, 'x')").run();
-  db.prepare("INSERT INTO medications (user_id, name, kind, created_at) VALUES (@uid, 'Sample Statin', 'medication', 'x')").run();
-  db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, notes, source, updated_at) VALUES (@uid, '2026-09-24', 'daily', 7, 'Long work week', 'ui', 'x')").run();
+  await db.prepare("INSERT INTO prompt_sections (user_id, position, name, text, sensitive, updated_at) VALUES (@uid, 1, 'profile', 'Coach. Today is {{TODAY}}.', 0, ?), (@uid, 2, 'genetics', 'Gene notes.', 1, ?)").run(now, now);
+  await db.prepare("INSERT INTO daily_metrics (user_id, date, hrv_ms, updated_at) VALUES (@uid, '2026-09-22', 48, 'x'), (@uid, '2026-09-23', 50, 'x')").run();
+  await db.prepare("INSERT INTO medications (user_id, name, kind, created_at) VALUES (@uid, 'Sample Statin', 'medication', 'x')").run();
+  await db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, notes, source, updated_at) VALUES (@uid, '2026-09-24', 'daily', 7, 'Long work week', 'ui', 'x')").run();
   return store;
 }
 
@@ -206,7 +206,7 @@ const response = (r, stop = 'end_turn') => ({
 });
 
 test('review: a draft breaking the rules is retried with the problems listed; the clean one is saved', async () => {
-  const store = seededStore();
+  const store = (await seededStore());
   const prompts = [];
   const drafts = [
     report([['Weekly Wins', 'HRV hit 99 ms — great. Keep taking Sample Statin.']]),
@@ -225,43 +225,43 @@ test('review: a draft breaking the rules is retried with the problems listed; th
   assert.equal(prompts[0].output_config.effort, 'high');
   assert.equal(prompts[0].model, 'claude-opus-5-5');
 
-  const saved = store.syncDb.prepare('SELECT * FROM reviews').get();
+  const saved = (await store.db.prepare('SELECT * FROM reviews').get());
   assert.equal(saved.week_ending, '2026-09-26');
   assert.match(saved.report_md, /## Discuss with your physician\n- \*\*Sample Statin\*\*/);
   assert.equal(saved.sensitive_sections, '["genetics"]');
   assert.match(saved.summary_json, /Long work week/, 'the week\'s notes are part of the summary');
 
-  const run = store.syncDb.prepare("SELECT status, meta, summary FROM runs WHERE name = 'review'").get();
+  const run = (await store.db.prepare("SELECT status, meta, summary FROM runs WHERE name = 'review'").get());
   assert.equal(run.status, 'ok');
   assert.deepEqual(JSON.parse(run.meta).sensitiveSections, ['genetics']);
   assert.doesNotMatch(run.meta + run.summary, /Gene notes|HRV averaged|Long work week/, 'no prompt or report text in the run record');
-  assert.equal(store.syncDb.prepare("SELECT COUNT(*) AS n FROM run_calls").get().n, 2);
-  store.close();
+  assert.equal((await store.db.prepare("SELECT COUNT(*) AS n FROM run_calls").get()).n, 2);
+  await store.close();
 });
 
 test('review: problems left after the retry are saved as warnings; dashes are stripped in code', async () => {
-  const store = seededStore();
+  const store = (await seededStore());
   const draft = report([['Weekly Wins', 'Slept 9.9 hours — a record.']]);
   const fake = fakeClaudeClient(async () => response(draft));
   const r = await runReview({ store, claude: createReviewClaude({ client: fake }), weekEnd: '2026-09-26', today: '2026-09-27', logger: silentLogger });
   assert.deepEqual(r.warnings, ['numbers not in the summary: 9.9']);
-  const saved = store.syncDb.prepare('SELECT report_md, warnings FROM reviews').get();
+  const saved = (await store.db.prepare('SELECT report_md, warnings FROM reviews').get());
   assert.doesNotMatch(saved.report_md, /—/);
   assert.deepEqual(JSON.parse(saved.warnings), ['numbers not in the summary: 9.9']);
-  store.close();
+  await store.close();
 });
 
 test('review: a truncated response fails the run instead of saving half a report (v1 bug fixed)', async () => {
-  const store = seededStore();
+  const store = (await seededStore());
   const fake = fakeClaudeClient(async () => response(report([['Weekly Wins', 'ok']]), 'max_tokens'));
   await assert.rejects(runReview({ store, claude: createReviewClaude({ client: fake }), weekEnd: '2026-09-26', today: '2026-09-27', logger: silentLogger }), ClaudeTruncatedError);
-  assert.equal(store.syncDb.prepare('SELECT COUNT(*) AS n FROM reviews').get().n, 0);
-  assert.deepEqual(JSON.parse(store.syncDb.prepare("SELECT summary FROM runs WHERE name = 'review'").get().summary), { weekEnd: '2026-09-26', error: 'ClaudeTruncatedError' });
-  store.close();
+  assert.equal((await store.db.prepare('SELECT COUNT(*) AS n FROM reviews').get()).n, 0);
+  assert.deepEqual(JSON.parse((await store.db.prepare("SELECT summary FROM runs WHERE name = 'review'").get()).summary), { weekEnd: '2026-09-26', error: 'ClaudeTruncatedError' });
+  await store.close();
 });
 
 test('weeklyReview: the job writes the review on the async handle, and its run belongs to the user', async () => {
-  const store = seededStore();
+  const store = (await seededStore());
   const draft = report([['Weekly Wins', 'HRV averaged 49 ms over 2 days.']]);
   const fake = fakeClaudeClient(async () => response(draft));
   const key = process.env.ANTHROPIC_API_KEY;
@@ -273,24 +273,24 @@ test('weeklyReview: the job writes the review on the async handle, and its run b
     const r = await weeklyReview({ store, claude: () => createReviewClaude({ client: fake }), weekEnd: '2026-09-26', today: '2026-09-27', force: true });
     assert.equal(r.status, 'written');
     assert.deepEqual(r.result.warnings, []);
-    assert.equal(store.syncDb.prepare('SELECT week_ending FROM reviews').pluck().get(), '2026-09-26');
-    assert.deepEqual(store.raw.prepare("SELECT user_id, status FROM runs WHERE name = 'review' ORDER BY id").all(),
+    assert.equal((await store.db.prepare('SELECT week_ending FROM reviews').pluck().get()), '2026-09-26');
+    assert.deepEqual((await store.db.unscoped.prepare("SELECT user_id, status FROM runs WHERE name = 'review' ORDER BY id").all()),
       [{ user_id: OWNER_ID, status: 'skipped' }, { user_id: OWNER_ID, status: 'ok' }]);
     const again = await weeklyReview({ store, claude: () => { throw new Error('no call expected'); }, weekEnd: '2026-09-26', today: '2026-09-27', scheduled: true });
     assert.equal(again.status, 'exists');
   } finally {
     if (key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = key;
-    store.close();
+    await store.close();
   }
 });
 
 test('dry run preparation needs no client and names the sensitive sections it would send', async () => {
-  const store = seededStore();
-  const prep = await prepareReview(store.syncDb, { weekEnd: '2026-09-26', today: '2026-09-27' });
+  const store = (await seededStore());
+  const prep = await prepareReview(store.db, { weekEnd: '2026-09-26', today: '2026-09-27' });
   assert.deepEqual(prep.sensitiveSent, ['genetics']);
   assert.deepEqual(prep.checks.medicationNames, ['Sample Statin']);
   assert.ok(prep.checks.allowed.has(48));
-  store.close();
+  await store.close();
 });
 
 test('summary: the weekly review gets 12 weeks and 12 months of training volume, all grounded', async () => {
@@ -312,22 +312,22 @@ test('summary: the current program block, its logged phase and finish reach the 
   const { loadWeekData } = await import('../metrics/load.js');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 11, phases: [
     { name: 'Phase 1', weeks: [1, 5] }, { name: 'Phase 2', weeks: [6, 11], special_weeks: { deload: [7] } }] }] }, { programs: ['MAPS Symmetry'] });
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const now = new Date().toISOString();
-  store.syncDb.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+  await store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  const ex = store.syncDb.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, ?, ?, ?, ?)');
-  ex.run(2, '2026-08-03', 'Symmetry Foundation - Phase 1', 'Squat');
-  ex.run(3, '2026-09-14', 'Symmetry Foundation - Phase 2', 'Squat'); // Phase 1 took 6 weeks of a planned 5
-  const s = buildSummary(computeWeek(await loadWeekData(store.syncDb, '2026-09-26', { catalog }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  const ex = store.db.prepare('INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, ?, ?, ?, ?) RETURNING id');
+  await ex.get(2, '2026-08-03', 'Symmetry Foundation - Phase 1', 'Squat');
+  await ex.get(3, '2026-09-14', 'Symmetry Foundation - Phase 2', 'Squat'); // Phase 1 took 6 weeks of a planned 5
+  const s = buildSummary(computeWeek(await loadWeekData(store.db, '2026-09-26', { catalog }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
   assert.deepEqual(s.program, { program: 'MAPS Symmetry', status: 'in_progress', phase: 'Phase 2', phaseStarted: '2026-09-14', phaseWeek: 2,
     phaseWeeks: 6, week: 7, programWeeks: 11, earliestFinish: '2026-10-25', paceFinish: '2026-11-02', pastProgramEnd: false,
     deloadWeek: true, failureWeek: false, estimatedFromCalendar: false });
   const allowed = allowedNumbers(s, '');
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'You are in week 7 of 11 of MAPS Symmetry, Phase 2, week 2 of 6.']]), allowed), []);
-  assert.equal(buildSummary(computeWeek(await loadWeekData(store.syncDb, '2026-07-25', { catalog }), { weekEnd: '2026-07-25' }), [], { today: '2026-07-26' }).program, null,
+  assert.equal(buildSummary(computeWeek(await loadWeekData(store.db, '2026-07-25', { catalog }), { weekEnd: '2026-07-25' }), [], { today: '2026-07-26' }).program, null,
     'no block covers that week');
-  store.close();
+  await store.close();
 });
 
 test('summary: called for vs logged reaches the review as counts and logged names only, grounded; absent without a catalog', async () => {
@@ -342,17 +342,17 @@ test('summary: called for vs logged reaches the review as counts and logged name
     { id: 'z-press', name: 'Z Press', implement: 'barbell', pattern: 'vertical press', primary: true },
     { id: 'row', name: 'Row', implement: 'dumbbell', pattern: 'horizontal pull', primary: false },
   ] });
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const now = new Date().toISOString();
-  store.syncDb.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+  await store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-09-14', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  store.syncDb.prepare(`INSERT INTO log_sessions (user_id, id, date, block_id, assignment, program, week, source, updated_at, phase)
+  await store.db.prepare(`INSERT INTO log_sessions (user_id, id, date, block_id, assignment, program, week, source, updated_at, phase)
     VALUES (@uid, 's1', '2026-09-22', 'b1', 'block', 'MAPS Symmetry', 2, 'forward', ?, 'Phase 1')`).run(now);
-  const { lastInsertRowid } = store.syncDb.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, canonical_id, implement, movement_pattern)
-    VALUES (@uid, 2026, 1, '2026-09-22', 'Symmetry Foundation 1 - Phase 1', 'Z Press', 'z-press', 'barbell', 'vertical press')`).run();
-  for (let i = 1; i <= 3; i++) store.syncDb.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps) VALUES (@uid, ?, ?, 95, 5)').run(lastInsertRowid, i);
+  const { id: lastInsertRowid } = (await store.db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise, canonical_id, implement, movement_pattern)
+    VALUES (@uid, 2026, 1, '2026-09-22', 'Symmetry Foundation 1 - Phase 1', 'Z Press', 'z-press', 'barbell', 'vertical press') RETURNING id`).get());
+  for (let i = 1; i <= 3; i++) (await store.db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps) VALUES (@uid, ?, ?, 95, 5)').run(lastInsertRowid, i));
 
-  const week = async (cat) => buildSummary(computeWeek(await loadWeekData(store.syncDb, '2026-09-26', { catalog: cat, dictionary, substitutions: { swaps: [] } }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
+  const week = async (cat) => buildSummary(computeWeek(await loadWeekData(store.db, '2026-09-26', { catalog: cat, dictionary, substitutions: { swaps: [] } }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
   const s = await week(catalog);
   assert.deepEqual(s.programAdherence, { program: 'MAPS Symmetry', days: 1, matched: 1, focus: 0, notMatched: 0,
     counts: { as_called: 0, swapped: 0, changed: 1, skipped: 1, added: 0 }, setsLogged: 3, setsCalled: { min: 6, max: 6 },
@@ -360,7 +360,7 @@ test('summary: called for vs logged reaches the review as counts and logged name
   assert.ok(!/"(Press|Row)"/.test(JSON.stringify(s.programAdherence)), 'no called-for name is sent');
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'One lifting day followed the program: 3 sets logged of 6 called for, 1 skipped, Z Press done instead.']]), allowedNumbers(s, '')), []);
   assert.equal((await week(null)).programAdherence, undefined, 'no catalog, no adherence');
-  store.close();
+  await store.close();
 });
 
 test('summary: the Program Advisor ranking reaches the review only within 21 days of the block\'s earliest finish, grounded', async () => {
@@ -377,12 +377,12 @@ test('summary: the Program Advisor ranking reaches the review only within 21 day
   const dictionary = createDictionary({ version: 1, exercises: [
     { id: 'squat', name: 'Squat', implement: 'barbell', pattern: 'squat', primary: true },
     { id: 'sprints', name: 'Sprints', implement: 'other', pattern: 'other', primary: false }] });
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const now = new Date().toISOString();
-  store.syncDb.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
+  await store.db.prepare(`INSERT INTO program_blocks (user_id, id, program, start_date, end_date, status, source, created_at, updated_at)
     VALUES (@uid, 'b1', 'MAPS Symmetry', '2026-08-03', NULL, 'in_progress', 'confirmed', ?, ?)`).run(now, now);
-  store.syncDb.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, 2, '2026-08-03', 'Symmetry - Phase 1', 'Squat')").run();
-  const week = async (weekEnd) => buildSummary(computeWeek(await loadWeekData(store.syncDb, weekEnd, { catalog, dictionary, substitutions: { avoid: [] } }), { weekEnd }), [], { today: weekEnd });
+  await store.db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2026, 2, '2026-08-03', 'Symmetry - Phase 1', 'Squat')").run();
+  const week = async (weekEnd) => buildSummary(computeWeek(await loadWeekData(store.db, weekEnd, { catalog, dictionary, substitutions: { avoid: [] } }), { weekEnd }), [], { today: weekEnd });
 
   // Earliest finish 2026-10-18 (11 weeks from Aug 3): 22 days after Sep 26, 15 after Oct 3.
   assert.equal((await week('2026-09-26')).advisor, undefined);
@@ -404,7 +404,7 @@ test('summary: the Program Advisor ranking reaches the review only within 21 day
   assert.equal(advisorDue({ status: 'completed', earliestFinish: null }, '2026-10-03'), true);
   assert.equal(advisorDue({ status: 'in_progress', earliestFinish: null, pastProgramEnd: true }, '2026-10-03'), true);
   assert.equal(advisorDue({ status: 'in_progress', earliestFinish: '2026-10-25', pastProgramEnd: false }, '2026-10-03'), false);
-  store.close();
+  await store.close();
 });
 
 test('summary: dataQuality lists the missing and partial days of the week (dates only), and is left out when there are none', async () => {
@@ -423,38 +423,38 @@ test('summary: dataQuality lists the missing and partial days of the week (dates
 
 test('summary: lift plateau statuses reach the review grounded; lifts not trained recently are left out', async () => {
   const { loadWeekData } = await import('../metrics/load.js');
-  const store = openOwnerStore(':memory:');
-  const db = store.syncDb;
+  const store = await ownerStore();
+  const db = store.db;
   const ex = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise, canonical_id, implement, is_primary, map_status)
-    VALUES (@uid, ?, ?, ?, ?, ?, 'barbell', 1, 'mapped')`);
+    VALUES (@uid, ?, ?, ?, ?, ?, 'barbell', 1, 'mapped') RETURNING id`);
   const set = db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, ?, 5, '5')");
   let row = 2;
-  const add = (date, id, name, weight) => set.run(ex.run(Number(date.slice(0, 4)), row++, date, name, id).lastInsertRowid, weight);
-  for (const d of ['2026-07-25', '2026-08-08']) add(d, 'barbell-deadlift', 'Barbell Deadlift', 300);
-  for (const d of ['2026-08-22', '2026-09-05', '2026-09-12', '2026-09-19']) add(d, 'barbell-deadlift', 'Barbell Deadlift', 280);
-  add('2026-01-10', 'military-press', 'Military Press', 95);
+  const add = async (date, id, name, weight) => set.run((await ex.get(Number(date.slice(0, 4)), row++, date, name, id)).id, weight);
+  for (const d of ['2026-07-25', '2026-08-08']) await add(d, 'barbell-deadlift', 'Barbell Deadlift', 300);
+  for (const d of ['2026-08-22', '2026-09-05', '2026-09-12', '2026-09-19']) await add(d, 'barbell-deadlift', 'Barbell Deadlift', 280);
+  await add('2026-01-10', 'military-press', 'Military Press', 95);
   const s = buildSummary(computeWeek(await loadWeekData(db, '2026-09-26', { catalog: null }), { weekEnd: '2026-09-26' }), [], { today: '2026-09-27' });
   assert.deepEqual(s.lifts.map((l) => [l.id, l.status, l.changePct]), [['barbell-deadlift', 'regressing', -6.6]]);
   assert.equal(s.lifts[0].trend, undefined, 'no trend points in the review');
   const allowed = allowedNumbers(s, '');
   assert.deepEqual(ungroundedNumbers(report([['Strength Progress', 'Deadlift is regressing: best estimated max 327 against 350, down 6.6%.']]), allowed), []);
-  store.close();
+  await store.close();
 });
 
 test('summary: heartRateZones from per-minute heart rate, only with a Zone 2 range and a birth year', async () => {
-  const store = seededStore();
-  const { syncDb: db } = store;
-  db.prepare("INSERT INTO workout_sessions (user_id, type, start, end, duration_sec, avg_hr, updated_at) VALUES (@uid, 'Elliptical', '2026-09-22T10:00:00', '2026-09-22T10:05:00', 300, 118, 'x')").run();
+  const store = (await seededStore());
+  const { db } = store;
+  await db.prepare("INSERT INTO workout_sessions (user_id, type, start, \"end\", duration_sec, avg_hr, updated_at) VALUES (@uid, 'Elliptical', '2026-09-22T10:00:00', '2026-09-22T10:05:00', 300, 118, 'x')").run();
   const ins = db.prepare("INSERT INTO workout_hr_samples (user_id, type, start, t, avg_bpm) VALUES (@uid, 'Elliptical', '2026-09-22T10:00:00', ?, ?)");
-  [105, 115, 120, 130].forEach((bpm, i) => ins.run(`2026-09-22T10:0${i}`, bpm));
+  for (const [i, bpm] of [105, 115, 120, 130].entries()) await ins.run(`2026-09-22T10:0${i}`, bpm);
   const zones = async () => (await prepareReview(db, { weekEnd: '2026-09-26', today: '2026-09-27' })).summary.heartRateZones;
   assert.equal(await zones(), undefined, 'no Zone 2 range yet');
   for (const [k, v] of [['zone2_low_bpm', '110'], ['zone2_high_bpm', '125'], ['birth_year', '1970']]) {
-    db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run(k, v);
+    await db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run(k, v);
   }
   const z = await zones();
   assert.deepEqual(z.week, { minutes: [1, 2, 1, 0, 0], noDetail: 1, total: 5 });
   assert.equal(z.maxHr, 169);
   assert.equal(z.zones[1].low, 110);
-  store.close();
+  await store.close();
 });

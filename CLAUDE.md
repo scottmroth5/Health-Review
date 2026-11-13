@@ -48,14 +48,19 @@ Health specific logic stays in this repo; never add it to agent-core.
                     every caller awaits each statement; syncDb is the guarded sync handle (a statement throws
                     TransactionConflictError while another request holds an async transaction), used only by the backup
                     and the restore test until 1G, and by tests to seed rows; raw is unguarded: the migrations,
-                    syncOwnerEmail as the store opens (until 1C), SQLite's own tables and pragmas (demo refresh,
-                    scripts/baseline.js). The review eval runner keeps its own sync case store until 1C
-                    (harness-gated). Never hold an async transaction across an external call (Claude, Google); a
+                    SQLite's own tables and pragmas (demo refresh, scripts/baseline.js). The review eval runner keeps its
+                    own sync case store until 1E (harness-gated). Never hold an async transaction across an external call (Claude, Google); a
                     transaction awaits only statements, so on SQLite it ends before another request can run
                     (test/database.test.ts). Read-then-write sequences run in one db.tx: medication, lab, prompt section and
                     settings writes (test/queries-concurrency.test.js), account deletion, the AI cap and alert emails, pause
-                    and resume, registration (test/server-concurrency.test.js). Tests: memoryStore in test/helpers.js (db
-                    and syncDb, owner or a second user)
+                    and resume, registration (test/server-concurrency.test.js). Tests (slice 4: the whole suite runs on
+                    either engine, TEST_DB=postgres for PostgreSQL): test/helpers.js openTestStore (unscoped, like
+                    openHealthStore(':memory:')), ownerStore, memoryStore (owner or a second user) and demoStore (the
+                    demo's made-up data, copied row for row into PostgreSQL by test/copy-rows.js), all async; a test
+                    seeds through await store.db, never syncDb, and awaits close(). Tests of SQLite itself (its
+                    migrations, the sync guard, backup, restore, demo refresh, the one-off session-times fix) open
+                    openHealthStore(':memory:') or a file directly. test/cross-engine.test.js answers every GET route
+                    and view on the demo data on both engines and fails on any byte of difference
                     PostgreSQL (v3 Phase 1C, docs/adr/0007; production stays on SQLite until 1H): postgres.ts
                     createPostgresDatabase, the same interface over a pg pool (createPostgresPool: UTC sessions, int8 and
                     numeric as numbers, a bigint past 2^53 throws; tx on one client through AsyncLocalStorage, nested as a
@@ -63,7 +68,30 @@ Health specific logic stays in this repo; never add it to agent-core.
                     failed statement aborts its transaction, so never catch a statement error inside a tx and carry on);
                     placeholders.ts toPositional rewrites ? and @name to $n with better-sqlite3's binding rules and
                     errors. One SQL text serves both engines. Tests needing a server use test/pg.js (a fresh C-collation
-                    database each, skipped without DATABASE_URL)
+                    database each, skipped without DATABASE_URL). Schema (slice 2): pg/001-baseline.sql is the SQLite
+                    schema through 033 (INTEGER bigint, a rowid key an identity, REAL double precision, NOCASE citext,
+                    SQLite's column order); pg/migrate.js openPostgresStore checks the database sorts and folds text as
+                    SQLite does (C collation and ctype; refused otherwise), then applies PG_MIGRATIONS under an advisory
+                    lock, each in its own transaction. Every new SQLite migration needs its PostgreSQL twin in
+                    PG_MIGRATIONS under the same id: test/schema-parity.test.js compares the two schemas table by table
+                    (columns and order, types, NOT NULL, defaults, keys, uniques, foreign keys, checks, indexes) and the
+                    rows a new database starts with (the owner). Shared SQL (slice 3): write SQL both engines take: quote
+                    "end"; ON CONFLICT, never INSERT OR; CASE for the larger of two values, never two-argument MAX or
+                    GREATEST; every selected column grouped or aggregated; LOWER(x) LIKE for a case-blind match (SQLite's
+                    LIKE ignores case, PostgreSQL's does not); a flag as CASE WHEN ... THEN 1 ELSE 0 END, never a bare
+                    comparison or EXISTS (PostgreSQL returns true and false); a duplicate is ON CONFLICT or
+                    dialect.js isUniqueViolation (error codes, never message text); an ORDER BY that names enough
+                    columns to break every tie (rows tied on the sort keys come back in no set order, which differs by
+                    engine); a bound value selected back as a column wrapped in CAST (PostgreSQL types a bare parameter
+                    as text); an insert's new id from RETURNING id with get(), never lastInsertRowid. What cannot be
+                    shared is in dialect.js (jsonText, listTables, tableColumns, primaryKey). test/sql-postgres.test.js
+                    prepares every SQL statement written out in the code on PostgreSQL (no rows needed) and fails on one
+                    that would not run or returns a boolean; statements built with ${} are covered by the full suite and
+                    the cross-engine routes.
+                    openStore() (db/store.js) opens PostgreSQL when DATABASE_URL is set, else SQLite, then
+                    syncOwnerEmail (async, on db); the server keeps openHealthStore until 1H and calls syncOwnerEmail
+                    itself, so a stray DATABASE_URL never moves production. The account export lists rows in primary key
+                    order
 /server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status
@@ -116,7 +144,8 @@ Health specific logic stays in this repo; never add it to agent-core.
 /legacy contains the v1 scripts for reference only. Do not modify or import from them.
 
 ## Commands
-npm test                          run unit tests, including metric fixtures (CI runs them under TZ=America/New_York and UTC)
+npm test                          run unit tests, including metric fixtures (CI runs them under TZ=America/New_York and UTC,
+                                  each on SQLite and on PostgreSQL)
 npm run check:personal -- --all   personal-data and secrets check of every tracked file (the pre-commit hook checks staged
                                   files; npm install turns the hook on; private terms go in data/private-terms.txt)
 node --test test/google.test.js   run one suite
@@ -124,6 +153,8 @@ DATABASE_URL=postgres://postgres:<pw>@127.0.0.1:55432/postgres npm test   also r
                                   service does this); locally: docker run -d --name hr-pg -p 127.0.0.1:55432:5432
                                   -e POSTGRES_PASSWORD=<pw> -e POSTGRES_INITDB_ARGS="--locale=C --encoding=UTF8"
                                   --tmpfs /var/lib/postgresql postgres:18 (made-up rows only; gone when removed)
+TEST_DB=postgres DATABASE_URL=... npm test   the whole suite on PostgreSQL: each store a copy of a migrated template
+                                  database (hr_tpl_<schema hash>, kept on the server), dropped when closed or at exit
 npm run typecheck                 tsc, checking only (tsconfig.json: db/ for now, a folder at a time; TypeScript 6.0.x, as
                                   typescript-eslint supports below 6.1; .ts runs through Node's type stripping, docs/adr/0005)
 npm run lint                      eslint, promise rules only (no-floating-promises, no-misused-promises) with type information

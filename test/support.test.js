@@ -6,12 +6,13 @@ import { randomBytes } from 'node:crypto';
 import { openHealthStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
+import { openTestStore } from './helpers.js';
 
 const SUPPORT = 'help-desk@example.com';
 const SITE = 'http://localhost:5188';
 
 test('with SUPPORT_EMAIL: policies, guides, status and the US-only page show it as a mailto link', async () => {
-  const app = await buildApp({ store: openHealthStore(':memory:'), supportEmail: SUPPORT, trustProxy: true, geo: { allow: ['US'], lookup: () => 'GB' } });
+  const app = await buildApp({ store: await openTestStore(), supportEmail: SUPPORT, trustProxy: true, geo: { allow: ['US'], lookup: () => 'GB' } });
   for (const url of ['/privacy', '/terms', '/guides']) {
     const body = (await app.inject({ url, headers: { 'x-forwarded-for': '10.0.0.1' } })).body;
     assert.match(body, new RegExp(`<a href="mailto:${SUPPORT}">${SUPPORT}</a>`), url);
@@ -25,7 +26,7 @@ test('with SUPPORT_EMAIL: policies, guides, status and the US-only page show it 
 
 test('unset or not an address: no address anywhere, "the administrator" instead, no placeholder left', async () => {
   for (const supportEmail of [null, 'not-an-address', '"><script>@x.com']) {
-    const app = await buildApp({ store: openHealthStore(':memory:'), supportEmail });
+    const app = await buildApp({ store: await openTestStore(), supportEmail });
     const body = (await app.inject('/terms')).body;
     assert.match(body, /email the administrator/);
     assert.ok(!body.includes('{{SUPPORT}}') && !body.includes('mailto:') && !body.includes('<script>'));
@@ -36,9 +37,9 @@ test('unset or not an address: no address anywhere, "the administrator" instead,
 test('the waiting page and the "you\'re in" email carry it', async () => {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
-  const store = openHealthStore(':memory:');
-  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('kim', 'kim@example.com', 'user', 'pending', 'x')").run();
-  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  const store = await openTestStore();
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('kim', 'kim@example.com', 'user', 'pending', 'x')").run();
+  await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const mail = [];
   let email;
   let nonce;

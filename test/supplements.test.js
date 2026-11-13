@@ -12,6 +12,7 @@ import { buildSystem, renderReport, reportSchema, REPORT_SCHEMA, EMERGENCY_LINE 
 import { allowedNumbers, checkReport, checkSuggestions } from '../agent/validate.js';
 import { prepareReview } from '../agent/review.js';
 import { askHelp } from '../agent/help.js';
+import { ownerStore, openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';
 const vitD = (amount, extra = {}) => ({ supplement: 'Vitamin D3', action: 'change', amount, reasons: 'Your note says you doubled it.',
@@ -90,25 +91,25 @@ test('the review: rules, schema field and statement only when the setting is on;
   assert.ok(!renderReport({ highlights: [], nextSteps: [], sections: [], physicianDiscussion: [], supplementSuggestions: [] }).includes(SUPPLEMENTS_TITLE));
   assert.equal(renderSuggestions([]), '');
 
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const week = { weekEnd: '2026-09-26', today: '2026-09-27' };
-  const off = await prepareReview(store.syncDb, week);
+  const off = await prepareReview(store.db, week);
   assert.equal(off.schema, REPORT_SCHEMA);
   assert.equal(off.checks.supplements, null);
-  store.syncDb.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', '2026-10-31T12:00:00.000Z', 'x')").run();
-  const on = await prepareReview(store.syncDb, week);
+  await store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', '2026-10-31T12:00:00.000Z', 'x')").run();
+  const on = await prepareReview(store.db, week);
   assert.ok(on.system.includes(SUPPLEMENT_RULES));
   assert.ok(on.schema.properties.supplementSuggestions);
   assert.deepEqual(on.checks.supplements, { age: null });
-  store.close();
+  await store.close();
 });
 
 test('the setting: off by default, on only with the statement accepted, off at any time; paused accounts can only turn it off', async () => {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
-  const store = openHealthStore(':memory:');
-  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('pat', 'pat@example.com', 'user', 'paused', 'x')").run();
-  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  const store = await openTestStore();
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('pat', 'pat@example.com', 'user', 'paused', 'x')").run();
+  await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   let email;
   let nonce;
   const app = await buildApp({ store, authMode: 'google', mailer: { send: async () => true }, log: { info() {}, warn() {}, error() {} },
@@ -130,7 +131,7 @@ test('the setting: off by default, on only with the statement accepted, off at a
   assert.equal((await lee.send('PUT', '/api/account/supplement-advice', { on: true })).statusCode, 400, 'not without accepting');
   assert.equal((await lee.send('PUT', '/api/account/supplement-advice', { on: true, accept: false })).statusCode, 400);
   assert.ok((await lee.send('PUT', '/api/account/supplement-advice', { on: true, accept: true })).json().supplementAdvice.since);
-  assert.equal(store.syncDb.prepare("SELECT user_id FROM settings WHERE key = 'supplement_advice'").pluck().get(), 'lee', 'their own settings row');
+  assert.equal((await store.db.prepare("SELECT user_id FROM settings WHERE key = 'supplement_advice'").pluck().get()), 'lee', 'their own settings row');
   assert.equal((await lee.send('PUT', '/api/account/supplement-advice', { on: false })).json().supplementAdvice.since, null);
 
   const pat = await signIn('pat@example.com');
@@ -142,7 +143,7 @@ test('the setting: off by default, on only with the statement accepted, off at a
 });
 
 test('Help: plain text and no statement when off; with it on, structured, general only, and the statement with any supplement answer', async () => {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const calls = [];
   const claude = (reply) => ({ send: async (o) => { calls.push(o); return { model: 'm', text: typeof reply === 'string' ? reply : null, data: typeof reply === 'string' ? null : reply }; } });
   const off = await askHelp({ store, claude: claude('Open Settings.'), question: 'Should I take creatine?', site: SITE, logger: { info() {}, warn() {}, error() {} } });
@@ -150,7 +151,7 @@ test('Help: plain text and no statement when off; with it on, structured, genera
   assert.equal(calls[0].schema, undefined);
   assert.doesNotMatch(calls[0].system, /turned on supplement suggestions/);
 
-  store.syncDb.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', '2026-10-31T12:00:00.000Z', 'x')").run();
+  await store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'supplement_advice', '2026-10-31T12:00:00.000Z', 'x')").run();
   const on = await askHelp({ store, claude: claude({ answer: 'Creatine is widely studied for strength.', supplementAdvice: true }), question: 'Should I take creatine?', site: SITE });
   assert.deepEqual(on, { answer: 'Creatine is widely studied for strength.', statement: SUPPLEMENT_DISCLAIMER });
   assert.ok(calls[1].schema.properties.supplementAdvice);
@@ -159,5 +160,5 @@ test('Help: plain text and no statement when off; with it on, structured, genera
   assert.equal(unflagged.statement, SUPPLEMENT_DISCLAIMER, 'shown although the model did not flag it');
   const app = await askHelp({ store, claude: claude({ answer: 'Open Settings, then Data feeds.', supplementAdvice: false }), question: 'How do I sync?', site: SITE });
   assert.equal(app.statement, undefined);
-  store.close();
+  await store.close();
 });

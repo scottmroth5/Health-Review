@@ -7,98 +7,99 @@ import { buildApp } from '../server/app.js';
 import { reviewStatus } from '../server/queries.js';
 import { addDays } from '../metrics/stats.js';
 import { OWNER_ID } from '../db/users.js';
+import { ownerStore } from './helpers.js';
 
 // Monday 2026-03-09: the review week is Sunday Mar 1 to Saturday Mar 7.
 const MONDAY = new Date(2026, 2, 9, 12, 0);
 const WEEK_END = '2026-03-07';
 
 /** Steps for every day from Jan 30 to Mar 7 (the week plus 28 days of median history), minus skipped dates. */
-function fillDays(db, { skip = [], steps = {} } = {}) {
+async function fillDays(db, { skip = [], steps = {} } = {}) {
   const add = db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, ?, ?, 'x')");
-  for (let d = '2026-01-30'; d <= WEEK_END; d = addDays(d, 1)) if (!skip.includes(d)) add.run(d, steps[d] ?? 8000);
+  for (let d = '2026-01-30'; d <= WEEK_END; d = addDays(d, 1)) if (!skip.includes(d)) (await add.run(d, steps[d] ?? 8000));
 }
 
-function store() {
-  return openOwnerStore(':memory:');
+async function store() {
+  return await ownerStore();
 }
 
 test('reviewStatus: a complete week is ready', async () => {
-  const s = store();
-  fillDays(s.syncDb);
+  const s = await store();
+  await fillDays(s.db);
   const r = await reviewStatus(s.db, '2026-03-09', MONDAY);
   assert.deepEqual({ weekEnd: r.weekEnd, missingDays: r.missingDays, partialDays: r.partialDays, ready: r.ready, hasReview: r.hasReview, lastRun: r.lastRun },
     { weekEnd: WEEK_END, missingDays: [], partialDays: [], ready: true, hasReview: false, lastRun: null });
   assert.equal(r.overdue, true); // Monday, no review
-  s.close();
+  await s.close();
 });
 
 test('reviewStatus: any missing day of the week blocks it, not just Saturday', async () => {
-  const s = store();
-  fillDays(s.syncDb, { skip: ['2026-03-03'] });
+  const s = await store();
+  await fillDays(s.db, { skip: ['2026-03-03'] });
   const r = await reviewStatus(s.db, '2026-03-09', MONDAY);
   assert.deepEqual(r.missingDays, ['2026-03-03']);
   assert.equal(r.ready, false);
-  s.close();
+  await s.close();
 });
 
 test('reviewStatus: a likely partial export blocks it (under a quarter of the 28-day median)', async () => {
-  const s = store();
-  fillDays(s.syncDb, { steps: { '2026-03-07': 1500 } }); // median 8000, quarter 2000
+  const s = await store();
+  await fillDays(s.db, { steps: { '2026-03-07': 1500 } }); // median 8000, quarter 2000
   const r = await reviewStatus(s.db, '2026-03-09', MONDAY);
   assert.deepEqual(r.partialDays, ['2026-03-07']);
   assert.equal(r.ready, false);
-  s.close();
+  await s.close();
 });
 
 test('reviewStatus: overdue only from 9am on the Sunday after, or once a run was tried', async () => {
-  const s = store();
-  fillDays(s.syncDb);
+  const s = await store();
+  await fillDays(s.db);
   assert.equal((await reviewStatus(s.db, '2026-03-08', new Date('2026-03-08T07:00:00-04:00'))).overdue, false);
   assert.equal((await reviewStatus(s.db, '2026-03-08', new Date('2026-03-08T09:00:00-04:00'))).overdue, true);
-  s.syncDb.prepare("INSERT INTO runs (user_id, name, meta, status, started_at, summary) VALUES (@uid, 'review', ?, 'skipped', 'x', ?)")
+  await s.db.prepare("INSERT INTO runs (user_id, name, meta, status, started_at, summary) VALUES (@uid, 'review', ?, 'skipped', 'x', ?)")
     .run(JSON.stringify({ weekEnd: WEEK_END }), JSON.stringify({ weekEnd: WEEK_END, missingDays: ['2026-03-07'], partialDays: [] }));
   const early = await reviewStatus(s.db, '2026-03-08', new Date('2026-03-08T08:05:00-04:00'));
   assert.equal(early.overdue, true);
   assert.equal(early.lastRun.status, 'skipped');
   assert.deepEqual(early.lastRun.summary.missingDays, ['2026-03-07']);
-  s.syncDb.prepare("INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at) VALUES (@uid, ?, '{}', 'x', 'x')").run(WEEK_END);
+  await s.db.prepare("INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at) VALUES (@uid, ?, '{}', 'x', 'x')").run(WEEK_END);
   assert.equal((await reviewStatus(s.db, '2026-03-09', MONDAY)).overdue, false);
-  s.close();
+  await s.close();
 });
 
 test('reviewStatus: a review written with a missing day is offered for a rewrite once the day arrives', async () => {
-  const s = store();
-  fillDays(s.syncDb, { skip: ['2026-03-07'] });
-  const save = s.syncDb.prepare("INSERT OR REPLACE INTO reviews (user_id, week_ending, summary_json, report_md, created_at) VALUES (@uid, ?, ?, 'x', 'x')");
-  save.run(WEEK_END, JSON.stringify({ dataQuality: { missingDays: ['2026-03-07'], suspectedPartialDays: [] } }));
+  const s = await store();
+  await fillDays(s.db, { skip: ['2026-03-07'] });
+  const save = s.db.prepare("INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at) VALUES (@uid, ?, ?, 'x', 'x') ON CONFLICT (user_id, week_ending) DO UPDATE SET summary_json = excluded.summary_json");
+  await save.run(WEEK_END, JSON.stringify({ dataQuality: { missingDays: ['2026-03-07'], suspectedPartialDays: [] } }));
   let r = await reviewStatus(s.db, '2026-03-09', MONDAY);
   assert.deepEqual(r.writtenWithGaps, { missingDays: ['2026-03-07'], partialDays: [] });
   assert.equal(r.rewriteAvailable, false); // still missing
   assert.equal(r.overdue, false);
 
-  s.syncDb.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, '2026-03-07', 8000, 'x')").run();
+  await s.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, '2026-03-07', 8000, 'x')").run();
   r = await reviewStatus(s.db, '2026-03-09', MONDAY);
   assert.equal(r.rewriteAvailable, true);
 
-  save.run(WEEK_END, JSON.stringify({ week: {} })); // rewritten with the full week: no dataQuality
+  await save.run(WEEK_END, JSON.stringify({ week: {} })); // rewritten with the full week: no dataQuality
   r = await reviewStatus(s.db, '2026-03-09', MONDAY);
   assert.equal(r.writtenWithGaps, null);
   assert.equal(r.rewriteAvailable, false);
-  s.close();
+  await s.close();
 });
 
 test('reviewStatus: a run for another week is not this week\'s run', async () => {
-  const s = store();
-  fillDays(s.syncDb);
-  s.syncDb.prepare("INSERT INTO runs (user_id, name, meta, status, started_at) VALUES (@uid, 'review', ?, 'ok', 'x')").run(JSON.stringify({ weekEnd: '2026-02-28' }));
+  const s = await store();
+  await fillDays(s.db);
+  await s.db.prepare("INSERT INTO runs (user_id, name, meta, status, started_at) VALUES (@uid, 'review', ?, 'ok', 'x')").run(JSON.stringify({ weekEnd: '2026-02-28' }));
   assert.equal((await reviewStatus(s.db, '2026-03-08', new Date(2026, 2, 8, 7, 0))).lastRun, null);
-  s.close();
+  await s.close();
 });
 
 async function setup(services = {}) {
-  const s = store();
+  const s = await store();
   const app = await buildApp({ store: s, services, clock: () => MONDAY });
-  return { db: s.syncDb, app, done: async () => { await app.close(); s.close(); } };
+  return { db: s.db, app, done: async () => { await app.close(); await s.close(); } };
 }
 
 const run = (app, payload = {}) => app.inject({ method: 'POST', url: '/api/reviews/run', payload });
@@ -106,7 +107,7 @@ const settle = () => new Promise((r) => setImmediate(r));
 
 test('api: the status reports the gate, whether a run is going, and whether this server can run one', async () => {
   const { db, app, done } = await setup();
-  fillDays(db, { skip: ['2026-03-07'] });
+  await fillDays(db, { skip: ['2026-03-07'] });
   const s = (await app.inject('/api/reviews/status')).json();
   assert.equal(s.weekEnd, WEEK_END);
   assert.deepEqual(s.missingDays, ['2026-03-07']);
@@ -125,7 +126,7 @@ test('api: a manual run syncs, refuses incomplete weeks unless forced, and runs 
     review: (o) => { calls.push(o); return new Promise((resolve) => { finish = resolve; }); },
   };
   const { db, app, done } = await setup(services);
-  fillDays(db, { skip: ['2026-03-07'] });
+  await fillDays(db, { skip: ['2026-03-07'] });
 
   const refused = await run(app);
   assert.equal(refused.statusCode, 409);
@@ -149,7 +150,7 @@ test('api: a manual run syncs, refuses incomplete weeks unless forced, and runs 
 test('api: a complete week runs without force; a failure is kept as its error name only', async () => {
   const services = { review: async () => { throw Object.assign(new Error('secret detail'), { name: 'ClaudeRefusalError' }); } };
   const { db, app, done } = await setup(services);
-  fillDays(db);
+  await fillDays(db);
   assert.equal((await run(app)).statusCode, 202);
   await settle();
   const s = (await app.inject('/api/reviews/status')).json();

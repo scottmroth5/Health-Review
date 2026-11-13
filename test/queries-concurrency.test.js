@@ -16,7 +16,7 @@ async function assertValidHistory(adb, id) {
 }
 
 test('two dose saves for one day at once leave one of the two sets, never a mix', async () => {
-  const store = memoryStore();
+  const store = await memoryStore();
   try {
     const { db: adb } = store;
     const { id } = await addMedication(adb, MED);
@@ -27,12 +27,12 @@ test('two dose saves for one day at once leave one of the two sets, never a mix'
     const asRows = (set) => set.map((d) => ({ timing: d.timing, taken: d.taken ? 1 : 0 })).sort((x, y) => x.timing.localeCompare(y.timing));
     assert.ok([JSON.stringify(asRows(a)), JSON.stringify(asRows(b))].includes(JSON.stringify(rows)), `one save's set: ${JSON.stringify(rows)}`);
   } finally {
-    store.close();
+    await store.close();
   }
 });
 
 test('two dose changes on one medication at once never leave two open periods', async () => {
-  const store = memoryStore();
+  const store = await memoryStore();
   try {
     const { db: adb } = store;
     const { id } = await addMedication(adb, MED);
@@ -44,12 +44,12 @@ test('two dose changes on one medication at once never leave two open periods', 
     const periods = await assertValidHistory(adb, id);
     assert.deepEqual(periods.map((p) => p.started_on), ['2026-03-01', '2026-03-10', '2026-03-12']);
   } finally {
-    store.close();
+    await store.close();
   }
 });
 
 test('a stop racing a change leaves a valid history; the loser is refused, not half-applied', async () => {
-  const store = memoryStore();
+  const store = await memoryStore();
   try {
     const { db: adb } = store;
     const { id } = await addMedication(adb, MED);
@@ -63,12 +63,12 @@ test('a stop racing a change leaves a valid history; the loser is refused, not h
     const periods = await assertValidHistory(adb, id);
     assert.deepEqual(periods, [{ started_on: '2026-03-01', stopped_on: '2026-03-15' }]);
   } finally {
-    store.close();
+    await store.close();
   }
 });
 
 test('a lab correction racing a delete leaves the result corrected or gone, never half-done', async () => {
-  const store = memoryStore();
+  const store = await memoryStore();
   try {
     const { db: adb } = store;
     const { id } = await addLabResult(adb, { name: 'Sample Marker', drawn_on: '2026-03-05', value: '5' });
@@ -84,12 +84,12 @@ test('a lab correction racing a delete leaves the result corrected or gone, neve
     assert.equal(removeFirst.status, 'fulfilled');
     assert.equal(updateAfter.reason?.statusCode, 404, 'a deleted result is not found, never recreated');
   } finally {
-    store.close();
+    await store.close();
   }
 });
 
 test('two zone saves at once cannot pass the order check together', async () => {
-  const store = memoryStore();
+  const store = await memoryStore();
   try {
     const { db: adb } = store;
     await saveSettings(adb, { zone2_low_bpm: 110, zone2_high_bpm: 125, zone3_high_bpm: 140 });
@@ -103,6 +103,6 @@ test('two zone saves at once cannot pass the order check together', async () => 
     const s = await adb.prepare("SELECT key, value FROM settings WHERE user_id = @uid AND key LIKE 'zone%' ORDER BY key").all();
     assert.deepEqual(Object.fromEntries(s.map((r) => [r.key, Number(r.value)])), { zone2_high_bpm: 135, zone2_low_bpm: 110, zone3_high_bpm: 140 });
   } finally {
-    store.close();
+    await store.close();
   }
 });

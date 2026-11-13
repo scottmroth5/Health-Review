@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createSqliteDatabase, guardSyncDatabase, TransactionConflictError } from '../db/database.ts';
 import { scopeDatabase } from '../db/scope.js';
 import { OWNER_ID } from '../db/users.js';
+import { openHealthStore } from '../db/store.js';
 import { memoryStore } from './helpers.js';
 
 const deferred = () => {
@@ -13,8 +14,9 @@ const deferred = () => {
 };
 const tick = () => new Promise((r) => setImmediate(r));
 
+// The SQLite adapter itself (its sync handle and raw), so a SQLite store on either test engine.
 function scratch() {
-  const store = memoryStore();
+  const store = openHealthStore(':memory:');
   store.raw.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, n INTEGER)');
   return store;
 }
@@ -35,7 +37,7 @@ test('statements: get, all, run and pluck give what better-sqlite3 gives, as pro
     await assert.rejects(adb.prepare('SELECT * FROM t WHERE id = ?').get(), /Too few parameter/);
     await adb.exec('DELETE FROM t');
     assert.equal(raw.prepare('SELECT COUNT(*) FROM t').pluck().get(), 0);
-    assert.equal(createSqliteDatabase(raw), store.shared.db, 'one interface per connection');
+    assert.equal(createSqliteDatabase(raw), store.db, 'one interface per connection');
   } finally {
     store.close();
   }
@@ -170,20 +172,20 @@ test('a transaction that awaits only statements finishes before a sync-handle re
 });
 
 test('scopeDatabase binds @uid, never reads another user\'s rows, and fails unscoped', async () => {
-  const store = memoryStore({ uid: 'user-b' });
+  const store = await memoryStore({ uid: 'user-b' });
   try {
     const owner = store.shared.db;
     await owner.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (?, 'k', 'owner', 'x')").run(OWNER_ID);
     const b = store.db;
     await b.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, ?, ?, 'x')").run('k', 'mine');
     assert.deepEqual(await b.prepare('SELECT value FROM settings WHERE user_id = @uid').pluck().all(), ['mine']);
-    assert.deepEqual(await b.prepare('SELECT ? AS a, @x AS x, @uid AS u').get(7, { x: 8 }), { a: 7, x: 8, u: 'user-b' });
+    assert.deepEqual(await b.prepare('SELECT CAST(? AS INTEGER) AS a, CAST(@x AS INTEGER) AS x, @uid AS u').get(7, { x: 8 }), { a: 7, x: 8, u: 'user-b' });
     assert.equal(b.uid, 'user-b');
     assert.equal(scopeDatabase(b, 'other').unscoped, owner, 'a scoped database is unwrapped first');
     await assert.rejects(owner.prepare('SELECT value FROM settings WHERE user_id = @uid').all(), /Missing named parameter/);
     await b.tx(async () => { await b.prepare("UPDATE settings SET value = 'changed' WHERE user_id = @uid").run(); });
     assert.equal(await owner.prepare("SELECT value FROM settings WHERE user_id = ?").pluck().get(OWNER_ID), 'owner');
   } finally {
-    store.close();
+    await store.close();
   }
 });

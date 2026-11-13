@@ -45,7 +45,9 @@ export async function canonicalSetCounts(db) {
 }
 
 export async function unmappedNames(db) {
-  const rows = await db.prepare(`SELECT e.exercise AS name, e.map_status AS status, e.implement, COUNT(s.exercise_id) AS sets,
+  // Rows of one name share a status and implement (normalization goes by name); MIN picks it on both engines, where
+  // PostgreSQL refuses a bare column outside GROUP BY.
+  const rows = await db.prepare(`SELECT e.exercise AS name, MIN(e.map_status) AS status, MIN(e.implement) AS implement, COUNT(s.exercise_id) AS sets,
       MIN(e.tab_year) AS first, MAX(e.tab_year) AS last
     FROM strength_exercises e LEFT JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
     WHERE e.user_id = @uid AND e.map_status IN ('unmapped', 'inferred', 'pending') GROUP BY e.exercise`).all();

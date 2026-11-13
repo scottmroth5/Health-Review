@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { securityProblems, files, SOURCE } from '../scripts/security-check.js';
 import { repoPath } from '../tools/paths.js';
+import { openTestStore } from './helpers.js';
 
 test('the code passes the security check', () => {
   assert.deepEqual(securityProblems(), []);
@@ -61,7 +62,7 @@ test('cookie and spreadsheet names can never reach an object prototype', async (
 test('every route has a per-address ceiling (429 past it); the deploy check is exempt', async () => {
   const { openHealthStore } = await import('../db/store.js');
   const { buildApp } = await import('../server/app.js');
-  const app = await buildApp({ store: openHealthStore(':memory:'), authMode: 'demo', instance: 'demo', features: { chat: false } });
+  const app = await buildApp({ store: await openTestStore(), authMode: 'demo', instance: 'demo', features: { chat: false } });
   let last;
   for (let i = 0; i < 601; i++) last = await app.inject('/privacy');
   assert.equal(last.statusCode, 429);

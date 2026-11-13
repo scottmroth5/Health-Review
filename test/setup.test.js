@@ -10,8 +10,9 @@ import { authSettings } from '../server/auth.js';
 import { sign, sessionKey } from '../server/session.js';
 import { nextReviewDay, setupSteps, sheetProblem } from '../server/setup.js';
 import { reviewStatus, dataCheckWarnings } from '../server/queries.js';
-import { scopeDb } from '../db/scope.js';
+import { scopeDatabase } from '../db/scope.js';
 import { computeWeek } from '../metrics/index.js';
+import { ownerStore, openTestStore } from './helpers.js';
 
 const TODAY = '2026-10-21'; // a Wednesday
 const step = (r, id) => r.steps.find((s) => s.id === id);
@@ -71,18 +72,18 @@ test('nextReviewDay: the coming Sunday, or today on a Sunday', async () => {
 });
 
 test('hand entry only: no Apple Health warnings, the review runs on check-ins, and an empty week is never sent', async () => {
-  const store = openOwnerStore(':memory:');
-  const db = store.syncDb;
+  const store = await ownerStore();
+  const db = store.db;
   assert.deepEqual(await dataCheckWarnings(db, TODAY, { apple: 'rest', now: new Date(`${TODAY}T12:00:00Z`) }), []);
   const none = await reviewStatus(db, TODAY, new Date(`${TODAY}T12:00:00Z`));
   assert.equal(none.reason, 'no_data');
   assert.equal(none.overdue, false, 'nothing to review is never due');
-  db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, '2026-10-14', 'daily', 7, 'ui', 'x')").run();
+  await db.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, '2026-10-14', 'daily', 7, 'ui', 'x')").run();
   const status = await reviewStatus(db, TODAY, new Date(`${TODAY}T12:00:00Z`));
   assert.equal(status.ready, true);
   assert.equal(status.reason, null);
   assert.deepEqual(status.missingDays, []);
-  store.close();
+  await store.close();
 });
 
 test('computeWeek: no dataQuality without any Apple Health day, so the review does not call every day missing', async () => {
@@ -97,10 +98,10 @@ test('/api/home and PUT /api/account/setup: a new user sees the checklist; skipp
   const SITE = 'http://localhost:5188';
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: secret });
-  const store = openHealthStore(':memory:');
+  const store = await openTestStore();
   const KIM = '00000000-0000-4000-8000-0000000000c3';
-  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at, feeds) VALUES (?, 'kim@example.com', 'user', 'approved', 'x', '{\"manual\":true}')").run(KIM);
-  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at, feeds) VALUES (?, 'kim@example.com', 'user', 'approved', 'x', '{\"manual\":true}')").run(KIM);
+  await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const app = await buildApp({ store, authMode: 'google', auth: { settings }, clock: () => new Date(`${TODAY}T16:00:00Z`), services: { hasAi: () => false } });
   const kim = { cookie: `hr_session=${sign({ email: 'kim@example.com', exp: Date.now() + 3_600_000, v: 1 }, sessionKey(secret))}`, origin: SITE };
 
@@ -112,7 +113,7 @@ test('/api/home and PUT /api/account/setup: a new user sees the checklist; skipp
   assert.deepEqual(home.summary.feeds.map((f) => f.feed), ['manual']);
 
   // A check-in completes the data and first result steps.
-  scopeDb(store.syncDb, KIM).prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, ?, 'daily', 6, 'ui', 'x')").run(TODAY);
+  await scopeDatabase(store.db, KIM).prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, ?, 'daily', 6, 'ui', 'x')").run(TODAY);
   home = (await app.inject({ url: '/api/home', headers: kim })).json();
   assert.equal(home.setup.doneCount, 2);
   assert.equal(home.summary.checkin.done, true);
@@ -128,9 +129,9 @@ test('/api/home and PUT /api/account/setup: a new user sees the checklist; skipp
   assert.equal((await put({ hidden: false })).json().setup.hidden, false);
   await app.close();
 
-  const demo = await buildApp({ store: openHealthStore(':memory:'), authMode: 'demo' });
+  const demo = await buildApp({ store: await openTestStore(), authMode: 'demo' });
   assert.equal((await demo.inject({ method: 'PUT', url: '/api/account/setup', payload: { hidden: true } })).statusCode, 403);
   assert.equal((await demo.inject('/api/home')).statusCode, 200);
   await demo.close();
-  store.close();
+  await store.close();
 });

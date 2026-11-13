@@ -30,11 +30,14 @@ export function upsertDailyMetrics(db, stamp) {
 export async function applyHealthDays(db, { records, exportedThrough = new Map(), standHours = [] }, stamp) {
   const storedDay = db.prepare(`SELECT date, ${HEALTH_METRIC_COLUMNS.join(', ')} FROM daily_metrics WHERE user_id = @uid AND date = ?`);
   const writeDay = upsertDailyMetrics(db, stamp);
-  // The latest write time holding each day; an older one read later never lowers it (MAX, NULL treated as earliest).
-  const markExported = db.prepare("UPDATE daily_metrics SET exported_through = MAX(COALESCE(exported_through, ''), ?) WHERE user_id = @uid AND date = ?");
-  const addHour = db.prepare('INSERT OR IGNORE INTO stand_hour_samples (user_id, date, hour) VALUES (@uid, ?, ?)');
-  const countStand = db.prepare(`UPDATE daily_metrics SET stand_hours = MAX(COALESCE(stand_hours, 0),
-    (SELECT COUNT(*) FROM stand_hour_samples s WHERE s.user_id = daily_metrics.user_id AND s.date = daily_metrics.date))
+  // The latest write time holding each day; an older one read later never lowers it (NULL treated as earliest). The
+  // larger of two values is a CASE: SQLite's two-argument MAX is not PostgreSQL's, and GREATEST is not SQLite's.
+  const markExported = db.prepare(`UPDATE daily_metrics SET exported_through = CASE WHEN exported_through >= @at THEN exported_through ELSE @at END
+    WHERE user_id = @uid AND date = @date`);
+  const addHour = db.prepare('INSERT INTO stand_hour_samples (user_id, date, hour) VALUES (@uid, ?, ?) ON CONFLICT DO NOTHING');
+  const standCount = '(SELECT COUNT(*) FROM stand_hour_samples s WHERE s.user_id = daily_metrics.user_id AND s.date = daily_metrics.date)';
+  const countStand = db.prepare(`UPDATE daily_metrics
+    SET stand_hours = CASE WHEN COALESCE(stand_hours, 0) >= ${standCount} THEN COALESCE(stand_hours, 0) ELSE ${standCount} END
     WHERE user_id = @uid AND date = ? AND EXISTS (SELECT 1 FROM stand_hour_samples s WHERE s.user_id = daily_metrics.user_id AND s.date = daily_metrics.date)`);
 
   // Each day merged with the stored day (stored first, so a tie goes to the newer data).
@@ -46,7 +49,7 @@ export async function applyHealthDays(db, { records, exportedThrough = new Map()
   }
   const days = mergeHealthDays([...stored, ...records]).filter((r) => dates.includes(r.date));
   for (const d of days) await writeDay(d);
-  for (const [date, at] of exportedThrough) await markExported.run(at, date);
+  for (const [date, at] of exportedThrough) await markExported.run({ at, date });
   for (const s of standHours) await addHour.run(s.date, s.hour);
   // Stand hours for every day touched, once its daily row exists (a stand hour alone never creates a day).
   const standDays = [...new Set([...dates, ...standHours.map((s) => s.date)])];
@@ -66,14 +69,16 @@ const shiftMinutes = (t, n) => new Date(Date.parse(`${t}Z`) + n * 60000).toISOSt
  */
 export function writeJsonWorkout(db, stamp) {
   const cols = WORKOUT_COLUMNS;
-  const near = db.prepare('SELECT * FROM workout_sessions WHERE user_id = @uid AND type = ? AND start BETWEEN ? AND ? AND NOT (start = ? AND end = ?)');
-  const drop = db.prepare('DELETE FROM workout_sessions WHERE user_id = @uid AND type = ? AND start = ? AND end = ?');
+  // "end" is quoted: it is a reserved word on PostgreSQL.
+  const near = db.prepare('SELECT * FROM workout_sessions WHERE user_id = @uid AND type = ? AND start BETWEEN ? AND ? AND NOT (start = ? AND "end" = ?)');
+  const drop = db.prepare('DELETE FROM workout_sessions WHERE user_id = @uid AND type = ? AND start = ? AND "end" = ?');
   const dropSamples = db.prepare('DELETE FROM workout_hr_samples WHERE user_id = @uid AND type = ? AND start = ?');
-  const upsert = db.prepare(`INSERT INTO workout_sessions (user_id, type, start, end, ${cols.join(', ')}, updated_at)
+  const upsert = db.prepare(`INSERT INTO workout_sessions (user_id, type, start, "end", ${cols.join(', ')}, updated_at)
     VALUES (@uid, @type, @start, @end, ${cols.map((c) => `@${c}`).join(', ')}, @updated_at)
-    ON CONFLICT (user_id, type, start, end) DO UPDATE SET ${cols.map((c) => `${c} = COALESCE(excluded.${c}, workout_sessions.${c})`).join(', ')},
+    ON CONFLICT (user_id, type, start, "end") DO UPDATE SET ${cols.map((c) => `${c} = COALESCE(excluded.${c}, workout_sessions.${c})`).join(', ')},
       updated_at = excluded.updated_at`);
-  const sample = db.prepare('INSERT OR REPLACE INTO workout_hr_samples (user_id, type, start, t, avg_bpm, min_bpm, max_bpm) VALUES (@uid, ?, ?, ?, ?, ?, ?)');
+  const sample = db.prepare(`INSERT INTO workout_hr_samples (user_id, type, start, t, avg_bpm, min_bpm, max_bpm) VALUES (@uid, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (user_id, type, start, t) DO UPDATE SET avg_bpm = excluded.avg_bpm, min_bpm = excluded.min_bpm, max_bpm = excluded.max_bpm`);
   return async (w, samples) => {
     const merged = { ...w };
     for (const old of await near.all(w.type, shiftMinutes(w.start, -1), shiftMinutes(w.start, 1), w.start, w.end)) {

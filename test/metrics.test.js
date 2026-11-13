@@ -32,6 +32,7 @@ function expandDaily({ from, to, skip = [], override = {}, ...values }) {
 }
 import { openOwnerStore } from '../db/store.js';
 import { saveSettings } from '../server/queries.js';
+import { ownerStore } from './helpers.js';
 
 /** Every key in expected must match actual; arrays must match in length and order. */
 function assertSubset(actual, expected, path = '') {
@@ -218,18 +219,18 @@ test('without a Zone 2 range, Zone 2 is reported as unset rather than zero', asy
 });
 
 test('from the database: settings, joined strength sets, and planned sets left out', async () => {
-  const store = openOwnerStore(':memory:');
-  const { syncDb: db } = store;
+  const store = await ownerStore();
+  const { db } = store;
   assert.equal((await loadMetricSettings(db)).zone2, null);
   await saveSettings(store.db, { zone2_low_bpm: 110, zone2_high_bpm: 125 });
   assert.deepEqual((await loadMetricSettings(db)).zone2, { low: 110, high: 125 });
 
-  const ex = db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2026, ?, ?, ?)");
+  const ex = db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2026, ?, ?, ?) RETURNING id");
   const set = db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, per_hand, reps, reps_text) VALUES (@uid, ?, 1, ?, ?, ?, ?)');
-  set.run(ex.run(2, '2026-03-03', 'Squat').lastInsertRowid, 175, 0, 3, '3');
-  set.run(ex.run(3, '2026-03-06', 'Deadlift').lastInsertRowid, 225, 0, null, null); // planned
-  set.run(ex.run(4, '2026-03-09', 'Squat').lastInsertRowid, 185, 0, 5, '5'); // after the week
-  db.prepare("INSERT INTO daily_metrics (user_id, date, hrv_ms, updated_at) VALUES (@uid, '2026-03-02', 50, 'x'), (@uid, '2026-03-08', 60, 'x')").run();
+  set.run((await ex.get(2, '2026-03-03', 'Squat')).id, 175, 0, 3, '3');
+  set.run((await ex.get(3, '2026-03-06', 'Deadlift')).id, 225, 0, null, null); // planned
+  set.run((await ex.get(4, '2026-03-09', 'Squat')).id, 185, 0, 5, '5'); // after the week
+  await db.prepare("INSERT INTO daily_metrics (user_id, date, hrv_ms, updated_at) VALUES (@uid, '2026-03-02', 50, 'x'), (@uid, '2026-03-08', 60, 'x')").run();
 
   const data = await loadWeekData(db, '2026-03-07');
   assert.equal(data.strength_sets.length, 2, 'rows after the week are not loaded');
@@ -237,7 +238,7 @@ test('from the database: settings, joined strength sets, and planned sets left o
   const result = computeWeek(data, { weekEnd: '2026-03-07', ...(await loadMetricSettings(db)) });
   assert.deepEqual([result.strength.week.sets, result.strength.week.volumeLbs], [1, 525]);
   assert.equal(result.recovery.hrv_ms.mean, 50, 'the morning after the week is not part of the week');
-  store.close();
+  await store.close();
 });
 
 test('programs: workout names map to programs; specific names win; notes and one-offs map to nothing', async () => {

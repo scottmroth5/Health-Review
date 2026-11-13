@@ -5,13 +5,14 @@ import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { dayMedications } from '../server/queries.js';
 import { medicationNames } from '../metrics/load.js';
+import { ownerStore } from './helpers.js';
 
 const TODAY = new Date(2026, 2, 9, 12, 0); // 2026-03-09
 
 async function setup() {
-  const store = openOwnerStore(':memory:');
+  const store = await ownerStore();
   const app = await buildApp({ store, clock: () => TODAY });
-  return { app, db: store.syncDb, done: async () => { await app.close(); store.close(); } };
+  return { app, db: store.db, done: async () => { await app.close(); await store.close(); } };
 }
 const post = (app, url, payload) => app.inject({ method: 'POST', url, payload });
 const add = async (app, body) => {
@@ -117,7 +118,7 @@ test('combine: one item with the merged history, check-offs taken if any was tak
   assert.deepEqual(await day('2026-02-20'), [['Alpha + Beta', [['daily', true, null]]]]);
   assert.deepEqual(await day('2026-02-21'), [['Alpha + Beta', [['daily', true, null]]]]);
   assert.deepEqual(await day('2026-03-02'), [['Alpha + Beta', [['daily', true, null]]]]);
-  assert.equal(db.prepare('SELECT count(*) FROM medication_doses').pluck().get(), 3);
+  assert.equal((await db.prepare('SELECT count(*) FROM medication_doses').pluck().get()), 3);
   await done();
 });
 

@@ -75,14 +75,52 @@ export function jsonWorkout(name, start, end, { duration, avgHr = null, maxHr = 
 
 export const silentLogger = { info() {}, warn() {}, error() {}, log() {} };
 
+/** The engine the suite runs on: TEST_DB=postgres (with DATABASE_URL) runs it on PostgreSQL, else SQLite in memory. */
+export const TEST_ENGINE = process.env.TEST_DB === 'postgres' ? 'postgres' : 'sqlite';
+if (TEST_ENGINE === 'postgres' && !process.env.DATABASE_URL) throw new Error('TEST_DB=postgres needs DATABASE_URL');
+
 /**
- * An in-memory health store scoped to one user (the owner unless uid is given, which is added as an approved user):
- * db and tx (sync), adb and atx (async, db/database.ts), raw, the shared unscoped store, and close.
+ * A new migrated store on the test engine, unscoped like openHealthStore(":memory:"): SQLite in memory, or a fresh
+ * PostgreSQL database (test/pg.js). close() is async on PostgreSQL; await it.
  */
-export function memoryStore({ uid = OWNER_ID } = {}) {
-  const shared = openHealthStore(':memory:');
+export async function openTestStore() {
+  if (TEST_ENGINE === 'sqlite') return openHealthStore(':memory:');
+  const { freshPgStore } = await import('./pg.js');
+  return freshPgStore();
+}
+
+/** openTestStore scoped to the owner, like openOwnerStore(":memory:"). */
+export async function ownerStore() {
+  return scopeStore(await openTestStore(), OWNER_ID);
+}
+
+/**
+ * A test store scoped to one user (the owner unless uid is given, which is added as an approved user): db and tx, the
+ * syncDb on SQLite only, shared (the unscoped store), and close.
+ */
+export async function memoryStore({ uid = OWNER_ID } = {}) {
+  const shared = await openTestStore();
   if (uid !== OWNER_ID) {
-    shared.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, 'user', 'approved', 'x')").run(uid, `${uid}@example.com`);
+    await shared.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES (?, ?, 'user', 'approved', 'x')").run(uid, `${uid}@example.com`);
   }
   return { ...scopeStore(shared, uid), shared, close: () => shared.close() };
+}
+
+/**
+ * A store holding the demo's made-up data for today (demo/generate.js), unscoped, on the test engine: built on SQLite,
+ * then copied row for row into PostgreSQL when the suite runs there (test/copy-rows.js).
+ */
+export async function demoStore({ today } = {}) {
+  const { refreshDemoDatabase } = await import('../demo/generate.js');
+  const built = openHealthStore(':memory:');
+  await refreshDemoDatabase(built, { today });
+  if (TEST_ENGINE === 'sqlite') return built;
+  const { copyRows } = await import('./copy-rows.js');
+  const store = await openTestStore();
+  try {
+    await copyRows(built, store);
+  } finally {
+    built.close();
+  }
+  return store;
 }

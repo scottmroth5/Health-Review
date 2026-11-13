@@ -12,6 +12,7 @@ import { OWNER_ID } from '../db/users.js';
 import { readXlsx, writeXlsx, XLSX_TYPE } from '../tools/xlsx.js';
 import { WORKOUT_LOG_HEADER } from '../ingest/create-sheet.js';
 import { MAX_UPLOAD_BYTES } from '../ingest/excel-upload.js';
+import { openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';
 const NOW = new Date('2026-03-20T16:00:00Z');
@@ -25,9 +26,9 @@ const book = (tabs) => writeXlsx([...Object.entries(tabs).map(([name, rows]) => 
 async function setup({ authMode = 'google', instance = 'main' } = {}) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
-  const store = openHealthStore(':memory:');
-  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
-  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  const store = await openTestStore();
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x'), ('kim', 'kim@example.com', 'user', 'approved', 'x')").run();
+  await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const lines = [];
   let email;
   let nonce;
@@ -48,7 +49,7 @@ async function setup({ authMode = 'google', instance = 'main' } = {}) {
         headers: { cookie, origin: SITE, 'content-type': type, 'x-file-name': encodeURIComponent(name) }, payload: buf }),
     };
   };
-  const count = (uid, year) => store.syncDb.prepare('SELECT COUNT(*) FROM strength_exercises WHERE user_id = ? AND tab_year = ?').pluck().get(uid, year);
+  const count = async (uid, year) => (await store.db.prepare('SELECT COUNT(*) FROM strength_exercises WHERE user_id = ? AND tab_year = ?').pluck().get(uid, year));
   return { app, store, signIn, count, lines };
 }
 
@@ -78,18 +79,18 @@ test('upload: year tabs replace those years; other years and app workouts stay; 
   assert.equal(first.json().exercises, 3);
   assert.equal(first.json().sets, 4);
   assert.equal(first.json().notes, 1);
-  assert.equal(count('lee', 2026), 2);
-  assert.equal(count('lee', 0), 1, 'the app workout stays');
+  assert.equal((await count('lee', 2026)), 2);
+  assert.equal((await count('lee', 0)), 1, 'the app workout stays');
   assert.equal((await lee.get('/api/training?view=month')).json().totals.volumeLbs, 185 * 5 * 2 + 135 * 8);
 
   // Uploading only 2026 again replaces 2026 and keeps 2025.
   await lee.upload(book({ 2026: [row(46090, 'Garage 5x5 Phase 1 B', 'Barbell Deadlift', 225, 5)] }));
-  assert.equal(count('lee', 2026), 1);
-  assert.equal(count('lee', 2025), 1);
-  assert.deepEqual(store.syncDb.prepare("SELECT exercise FROM strength_exercises WHERE user_id = 'lee' AND tab_year = 2026").pluck().all(), ['Barbell Deadlift']);
-  assert.equal(count('kim', 2026), 0, 'never another user');
+  assert.equal((await count('lee', 2026)), 1);
+  assert.equal((await count('lee', 2025)), 1);
+  assert.deepEqual((await store.db.prepare("SELECT exercise FROM strength_exercises WHERE user_id = 'lee' AND tab_year = 2026").pluck().all()), ['Barbell Deadlift']);
+  assert.equal((await count('kim', 2026)), 0, 'never another user');
 
-  const run = store.syncDb.prepare("SELECT * FROM runs WHERE name = 'workout-upload' AND user_id = 'lee' ORDER BY id DESC").get();
+  const run = (await store.db.prepare("SELECT * FROM runs WHERE name = 'workout-upload' AND user_id = 'lee' ORDER BY id DESC").get());
   assert.equal(run.status, 'ok');
   const traces = JSON.stringify(run) + lines.join('\n');
   assert.ok(!/Deadlift|Garage|Squat/.test(traces), 'no file content in the run or the log');
@@ -117,7 +118,7 @@ test('refused before anything changes: other file types, a renamed CSV, an .xls,
   assert.equal(badColumns.statusCode, 400);
   assert.match(badColumns.json().error, /Row 1 needs the Workout Log columns/);
   assert.equal((await lee.upload(Buffer.alloc(MAX_UPLOAD_BYTES + 1))).statusCode, 413);
-  assert.equal(count('lee', 2026), 0, 'nothing was stored');
+  assert.equal((await count('lee', 2026)), 0, 'nothing was stored');
 });
 
 test('refused for the owner, paused users, users syncing a Google Sheet, past 10 an hour, and in the demo', async () => {
@@ -126,7 +127,7 @@ test('refused for the owner, paused users, users syncing a Google Sheet, past 10
   const owner = await signIn('owner@example.com');
   assert.equal((await owner.upload(good)).statusCode, 409);
   const kim = await signIn('kim@example.com');
-  store.syncDb.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES ('kim', 'workout_log_sheet_id', 'made-up-sheet-id', 'x')").run();
+  await store.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES ('kim', 'workout_log_sheet_id', 'made-up-sheet-id', 'x')").run();
   assert.match((await kim.upload(good)).json().error, /Google Sheet/);
   const lee = await signIn('lee@example.com');
   await lee.send('POST', '/api/account/pause');

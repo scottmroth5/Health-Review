@@ -8,6 +8,7 @@ import { buildApp } from '../server/app.js';
 import { authSettings, CALLBACK_PATH } from '../server/auth.js';
 import { boxKey, open } from '../tools/secret-box.js';
 import { HEALTH_CONSENT_VERSION, userByEmail } from '../db/users.js';
+import { openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';
 // Made-up key shapes, built here so no key-shaped string sits in the code (the personal-data check looks for those).
@@ -17,7 +18,7 @@ const KEY = fakeKey('made-up-test-value-0000000000');
 async function setup({ services = {} } = {}) {
   const settings = authSettings({ AUTH_MODE: 'google', PUBLIC_URL: SITE, GOOGLE_WEB_CLIENT_ID: 'x', GOOGLE_WEB_CLIENT_SECRET: 'y',
     AUTH_ALLOWED_EMAILS: 'owner@example.com', SESSION_SECRET: randomBytes(48).toString('base64') });
-  const store = openHealthStore(':memory:');
+  const store = await openTestStore();
   const mail = [];
   const mailer = { configured: true, send: async (m) => { mail.push(m); return true; } };
   const keyBox = boxKey('test-user-key-secret-long-enough-32+');
@@ -59,11 +60,11 @@ test('registration: request access, wait, get approved by the admin with emails 
   assert.equal((await post('')).headers.location, '/auth/register');
   assert.equal((await post('agree=on')).headers.location, '/auth/register', 'the terms alone are not consent');
   assert.equal((await post('healthConsent=on')).headers.location, '/auth/register');
-  assert.equal((await userByEmail(store.syncDb, 'kim@example.com')), null);
+  assert.equal((await userByEmail(store.db, 'kim@example.com')), null);
   assert.equal((await post('agree=on&healthConsent=on')).headers.location, '/auth/waiting');
-  assert.equal((await userByEmail(store.syncDb, 'kim@example.com')).status, 'pending');
-  assert.equal((await userByEmail(store.syncDb, 'kim@example.com')).health_consent_version, HEALTH_CONSENT_VERSION);
-  assert.ok((await userByEmail(store.syncDb, 'kim@example.com')).health_consent_at);
+  assert.equal((await userByEmail(store.db, 'kim@example.com')).status, 'pending');
+  assert.equal((await userByEmail(store.db, 'kim@example.com')).health_consent_version, HEALTH_CONSENT_VERSION);
+  assert.ok((await userByEmail(store.db, 'kim@example.com')).health_consent_at);
   assert.equal(mail.length, 1);
   assert.equal(mail[0].to, 'owner@example.com');
   assert.match(mail[0].text, /kim@example\.com/);
@@ -90,14 +91,14 @@ test('registration: request access, wait, get approved by the admin with emails 
   assert.equal((await app.inject('/privacy')).statusCode, 200);
   assert.match((await app.inject('/terms')).body, /Not medical advice/);
   await app.close();
-  store.close();
+  await store.close();
 });
 
 test('claude key: checked, sealed per user, never returned; no key means no AI; the owner key is the server\'s', async () => {
-  const services = { claude: () => ({}), hasAi: (uid) => uid === '00000000-0000-4000-8000-000000000001' || Boolean(store.syncDb.prepare('SELECT claude_key_enc FROM users WHERE id = ?').pluck().get(uid)), review: async () => ({}) };
+  const services = { claude: () => ({}), hasAi: async (uid) => uid === '00000000-0000-4000-8000-000000000001' || Boolean((await store.db.prepare('SELECT claude_key_enc FROM users WHERE id = ?').pluck().get(uid))), review: async () => ({}) };
   const { app, store, keyBox, signIn, as } = await setup({ services });
-  store.syncDb.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
-  store.syncDb.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
+  await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)
   const lee = as(await signIn('lee@example.com'));
   assert.equal((await lee.get('/api/account')).json().claudeKey, null);
   assert.equal((await lee.get('/api/advisor/chat')).json().needsKey, true);
@@ -109,17 +110,17 @@ test('claude key: checked, sealed per user, never returned; no key means no AI; 
   assert.equal(saved.statusCode, 200);
   assert.ok(!saved.body.includes(KEY), 'never echoed');
   assert.equal(saved.json().claudeKey.source, 'yours');
-  const sealed = store.syncDb.prepare("SELECT claude_key_enc FROM users WHERE id = 'lee'").pluck().get();
+  const sealed = (await store.db.prepare("SELECT claude_key_enc FROM users WHERE id = 'lee'").pluck().get());
   assert.ok(sealed && !sealed.includes('made-up'));
   assert.equal(open(sealed, 'lee', keyBox), KEY);
   assert.equal((await lee.get('/api/advisor/chat')).json().needsKey, false);
   for (const url of ['/api/account', '/api/advisor/chat', '/api/reviews/status']) assert.ok(!(await lee.get(url)).body.includes(KEY));
   await lee.send('DELETE', '/api/account/claude-key');
-  assert.equal(store.syncDb.prepare("SELECT claude_key_enc FROM users WHERE id = 'lee'").pluck().get(), null);
+  assert.equal((await store.db.prepare("SELECT claude_key_enc FROM users WHERE id = 'lee'").pluck().get()), null);
 
   const owner = as(await signIn('owner@example.com'));
   assert.equal((await owner.get('/api/account')).json().claudeKey.source, 'server');
   assert.equal((await owner.send('PUT', '/api/account/claude-key', { key: KEY })).statusCode, 409);
   await app.close();
-  store.close();
+  await store.close();
 });
