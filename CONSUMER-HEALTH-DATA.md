@@ -1,6 +1,6 @@
 # Consumer Health Data Privacy Policy
 
-Effective date: November 3, 2026
+Effective date: November 13, 2026
 
 This policy covers health information in Health Review, a personal project run by its owner (the operator). The public demo holds made-up data only.
 
@@ -34,7 +34,7 @@ There are no affiliates. No third party collects your health data across website
 You can ask whether your consumer health data is collected, shared or sold; get a copy of it; get a list of who has received it, with a contact email for each; withdraw your consent; and have it deleted.
 
 - **Export:** Settings, Export my data.
-- **Delete or withdraw consent:** Settings, Delete my account removes your data at once. Copies in encrypted backups age out within about two months. Feedback emails already sent to the operator stay in the operator's mailbox until the operator deletes them. Withdrawing consent means the app can no longer hold your health data, so it is handled as deleting your account.
+- **Delete or withdraw consent:** Settings, Delete my account removes your data at once. Copies in the server's update copies and disk snapshots are gone within 14 days, and copies in the encrypted backups age out within about two months. Feedback emails already sent to the operator stay in the operator's mailbox until the operator deletes them. Withdrawing consent means the app can no longer hold your health data, so it is handled as deleting your account.
 - **Anything else:** email {{SUPPORT}}. You will get an answer within 45 days. If more time is needed, you will be told why, and it will be at most 45 more days.
 
 ## Appeals

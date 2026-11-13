@@ -234,7 +234,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     if (!u || u.role === 'admin' || !(await deleteUserData(store.db, u.id))) return;
     log.info('[users] a user deleted their account');
     await mailer.send({ to: await adminEmail(), subject: 'Health Review: a user deleted their account',
-      text: `${u.name || u.email} (${u.email}) deleted their Health Review account and its data. Encrypted backups keep a copy until they age out.\n` });
+      text: `${u.name || u.email} (${u.email}) deleted their Health Review account and its data. The server's update copies and disk snapshots keep a copy for up to 14 days, and the encrypted backups until they age out (about two months).\n` });
   };
   const recordConsent = async (uid) => {
     await recordHealthConsent(store.db, uid, clock());

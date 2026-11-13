@@ -843,7 +843,7 @@ function renderAccountControls(a) {
     await fetch('/auth/logout', { method: 'POST' }).catch(() => {});
     location.href = '/auth/signed-out';
   }) },
-  h('p', { class: 'small' }, h('strong', {}, 'This deletes everything stored for you: '), 'health data, check-ins, medications, labs, workouts, programs, reviews, your key and feeds. It cannot be undone. Encrypted backups keep a copy until they age out (about two months). Export your data first if you want a copy.'),
+  h('p', { class: 'small' }, h('strong', {}, 'This deletes everything stored for you: '), 'health data, check-ins, medications, labs, workouts, programs, reviews, your key and feeds. It cannot be undone. Update copies and disk snapshots on the server keep a copy for up to 14 days, and the encrypted backups until they age out (about two months). Export your data first if you want a copy.'),
   h('label', {}, `Type ${a.email} to confirm`, h('input', { name: 'confirm', type: 'email', autocomplete: 'off', required: true })),
   h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'danger' }, 'Delete my account'), h('button', { type: 'button', class: 'ghost', onclick: () => { deleteForm.hidden = true; } }, 'Cancel')));
   // Time zone: decides "today" and the review week. The owner's is the server's (OWNER_TZ).

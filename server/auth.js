@@ -353,7 +353,7 @@ export function registerAuth(app, { mode = 'none', settings = {}, exchange, now 
         <p><label>Type your email (${escapeHtml(email)}) to confirm<br><input name="confirmEmail" type="email" autocomplete="off" required></label></p>
         <p><button type="submit">Delete my account</button></p>
       </form>${POLICY_LINKS}${contact}${signOut}`);
-  const deletedPage = page('Your account was deleted', `<p>Your account and everything stored for you were deleted. Copies in encrypted backups age out within about two months.</p>${contact}`);
+  const deletedPage = page('Your account was deleted', `<p>Your account and everything stored for you were deleted. Copies in the server's update copies and disk snapshots are gone within 14 days, and copies in the encrypted backups age out within about two months.</p>${contact}`);
   // Who the consent step is for: a signed-in, approved or paused user who has not given it.
   const consentUser = async (req) => {
     const session = sessionOf(req);

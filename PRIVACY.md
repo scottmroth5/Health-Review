@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: November 3, 2026
+Last updated: November 13, 2026
 
 Health Review is a personal project run by its owner (the operator). It is not a commercial service. People can request access, and the operator approves each request by hand. You must be 18 or older to use it.
 
@@ -47,6 +47,7 @@ Health Review is a personal project run by its owner (the operator). It is not a
 - In a database on a server in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
 - The server's disk is encrypted by Amazon with keys Amazon manages. The operator accepts this for now; a later move will use encryption keys the operator controls.
 - Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS to the operator's Google Drive. Seven nightly, three weekly and one monthly backup are kept, so a backup ages out within about two months.
+- Two short-lived copies also exist on Amazon's side: before each update the server keeps a copy of the database for at most 14 days, and Amazon keeps a daily snapshot of the server's disk for 7 days. Both are encrypted by Amazon with keys Amazon manages.
 
 ## Usage totals
 
@@ -64,7 +65,7 @@ The demo holds made-up data only. It counts visits with PostHog (https://posthog
 
 - **Export:** Settings, **Export my data** downloads everything stored for you as one file (never your encrypted key or tokens).
 - **Pause:** Settings, **Pause my account** stops new data and AI until you resume; your data stays. The operator can pause your account too, and then only the operator can resume it.
-- **Delete:** Settings, **Delete my account** removes your account and everything stored for you at once, after you type your email to confirm. Copies in the encrypted backups age out within about two months. The usage totals, which are not linked to your account, remain. You can also ask the operator to delete it.
+- **Delete:** Settings, **Delete my account** removes your account and everything stored for you at once, after you type your email to confirm. Copies in the server's update copies and disk snapshots are gone within 14 days, and copies in the encrypted backups age out within about two months. The usage totals, which are not linked to your account, remain. You can also ask the operator to delete it.
 - Remove your Claude key or disconnect Google Sheets at any time in Settings, and revoke the app's Google access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 - **Consumer health data:** see the [Consumer Health Data Privacy Policy](/consumer-health-data) for your rights, including withdrawing consent.
 

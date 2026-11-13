@@ -125,7 +125,7 @@ test('the sign-in page links each policy; Continue with Google goes to Google; t
   const policy = await app.inject('/consumer-health-data');
   assert.equal(policy.statusCode, 200);
   assert.match(policy.body, /<h1>Consumer Health Data Privacy Policy<\/h1>/);
-  assert.match(policy.body, /Effective date: November 3, 2026/);
+  assert.match(policy.body, /Effective date: November 13, 2026/);
   assert.match(policy.body, /mailto:help@example\.com/);
   assert.doesNotMatch(policy.body, /\{\{|\[\[/, 'every placeholder filled');
   for (const file of ['CONSUMER-HEALTH-DATA.md', 'PRIVACY.md', 'TERMS.md']) {
