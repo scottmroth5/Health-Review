@@ -90,7 +90,8 @@ test('opening a database file prunes old copies even when nothing migrates; the 
     process.env.HEALTH_DB_PATH = path;
     try { assert.equal(migrationCopiesDir(), join(dir, 'backups')); } finally { if (before === undefined) delete process.env.HEALTH_DB_PATH; else process.env.HEALTH_DB_PATH = before; }
     const stale = 'pre-migration-20200101T000000Z.db';
-    const fresh = `pre-migration-${new Date().toISOString().replace(/[-:.]/g, '')}.db`;
+    // A minute back: the open's own copy (named by this millisecond, removed when nothing migrates) must not share its name.
+    const fresh = `pre-migration-${new Date(Date.now() - 60_000).toISOString().replace(/[-:.]/g, '')}.db`;
     mkdirSync(join(dir, 'backups'));
     writeFileSync(join(dir, 'backups', stale), '');
     writeFileSync(join(dir, 'backups', fresh), '');
