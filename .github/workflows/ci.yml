@@ -65,6 +65,29 @@ jobs:
       - run: npm run lint
         if: matrix.engine == 'sqlite'
 
+  # The Terraform in infra/ (v3 Phase 1F): formatted, valid without a backend or credentials, and free of high or critical
+  # misconfigurations (accepted ones carry an inline #trivy:ignore with the reason). Nothing here reaches AWS.
+  infra:
+    name: Infrastructure (Terraform)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Format and validate
+        run: |
+          docker run --rm -v "$PWD/infra:/src:ro" --entrypoint sh hashicorp/terraform:1.17.2 -c '
+            cp -r /src /w && cd /w && terraform fmt -check -recursive -diff || exit 1
+            for d in /w /w/bootstrap; do
+              cd "$d" && terraform init -backend=false -input=false -lockfile=readonly >/dev/null && terraform validate -no-color || exit 1
+            done'
+      - name: Scan the Terraform (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: infra
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
   codeql:
     name: CodeQL (security)
     runs-on: ubuntu-latest

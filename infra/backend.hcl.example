@@ -1,0 +1,8 @@
+# Copy to backend.hcl (gitignored) and fill in the bucket the bootstrap stack printed.
+#   terraform init -backend-config=backend.hcl
+# No encrypt or kms_key_id here on purpose: the bucket's default encryption is the customer-managed key, and encrypt =
+# true without a key id would ask S3 for its own keys instead.
+bucket       = "health-review-tfstate-<something-unique>"
+key          = "health-review/main.tfstate"
+region       = "us-east-2"
+use_lockfile = true

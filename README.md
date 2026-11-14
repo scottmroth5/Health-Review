@@ -600,7 +600,8 @@ Health Review is an evolving personal project. Potential areas for continued dev
 - **Personalized insights:** Continue improving weekly reviews and making trends easier to understand and discuss with a
   healthcare professional.
 - **Keys you control** (after the Lightsail move): RDS plus EC2 with a KMS customer-managed key, which ends the
-  temporary AWS-managed-key exception.
+  temporary AWS-managed-key exception. The Terraform is written ([infra/README.md](infra/README.md),
+  [ADR 0009](docs/adr/0009-infrastructure.md)); it isn't applied yet, and production stays on Lightsail until the cutover.
 - **v3 architecture:** the decisions are in [docs/adr](docs/adr) and today's system in
   [docs/architecture/current.md](docs/architecture/current.md).
 

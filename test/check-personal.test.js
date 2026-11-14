@@ -2,7 +2,7 @@
 // never matches the check itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findPersonalHits, findSecretShapes, envValues, termsFile, isForbiddenPath, maskTerm } from '../scripts/check-personal.js';
+import { findPersonalHits, findSecretShapes, findInfraShapes, envValues, termsFile, isForbiddenPath, maskTerm } from '../scripts/check-personal.js';
 
 test('private terms: case-insensitive, whole words, and allow terms blanked first', () => {
   const text = 'line one\nSee Dr Sample Clinic here\nsampleclinicx is a handle\nPat Example wrote this';
@@ -29,8 +29,23 @@ test('forbidden paths: data/, .env files, health exports, keys, tokens and backu
     'key.pem', 'health-2026-10-05.hrbk', 'token.json', 'tools/google/client_secret_123.json']) assert.ok(isForbiddenPath(f), f);
   for (const f of ['server/app.js', 'deploy/cloud.env.example', 'config/health-targets.json', 'evals/fixtures/metrics/zones.json']) assert.ok(!isForbiddenPath(f), f);
   for (const f of ['infra/terraform.tfstate', 'infra/terraform.tfstate.backup', 'infra/.terraform/providers/x', 'infra/terraform.tfstate.d/prod/s',
-    'infra/prod.tfvars', 'infra/x.auto.tfvars.json', 'infra/plan.tfplan']) assert.ok(isForbiddenPath(f), f);
-  for (const f of ['infra/main.tf', 'infra/variables.tf', 'infra/prod.tfvars.example', 'infra/.terraform.lock.hcl']) assert.ok(!isForbiddenPath(f), f);
+    'infra/prod.tfvars', 'infra/x.auto.tfvars.json', 'infra/plan.tfplan', 'infra/backend.hcl', 'infra/bootstrap/backend_override.tf']) assert.ok(isForbiddenPath(f), f);
+  for (const f of ['infra/main.tf', 'infra/variables.tf', 'infra/prod.tfvars.example', 'infra/.terraform.lock.hcl', 'infra/backend.hcl.example']) assert.ok(!isForbiddenPath(f), f);
+});
+
+test('infra files: account ids, ARNs naming an account, emails and public addresses are caught; placeholders are not', () => {
+  // Built at run time so this file never matches the check itself.
+  const id = ['1234', '5678', '9012'].join('');
+  const names = (text) => findInfraShapes(text).map((h) => h.name);
+  assert.deepEqual(names(`account = "${id}"`), ['AWS account id']);
+  assert.deepEqual(names(`role = "arn:aws:iam::${id}:role/x"`), ['ARN with an account id']);
+  assert.deepEqual(names(`alert_email = "owner${'@'}gmail.com"`), ['email address']);
+  assert.deepEqual(names(`host = "${[16, 58, 1, 2].join('.')}"`), ['public IP address']);
+  for (const ok of ['alert_email = "you@example.com"', 'cidr_ipv4 = "0.0.0.0/0"', 'vpc_cidr = "10.40.0.0/16"', 'x = "172.16.0.1"',
+    'policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"', 'threshold = 4294967296', 'version = "6.21.0"',
+    '"zh:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"']) {
+    assert.deepEqual(names(ok), [], ok);
+  }
 });
 
 test('secret shapes are caught; near misses are not', () => {

@@ -10,3 +10,6 @@ data/
 *.tfvars
 *.tfvars.json
 .terraform/
+backend.hcl
+*_override.tf
+*_override.tf.json

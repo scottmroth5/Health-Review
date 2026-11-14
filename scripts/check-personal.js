@@ -88,7 +88,30 @@ export function isForbiddenPath(file) {
   return f.startsWith('data/') || /(^|\/)\.env(\..*)?$/.test(f) || /\.(csv|xml|pem|hrbk)$/i.test(f)
     || /(^|\/)(token[^/]*|client_secret[^/]*)\.json$/i.test(f)
     || /\.tfstate(\..*)?$/i.test(f) || /(^|\/)\.terraform\//.test(f) || /(^|\/)terraform\.tfstate\.d\//.test(f)
-    || /\.tfplan$/i.test(f) || /\.tfvars(\.json)?$/i.test(f);
+    || /\.tfplan$/i.test(f) || /\.tfvars(\.json)?$/i.test(f)
+    || /(^|\/)backend\.hcl$/i.test(f) || /_override\.tf(\.json)?$/i.test(f);
+}
+
+// Private IPv4 ranges, loopback, link-local and "anywhere": allowed in infra/ (CIDR blocks and the like).
+const PUBLIC_IP_OK = /^(0\.0\.0\.0|10\.\d+\.\d+\.\d+|127\.\d+\.\d+\.\d+|169\.254\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$/;
+
+/**
+ * What must never appear in infra/ files (v3 Phase 1F; the repo is public): an AWS account id, an ARN naming an account,
+ * an email address, or a public IPv4 address. Values belong in the owner's gitignored terraform.tfvars and backend.hcl.
+ * Placeholders such as you@example.com are allowed. Returns [{ line, name }].
+ */
+export function findInfraShapes(text) {
+  const hits = [];
+  text.split(/\r?\n/).forEach((line, i) => {
+    const add = (name) => hits.push({ line: i + 1, name });
+    if (/arn:aws[a-z-]*:[a-z0-9-]*:[a-z0-9-]*:\d{12}:/.test(line)) add('ARN with an account id');
+    else if (/(?<![\w.-])\d{12}(?![\w.-])/.test(line)) add('AWS account id');
+    const emails = line.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) ?? [];
+    if (emails.some((e) => !/@example\.(com|org|net)$/i.test(e))) add('email address');
+    const ips = line.match(/(?<![\w.])\d{1,3}(\.\d{1,3}){3}(?![\w.])/g) ?? [];
+    if (ips.some((ip) => !PUBLIC_IP_OK.test(ip))) add('public IP address');
+  });
+  return hits;
 }
 
 function escapeRegex(s) {
@@ -123,6 +146,12 @@ function main() {
     for (const hit of findSecretShapes(text)) {
       found += 1;
       console.error(`  ${file}:${hit.line}  looks like a ${hit.name}`);
+    }
+    if (file.replace(/\\/g, '/').startsWith('infra/')) {
+      for (const hit of findInfraShapes(text)) {
+        found += 1;
+        console.error(`  ${file}:${hit.line}  looks like an ${hit.name}; keep it in terraform.tfvars or backend.hcl`);
+      }
     }
     for (const hit of findPersonalHits(text, terms, own.allowTerms)) {
       found += 1;

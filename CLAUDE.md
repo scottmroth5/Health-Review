@@ -148,8 +148,19 @@ Health specific logic stays in this repo; never add it to agent-core.
 /test               node:test suites with synthetic fixtures only
 /docs               guides/ (public setup guides, served at /guides), adr/ (decision records: 0000-template.md, one per
                     decision, "planned" when not built yet), architecture/ (current.md: today's system and trust
-                    boundaries; no addresses or account details). v3 plan (2026-11-02, revision 2): data/handoff/
+                    boundaries; target.md: the RDS and EC2 target from infra/; no addresses or account details). v3 plan (2026-11-02, revision 2): data/handoff/
                     health-review-v3-plan-2026-11-02.md, one phase at a time with owner gates; Phase 0 done 2026-11-02
+/infra              Terraform for the RDS and EC2 move (v3 Phase 1F, docs/adr/0009, infra/README.md the owner's runbook):
+                    bootstrap/ (the customer-managed KMS key alias/health-review and the encrypted state bucket) and
+                    the main stack (VPC with no NAT, RDS PostgreSQL 18 private and TLS only with an RDS-managed master
+                    password, one t3a.small Ubuntu server with IMDSv2 and SSM, Parameter Store read on /health-review/,
+                    alarms by SNS email). The owner runs every plan and apply; Claude never holds AWS credentials or
+                    applies. Values (bucket, email, deploy key) only in gitignored terraform.tfvars and backend.hcl;
+                    check-personal refuses them, state, plans, override files, and account ids, account ARNs, emails and
+                    public IPs in infra/. CI's infra job: fmt, validate without a backend, Trivy config (accepted
+                    findings carry an inline #trivy:ignore with the reason). Locally the same through docker run
+                    hashicorp/terraform:1.17.2 (copy the folder inside the container: the Windows mount is too slow to
+                    start the provider). Not applied yet; production stays on Lightsail until 1H
 /data               gitignored; local health datastore and exports; google/ holds the OAuth client_secret.json and token.json
 /legacy contains the v1 scripts for reference only. Do not modify or import from them.
 
