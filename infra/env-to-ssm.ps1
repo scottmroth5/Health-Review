@@ -48,11 +48,15 @@ foreach ($line in (Remote '/opt/health-review/.env') -split "`n") {
 # The Drive sign-in (backups, load-from-backup), as environment settings the app already reads.
 if (-not $settings.Contains('GOOGLE_REFRESH_TOKEN')) {
   $token = Remote '/opt/health-review/data/google/token.json' | ConvertFrom-Json
+  if (-not $token.refresh_token) { throw 'token.json on Lightsail has no refresh token' }
+  $settings['GOOGLE_REFRESH_TOKEN'] = $token.refresh_token
+}
+# The client usually comes from .env already (deploy/cloud.env.example); the file only when it does not.
+if (-not ($settings.Contains('GOOGLE_CLIENT_ID') -and $settings.Contains('GOOGLE_CLIENT_SECRET'))) {
   $client = (Remote '/opt/health-review/data/google/client_secret.json' | ConvertFrom-Json)
   $c = if ($client.installed) { $client.installed } else { $client.web }
   $settings['GOOGLE_CLIENT_ID'] = $c.client_id
   $settings['GOOGLE_CLIENT_SECRET'] = $c.client_secret
-  $settings['GOOGLE_REFRESH_TOKEN'] = $token.refresh_token
 }
 
 # Never carried over: the SQLite path and anything the database setup owns.
