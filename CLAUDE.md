@@ -247,7 +247,8 @@ deploy/                           the server (/opt/health-review): compose.yml (
                                   logins, the backup container only) before every start; the backup service (compose profile
                                   postgres, image <tag>-backup from Dockerfile --target backup with PostgreSQL 18; scripts/
                                   backup-service.js: the schedule, backup-now, restore-test, pre-migrate, restore-pre-migration,
-                                  load-from-backup); a migrating deploy runs pre-migrate (tools/backup/pg-deploy.js: a pg_dump
+                                  reset-database --confirm <database> (before every load: no other connections, a checked
+                                  dump kept, then the schema dropped and migrated afresh), load-from-backup); a migrating deploy runs pre-migrate (tools/backup/pg-deploy.js: a pg_dump
                                   to data/backups/pre-migration-<stamp>.dump, restored into a scratch cluster and migrated
                                   there first; 0 / 10 / 1), the Drive backup with the current image, then scripts/migrate.js in
                                   the backup container; a failed migration or start empties the schema and restores the dump.

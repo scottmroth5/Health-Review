@@ -8,6 +8,8 @@
 //   node scripts/backup-service.js restore-pre-migration   a failed deploy: the dump back over the live database
 //   node scripts/backup-service.js load-from-backup [--file <hrbk>]   newest backup in production's Drive folder (or a
 //                                                          file) into an empty database
+//   node scripts/backup-service.js reset-database --confirm <database>   before a load: refuses while anything else is
+//                                                          connected, keeps a checked dump, then empties and migrates
 // Database URLs (never logged): DATABASE_URL (hr_app: runs, alerts, live counts), BACKUP_DATABASE_URL (hr_backup:
 // pg_dump), MIGRATE_DATABASE_URL (hr_migrate: restore and load only).
 import { readFileSync, statSync } from 'node:fs';
@@ -25,7 +27,7 @@ import { createDriveClient } from '../tools/backup/drive.js';
 import { PRODUCTION_DRIVE_FOLDER } from '../tools/backup/run.js';
 import { newestBackup } from '../tools/backup/restore-check.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
-import { loadFromBackup, newestDumpSince, preMigrate, restorePreMigration } from '../tools/backup/pg-deploy.js';
+import { loadFromBackup, newestDumpSince, preMigrate, resetDatabase, restorePreMigration } from '../tools/backup/pg-deploy.js';
 
 const [command = 'serve', ...rest] = process.argv.slice(2);
 const arg = (flag) => { const i = rest.indexOf(flag); return i >= 0 ? rest[i + 1] : undefined; };
@@ -112,6 +114,10 @@ async function main() {
       await restorePreMigration({ migrateUrl: need('MIGRATE_DATABASE_URL'), file });
       return 0;
     }
+    case 'reset-database':
+      return resetDatabase({
+        backupUrl: need('BACKUP_DATABASE_URL'), migrateUrl: need('MIGRATE_DATABASE_URL'), dir: backupsDir, confirm: arg('--confirm'),
+      });
     case 'load-from-backup': {
       const passphrase = need('HEALTH_BACKUP_PASSPHRASE');
       let file;

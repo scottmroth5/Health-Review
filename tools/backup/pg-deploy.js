@@ -9,11 +9,13 @@
 //                           and the Drive backup remain if this fails).
 //   loadFromBackup          a Drive backup's SQLite database into an empty PostgreSQL database (staging now, the 1H
 //                           cutover later): audited, copied and verified by fingerprint (scripts/migrate-to-postgres.js).
+//   resetDatabase           before a load: the typed database name, no other connections, a checked dump kept, then the
+//                           schema dropped and migrated afresh (the freshly migrated state the load requires).
 // Plaintext only in the OS temp folder or data/backups (the server's encrypted disk, mode 600, aged out with the .db
 // copies); counts, names and exit codes in the output, never a value or a URL.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { createPostgresPool } from '../../db/postgres.ts';
 import { migratePostgres, pendingPostgres, PG_MIGRATIONS } from '../../db/pg/migrate.js';
 import { setupGrants } from '../../db/pg/roles.js';
@@ -74,9 +76,16 @@ export function newestDumpSince(dir, since) {
  */
 export async function restorePreMigration({ migrateUrl, file, prefix = 'hr', log = console.log }) {
   const { restoreLive } = await import('./pg.js');
+  // Objects a failed migration added are not in the dump, so the schema starts empty.
+  await emptySchema(migrateUrl, prefix);
+  await restoreLive(migrateUrl, file);
+  log('restore-pre-migration: the database is back to its state before the deploy');
+}
+
+/** Drops and re-creates the public schema as the migration role, grants included, in one transaction. */
+async function emptySchema(migrateUrl, prefix) {
   const pool = createPostgresPool(migrateUrl, { max: 1 });
   try {
-    // Objects a failed migration added are not in the dump, so the schema starts empty; one transaction, grants included.
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -93,8 +102,62 @@ export async function restorePreMigration({ migrateUrl, file, prefix = 'hr', log
   } finally {
     await pool.end();
   }
-  await restoreLive(migrateUrl, file);
-  log('restore-pre-migration: the database is back to its state before the deploy');
+}
+
+/** The database a URL names (its path), or ''. */
+const databaseOf = (url) => decodeURIComponent(new URL(url).pathname.replace(/^\//, ''));
+
+/**
+ * Empties the database and migrates it afresh, so a load (loadFromBackup's copy, which takes only a freshly migrated
+ * database) can follow: before the 1H cutover, and whenever staging is loaded again. Guarded three ways: the caller
+ * types the database's name, nothing else may be connected to it (the app and the backup service stopped), and a
+ * pg_dump checked in a scratch cluster is kept in dir first (pre-migration-<stamp>.dump, pruned with the others).
+ * @param {{ backupUrl: string, migrateUrl: string, dir: string, confirm?: string, prefix?: string,
+ *   migrations?: typeof PG_MIGRATIONS, log?: (s: string) => void, waitMs?: number }} o
+ */
+export async function resetDatabase({ backupUrl, migrateUrl, dir, confirm, prefix = 'hr', migrations = PG_MIGRATIONS, log = console.log, waitMs = 5000 }) {
+  const database = databaseOf(migrateUrl);
+  if (!database || confirm !== database) throw new Error(`reset-database empties the whole database; type --confirm ${database || '<database>'} to go ahead`);
+
+  const pool = createPostgresPool(migrateUrl, { max: 1 });
+  try {
+    // A stopped container's connections close a moment after it stops, so wait a little before refusing.
+    let others = 0;
+    for (let waited = 0; ; waited += 100) {
+      const { rows: [r] } = await pool.query(
+        'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()');
+      others = r.n;
+      if (!others || waited >= waitMs) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (others) throw new Error(`${others} other connection(s) to the database; stop the app and the backup service first`);
+  } finally {
+    await pool.end();
+  }
+
+  // Back up first (owner's rule): a dump that is proven to restore, kept until the pruning ages it out.
+  const { dump, restoreInto, withScratchCluster } = await import('./pg.js');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `pre-migration-${stamp()}.dump`);
+  try {
+    await dump(backupUrl, file);
+    chmodSync(file, 0o600);
+    await withScratchCluster((scratch) => restoreInto(scratch, file));
+  } catch (err) {
+    rmSync(file, { force: true });
+    throw err;
+  }
+
+  await emptySchema(migrateUrl, prefix);
+  const migrate = createPostgresPool(migrateUrl, { max: 1 });
+  let applied;
+  try {
+    applied = await migratePostgres(migrate, migrations);
+  } finally {
+    await migrate.end();
+  }
+  log(`reset-database: checked dump kept (${basename(file)}); schema emptied; ${applied.length} migration(s) applied`);
+  return 0;
 }
 
 /**

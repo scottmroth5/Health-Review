@@ -14,7 +14,7 @@ import { pgToolsSkip } from '../tools/backup/pg.js';
 import { runBackup } from '../tools/backup/run.js';
 import { decrypt, encrypt, pack, unpack } from '../tools/backup/crypto.js';
 import { restoreTest } from '../tools/backup/restore-check.js';
-import { loadFromBackup, newestDumpSince, preMigrate, restorePreMigration } from '../tools/backup/pg-deploy.js';
+import { loadFromBackup, newestDumpSince, preMigrate, resetDatabase, restorePreMigration } from '../tools/backup/pg-deploy.js';
 import { migratePostgres, PG_MIGRATIONS } from '../db/pg/migrate.js';
 import { setupGrants, setupRoles } from '../db/pg/roles.js';
 import { createPostgresPool } from '../db/postgres.ts';
@@ -144,6 +144,83 @@ test('restore-pre-migration: a migrated database goes back to its dump, grants i
   } finally {
     await Promise.all(pools.map((p) => p.end()));
     rmSync(dir, { recursive: true, force: true });
+    await dropWhenIdle(admin, database);
+    for (const r of ['app', 'backup', 'migrate']) await admin.query(`DROP ROLE IF EXISTS "${prefix}_${r}"`);
+    await admin.end();
+  }
+});
+
+test('reset-database: typed name, no other connections, a checked dump kept, then empty and migrated for a load', { skip }, async () => {
+  const prefix = `t${randomBytes(4).toString('hex')}`;
+  const database = `${prefix}_db`;
+  const pw = () => randomBytes(24).toString('base64url');
+  const passwords = { migrate: pw(), app: pw(), backup: pw() };
+  const urlAs = (role) => {
+    const u = new URL(process.env.DATABASE_URL);
+    u.username = `${prefix}_${role}`;
+    u.password = passwords[role];
+    u.pathname = `/${database}`;
+    return u.toString();
+  };
+  const admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await admin.connect();
+  const dir = mkdtempSync(join(tmpdir(), 'hr-pg-reset-'));
+  const work = mkdtempSync(join(tmpdir(), 'hr-pg-reset-load-'));
+  const pools = [];
+  try {
+    await setupRoles(admin, { prefix, database, passwords });
+    const migrate = createPostgresPool(urlAs('migrate'), { max: 1 });
+    const c = await migrate.connect();
+    try { await setupGrants(c, { prefix }); } finally { c.release(); }
+    await migratePostgres(migrate);
+    await migrate.end();
+    let app = createPostgresPool(urlAs('app'), { max: 1 });
+    pools.push(app);
+    await app.query("INSERT INTO settings (user_id, key, value, updated_at) VALUES ($1, 'staging', 'v', 'x')", [OWNER_ID]);
+    await app.query("INSERT INTO users (id, email, role, status, created_at) VALUES ('second', 'second@example.com', 'user', 'approved', 'x')");
+    const reset = (confirm, waitMs = 300) => resetDatabase({
+      backupUrl: urlAs('backup'), migrateUrl: urlAs('migrate'), dir, confirm, prefix, log: quiet, waitMs,
+    });
+    const settingsCount = async (p) => (await p.query('SELECT count(*)::int AS n FROM settings')).rows[0].n;
+
+    await assert.rejects(reset(undefined), /--confirm/);
+    await assert.rejects(reset('health_review'), /--confirm/);
+    // The app still connected: refused, nothing dumped or changed.
+    await assert.rejects(reset(database), /stop the app/);
+    assert.equal(await settingsCount(app), 1);
+    assert.equal(readdirSync(dir).length, 0);
+
+    await app.end();
+    pools.length = 0;
+    assert.equal(await reset(database, 5000), 0);
+    const kept = readdirSync(dir);
+    assert.equal(kept.length, 1);
+    assert.match(kept[0], /^pre-migration-\d{8}T\d{9}Z\.dump$/);
+
+    app = createPostgresPool(urlAs('app'), { max: 1 });
+    pools.push(app);
+    assert.equal(await settingsCount(app), 0);
+    assert.deepEqual((await app.query('SELECT id FROM users')).rows.map((r) => r.id), [OWNER_ID]);
+    const ids = (await app.query('SELECT id FROM schema_migrations ORDER BY id')).rows.map((r) => r.id);
+    assert.deepEqual(ids, PG_MIGRATIONS.map((m) => m.id).sort());
+    await app.query("INSERT INTO settings (user_id, key, value, updated_at) VALUES ($1, 'after', 'v', 'x')", [OWNER_ID]);
+    await assert.rejects(app.query('CREATE TABLE app_made (x int)'), (err) => err.code === '42501');
+    await app.query("DELETE FROM settings WHERE key = 'after'");
+    await app.end();
+    pools.length = 0;
+
+    // The state a load takes: a SQLite backup copies in and verifies.
+    const source = openOwnerStore(join(work, 'live.db'));
+    source.syncDb.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, '2026-03-01', 7001, 'x')").run();
+    source.syncDb.pragma('wal_checkpoint(TRUNCATE)');
+    const bytes = readFileSync(join(work, 'live.db'));
+    source.close();
+    const file = encrypt(pack([{ name: 'health.db', data: bytes }]), PASS, { logN: 14, r: 8, p: 1 });
+    assert.equal(await loadFromBackup({ file, passphrase: PASS, migrateUrl: urlAs('migrate'), log: quiet }), 0);
+  } finally {
+    await Promise.all(pools.map((p) => p.end()));
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
     await dropWhenIdle(admin, database);
     for (const r of ['app', 'backup', 'migrate']) await admin.query(`DROP ROLE IF EXISTS "${prefix}_${r}"`);
     await admin.end();

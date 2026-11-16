@@ -130,12 +130,16 @@ sudo -u deploy ./deploy.sh status
 
 ### 8. Load a copy of the data and test
 The newest backup in production's Drive folder goes into the empty database. It is audited, copied and verified by
-fingerprint, printing PASS or FAIL with counts only. The app is stopped first: the copy refuses a database that already
-holds rows beyond the owner's.
+fingerprint, printing PASS or FAIL with counts only. The copy refuses a database that holds rows beyond the owner's, and
+the app writes some as soon as it runs (on 2026-11-16 a bot's first visit counted one arrival in usage_totals), so every
+load starts with the app stopped and `reset-database`: it refuses while anything else is connected, keeps a pg_dump
+checked in a scratch cluster in data/backups (pre-migration-<stamp>.dump, pruned with the others), then drops the
+schema and migrates it afresh. Run each line on its own (an SSM session's shell garbles multi-line pastes; type `bash`
+first):
 ```bash
 sudo -u deploy env COMPOSE_PROFILES=postgres docker compose stop app backup
-sudo -u deploy env IMAGE_TAG=sha-<7> COMPOSE_PROFILES=postgres docker compose run --rm --no-deps -T backup \
-  node scripts/backup-service.js load-from-backup
+sudo -u deploy env IMAGE_TAG=sha-<7> COMPOSE_PROFILES=postgres docker compose run --rm --no-deps -T backup node scripts/backup-service.js reset-database --confirm health_review
+sudo -u deploy env IMAGE_TAG=sha-<7> COMPOSE_PROFILES=postgres docker compose run --rm --no-deps -T backup node scripts/backup-service.js load-from-backup
 sudo -u deploy ./deploy.sh up
 ```
 Then test together:
@@ -146,7 +150,8 @@ Then test together:
 - a second user's isolation;
 - `backup-now` and `restore-test` (the same `docker compose run ... backup` line, with those commands).
 
-Cutover (1H) repeats steps 5 and 8 in production mode, then moves DNS.
+Cutover (1H) repeats steps 5 and 8 in production mode (the reset empties staging's copy from the same database), then
+moves DNS.
 
 ## Later changes
 Run `terraform plan "-out=main.tfplan"` and read it, then `terraform apply main.tfplan`.

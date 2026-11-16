@@ -52,6 +52,11 @@ The connection to RDS must be verified TLS (`rds.force_ssl` is on), and the imag
   3. The old image starts.
 
   At today's size this takes under a minute. RDS's 7-day point-in-time recovery and the Drive backup are the fallbacks. No manual RDS snapshots are taken (owner's choice, 2026-11-16).
+- **Before a load** (`reset-database --confirm <database>`, added 2026-11-16): the load copies only into a freshly migrated database, and a running app writes rows at once (staging's first load was refused over one bot visit in `usage_totals`). The 1H cutover also has to empty staging's copy, since both use the one database. The command:
+  1. needs the database's name typed;
+  2. refuses while anything else is connected (the app and the backup service stopped), after waiting a few seconds for closing connections;
+  3. keeps a pg_dump checked in a scratch cluster, under the same pre-migration name and pruning;
+  4. drops and re-creates the schema with its grants, then runs every migration as `hr_migrate`. Dropping the schema, not truncating, leaves exactly the freshly migrated state: the owner row and fresh sequences.
 - **Settings from Parameter Store.**
   - `deploy/env-from-ssm.sh` runs on the host with the instance role before every start, since containers cannot reach instance metadata.
   - It writes `/health-review/env/*` to `.env` and `/health-review/backup/*` to `backup.env`. Both files are mode 600 and belong to the deploy user.
