@@ -155,7 +155,7 @@ Health specific logic stays in this repo; never add it to agent-core.
 /scripts            command-line entry points
 /test               node:test suites with synthetic fixtures only
 /docs               guides/ (public setup guides, served at /guides), adr/ (decision records: 0000-template.md, one per
-                    decision, "planned" when not built yet), architecture/ (current.md: today's system and trust
+                    decision, "planned" when not built yet), runbooks/ (postgres-cutover.md: the 1H cutover and its rollback), architecture/ (current.md: today's system and trust
                     boundaries; target.md: the RDS and EC2 target from infra/; no addresses or account details). v3 plan (2026-11-02, revision 2): data/handoff/
                     health-review-v3-plan-2026-11-02.md, one phase at a time with owner gates; Phase 0 done 2026-11-02
 /infra              Terraform for the RDS and EC2 move (v3 Phase 1F, docs/adr/0009, infra/README.md the owner's runbook):
@@ -248,7 +248,8 @@ deploy/                           the server (/opt/health-review): compose.yml (
                                   postgres, image <tag>-backup from Dockerfile --target backup with PostgreSQL 18; scripts/
                                   backup-service.js: the schedule, backup-now, restore-test, pre-migrate, restore-pre-migration,
                                   reset-database --confirm <database> (before every load: no other connections, a checked
-                                  dump kept, then the schema dropped and migrated afresh), load-from-backup); a migrating deploy runs pre-migrate (tools/backup/pg-deploy.js: a pg_dump
+                                  dump kept, then the schema dropped and migrated afresh), load-from-backup, rollback-export (1H's
+                                  14-day fallback: the database as an encrypted SQLite backup the old server restores)); a migrating deploy runs pre-migrate (tools/backup/pg-deploy.js: a pg_dump
                                   to data/backups/pre-migration-<stamp>.dump, restored into a scratch cluster and migrated
                                   there first; 0 / 10 / 1), the Drive backup with the current image, then scripts/migrate.js in
                                   the backup container; a failed migration or start empties the schema and restores the dump.

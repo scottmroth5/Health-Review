@@ -150,8 +150,8 @@ Then test together:
 - a second user's isolation;
 - `backup-now` and `restore-test` (the same `docker compose run ... backup` line, with those commands).
 
-Cutover (1H) repeats steps 5 and 8 in production mode (the reset empties staging's copy from the same database), then
-moves DNS.
+Cutover (1H): [docs/runbooks/postgres-cutover.md](../docs/runbooks/postgres-cutover.md). It repeats step 8 with a final
+backup and step 5 in production mode (the reset empties staging's copy from the same database), then moves DNS.
 
 ## Later changes
 Run `terraform plan "-out=main.tfplan"` and read it, then `terraform apply main.tfplan`.

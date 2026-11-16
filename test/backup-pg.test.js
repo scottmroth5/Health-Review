@@ -1,21 +1,22 @@
 // The PostgreSQL backup path (v3 Phase 1G): pg_dump checked in a scratch cluster, packed and encrypted like the SQLite
 // backup; the restore test on a .dump; pre-migrate's exit codes; the failed-deploy restore; and load-from-backup from a
-// SQLite backup. Made-up rows only. Needs a PostgreSQL server (DATABASE_URL, a user that may create roles and databases)
+// SQLite backup; reset-database and the rollback export. Made-up rows only. Needs a PostgreSQL server (DATABASE_URL, a user that may create roles and databases)
 // and PostgreSQL 18's programs (PG_BIN): CI's postgres jobs and the backup image have both; elsewhere these skip.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
 import { dropWhenIdle, freshPgDatabase, freshPgStore, pgSkip } from './pg.js';
 import { pgToolsSkip } from '../tools/backup/pg.js';
-import { runBackup } from '../tools/backup/run.js';
+import { restoreBackup, runBackup } from '../tools/backup/run.js';
 import { decrypt, encrypt, pack, unpack } from '../tools/backup/crypto.js';
 import { restoreTest } from '../tools/backup/restore-check.js';
-import { loadFromBackup, newestDumpSince, preMigrate, resetDatabase, restorePreMigration } from '../tools/backup/pg-deploy.js';
-import { migratePostgres, PG_MIGRATIONS } from '../db/pg/migrate.js';
+import { loadFromBackup, newestDumpSince, preMigrate, resetDatabase, restorePreMigration, rollbackExport } from '../tools/backup/pg-deploy.js';
+import { migratePostgres, openPostgresStore, PG_MIGRATIONS } from '../db/pg/migrate.js';
+import Database from 'better-sqlite3';
 import { setupGrants, setupRoles } from '../db/pg/roles.js';
 import { createPostgresPool } from '../db/postgres.ts';
 import { openOwnerStore } from '../db/store.js';
@@ -224,6 +225,47 @@ test('reset-database: typed name, no other connections, a checked dump kept, the
     await dropWhenIdle(admin, database);
     for (const r of ['app', 'backup', 'migrate']) await admin.query(`DROP ROLE IF EXISTS "${prefix}_${r}"`);
     await admin.end();
+  }
+});
+
+test('rollback-export: refuses while connected, then an encrypted SQLite backup with the same rows', { skip }, async () => {
+  const target = await freshPgDatabase();
+  const work = mkdtempSync(join(tmpdir(), 'hr-pg-rollback-'));
+  let store;
+  try {
+    store = await openPostgresStore(target.url, { pool: { max: 1 } });
+    for (let d = 1; d <= 4; d++) {
+      await store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (?, ?, ?, 'x')").run(OWNER_ID, `2026-04-0${d}`, 6000 + d);
+    }
+    const catalog = join(work, 'programs.json');
+    writeFileSync(catalog, '{"programs":[]}');
+    const run = (waitMs) => rollbackExport({
+      backupUrl: target.url, passphrase: PASS, date: '2026-04-05', toDir: work, extras: [{ name: 'programs.json', path: catalog }], log: quiet, waitMs,
+    });
+    // The app (here, the store's open connection) still connected: refused, nothing written.
+    await assert.rejects(run(300), /stop the app/);
+    assert.ok(!existsSync(join(work, 'health-2026-04-05.hrbk')));
+
+    await store.close();
+    store = null;
+    const r = await run(5000);
+    assert.equal(r.name, 'health-2026-04-05.hrbk');
+    const file = readFileSync(join(work, r.name));
+    assert.deepEqual(unpack(decrypt(file, PASS)).map((f) => f.name), ['health.db', 'programs.json']);
+    const out = join(work, 'rollback.db');
+    restoreBackup({ file, passphrase: PASS, outPath: out });
+    const db = new Database(out, { readonly: true });
+    try {
+      assert.equal(db.prepare('SELECT count(*) AS n FROM daily_metrics').get().n, 4);
+      assert.equal(db.prepare('SELECT count(*) AS n FROM users').get().n, 1);
+    } finally {
+      db.close();
+    }
+    assert.equal(readdirSync(tmpdir()).filter((n) => n.startsWith('hr-rollback-')).length, 0, 'no plaintext left in temp');
+  } finally {
+    await store?.close();
+    await target.drop();
+    rmSync(work, { recursive: true, force: true });
   }
 });
 

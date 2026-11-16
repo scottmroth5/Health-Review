@@ -16,10 +16,11 @@ const quiet = { info() {} };
 const removeFile = (path) => { for (const suffix of ['', '-wal', '-shm']) rmSync(path + suffix, { force: true }); };
 
 /**
- * @param {{ url: string, out: string, log?: (line: string) => void }} o
+ * @param {{ url: string, out: string, log?: (line: string) => void, migrate?: boolean }} o  migrate false: opens without
+ *   migrating (a role with no DDL rights, such as the backup role; refuses a database with pending migrations)
  * @returns {Promise<number>} the exit code
  */
-export async function exportToSqlite({ url, out, log = console.log }) {
+export async function exportToSqlite({ url, out, log = console.log, migrate = true }) {
   if (!url) throw new Error('Set DATABASE_URL to the PostgreSQL database to export');
   if (!out) throw new Error('Give --out <new SQLite file>');
   if (existsSync(out)) throw new Error('The --out file already exists; give a new file name');
@@ -28,7 +29,7 @@ export async function exportToSqlite({ url, out, log = console.log }) {
   let ok = false;
   let created = false; // only a file this run made is ever removed
   try {
-    source = await openPostgresStore(url);
+    source = await openPostgresStore(url, { migrate });
     created = true;
     target = openHealthStore(out, { snapshot: false, log: quiet });
     const result = await transfer(source, target);

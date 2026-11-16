@@ -11,6 +11,12 @@
 			read_timeout 5m
 		}
 	}
+	# While the app is stopped or restarting (a deploy, the 1H cutover), a short plain answer instead of a bare 502. Health
+	# Auto Export treats 503 as a failed post; its days are exported again afterwards.
+	handle_errors 502 503 {
+		header Retry-After 600
+		respond "Health Review is down for maintenance and will be back shortly." 503
+	}
 	# No access log: the app keeps its own records to counts only, and request lines are not worth keeping.
 }
 

@@ -11,6 +11,8 @@
 //                           cutover later): audited, copied and verified by fingerprint (scripts/migrate-to-postgres.js).
 //   resetDatabase           before a load: the typed database name, no other connections, a checked dump kept, then the
 //                           schema dropped and migrated afresh (the freshly migrated state the load requires).
+//   rollbackExport          the 14 days after cutover: the database as a verified SQLite file in an ordinary encrypted
+//                           backup, for the old server's backup:restore.
 // Plaintext only in the OS temp folder or data/backups (the server's encrypted disk, mode 600, aged out with the .db
 // copies); counts, names and exit codes in the output, never a value or a URL.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -19,8 +21,9 @@ import { basename, join } from 'node:path';
 import { createPostgresPool } from '../../db/postgres.ts';
 import { migratePostgres, pendingPostgres, PG_MIGRATIONS } from '../../db/pg/migrate.js';
 import { setupGrants } from '../../db/pg/roles.js';
-import { decrypt, unpack } from './crypto.js';
-import { restoreBackup } from './run.js';
+import Database from 'better-sqlite3';
+import { checkPassphrase, decrypt, unpack } from './crypto.js';
+import { restoreBackup, runBackup } from './run.js';
 
 const stamp = (d = new Date()) => d.toISOString().replace(/[-:.]/g, '').replace(/(\d{3})Z$/, '$1Z');
 const DUMP_NAME = /^pre-migration-\d{8}T\d{9}Z\.dump$/;
@@ -108,20 +111,12 @@ async function emptySchema(migrateUrl, prefix) {
 const databaseOf = (url) => decodeURIComponent(new URL(url).pathname.replace(/^\//, ''));
 
 /**
- * Empties the database and migrates it afresh, so a load (loadFromBackup's copy, which takes only a freshly migrated
- * database) can follow: before the 1H cutover, and whenever staging is loaded again. Guarded three ways: the caller
- * types the database's name, nothing else may be connected to it (the app and the backup service stopped), and a
- * pg_dump checked in a scratch cluster is kept in dir first (pre-migration-<stamp>.dump, pruned with the others).
- * @param {{ backupUrl: string, migrateUrl: string, dir: string, confirm?: string, prefix?: string,
- *   migrations?: typeof PG_MIGRATIONS, log?: (s: string) => void, waitMs?: number }} o
+ * Throws unless nothing else is connected to the database (the app and the backup service stopped). A stopped
+ * container's connections close a moment after it stops, so it waits up to waitMs before refusing.
  */
-export async function resetDatabase({ backupUrl, migrateUrl, dir, confirm, prefix = 'hr', migrations = PG_MIGRATIONS, log = console.log, waitMs = 5000 }) {
-  const database = databaseOf(migrateUrl);
-  if (!database || confirm !== database) throw new Error(`reset-database empties the whole database; type --confirm ${database || '<database>'} to go ahead`);
-
-  const pool = createPostgresPool(migrateUrl, { max: 1 });
+async function refuseOtherConnections(url, waitMs) {
+  const pool = createPostgresPool(url, { max: 1 });
   try {
-    // A stopped container's connections close a moment after it stops, so wait a little before refusing.
     let others = 0;
     for (let waited = 0; ; waited += 100) {
       const { rows: [r] } = await pool.query(
@@ -134,6 +129,53 @@ export async function resetDatabase({ backupUrl, migrateUrl, dir, confirm, prefi
   } finally {
     await pool.end();
   }
+}
+
+/**
+ * The rollback path in the 14 days after cutover (v3 Phase 1H): the PostgreSQL database back into a SQLite file
+ * (scripts/export-to-sqlite.js: fingerprint-verified, deleted if it does not match), packed with the catalog as an
+ * ordinary encrypted SQLite backup, health-<date>.hrbk, which the old server restores with backup:restore --file latest.
+ * Refuses while anything else is connected, so nothing written after the export is lost. Plaintext only in the OS temp
+ * folder, deleted on every path.
+ * @param {{ backupUrl: string, passphrase: string, date: string, drive?: object, toDir?: string,
+ *   extras?: { name: string, path: string }[], log?: (s: string) => void, waitMs?: number }} o
+ * @returns {Promise<{ name: string, bytes: number }>}
+ */
+export async function rollbackExport({ backupUrl, passphrase, date, drive, toDir, extras = [], log = console.log, waitMs = 5000 }) {
+  checkPassphrase(passphrase);
+  await refuseOtherConnections(backupUrl, waitMs);
+  const tmp = mkdtempSync(join(tmpdir(), 'hr-rollback-'));
+  try {
+    const out = join(tmp, 'health.db');
+    const { exportToSqlite } = await import('../../scripts/export-to-sqlite.js');
+    if (await exportToSqlite({ url: backupUrl, out, migrate: false, log }) !== 0) {
+      throw new Error('The export did not match the database; nothing was uploaded');
+    }
+    const db = new Database(out, { readonly: true });
+    try {
+      const r = await runBackup({ db, passphrase, extras, drive, toDir, date });
+      log(`rollback-export: ${r.name} ${r.bytes} bytes${toDir ? ' (to a folder)' : ''}`);
+      return r;
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Empties the database and migrates it afresh, so a load (loadFromBackup's copy, which takes only a freshly migrated
+ * database) can follow: before the 1H cutover, and whenever staging is loaded again. Guarded three ways: the caller
+ * types the database's name, nothing else may be connected to it (the app and the backup service stopped), and a
+ * pg_dump checked in a scratch cluster is kept in dir first (pre-migration-<stamp>.dump, pruned with the others).
+ * @param {{ backupUrl: string, migrateUrl: string, dir: string, confirm?: string, prefix?: string,
+ *   migrations?: typeof PG_MIGRATIONS, log?: (s: string) => void, waitMs?: number }} o
+ */
+export async function resetDatabase({ backupUrl, migrateUrl, dir, confirm, prefix = 'hr', migrations = PG_MIGRATIONS, log = console.log, waitMs = 5000 }) {
+  const database = databaseOf(migrateUrl);
+  if (!database || confirm !== database) throw new Error(`reset-database empties the whole database; type --confirm ${database || '<database>'} to go ahead`);
+  await refuseOtherConnections(migrateUrl, waitMs);
 
   // Back up first (owner's rule): a dump that is proven to restore, kept until the pruning ages it out.
   const { dump, restoreInto, withScratchCluster } = await import('./pg.js');
