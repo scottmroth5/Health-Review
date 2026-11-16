@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
-import { freshPgDatabase, freshPgStore, pgSkip } from './pg.js';
+import { dropWhenIdle, freshPgDatabase, freshPgStore, pgSkip } from './pg.js';
 import { pgToolsSkip } from '../tools/backup/pg.js';
 import { runBackup } from '../tools/backup/run.js';
 import { decrypt, encrypt, pack, unpack } from '../tools/backup/crypto.js';
@@ -144,7 +144,7 @@ test('restore-pre-migration: a migrated database goes back to its dump, grants i
   } finally {
     await Promise.all(pools.map((p) => p.end()));
     rmSync(dir, { recursive: true, force: true });
-    await admin.query(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
+    await dropWhenIdle(admin, database);
     for (const r of ['app', 'backup', 'migrate']) await admin.query(`DROP ROLE IF EXISTS "${prefix}_${r}"`);
     await admin.end();
   }

@@ -34,8 +34,23 @@ function urlFor(name) {
   return url.toString();
 }
 
+/**
+ * Drops a test database once its sessions are gone. pg's pool.end() resolves before the server has finished closing the
+ * connections, and DROP ... WITH (FORCE) on one still closing sends it an error nothing listens for any more (an
+ * uncaught exception in the test). Waits up to 5 s, then forces.
+ * @param {import('pg').Client} admin
+ */
+export async function dropWhenIdle(admin, name) {
+  for (let i = 0; i < 50; i++) {
+    const { rows: [r] } = await admin.query('SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = $1', [name]);
+    if (!r.n) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+}
+
 async function dropDatabase(name) {
-  await withAdmin((admin) => admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`));
+  await withAdmin((admin) => dropWhenIdle(admin, name));
 }
 
 /**

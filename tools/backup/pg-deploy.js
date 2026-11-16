@@ -111,11 +111,14 @@ export async function loadFromBackup({ file, passphrase, migrateUrl, catalogPath
     rmSync(join(tmp, 'restored-programs.json'), { force: true });
     const catalog = files.find((f) => f.name === 'programs.json');
     if (catalog && catalogPath) {
-      if (existsSync(catalogPath)) log('load-from-backup: the program catalog is already there; kept it');
-      else {
-        mkdirSync(join(catalogPath, '..'), { recursive: true });
+      // One step: 'wx' refuses an existing file as it opens it (no check-then-write gap).
+      mkdirSync(join(catalogPath, '..'), { recursive: true });
+      try {
         writeFileSync(catalogPath, catalog.data, { flag: 'wx', mode: 0o600 });
         log('load-from-backup: program catalog written');
+      } catch (err) {
+        if (err.code !== 'EEXIST') throw err;
+        log('load-from-backup: the program catalog is already there; kept it');
       }
     }
     const { migrateToPostgres } = await import('../../scripts/migrate-to-postgres.js');

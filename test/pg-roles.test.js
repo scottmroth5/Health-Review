@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
-import { pgSkip } from './pg.js';
+import { dropWhenIdle, pgSkip } from './pg.js';
 import { setupRoles, setupGrants } from '../db/pg/roles.js';
 import { openPostgresStore, migratePostgres, PG_MIGRATIONS } from '../db/pg/migrate.js';
 import { createPostgresPool } from '../db/postgres.ts';
@@ -79,7 +79,7 @@ test('roles: app reads and writes only, backup reads only, migrate owns the sche
     assert.equal((await backup.query('SELECT count(*)::int AS n FROM later_t')).rows[0].n, 1);
   } finally {
     await Promise.all(pools.map((p) => p.end()));
-    await admin.query(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
+    await dropWhenIdle(admin, database);
     for (const r of ['app', 'backup', 'migrate']) await admin.query(`DROP ROLE IF EXISTS "${prefix}_${r}"`);
     await admin.end();
   }
