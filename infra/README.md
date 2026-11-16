@@ -34,7 +34,11 @@ RDS backups within the database's size are free. Check the AWS Pricing Calculato
 ## First time
 You need Terraform 1.10 or later (`winget install Hashicorp.Terraform`), the AWS CLI with the Session Manager plugin
 (`winget install Amazon.SessionManagerPlugin`), and an AWS profile allowed to administer the account. In PowerShell:
-`$env:AWS_PROFILE = "<your admin profile>"`.
+`$env:AWS_PROFILE = "<your admin profile>"`, or sign in with `aws login` (answer n to its AI skills and MCP questions).
+Without winget, download Terraform's zip from releases.hashicorp.com and check it against the SHA256SUMS file there.
+An account created as a project in AWS Settings blocks creating KMS keys until advanced features are activated (AWS
+Settings, Projects, Explore advanced features; it can't be undone and ends the spend limit, so set an AWS budget).
+In PowerShell, quote any argument that holds `=` and a dot, as the commands below do.
 
 ### 1. Bootstrap
 ```powershell
@@ -46,8 +50,8 @@ terraform apply                                  # 9 to add: the key, its alias,
 Then move the bootstrap's own state into the bucket it made, so no state stays on this computer:
 ```powershell
 copy ..\backend.hcl.example ..\backend.hcl       # fill in the bucket name from the output
-Set-Content backend_override.tf 'terraform { backend "s3" {} }'
-terraform init -migrate-state -backend-config=..\backend.hcl -backend-config="key=health-review/bootstrap.tfstate"
+Set-Content backend_override.tf "terraform {`n  backend `"s3`" {}`n}"
+terraform init -migrate-state "-backend-config=..\backend.hcl" "-backend-config=key=health-review/bootstrap.tfstate"
 Remove-Item terraform.tfstate*                   # after "Successfully configured the backend"
 ```
 `backend_override.tf` and `backend.hcl` are gitignored; keep them.
@@ -56,8 +60,8 @@ Remove-Item terraform.tfstate*                   # after "Successfully configure
 ```powershell
 cd ..
 copy terraform.tfvars.example terraform.tfvars   # the alert email and the deploy key's public half
-terraform init -backend-config=backend.hcl
-terraform plan -out=main.tfplan
+terraform init "-backend-config=backend.hcl"      # quoted: PowerShell splits the argument otherwise
+terraform plan "-out=main.tfplan"
 ```
 Expect **37 to add, 0 to change, 0 to destroy**. Paste only that line back to Claude Code, plus anything that looks
 wrong. The full plan names the account, so it stays on this computer.
@@ -80,7 +84,7 @@ Nothing serves traffic yet. Phase 1G adds:
 DNS moves only at cutover (1H).
 
 ## Later changes
-Run `terraform plan -out=main.tfplan` and read it, then `terraform apply main.tfplan`.
+Run `terraform plan "-out=main.tfplan"` and read it, then `terraform apply main.tfplan`.
 - **The server is never replaced** for a newer Ubuntu image or an edited `user-data.sh`: both are ignored after creation, and unattended upgrades patch the running server.
 - **RDS changes wait for its maintenance window** (`apply_immediately` is off).
 
