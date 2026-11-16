@@ -1,6 +1,7 @@
 // The encrypted backup as a job: npm run backup (scripts/backup.js) and the in-app scheduler (SCHEDULE_BACKUP) run this.
 // data/health.db and the MAPS catalog, encrypted with HEALTH_BACKUP_PASSPHRASE, to Google Drive (or a folder), recorded
-// as a 'backup' run with the file name, size and counts only (tools/backup).
+// as a 'backup' run with the file name, size and counts only (tools/backup). On PostgreSQL (pgUrl, the backup
+// container's BACKUP_DATABASE_URL; v3 Phase 1G) a checked pg_dump replaces the SQLite snapshot.
 import { existsSync } from 'node:fs';
 import { migrationCopiesDir, pruneMigrationCopies } from '../db/store.js';
 import { checkPassphrase } from '../tools/backup/crypto.js';
@@ -20,13 +21,16 @@ const quiet = { info() {}, warn() {}, error() {}, log() {} };
  * @param {string} [o.toDir]  write the encrypted file to this folder instead of uploading
  * @param {object} [o.drive]  a Drive client (tests pass a fake); default: Google Drive with the saved sign-in
  * @param {string|null} [o.copiesDir]  the pre-migration copies to age out after a backup (default: the database's; null: none)
+ * @param {string} [o.pgUrl]  back up this PostgreSQL database (the backup role's URL) instead of the store's SQLite file
  */
-export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, toDir, drive, date = localDate(), copiesDir = migrationCopiesDir() }) {
+export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, toDir, drive, date = localDate(), copiesDir = migrationCopiesDir(), pgUrl }) {
   checkPassphrase(passphrase);
   const run = await startUserRun(store, 'backup', { to: toDir ? 'folder' : 'google-drive' }, quiet);
   try {
     const r = await runBackup({
-      db: store.syncDb, // the guarded sync handle until 1G (better-sqlite3's backup API): it throws rather than copy another request's open transaction
+      // SQLite: the guarded sync handle (better-sqlite3's backup API), which throws rather than copy another request's
+      // open transaction. PostgreSQL: pg_dump's own consistent snapshot.
+      ...(pgUrl ? { pgUrl } : { db: store.syncDb }),
       passphrase,
       extras: [{ name: 'programs.json', path: dataPath('maps', 'programs.json') }],
       drive: toDir ? null : drive ?? createDriveClient(getGoogleAuth()),

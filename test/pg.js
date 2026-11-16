@@ -117,6 +117,7 @@ export async function freshPgStore() {
   let closing;
   const fresh = {
     ...store,
+    url: urlFor(name), // for tests that run PostgreSQL's own programs against it (test/backup-pg.test.js)
     close() {
       closing ??= (async () => {
         open.delete(fresh);

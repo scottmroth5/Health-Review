@@ -93,14 +93,15 @@ export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_
 /**
  * Opens the health database on either engine (v3 Phase 1C): PostgreSQL when url (DATABASE_URL) is set
  * (db/pg/migrate.js), else SQLite (openHealthStore), then brings the owner's email in step with the environment. The
- * server keeps openHealthStore until 1H, so a stray DATABASE_URL never moves production; tests and dev tools use this.
- * @param {{ url?: string, path?: string, snapshot?: boolean, log?: { info: Function } }} [options]
+ * server calls it only with DB_ENGINE=postgres (server/index.js), so a stray DATABASE_URL never moves a SQLite server.
+ * migrate false (the server, as hr_app): pending PostgreSQL migrations refuse the open instead of running.
+ * @param {{ url?: string, path?: string, snapshot?: boolean, migrate?: boolean, log?: { info: Function } }} [options]
  */
-export async function openStore({ url = process.env.DATABASE_URL, path, ...options } = {}) {
+export async function openStore({ url = process.env.DATABASE_URL, path, migrate = true, ...options } = {}) {
   let store;
   if (url) {
     const { openPostgresStore } = await import('./pg/migrate.js');
-    store = await openPostgresStore(url);
+    store = await openPostgresStore(url, { migrate });
   } else {
     store = openHealthStore(path, options);
   }
@@ -120,7 +121,7 @@ function withAsyncDatabase(store) {
   return { ...store, raw, db, tx: db.tx, syncDb: guardSyncDatabase(raw) };
 }
 
-const COPY_NAME = /^pre-migration-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{0,3})Z\.db$/;
+const COPY_NAME = /^pre-migration-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{0,3})Z\.(?:db|dump)$/; // .dump: the backup container's pre-migrate dumps (PostgreSQL, v3 Phase 1G)
 
 /**
  * Keeps the newest `keep` pre-migration copies in a folder, and none older than `maxAgeDays` (by the UTC stamp in the

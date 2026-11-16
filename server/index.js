@@ -1,7 +1,7 @@
 // Starts the Health Review UI: npm start, then open http://localhost:5188
 // Locally AUTH_MODE=none binds to 127.0.0.1. On the server AUTH_MODE=google (or demo for the public demo) with HOST=0.0.0.0
 // behind Caddy (TRUST_PROXY). Google sign-in for the sync loads on the first sync.
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore, openStore } from '../db/store.js';
 import { scopeStore } from '../db/scope.js';
 import { OWNER_ID, getUser, startUserRun, syncOwnerEmail, timeZoneOf } from '../db/users.js';
 import { open } from '../tools/secret-box.js';
@@ -29,6 +29,7 @@ import { createAiAccess } from './ai-access.js';
 import { countryLookup, geoAllowFromEnv, loadGeoReader, loadRelayRanges } from './geo.js';
 
 const demo = process.env.HEALTH_INSTANCE === 'demo';
+const onPostgres = () => process.env.DB_ENGINE === 'postgres' && Boolean(process.env.DATABASE_URL);
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? (demo ? 5189 : 5188));
 const settings = authSettings();
@@ -88,8 +89,14 @@ if (demo) {
     catalog: loadDemoCatalog(), substitutions: JSON.parse(readFileSync(DEMO_SUBSTITUTIONS_PATH, 'utf8')),
   });
 } else {
-  store = openHealthStore();
-  await syncOwnerEmail(store.db);
+  // PostgreSQL only when both DB_ENGINE=postgres and DATABASE_URL are set (v3 Phase 1G; the new server's .env), so a
+  // stray URL never moves a SQLite server. The app connects as hr_app (no DDL) and never migrates: pending migrations
+  // stop the start, and deploy.sh runs them first (scripts/migrate.js) after the pre-migration dump.
+  if (onPostgres()) store = await openStore({ url: process.env.DATABASE_URL, migrate: false });
+  else {
+    store = openHealthStore();
+    await syncOwnerEmail(store.db);
+  }
   // Each user's view of the database (db/scope.js); the command-line scripts and these jobs act as one user at a time.
   const forUser = (uid) => scopeStore(store, uid);
   // Claude per user (multi-user, phases 2 and 4; server/ai-access.js decides): the owner's client from ANTHROPIC_API_KEY
@@ -204,8 +211,11 @@ if (demo) {
   // A missing country database means the US-only block is off: email the administrator (once a day at most).
   if (geoAllow.length && !geo.lookup) alerts.alert('geo-db', 'US-only blocking is off', 'The country database is missing from the server image, so requests from outside the allowed countries are not blocked. The next image build adds it.').catch(() => {});
   if (geo.lookup && !relay) alerts.alert('geo-relay', 'Private Relay list missing', "Apple's iCloud Private Relay address list is missing from the server image, so visitors with Private Relay on may be refused. The next image build adds it.").catch(() => {});
+  // On PostgreSQL the backup container runs the backup and the restore test (scripts/backup-service.js, with pg_dump);
+  // they still show here, with their runs, but this process never starts them.
+  const elsewhere = onPostgres() ? new Set(['backup', 'restore-test']) : new Set();
   scheduler = createScheduler({
-    jobs: schedulesFromEnv().filter((j) => runners[j.name]).map((j) => ({ ...j, run: runners[j.name] })),
+    jobs: schedulesFromEnv().filter((j) => runners[j.name]).map((j) => ({ ...j, run: elsewhere.has(j.name) ? null : runners[j.name] })),
     runs: jobRunsLookup(store.db),
   });
   // Health Auto Export's posts (POST /api/ingest/*): on the server APPLE_SOURCE=rest and INGEST_TOKEN are set.
@@ -224,7 +234,7 @@ await scheduler?.start();
 const shutdown = async () => {
   scheduler?.stop();
   await app.close();
-  store.close();
+  await store.close(); // a promise on PostgreSQL (the pool), a plain call on SQLite
   process.exit(0);
 };
 // Signal handlers cannot wait; shutdown runs to its own process.exit.

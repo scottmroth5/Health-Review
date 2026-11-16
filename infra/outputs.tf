@@ -14,6 +14,16 @@ output "db_endpoint" {
   value       = aws_db_instance.main.endpoint
 }
 
+output "db_address" {
+  description = "The RDS host name alone (db-setup.ps1: the TLS name to verify and the port forward's target)."
+  value       = aws_db_instance.main.address
+}
+
+output "region" {
+  description = "The stack's region (the owner's scripts)."
+  value       = local.region
+}
+
 output "db_master_secret_arn" {
   description = "The RDS-managed master password's secret (Secrets Manager)."
   value       = aws_db_instance.main.master_user_secret[0].secret_arn

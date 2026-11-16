@@ -39,7 +39,31 @@ const types = {
  * @param connectionString  postgres://... (never logged)
  */
 export function createPostgresPool(connectionString: string, extra: pg.PoolConfig = {}): pg.Pool {
+  checkTls(connectionString);
   return new pg.Pool({ connectionString, max: 10, ...extra, types, options: '-c TimeZone=UTC' });
+}
+
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * In production a database on another machine must be reached over verified TLS (v3 Phase 1G): the URL carries
+ * sslmode=verify-full with an sslrootcert (the image's RDS bundle, /app/certs/rds-global-bundle.pem), so a wrong
+ * certificate or a downgrade fails rather than sending health data in the clear. Loopback and Unix sockets (a host
+ * starting with /, as the backup container's scratch cluster uses) are exempt. Throws without echoing the URL.
+ */
+export function checkTls(connectionString: string, env: NodeJS.ProcessEnv = process.env): void {
+  if (env.NODE_ENV !== 'production') return;
+  let url: URL;
+  try {
+    url = new URL(connectionString);
+  } catch {
+    throw new Error('The database URL is not a valid postgres:// URL');
+  }
+  const host = decodeURIComponent(url.hostname);
+  if (!host || host.startsWith('/') || LOOPBACK.has(host) || url.searchParams.get('host')?.startsWith('/')) return;
+  if (url.searchParams.get('sslmode') !== 'verify-full' || !url.searchParams.get('sslrootcert')) {
+    throw new Error('A remote database URL needs sslmode=verify-full and sslrootcert in production');
+  }
 }
 
 interface TxState {

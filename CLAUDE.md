@@ -91,9 +91,17 @@ Health specific logic stays in this repo; never add it to agent-core.
                     that would not run or returns a boolean; statements built with ${} are covered by the full suite and
                     the cross-engine routes.
                     openStore() (db/store.js) opens PostgreSQL when DATABASE_URL is set, else SQLite, then
-                    syncOwnerEmail (async, on db); the server keeps openHealthStore until 1H and calls syncOwnerEmail
-                    itself, so a stray DATABASE_URL never moves production. The account export lists rows in primary key
-                    order
+                    syncOwnerEmail (async, on db). The server opens PostgreSQL only with DB_ENGINE=postgres and
+                    DATABASE_URL both set (else openHealthStore and syncOwnerEmail itself), so a stray DATABASE_URL never
+                    moves a SQLite server. The account export lists rows in primary key order
+                    Running on RDS (v3 Phase 1G, docs/adr/0010): db/postgres.ts checkTls (production refuses a remote URL
+                    without sslmode=verify-full and sslrootcert; the image has /app/certs/rds-global-bundle.pem);
+                    db/pg/roles.js (database health_review, C collation, owned by hr_migrate; hr_app rows only, no DDL,
+                    default privileges for later tables; hr_backup SELECT only; created by the owner's infra/db-setup.ps1
+                    through scripts/db-setup.js); the app opens with migrate: false (openPostgresStore refuses pending
+                    migrations, pendingPostgres); scripts/migrate.js applies them as hr_migrate (MIGRATE_DATABASE_URL). On
+                    PostgreSQL the app's scheduler shows backup and restore-test (run: null) but the backup container runs
+                    them
                     Moving the data (v3 Phase 1E, docs/adr/0008): transfer.js on the async interface for both directions:
                     tableOrder (parents first, dialect.js foreignKeyParents), checkSameSchema (tables, columns and order,
                     same migration), copyAll (only into a freshly migrated database, its owner row replaced; one
@@ -160,7 +168,12 @@ Health specific logic stays in this repo; never add it to agent-core.
                     public IPs in infra/. CI's infra job: fmt, validate without a backend, Trivy config (accepted
                     findings carry an inline #trivy:ignore with the reason). Locally the same through docker run
                     hashicorp/terraform:1.17.2 (copy the folder inside the container: the Windows mount is too slow to
-                    start the provider). Not applied yet; production stays on Lightsail until 1H
+                    start the provider). Bootstrapped and planned 2026-11-16 (the account is now an organization the owner
+                    runs: advanced features, for KMS keys); applied just before staging; production stays on Lightsail
+                    until 1H. user-data.sh writes server.conf (DB_ENGINE=postgres, ENV_SOURCE=ssm, AWS_REGION), state/,
+                    and empty .env and backup.env for the deploy user. The owner's scripts (Claude never runs them):
+                    db-setup.ps1 (roles and URLs) and env-to-ssm.ps1 (Lightsail's settings into Parameter Store, staging or
+                    production mode; staging: its own names, no SCHEDULE_ or SMTP_, BACKUP_DRIVE_FOLDER of its own)
 /data               gitignored; local health datastore and exports; google/ holds the OAuth client_secret.json and token.json
 /legacy contains the v1 scripts for reference only. Do not modify or import from them.
 
@@ -228,7 +241,19 @@ deploy/                           the server (/opt/health-review): compose.yml (
                                   that would migrate starts (its db:pending on a copy), an encrypted Drive backup with the
                                   current image, and on a failed deploy the pre-migration copy goes back before the old
                                   image starts; --no-backup, --skip-db-check; the server's copy is installed by hand; state in
-                                  ./state, owned by deploy), cloud.env.example (the server .env's names, placeholders)
+                                  ./state, owned by deploy), cloud.env.example (the server .env's names, placeholders).
+                                  PostgreSQL servers (server.conf, v3 Phase 1G, docs/adr/0010): env-from-ssm.sh rebuilds .env
+                                  (/health-review/env/) and backup.env (/health-review/backup/: the migration and backup
+                                  logins, the backup container only) before every start; the backup service (compose profile
+                                  postgres, image <tag>-backup from Dockerfile --target backup with PostgreSQL 18; scripts/
+                                  backup-service.js: the schedule, backup-now, restore-test, pre-migrate, restore-pre-migration,
+                                  load-from-backup); a migrating deploy runs pre-migrate (tools/backup/pg-deploy.js: a pg_dump
+                                  to data/backups/pre-migration-<stamp>.dump, restored into a scratch cluster and migrated
+                                  there first; 0 / 10 / 1), the Drive backup with the current image, then scripts/migrate.js in
+                                  the backup container; a failed migration or start empties the schema and restores the dump.
+                                  tools/backup/pg.js is the only code that starts pg tools (argument arrays, PG* environment
+                                  variables never argv, errors name the tool and exit code only; scratch clusters on a Unix
+                                  socket in the OS temp folder, deleted after). Lightsail has no server.conf and runs as before
 .github/workflows/deploy.yml      after CI passes on a push to main: build ghcr.io/scottmroth5/health-review (sha-<7>, latest;
                                   a public package, code only), then, only when the repository variable DEPLOY_ENABLED is
                                   true, SSH as deploy and run deploy.sh deploy <tag>; manual runs deploy a tag or roll back
@@ -754,14 +779,16 @@ transit (owner's choice, 2026-10-05): TLS for every transfer, and encryption at 
 files in consumer cloud storage (Google Drive and the like), encrypt before upload, and never store the key or password
 with the data. Never store, sync or send it unencrypted, never put it in CI, and never commit it. This is about where
 data is kept; what may be sent to the Claude API is governed by the rules below.
-The approved off-machine copy is the nightly backup (tools/backup): an online SQLite snapshot that must pass its
-integrity check, packed with the MAPS catalog, gzipped, then AES-256-GCM with a scrypt key from
+The approved off-machine copy is the nightly backup (tools/backup): an online snapshot that must prove itself readable
+(SQLite: the backup API and its integrity check; PostgreSQL: pg_dump as hr_backup, restored into a throwaway local
+cluster in the OS temp folder, v3 Phase 1G), packed with the MAPS catalog, gzipped, then AES-256-GCM with a scrypt key from
 HEALTH_BACKUP_PASSPHRASE (.env only, never uploaded or logged) and a fresh salt and nonce per file, verified by
 decrypting before it is uploaded over HTTPS with the drive.file scope (the app sees only files it created). Plaintext
 snapshots exist only in the OS temp folder and are deleted on every exit path. Kept: 7 nightly, 3 weekly, 1 monthly.
 The monthly restore test (tools/backup/restore-check.js restoreTest, jobs/restore-check.js; SCHEDULE_RESTORE_TEST,
 npm run backup:test) proves the newest backup can be read: decrypted into a new OS temp folder (deleted on every exit
-path), integrity checked, and compared with the live database by table row counts only. It fails on a decrypt or integrity
+path), integrity checked (a PostgreSQL dump: restored into a throwaway local cluster, never the production instance), and
+compared with the live database by table row counts only. It fails on a decrypt or integrity
 failure, a table missing from the backup (unless the backup predates the migration that added it), or a table empty in
 the backup that holds 10+ rows live; other differences are recorded (a backup is a day old, and some rows are replaced on
 purpose). Each result is a 'restore-test' run; a failed last run is a warning on Daily Check-in until a later one passes.
@@ -815,9 +842,10 @@ supplementFacts (current supplements with amounts, medication names without dose
 Help still sends no user data. Prescription medications are never recommended, dosed or replaced by a supplement.
 Blood oxygen and breathing disturbances (values and targets) appear in the review only in physicianDiscussion.
 Never output em dashes, en dashes, or double hyphens in generated text.
-Back up before every database change (owner's rule, 2026-10-24): a migration never runs on a database file without a
-checked copy taken first (db/store.js), and a deploy whose image would migrate makes the encrypted Drive backup first and
-stops if it fails (deploy/deploy.sh).
+Back up before every database change (owner's rule, 2026-10-24): a migration never runs on a database without a checked
+copy taken first (SQLite: the VACUUM INTO copy, db/store.js; PostgreSQL: a pg_dump restored into a scratch cluster and
+migrated there first, kept in data/backups for the failed-deploy restore, tools/backup/pg-deploy.js), and a deploy whose
+image would migrate makes the encrypted Drive backup first and stops if it fails (deploy/deploy.sh).
 Never commit anything under /data, or any .csv or .xml file. Never log or print API keys.
 
 ## Conventions

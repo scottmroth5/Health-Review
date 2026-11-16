@@ -104,7 +104,8 @@ export function schedulesFromEnv(env = process.env) {
 
 /**
  * @param {object} o
- * @param {Array<{ name: string, schedule: object, run: () => Promise<void> }>} o.jobs  run resolves when the job is done
+ * @param {Array<{ name: string, schedule: object, run: (() => Promise<void>) | null }>} o.jobs  run resolves when the job is
+ *   done; null: another process runs it (the backup container on PostgreSQL), so it is shown in status but never fired
  * @param {{ lastRanAt: (name) => Promise<string|null>|string|null, isRunning: (name, now) => Promise<boolean>|boolean }} o.runs
  *   jobRunsLookup(db) (server/admin-queries.js; async, docs/adr/0006)
  * @param {() => Date} [o.now]
@@ -117,7 +118,7 @@ export function createScheduler({ jobs, runs, now = () => new Date(), tz = owner
   let timer = null;
 
   const fire = async (job, why) => {
-    if (job.running) return;
+    if (job.running || !job.run) return;
     // Marked before the database check is awaited, so a tick in between cannot fire the same job twice.
     job.running = true;
     let elsewhere;
@@ -164,6 +165,7 @@ export function createScheduler({ jobs, runs, now = () => new Date(), tz = owner
     async start() {
       const t = now();
       for (const job of state) {
+        if (!job.run) continue;
         const missed = lastRun(job.schedule, t, tz);
         const ran = await runs.lastRanAt(job.name);
         if (missed && t - missed <= CATCH_UP_HOURS * 3600 * 1000 && (!ran || new Date(ran) < missed)) void fire(job, 'missed while the server was off');

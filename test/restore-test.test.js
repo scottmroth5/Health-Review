@@ -50,14 +50,14 @@ test('restore test: a good backup passes; rows added since are differences, not 
   const drive = fakeDrive();
   const r0 = await backupOf(store, drive);
   const before = leftovers();
-  const pass = restoreTest({ file: drive.files.get(r0.driveFileId).data, passphrase: PASS, live: store.syncDb });
+  const pass = await restoreTest({ file: drive.files.get(r0.driveFileId).data, passphrase: PASS, live: store.db });
   assert.equal(pass.ok, true);
   assert.deepEqual(pass.problems, []);
   assert.deepEqual(pass.differences, []);
   assert.ok(pass.tables >= 20);
 
   store.syncDb.prepare("INSERT INTO daily_metrics (user_id, date, steps, updated_at) VALUES (@uid, '2026-03-13', 9000, 'x')").run(); // today's data, after the backup
-  const later = restoreTest({ file: drive.files.get(r0.driveFileId).data, passphrase: PASS, live: store.syncDb });
+  const later = await restoreTest({ file: drive.files.get(r0.driveFileId).data, passphrase: PASS, live: store.db });
   assert.equal(later.ok, true);
   assert.deepEqual(later.differences, [{ table: 'daily_metrics', backup: 12, live: 13 }]);
   assert.equal(leftovers(), before, 'the decrypted copy is deleted');
@@ -70,25 +70,25 @@ test('restore test fails: a wrong passphrase or a damaged file throws; a missing
   const r0 = await backupOf(store, drive);
   const file = drive.files.get(r0.driveFileId).data;
   const before = leftovers();
-  assert.throws(() => restoreTest({ file, passphrase: 'a different long passphrase', live: store.syncDb }));
+  await assert.rejects(restoreTest({ file, passphrase: 'a different long passphrase', live: store.db }));
   const damaged = Buffer.from(file);
   damaged[damaged.length - 20] ^= 0xff;
-  assert.throws(() => restoreTest({ file: damaged, passphrase: PASS, live: store.syncDb }));
+  await assert.rejects(restoreTest({ file: damaged, passphrase: PASS, live: store.db }));
   assert.equal(leftovers(), before, 'nothing left behind after a failure');
 
   // A table the live database has but the backup lacks, and a table empty in the backup that holds 10+ rows live.
   store.syncDb.exec('CREATE TABLE added_later (id INTEGER PRIMARY KEY)');
   const ins = store.syncDb.prepare("INSERT INTO checkins (user_id, date, cadence, readiness, source, updated_at) VALUES (@uid, ?, 'daily', 7, 'ui', 'x')");
   for (let d = 1; d <= 10; d++) ins.run(`2026-02-${String(d).padStart(2, '0')}`);
-  const r = restoreTest({ file, passphrase: PASS, live: store.syncDb });
+  const r = await restoreTest({ file, passphrase: PASS, live: store.db });
   assert.equal(r.ok, false);
   assert.deepEqual(r.problems, ['table added_later is missing from the backup', 'table checkins is empty in the backup but has 10 rows']);
 
   // A backup taken before a migration lacks that migration's tables: recorded, not a problem.
   const cols = store.syncDb.prepare('PRAGMA table_info(schema_migrations)').all().map((c) => c.name);
   store.syncDb.prepare(`INSERT INTO schema_migrations (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
-    .run(...cols.map((c) => (c === 'id' ? '999-later' : 'x')));
-  const older = restoreTest({ file, passphrase: PASS, live: store.syncDb });
+    .run(...cols.map((c) => (c === 'id' ? '999-later' : c === 'app' ? 'health-review' : 'x')));
+  const older = await restoreTest({ file, passphrase: PASS, live: store.db });
   assert.deepEqual(older.problems, ['table checkins is empty in the backup but has 10 rows']);
   assert.ok(older.differences.some((d) => d.table === 'added_later' && d.backup === null));
   store.close();

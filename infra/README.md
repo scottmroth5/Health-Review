@@ -76,12 +76,77 @@ Then:
 2. **Check the server** without SSH: `aws ssm start-session --target <server_instance_id>`, then `cloud-init status`
    (expect `done`), `docker --version` and `exit`.
 
-Nothing serves traffic yet. Phase 1G adds:
-- the app's database (C collation) and its two roles;
-- the parameters under `/health-review/` (SecureString, `alias/health-review`);
-- compose, Caddy and the deploy.
+Nothing serves traffic yet.
 
-DNS moves only at cutover (1H).
+### 4. The database and its roles (Phase 1G)
+From `infra\`, signed in with `aws login`:
+```powershell
+powershell -ExecutionPolicy Bypass -File db-setup.ps1
+```
+It reads RDS's master password from Secrets Manager and makes three new passwords, all in memory only. Through an SSM
+port forward it then creates the `health_review` database (C collation) and the three roles:
+- `hr_migrate`: owns the schema;
+- `hr_app`: rows only;
+- `hr_backup`: read only.
+
+Their URLs are stored as SecureString parameters:
+- `/health-review/env/DATABASE_URL`;
+- `/health-review/backup/MIGRATE_DATABASE_URL` and `BACKUP_DATABASE_URL`.
+
+It prints progress lines only. See [ADR 0010](../docs/adr/0010-postgres-operations.md).
+
+### 5. The settings, in staging mode
+The Lightsail server's `.env` and Google sign-in files are read over SSH into memory and stored under
+`/health-review/env/`. Staging changes four things:
+- the two site names;
+- no scheduled jobs;
+- no email;
+- its own Drive backup folder.
+```powershell
+powershell -ExecutionPolicy Bypass -File env-to-ssm.ps1 -Mode staging -Lightsail <user>@<lightsail address> `
+  -KeyFile <path to the Lightsail key> -Site <staging app name> -DemoSite <staging demo name>
+```
+
+### 6. DNS and Google
+- **DNS:** two A records (the staging app name and the staging demo name) pointing at `terraform output server_public_ip`.
+- **Google:** in Google Cloud, add the web client's redirect URIs for the staging name:
+  - `https://<staging app name>/auth/google/callback`;
+  - `https://<staging app name>/auth/google/sheets/callback`.
+
+### 7. Install the deploy files and start
+Open a session on the server: `aws ssm start-session --target <server_instance_id>`. Then copy the four files from this
+repository at the commit being deployed:
+```bash
+cd /opt/health-review
+for f in compose.yml Caddyfile deploy.sh env-from-ssm.sh; do
+  sudo curl -fsSL -o "$f" "https://raw.githubusercontent.com/scottmroth5/Health-Review/<commit>/deploy/$f"
+done
+sudo chmod 755 deploy.sh env-from-ssm.sh
+# The first deploy creates the schema (the baseline migration, as hr_migrate) on the empty database. There is no current
+# image to make a Drive backup with, and nothing in the database to back up, hence --no-backup this once.
+sudo -u deploy ./deploy.sh deploy sha-<7> --no-backup
+sudo -u deploy ./deploy.sh status
+```
+
+### 8. Load a copy of the data and test
+The newest backup in production's Drive folder goes into the empty database. It is audited, copied and verified by
+fingerprint, printing PASS or FAIL with counts only. The app is stopped first: the copy refuses a database that already
+holds rows beyond the owner's.
+```bash
+sudo -u deploy env COMPOSE_PROFILES=postgres docker compose stop app backup
+sudo -u deploy env IMAGE_TAG=sha-<7> COMPOSE_PROFILES=postgres docker compose run --rm --no-deps -T backup \
+  node scripts/backup-service.js load-from-backup
+sudo -u deploy ./deploy.sh up
+```
+Then test together:
+- sign-in and every tab;
+- a manual sync;
+- an ingest post with a staging token;
+- a review dry run and the account export;
+- a second user's isolation;
+- `backup-now` and `restore-test` (the same `docker compose run ... backup` line, with those commands).
+
+Cutover (1H) repeats steps 5 and 8 in production mode, then moves DNS.
 
 ## Later changes
 Run `terraform plan "-out=main.tfplan"` and read it, then `terraform apply main.tfplan`.

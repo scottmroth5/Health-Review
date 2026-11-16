@@ -11,6 +11,13 @@ token*.json
 MAPS*
 **/MAPS*
 
+# The Terraform (v3 Phase 1F): the servers never need it, and a working copy holds the owner's terraform.tfvars,
+# backend.hcl and provider binaries (.terraform/), which must never reach an image.
+infra/
+*.tfvars
+*.tfstate*
+.terraform/
+
 # Not needed to run the server, or rebuilt inside the image.
 node_modules/
 .git/

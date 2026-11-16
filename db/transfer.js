@@ -33,7 +33,7 @@ export async function tableOrder(db) {
 }
 
 /** The newest schema a database is at, named by the SQLite migration id (PostgreSQL's baseline stands for BASELINE_THROUGH). */
-async function schemaVersion(db) {
+export async function schemaVersion(db) {
   const ids = await db.prepare('SELECT id FROM schema_migrations WHERE app = ? ORDER BY id').pluck().all(APP);
   if (db.engine !== 'postgres') return ids.at(-1) ?? null;
   const known = PG_MIGRATIONS.map((m) => m.id).filter((id) => ids.includes(id));

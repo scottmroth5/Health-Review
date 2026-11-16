@@ -1,12 +1,15 @@
 #!/bin/bash
-# First boot of the Health Review server (Terraform templatefile; runs once as root through cloud-init). Phase 1G adds
-# compose.yml, the Caddyfile, deploy.sh and the .env from Parameter Store. Nothing here is secret.
+# First boot of the Health Review server (Terraform templatefile; runs once as root through cloud-init). Nothing here is
+# secret. The owner then installs compose.yml, the Caddyfile, deploy.sh and env-from-ssm.sh from the repo's deploy/
+# folder (infra/README.md), and deploy.sh fills .env and backup.env from Parameter Store before every start.
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get -y upgrade
-apt-get install -y docker.io docker-compose-v2 fail2ban unattended-upgrades
+apt-get install -y docker.io docker-compose-v2 fail2ban unattended-upgrades python3
+# The AWS CLI (env-from-ssm.sh reads the settings with the instance role).
+snap install aws-cli --classic
 
 # Security updates install themselves; a needed reboot happens at 04:30 (the compose services restart on their own).
 cat > /etc/apt/apt.conf.d/52health-review <<'EOF'
@@ -33,6 +36,14 @@ chmod 600 /home/deploy/.ssh/authorized_keys
 # The app folder: root-owned, with the data folder for the container's uid 1000 only.
 install -d -m 755 -o root -g root /opt/health-review
 install -d -m 700 -o 1000 -g 1000 /opt/health-review/data
+install -d -m 700 -o deploy -g deploy /opt/health-review/state
+# The settings files deploy.sh rewrites from Parameter Store (env-from-ssm.sh): the deploy user's, readable by no one else.
+install -m 600 -o deploy -g deploy /dev/null /opt/health-review/.env
+install -m 600 -o deploy -g deploy /dev/null /opt/health-review/backup.env
+# What kind of server this is, for deploy.sh (read line by line, never sourced): PostgreSQL on RDS, settings from
+# Parameter Store in this region.
+printf 'DB_ENGINE=postgres\nENV_SOURCE=ssm\nAWS_REGION=%s\n' '${region}' > /opt/health-review/server.conf
+chmod 644 /opt/health-review/server.conf
 
 # The CloudWatch agent: memory and root disk use, for the alarms (namespace CWAgent, by instance).
 curl -fsSL -o /tmp/cwagent.deb https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb

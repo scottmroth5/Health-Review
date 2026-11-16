@@ -38,6 +38,7 @@ resource "aws_instance" "app" {
 
   user_data = templatefile("${path.module}/user-data.sh", {
     deploy_ssh_public_key = var.deploy_ssh_public_key
+    region                = local.region
   })
 
   tags = { Name = local.name }

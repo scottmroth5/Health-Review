@@ -85,6 +85,41 @@ services:
         max-size: 5m
         max-file: "2"
 
+  # PostgreSQL servers only (profile postgres; deploy.sh turns it on from server.conf, v3 Phase 1G): the nightly backup
+  # and the monthly restore test with pg_dump, and deploy.sh's pre-migrate, migrate and restore steps. The only container
+  # with the migration and backup logins (backup.env). Scratch clusters for checks live in /tmp and are deleted after each.
+  backup:
+    image: ${IMAGE:-ghcr.io/scottmroth5/health-review}:${IMAGE_TAG:-latest}-backup
+    profiles: [postgres]
+    restart: unless-stopped
+    env_file:
+      - .env
+      # Optional to compose, so a SQLite server without the file (Lightsail) still loads this file; the service itself
+      # refuses to run without the URLs it needs.
+      - path: backup.env
+        required: false
+    environment:
+      DATA_DIR: /app/data
+    volumes:
+      # The Google sign-in files (Drive), the MAPS catalog for the backup, and data/backups for pre-migration dumps.
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,uid=1000,gid=1000,mode=0700
+    init: true
+    stop_grace_period: 30s
+    mem_limit: 512m
+    pids_limit: 200
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "3"
+
   caddy:
     image: caddy:2
     restart: unless-stopped

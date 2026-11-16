@@ -49,6 +49,23 @@ jobs:
           node-version: 26
           cache: npm
       - run: npm ci
+      # PostgreSQL 18's own programs for the backup container's tests (test/backup-pg.test.js, v3 Phase 1G: pg_dump,
+      # pg_restore and throwaway scratch clusters), from the PostgreSQL project's apt repository, its key checked against
+      # the published fingerprint first. No cluster is created; the tests make and delete their own.
+      - name: PostgreSQL 18 programs
+        if: matrix.engine == 'postgres'
+        run: |
+          key=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL --max-time 60 -o "$key" https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          gpg --show-keys --with-colons "$key" | grep -q '^fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:$'
+          grep -l apt.postgresql.org /etc/apt/sources.list.d/* 2>/dev/null | xargs -r sudo rm -f
+          echo "deb [signed-by=$key] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo install -d /etc/postgresql-common/createcluster.d
+          echo 'create_main_cluster = false' | sudo tee /etc/postgresql-common/createcluster.d/no-main.conf >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-18
+          echo "PG_BIN=/usr/lib/postgresql/18/bin" >> "$GITHUB_ENV"
       - run: npm test
       # The checks below do not depend on the engine, so they run on the SQLite jobs only.
       # Known vulnerabilities in what the app ships (dev tools excluded); high or critical fails the build.

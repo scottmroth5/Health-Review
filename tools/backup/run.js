@@ -2,13 +2,23 @@
 // prove the result decrypts to the same bytes, then upload to the app's Google Drive folder (or write it to a
 // folder, e.g. a USB drive) and prune old copies. The plaintext snapshot only ever exists in the OS temp folder
 // and is deleted on every exit path. Nothing here logs file contents or the passphrase.
+// Two engines: SQLite (db, better-sqlite3's online backup plus its integrity check, packed as health.db) and
+// PostgreSQL (pgUrl, v3 Phase 1G: pg_dump as the backup role, restored into a throwaway local cluster as the check,
+// packed as health.dump; tools/backup/pg.js, in the backup container only).
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
 import { checkPassphrase, decrypt, encrypt, pack, sha256, unpack } from './crypto.js';
 
-export const DRIVE_FOLDER = 'Health-Review backups';
+/** Production's backup folder in Google Drive. */
+export const PRODUCTION_DRIVE_FOLDER = 'Health-Review backups';
+/**
+ * Where this server's backups go: production's folder, unless BACKUP_DRIVE_FOLDER names another (staging, v3 Phase 1G:
+ * so a test backup never replaces production's for the day, and a PostgreSQL backup never reaches the folder the SQLite
+ * server's restore test reads).
+ */
+export const DRIVE_FOLDER = process.env.BACKUP_DRIVE_FOLDER?.trim() || PRODUCTION_DRIVE_FOLDER;
 export const RETENTION = { nightly: 7, weekly: 3, monthly: 1 }; // owner's choice, 2026-10-05
 const NAME = /^health-(\d{4}-\d{2}-\d{2})\.hrbk$/;
 
@@ -45,27 +55,32 @@ export function retention(names, { nightly, weekly, monthly } = RETENTION) {
 
 /**
  * @param {object} o
- * @param {import('better-sqlite3').Database} o.db  the live database (backed up online, safe while the app runs)
+ * @param {import('better-sqlite3').Database} [o.db]  a SQLite live database (backed up online, safe while the app runs)
+ * @param {string} [o.pgUrl]  or a PostgreSQL one: the backup role's URL (never logged)
  * @param {string} o.passphrase
  * @param {Array<{name: string, path: string}>} [o.extras]  other files to include when they exist
  * @param {object} [o.drive]  createDriveClient(...) or a fake; with o.toDir the upload is skipped
  * @param {string} [o.toDir]  write the encrypted file to this folder instead
  * @param {string} o.date  YYYY-MM-DD, the backup's name
  */
-export async function runBackup({ db, passphrase, extras = [], drive, toDir, date }) {
+export async function runBackup({ db, pgUrl, passphrase, extras = [], drive, toDir, date }) {
   checkPassphrase(passphrase);
   if (!drive && !toDir) throw new Error('Nowhere to put the backup');
+  if (!db === !pgUrl) throw new Error('runBackup: give either a SQLite db or a PostgreSQL URL');
   const tmp = mkdtempSync(join(tmpdir(), 'hr-backup-'));
   try {
-    const snapshot = join(tmp, 'health.db');
-    await db.backup(snapshot);
-    const check = new Database(snapshot, { readonly: true });
-    const integrity = check.pragma('integrity_check', { simple: true });
-    check.close();
-    if (integrity !== 'ok') throw new Error('The database snapshot failed its integrity check; nothing was uploaded');
+    const snapshot = join(tmp, pgUrl ? 'health.dump' : 'health.db');
+    if (pgUrl) await pgSnapshot(pgUrl, snapshot);
+    else {
+      await db.backup(snapshot);
+      const check = new Database(snapshot, { readonly: true });
+      const integrity = check.pragma('integrity_check', { simple: true });
+      check.close();
+      if (integrity !== 'ok') throw new Error('The database snapshot failed its integrity check; nothing was uploaded');
+    }
 
     const dbBytes = readFileSync(snapshot);
-    const files = [{ name: 'health.db', data: dbBytes }];
+    const files = [{ name: pgUrl ? 'health.dump' : 'health.db', data: dbBytes }];
     for (const x of extras) if (existsSync(x.path)) files.push({ name: x.name, data: readFileSync(x.path) });
     const encrypted = encrypt(pack(files), passphrase);
     // Prove the file restores before it goes anywhere.
@@ -94,6 +109,27 @@ export async function runBackup({ db, passphrase, extras = [], drive, toDir, dat
 }
 
 /**
+ * A checked PostgreSQL snapshot at file: pg_dump, then restored into a throwaway cluster, which must hold the app's tables
+ * (users and schema_migrations among them). PostgreSQL's stand-in for SQLite's integrity check.
+ */
+export async function pgSnapshot(url, file) {
+  const { dump, restoreInto, withScratchCluster } = await import('./pg.js');
+  const { createPostgresPool } = await import('../../db/postgres.ts');
+  await dump(url, file);
+  const tables = await withScratchCluster(async (scratch) => {
+    await restoreInto(scratch, file);
+    const pool = createPostgresPool(scratch, { max: 1 });
+    try {
+      return (await pool.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")).rows.map((r) => r.tablename);
+    } finally {
+      await pool.end();
+    }
+  });
+  if (!tables.includes('users') || !tables.includes('schema_migrations')) throw new Error('The database dump did not restore with its tables; nothing was uploaded');
+  return { tables: tables.length };
+}
+
+/**
  * Decrypts a backup into new files: the database at outPath (never over an existing file) and any other
  * files next to it as restored-<name>. Checks the restored database's integrity.
  */
@@ -104,7 +140,9 @@ export function restoreBackup({ file, passphrase, outPath }) {
   };
   const files = unpack(decrypt(file, passphrase));
   const db = files.find((f) => f.name === 'health.db');
-  if (!db) throw new Error('The backup has no database in it');
+  if (!db) throw new Error(files.some((f) => f.name === 'health.dump')
+    ? 'This is a PostgreSQL backup (health.dump); restore it with the backup container (load-from-backup)'
+    : 'The backup has no database in it');
   writeNew(outPath, db.data, `${outPath} already exists; choose a new file name`);
   const check = new Database(outPath, { readonly: true });
   const integrity = check.pragma('integrity_check', { simple: true });

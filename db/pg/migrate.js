@@ -6,8 +6,10 @@
 // test/schema-parity.test.js fails until it has one and the two schemas match. Applied ids go in schema_migrations under
 // the app name, as on SQLite.
 //
-// Back up before every database change (owner's rule): nothing here backs up yet, since only throwaway test databases
-// are opened. 1G adds the pre-migration snapshot before production opens one.
+// Back up before every database change (owner's rule): production never migrates on open. The app opens with
+// migrate: false (hr_app has no DDL) and refuses pending migrations; deploy.sh first runs the backup container's
+// pre-migrate (a pg_dump restored into a scratch cluster and migrated there), then scripts/migrate.js as hr_migrate
+// (v3 Phase 1G, docs/adr/0010). Tests and the transfer scripts still migrate on open.
 import { readFileSync } from 'node:fs';
 import { createPostgresDatabase, createPostgresPool } from '../postgres.ts';
 import { OWNER_ID, ownerEmailFromEnv } from '../users.js';
@@ -103,18 +105,37 @@ export async function migratePostgres(pool, migrations = PG_MIGRATIONS) {
 }
 
 /**
- * Opens a PostgreSQL database as a store: checks its collation, applies any new migrations, and returns the same async
- * interface as openHealthStore ({ db, tx }). syncDb and raw are null: the SQLite-only jobs (backup, restore test, demo
- * refresh) refuse it until 1G.
- * @param {string} connectionString  postgres://... (never logged)
- * @param {{ migrations?: typeof PG_MIGRATIONS, pool?: import('pg').PoolConfig }} [options]  pool: extra pool settings (the tests')
+ * The migration ids not yet recorded, in order; every one when schema_migrations does not exist yet.
+ * @param {import('pg').Pool} pool
+ * @returns {Promise<string[]>}
  */
-export async function openPostgresStore(connectionString, { migrations = PG_MIGRATIONS, pool: poolOptions = {} } = {}) {
+export async function pendingPostgres(pool, migrations = PG_MIGRATIONS) {
+  const { rows: [t] } = await pool.query("SELECT to_regclass('schema_migrations') IS NOT NULL AS present");
+  if (!t.present) return migrations.map((m) => m.id);
+  const { rows } = await pool.query('SELECT id FROM schema_migrations WHERE app = $1', [APP]);
+  const applied = new Set(rows.map((r) => r.id));
+  return migrations.filter((m) => !applied.has(m.id)).map((m) => m.id);
+}
+
+/**
+ * Opens a PostgreSQL database as a store: checks its collation, applies any new migrations, and returns the same async
+ * interface as openHealthStore ({ db, tx }). syncDb and raw are null: backup and the restore test run in the backup
+ * container (tools/backup/pg.js), and the demo stays on SQLite.
+ * With migrate false (production's app, as hr_app) nothing is applied: pending migrations refuse the open, naming the ids.
+ * @param {string} connectionString  postgres://... (never logged)
+ * @param {{ migrations?: typeof PG_MIGRATIONS, pool?: import('pg').PoolConfig, migrate?: boolean }} [options]
+ *   pool: extra pool settings (the tests')
+ */
+export async function openPostgresStore(connectionString, { migrations = PG_MIGRATIONS, pool: poolOptions = {}, migrate = true } = {}) {
   const pool = createPostgresPool(connectionString, poolOptions);
-  let applied;
+  let applied = [];
   try {
     await checkCollation(pool);
-    applied = await migratePostgres(pool, migrations);
+    if (migrate) applied = await migratePostgres(pool, migrations);
+    else {
+      const pending = await pendingPostgres(pool, migrations);
+      if (pending.length) throw new Error(`The database has ${pending.length} pending migration(s) (${pending.join(', ')}); run scripts/migrate.js first`);
+    }
   } catch (err) {
     await pool.end();
     throw err;
