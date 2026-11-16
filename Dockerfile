@@ -57,13 +57,20 @@ RUN echo "Private Relay list for build $GEO_STAMP" \
 # Amazon RDS's certificate authorities (every region), so the app verifies the database's certificate
 # (sslmode=verify-full, db/postgres.ts checkTls). Downloaded over HTTPS from AWS at each build; the build fails without it.
 FROM debian:bookworm-slim AS certs
-RUN apt-get update  && apt-get install -y --no-install-recommends curl ca-certificates  && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /certs  && curl -fsSL --max-time 120 -o /certs/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem  && grep -q 'BEGIN CERTIFICATE' /certs/rds-global-bundle.pem
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /certs \
+ && curl -fsSL --max-time 120 -o /certs/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+ && grep -q 'BEGIN CERTIFICATE' /certs/rds-global-bundle.pem
 
 # The PostgreSQL project's Debian signing key, checked against its published fingerprint before apt trusts it.
 FROM debian:bookworm-slim AS pgkey
-RUN apt-get update  && apt-get install -y --no-install-recommends curl ca-certificates gnupg  && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL --max-time 60 -o /pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc  && gpg --show-keys --with-colons /pgdg.asc | grep -q '^fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:$'
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+ && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL --max-time 60 -o /pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+ && gpg --show-keys --with-colons /pgdg.asc | grep -q '^fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:$'
 
 # Runtime: the same Debian and Node as above, so the native module built there loads here unchanged.
 FROM node:26-bookworm-slim AS runtime
@@ -105,7 +112,15 @@ CMD ["node", "server/index.js"]
 FROM runtime AS backup
 USER root
 COPY --from=pgkey /pgdg.asc /usr/share/keyrings/postgresql.asc
-RUN echo 'deb [signed-by=/usr/share/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' > /etc/apt/sources.list.d/pgdg.list  && mkdir -p /etc/postgresql-common/createcluster.d  && echo 'create_main_cluster = false' > /etc/postgresql-common/createcluster.d/no-main.conf  && apt-get update  && apt-get install -y --no-install-recommends postgresql-18  && rm -rf /var/lib/apt/lists/*
+# ssl-cert, a dependency, makes a throwaway "snakeoil" key pair at install. The scratch clusters use no TLS, and a
+# published image carries no private key, so it is removed in the same layer (Trivy's secret scan flags it otherwise).
+RUN echo 'deb [signed-by=/usr/share/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
+ && mkdir -p /etc/postgresql-common/createcluster.d \
+ && echo 'create_main_cluster = false' > /etc/postgresql-common/createcluster.d/no-main.conf \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends postgresql-18 \
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem
 ENV PG_BIN=/usr/lib/postgresql/18/bin
 USER node
 HEALTHCHECK NONE
