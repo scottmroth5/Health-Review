@@ -417,7 +417,11 @@ Current program card ends and starts blocks (2026-11-17; ingest/program-blocks.j
 End is the confirmed in-progress block only, its form defaulting to last_named_session (the last day whose Workout
 Log name maps to the program); Start takes any name (80 characters), refused while a block is in progress. A name
 outside the user's catalog is a training block (in_catalog false): weeks since the start, no phases or finish, never
-estimatedFromCalendar, and advisorDue stays false while it runs.
+estimatedFromCalendar, and advisorDue stays false while it runs. The Programs tab's Edit on a confirmed block changes its
+start, last day and status (PUT /api/program/blocks/:id, changeBlockDates: no date after today, a finished block needs a
+last day; editBlock moves the sessions); an overlap refusal says to change the dates there. Settings hide_log_workout
+(PUT /api/account/log-workout { hidden }, GET /api/account logWorkoutHidden) hides the Training tab's Log workout card,
+from the card or Settings, for someone who logs in their sheet.
 MAPS catalog (metrics/catalog.js, data/maps/programs.json): each program's weeks, phases with week ranges, deload and
 failure weeks and prescriptions, transcribed from the owner's Mind Pump PDFs in data/MAPS Programs. refreshPhases
 (after detection, review commands and sync) stores each session's phase and each block's program_weeks. Phases come

@@ -21,6 +21,8 @@ New lifting days join the program in progress until you end it. On the Training 
 - **End program:** pick the last day (it suggests the last day logged under that program's name) and whether you completed it or stopped early. Days after it leave the program.
 - **Start program:** give any name and a start date. A name from your catalog gets its phases and finish date; any other name, such as "Light workout" for a lighter stretch of your own lifts, is a training block that shows weeks since the start. Lifting days from the start date join it.
 
+Got a date wrong? On the Programs screen, **Edit** on a confirmed block changes its start, last day and status (Completed, Stopped early, In progress). Lifting days inside the new dates join it and days outside leave it. Two confirmed blocks can't overlap, so fix the earlier one's last day before starting the next.
+
 ## Shared programs
 
 If the administrator shares their program catalog with you, its program names are listed on the Programs screen. Their phases and lengths are used for you, but their contents are not shown or exported. A program of your own with the same name is used instead.

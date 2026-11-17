@@ -363,6 +363,21 @@ function renderDataChecks(checks = []) {
  * Google sign-in: the first name in parentheses after the title (the email's username until the next sign-in brings the
  * name), and the address with Sign out at the bottom of Home.
  */
+/** The Training tab's Log workout card, hidden for someone who logs in their sheet (saved per account). */
+function setLogWorkoutHidden(hidden) {
+  $('#log-workout-card').hidden = hidden;
+  renderJumps('training');
+}
+
+$('#log-workout-hide').addEventListener('click', async () => {
+  try {
+    await api('PUT', '/api/account/log-workout', { hidden: true });
+    setLogWorkoutHidden(true);
+  } catch (err) {
+    setStatus($('#log-workout-status'), err.message, 'error');
+  }
+});
+
 async function loadAccount() {
   const me = await api('GET', '/api/me').catch(() => null);
   const account = await api('GET', '/api/account').catch(() => null);
@@ -378,6 +393,7 @@ async function loadAccount() {
   state.goals = account?.goals ?? {};
   state.tileOrder = account?.tileOrder ?? null;
   state.layouts = account?.layouts ?? {};
+  setLogWorkoutHidden(Boolean(account?.logWorkoutHidden));
   applyTileOrder();
   // The tab on screen may have drawn before the account arrived: put it in the saved (or goal) order now.
   if (currentView === 'training') orderCards('training');
@@ -579,7 +595,7 @@ function jumpTo(el) {
 function renderJumps(view) {
   const nav = $(`[data-jump="${view}"]`);
   if (!nav) return;
-  const cards = areaItems(view);
+  const cards = areaItems(view).filter((el) => !el.hidden);
   if (view === 'health') cards.push($('#charts-title'));
   const label = (el) => el.dataset.jumpLabel ?? (el.matches('h2') ? el : el.querySelector('h2'))?.textContent?.trim() ?? '';
   const charts = view === 'health' ? $$('#charts .chart-card') : [];
@@ -861,9 +877,18 @@ function renderAccountControls(a) {
   // Home's setup checklist, once hidden, comes back from here.
   const setupRow = a.setupHidden ? h('p', { class: 'small' }, 'The setup checklist is hidden. ',
     h('button', { type: 'button', class: 'ghost small-button', onclick: run(async () => { await api('PUT', '/api/account/setup', { hidden: false }); renderAccountControls({ ...a, setupHidden: false }); say('The setup checklist is back on Home.'); }) }, 'Show it on Home')) : null;
+  // The Training tab's Log workout card: hide it when workouts come from the sheet, or bring it back.
+  const logWorkoutRow = h('p', { class: 'small' }, a.logWorkoutHidden ? 'The Log workout card is hidden on Training. ' : 'The Log workout card is shown on Training. ',
+    h('button', { type: 'button', class: 'ghost small-button', onclick: run(async () => {
+      const hidden = !a.logWorkoutHidden;
+      renderAccountControls(await api('PUT', '/api/account/log-workout', { hidden }));
+      setLogWorkoutHidden(hidden);
+      say(hidden ? 'The Log workout card is hidden.' : 'The Log workout card is back on Training.');
+    }) }, a.logWorkoutHidden ? 'Show it' : 'Hide it'));
   fill($('#account-controls'), [
     zoneRow,
     setupRow,
+    logWorkoutRow,
     h('div', { class: 'actions' },
       h('a', { class: 'button ghost', href: '/api/account/export', download: '' }, 'Export my data'),
       owner ? null : a.status === 'paused'
@@ -949,9 +974,34 @@ function renderProgramBlocks(blocks) {
   const label = (b) => `${b.start_date} to ${b.end_date ?? 'now'} · ${b.sessions} lifting days · ${b.source === 'confirmed' ? 'confirmed' : 'detected'}`;
   fill($('#program-blocks'), blocks.length ? [...blocks].reverse().map((b) => h('div', { class: 'user-row' },
     h('div', { class: 'user-facts' }, h('strong', {}, b.program), h('div', { class: 'muted small' }, label(b))),
-    b.source === 'confirmed' ? null : h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: async () => {
-      try { renderProgramBlocks((await api('POST', `/api/program/blocks/${encodeURIComponent(b.id)}/confirm`)).blocks); } catch (err) { sayPrograms(err.message); }
-    } }, 'Confirm')))) : [h('p', { class: 'muted small' }, 'No program blocks yet: they appear once Workout Log names match a program.')]);
+    b.source === 'confirmed'
+      ? h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: () => editBlockForm(b) }, 'Edit'))
+      : h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: async () => {
+        try { renderProgramBlocks((await api('POST', `/api/program/blocks/${encodeURIComponent(b.id)}/confirm`)).blocks); } catch (err) { sayPrograms(err.message); }
+      } }, 'Confirm')))) : [h('p', { class: 'muted small' }, 'No program blocks yet: they appear once Workout Log names match a program.')]);
+}
+
+/** Edit a confirmed block: its start, last day and status. Lifting days move in or out to match. */
+function editBlockForm(b) {
+  const card = $('#program-blocks').closest('.card');
+  const status = h('select', { name: 'status' },
+    [['completed', 'Completed'], ['abandoned', 'Stopped early'], ['in_progress', 'In progress']]
+      .map(([value, text]) => h('option', { value, selected: b.status === value }, text)));
+  const end = h('input', { type: 'date', name: 'end', value: b.end_date ?? '', min: b.start_date, max: state.today });
+  const sync = () => { end.disabled = status.value === 'in_progress'; end.required = !end.disabled; };
+  status.addEventListener('change', sync);
+  sync();
+  inlineForm(card, `Edit ${b.program}. Lifting days in the new dates join it; days outside them leave it.`, [
+    h('label', {}, 'Start', h('input', { type: 'date', name: 'start', required: true, value: b.start_date, max: state.today })),
+    h('label', {}, 'Last day', end),
+    h('label', {}, 'Status', status),
+  ], 'Save', async (form) => {
+    const inProgress = status.value === 'in_progress';
+    const out = await api('PUT', `/api/program/blocks/${encodeURIComponent(b.id)}`, {
+      start: form.elements.start.value, end: inProgress ? null : form.elements.end.value, status: status.value });
+    renderProgramBlocks(out.blocks);
+    sayPrograms(`${b.program} saved.`);
+  }, async () => { $('.inline-form', card)?.remove(); });
 }
 
 function openBuilder(draft, problems = [], notes = []) {

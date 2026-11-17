@@ -19,7 +19,7 @@ import { loadGoals, loadSubstitutions, loadTargets, loadProfile, loadUserProgram
 import { loadTargetConfig } from '../metrics/targets.js';
 import { loadLabRanges } from '../metrics/labs.js';
 import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
-import { confirmBlocks, currentProgram, endBlock, listBlocks, refreshPhases, ReviewError, startBlock } from '../ingest/program-blocks.js';
+import { changeBlockDates, confirmBlocks, currentProgram, endBlock, listBlocks, refreshPhases, ReviewError, startBlock } from '../ingest/program-blocks.js';
 import { ProgramError, SOURCES, deleteProgram, exportPrograms, importPrograms, saveProgram } from '../ingest/user-programs.js';
 import { MAX_PDF_BYTES, extractProgram, isPdf } from '../agent/extract-program.js';
 import { WorkoutError, deleteWorkout, listWorkouts, saveWorkout, workoutSuggestions } from '../ingest/app-workouts.js';
@@ -667,6 +667,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       response: { 200: anyObject },
     },
   }, async (req, reply) => await blockChange(req, reply, (opts) => endBlock(db, req.params.id, req.body, opts)));
+  app.put('/api/program/blocks/:id', {
+    schema: {
+      summary: "Change a block's start, last day or status (an in-progress block has no last day); sessions move to match",
+      params: programIdParams,
+      body: { type: 'object', additionalProperties: false, minProperties: 1,
+        properties: { start: blockDate, end: { anyOf: [blockDate, { type: 'null' }] }, status: { type: 'string', enum: ['completed', 'abandoned', 'in_progress'] } } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => await blockChange(req, reply, (opts) => changeBlockDates(db, req.params.id, req.body, opts)));
   app.post('/api/program/blocks', {
     schema: {
       summary: 'Start a program or training block on a day (any name; one outside the catalog has no phases or finish)',
@@ -1115,6 +1124,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       })(),
       // Home's setup checklist was hidden (Settings brings it back).
       setupHidden: Boolean(await db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'setup_hidden'").get()),
+      // The Training tab's Log workout card was hidden (someone who logs in their sheet; Settings brings it back).
+      logWorkoutHidden: (await setting('hide_log_workout')) === '1',
       // Supplement suggestions (off by default): when the statement was accepted, and the statement itself.
       supplementAdvice: { since: await supplementAdviceSince(db), statement: SUPPLEMENT_DISCLAIMER },
       pausedBySelf: u?.status === 'paused' && Boolean(await db.prepare("SELECT 1 FROM settings WHERE user_id = @uid AND key = 'paused_by_self'").get()),
@@ -1293,6 +1304,14 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       if (await isPaused(req)) return reply.code(403).send({ error: NO_AI.paused });
       await putSetting('supplement_advice', clock().toISOString());
     } else await putSetting('supplement_advice', null);
+    return accountView(req);
+  });
+
+  // Hide or show the Training tab's Log workout card (from the card, or Settings).
+  app.put('/api/account/log-workout', {
+    schema: { summary: "Hide or show the Training tab's Log workout card", body: { type: 'object', additionalProperties: false, required: ['hidden'], properties: { hidden: { type: 'boolean' } } }, response: { 200: anyObject } },
+  }, async (req) => {
+    await putSetting('hide_log_workout', req.body.hidden ? '1' : null);
     return accountView(req);
   });
 

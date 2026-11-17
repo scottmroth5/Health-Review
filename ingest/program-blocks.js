@@ -191,7 +191,7 @@ export async function listBlocks(db, { unconfirmed = false } = {}) {
 async function assertNoOverlap(db, block) {
   const other = await db.prepare(`SELECT id, program, start_date FROM program_blocks WHERE user_id = @uid AND source = 'confirmed' AND id <> ?
     AND start_date <= ? AND COALESCE(end_date, '9999-12-31') >= ?`).get(block.id, block.end_date ?? '9999-12-31', block.start_date);
-  if (other) throw new ReviewError(`Overlaps confirmed block ${other.id.slice(0, 8)} (${other.program} from ${other.start_date})`);
+  if (other) throw new ReviewError(`Overlaps confirmed block ${other.id.slice(0, 8)} (${other.program} from ${other.start_date}). Change its dates on the Programs tab.`);
 }
 
 /**
@@ -270,6 +270,21 @@ export async function endBlock(db, ref, { end, outcome }, { today, now = new Dat
   if (!isDate(end)) throw new ReviewError(`Not a date: ${end}`);
   if (end > today) throw new ReviewError('The last day can not be after today');
   return await editBlock(db, b.id, { end, status: outcome }, { today, now });
+}
+
+/**
+ * Changes a block's start, last day or status from the app (Programs tab, Edit): neither date after today; an
+ * in-progress block has no last day. Validation, the overlap check and moving sessions are editBlock's.
+ */
+export async function changeBlockDates(db, ref, { start, end, status }, { today, now = new Date() }) {
+  if (start !== undefined && (!isDate(start) || start > today)) throw new ReviewError(isDate(start) ? 'The start can not be after today' : `Not a date: ${start}`);
+  if (end !== undefined && end !== null && (!isDate(end) || end > today)) throw new ReviewError(isDate(end) ? 'The last day can not be after today' : `Not a date: ${end}`);
+  if (end === null && status !== undefined && status !== 'in_progress') throw new ReviewError('Give the last day, or mark it in progress');
+  const changes = {};
+  if (start !== undefined) changes.start = start;
+  if (end !== undefined) changes.end = end ?? '';
+  if (status !== undefined) changes.status = status;
+  return await editBlock(db, ref, changes, { today, now });
 }
 
 /**

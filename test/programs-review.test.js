@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.js';
 import {
-  ReviewError, assignForward, blockStatus, confirmBlocks, detect, editBlock, endBlock, findBlock, listBlocks, mergeBlocks,
+  ReviewError, assignForward, blockStatus, changeBlockDates, confirmBlocks, detect, editBlock, endBlock, findBlock, listBlocks, mergeBlocks,
   sessionCoverage, splitBlock, startBlock, unassignDays, writeDetected,
 } from '../ingest/program-blocks.js';
 import { addDays } from '../metrics/stats.js';
@@ -90,6 +90,19 @@ test('end and start program: the app ends the block in progress and starts a tra
   const exId = (await db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2025, 99, '2025-07-01', 'Light workout', 'Squat') RETURNING id").get()).id;
   await db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, 80, 8, '8')").run(exId);
   assert.deepEqual(await assignForward(adb, TODAY), { assigned: 1, block: 'Light workout' });
+  await store.close();
+});
+
+test('changeBlockDates: moves the last day, refuses future dates, and in progress clears the last day', async () => {
+  const { store, adb, ana } = await setup();
+  await confirmBlocks(adb, 'all-detected', opts);
+  await assert.rejects(() => changeBlockDates(adb, ana, { end: '2026-02-01', status: 'completed' }, opts), /after today/);
+  await assert.rejects(() => changeBlockDates(adb, ana, { start: '2026-02-01' }, opts), /start can not be after today/);
+  await assert.rejects(() => changeBlockDates(adb, ana, { end: null, status: 'abandoned' }, opts), /Give the last day/);
+  const moved = await changeBlockDates(adb, ana, { end: '2025-02-04', status: 'abandoned' }, opts);
+  assert.deepEqual([moved.end_date, moved.status], ['2025-02-04', 'abandoned']);
+  const open = await changeBlockDates(adb, ana, { end: null, status: 'in_progress' }, opts);
+  assert.deepEqual([open.end_date, open.status], [null, 'in_progress']);
   await store.close();
 });
 

@@ -72,6 +72,20 @@ test('saving goals and the tile order; bad values refused', async () => {
   assert.equal((await lee.send('PUT', '/api/account/tile-order', { tiles: null })).json().tileOrder, null);
 });
 
+test('hiding the Log workout card is saved per account; bad values refused', async () => {
+  const { store, signIn } = await setup();
+  await store.db.prepare("INSERT INTO users (id, email, role, status, created_at, health_consent_at) VALUES ('kim', 'kim@example.com', 'user', 'approved', 'x', 'x')").run();
+  const lee = await signIn('lee@example.com');
+  const kim = await signIn('kim@example.com');
+  assert.equal((await lee.get('/api/account')).json().logWorkoutHidden, false);
+  assert.equal((await lee.send('PUT', '/api/account/log-workout', { hidden: 'yes' })).statusCode, 400);
+  assert.equal((await lee.send('PUT', '/api/account/log-workout', {})).statusCode, 400);
+  assert.equal((await lee.send('PUT', '/api/account/log-workout', { hidden: true })).json().logWorkoutHidden, true);
+  assert.equal((await lee.get('/api/account')).json().logWorkoutHidden, true);
+  assert.equal((await kim.get('/api/account')).json().logWorkoutHidden, false, "another account's choice is its own");
+  assert.equal((await lee.send('PUT', '/api/account/log-workout', { hidden: false })).json().logWorkoutHidden, false);
+});
+
 test('the review summary and its instructions carry the goals (labels only); none when unset', async () => {
   const { store } = await setup();
   const db = scopeDatabase(store.db, 'lee');

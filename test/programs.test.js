@@ -196,6 +196,32 @@ test('End program and Start program: only the user\'s own block in progress ends
   assert.equal((await lee.send('POST', '/api/program/blocks', { program: '', start: '2026-03-16' })).statusCode, 400);
 });
 
+test('Edit a block: a wrong last day that blocks Start is moved back, then Start works', async () => {
+  const { signIn, lift } = await setup();
+  const lee = await signIn('lee@example.com');
+  const kim = await signIn('kim@example.com');
+  await lift('lee', [['2026-03-02', 'Plan Five Phase 1 A'], ['2026-03-09', 'Plan Five Phase 1 A'], ['2026-03-16', 'Light workout'], ['2026-03-19', 'Light workout']]);
+  await lee.send('POST', '/api/programs', { program: program('Plan Five'), match: 'plan five' });
+  const [block] = (await lee.get('/api/program/blocks')).json();
+  await lee.send('POST', `/api/program/blocks/${block.id}/confirm`);
+  await lee.send('POST', `/api/program/blocks/${block.id}/end`, { end: '2026-03-19', outcome: 'completed' }); // the wrong day
+  const refused = await lee.send('POST', '/api/program/blocks', { program: 'Light workout', start: '2026-03-16' });
+  assert.equal(refused.statusCode, 409);
+  assert.match(refused.json().error, /Overlaps confirmed block .*Change its dates on the Programs tab/);
+
+  assert.equal((await kim.send('PUT', `/api/program/blocks/${block.id}`, { end: '2026-03-09' })).statusCode, 409, "not the other user's to edit");
+  assert.equal((await lee.send('PUT', `/api/program/blocks/${block.id}`, {})).statusCode, 400);
+  assert.equal((await lee.send('PUT', `/api/program/blocks/${block.id}`, { end: '2026-03-09', status: 'paused' })).statusCode, 400);
+  assert.equal((await lee.send('PUT', `/api/program/blocks/${block.id}`, { end: '2099-01-03', status: 'completed' })).statusCode, 409, 'not after today');
+  assert.equal((await lee.send('PUT', `/api/program/blocks/${block.id}`, { end: null, status: 'completed' })).statusCode, 409, 'a finished block needs a last day');
+
+  const edited = (await lee.send('PUT', `/api/program/blocks/${block.id}`, { start: '2026-03-02', end: '2026-03-09', status: 'abandoned' })).json();
+  assert.deepEqual([edited.blocks[0].end_date, edited.blocks[0].status, edited.blocks[0].sessions], ['2026-03-09', 'abandoned', 2]);
+  const started = await lee.send('POST', '/api/program/blocks', { program: 'Light workout', start: '2026-03-16' });
+  assert.equal(started.statusCode, 200);
+  assert.equal(started.json().program.sessions, 2);
+});
+
 test('PDF: Claude drafts with the user\'s AI; nothing is saved, the file is never kept; refused without the right or AI', async () => {
   const draft = { name: 'Paper Plan', weeks: 4, focus: 'Made-up plan', notes: ['Week 5 bonus workout left out'], phases: [
     { name: 'Phase 1', first_week: 1, last_week: 2, workouts_per_week: 3, deload_weeks: [], failure_weeks: [], workouts: [{ name: 'Day 1', exercises: [{ name: 'Barbell Squat', sets: '3', reps: '5' }, { name: 'Planks', sets: '', reps: '30s' }] }] },
