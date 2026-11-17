@@ -15,6 +15,7 @@
 // started in the last 30 minutes is still marked running (a terminal command, Sync now).
 import { addDays } from '../metrics/stats.js';
 import { localDate, ownerTz, zonedInstant } from '../tools/time.ts';
+import { telemetry } from '../tools/telemetry.ts';
 
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const FULL_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -135,6 +136,7 @@ export function createScheduler({ jobs, runs, now = () => new Date(), tz = owner
       return;
     }
     log.info?.(`[schedule] ${job.name}: starting (${why})`);
+    const started = Date.now();
     try {
       await job.run();
       job.lastResult = 'ok';
@@ -144,6 +146,7 @@ export function createScheduler({ jobs, runs, now = () => new Date(), tz = owner
       log.warn?.(`[schedule] ${job.name}: failed (${err.name})`);
     } finally {
       job.running = false;
+      try { telemetry().job(job.name, job.lastResult, Date.now() - started); } catch { /* never affects the job */ }
     }
   };
 

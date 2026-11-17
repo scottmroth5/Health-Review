@@ -6,6 +6,7 @@
 // Statements go through the async interface, so a run write made while another request holds a transaction waits for
 // it rather than joining it. Never start or finish a run inside a db.tx: the run row would roll back with it.
 import type { Database } from './database.ts';
+import { telemetry } from '../tools/telemetry.ts';
 
 /** Where the finish line goes (console by default). */
 export interface RunLogger {
@@ -84,6 +85,10 @@ export async function startUserRun(store: { db: Database & { uid?: string } }, n
   const id = Number(inserted.id);
 
   async function recordCall(info: CallInfo): Promise<void> {
+    // Telemetry (tools/telemetry.ts): the run's name and the call's outcome only, never its text or tokens.
+    try {
+      telemetry().ai(name, info.error ? 'error' : info.stopReason === 'refusal' ? 'refused' : 'ok', info.durationMs ?? 0);
+    } catch { /* never affects the run */ }
     totals.calls += 1;
     if (info.error) totals.errors += 1;
     totals.inputTokens += info.inputTokens ?? 0;

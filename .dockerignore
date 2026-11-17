@@ -19,6 +19,11 @@ infra/
 .terraform/
 
 # Not needed to run the server, or rebuilt inside the image.
+# .cache/: CI's image scan (Trivy) keeps its vulnerability database in the workspace's .cache/trivy, and the published
+# images are built after the scan from that same workspace; without this line the database (hundreds of MB) went into
+# the image and the server's disk filled on deploy (2026-11-17).
+.cache/
+**/.cache/
 node_modules/
 .git/
 .githooks/

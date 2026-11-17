@@ -641,6 +641,15 @@ restore-test) and the last Health Auto Export posts (GET /api/jobs, queries.js j
 data/logs until the move, but nothing serves them). The server logs one line per event to stdout through buildApp's log
 (console by default): [sync] ok with counts, [review] ok or failed with the week, [ingest] route ok or error; counts and
 names only, never health, prompt or report text, so docker compose logs shows what ran.
+Telemetry (v3 Phase 2, docs/adr/0013; owner's choice 2026-11-17: on the server now, AWS CloudWatch later, never a third
+party): tools/telemetry.ts holds OpenTelemetry's providers (installTelemetry in server/index.js; none in scripts and
+tests). Code records only through telemetry().request (app.js onResponse: method, route template or "unmatched", status,
+ms), .job (scheduler.js) and .ai (db/runs.ts recordCall: the run's name and outcome), whose attributes pass clean() and
+the ALLOWED map (key and value check; the metrics views allowlist again); never the OpenTelemetry API directly, never a
+URL, query, header, body, user id, email, model text or error message. TELEMETRY log (default: [trace] for a request
+over 1 s or a 5xx and for a failed job or Claude call, [telemetry] summary every 15 minutes) or off. A new attribute
+needs an ALLOWED entry, a test (test/telemetry.test.js sends a marker, an email and a user id and fails if any appears)
+and a line in the ADR.
 GET /api/spend (queries.js spend) totals estimated Claude API cost by month and year: runs.cost_usd by kind (review, advisor-chat,
 other) plus the review eval's results.jsonl usage priced with agent-core's costFromUsage (@scottmroth5/agent-core/pricing),
 dated by each results file's last write; only model and usage are read. The demo passes no eval folder.

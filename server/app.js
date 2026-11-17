@@ -20,6 +20,7 @@ import { scopeDatabase } from '../db/scope.ts';
 import { HEALTH_CONSENT_VERSION, OWNER_ID, getUser, recordHealthConsent, setGoogleToken, setUserFeeds, syncOwnerEmail, timeZoneOf, userByEmail } from '../db/users.ts';
 import { createPendingUser, deleteUserData } from './admin-queries.js';
 import { createUsageTotals, hostnameOrNull } from './usage-totals.js';
+import { telemetry } from '../tools/telemetry.ts';
 import { createMailer } from '../tools/mail.ts';
 import { boxKey, seal } from '../tools/secret-box.ts';
 import { policyPage, supportEmailFrom } from './pages.js';
@@ -213,6 +214,13 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   }
   // Settles once the usage counts in flight are written: they run after the response is sent (the tests wait on it).
   app.decorate('usageIdle', async () => { await counter?.idle(); });
+  // Telemetry (tools/telemetry.ts, docs/adr/0013): each request's method, route template (never its URL), status and
+  // duration, through the attribute allowlist. Recording never affects a response.
+  app.addHook('onResponse', async (req, reply) => {
+    try {
+      telemetry().request(req.method, req.routeOptions?.url ?? null, reply.statusCode, reply.elapsedTime);
+    } catch { /* telemetry never affects a request */ }
+  });
   registerAuth(app, { supportEmail: support, mode: authMode, settings: auth.settings, exchange: auth.exchange, now: auth.now, findUser: (email) => userByEmail(store.db, email), registerUser,
     sheetsExchange: auth.sheetsExchange, connectSheets, createSheet, recordConsent, deleteAccount });
   // The privacy policy and terms, readable before signing in.

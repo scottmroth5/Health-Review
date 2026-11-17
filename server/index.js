@@ -27,8 +27,11 @@ import { runReview } from '../agent/review.js';
 import { assertSafeBinding, authSettings } from './auth.js';
 import { createAiAccess } from './ai-access.js';
 import { countryLookup, geoAllowFromEnv, loadGeoReader, loadRelayRanges } from './geo.js';
+import { createTelemetry, installTelemetry, telemetry } from '../tools/telemetry.ts';
 
 const demo = process.env.HEALTH_INSTANCE === 'demo';
+// Telemetry (tools/telemetry.ts, docs/adr/0013): TELEMETRY log (default) or off; kept in this server's logs.
+installTelemetry(createTelemetry({ instance: demo ? 'demo' : 'main' }));
 const onPostgres = () => process.env.DB_ENGINE === 'postgres' && Boolean(process.env.DATABASE_URL);
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? (demo ? 5189 : 5188));
@@ -240,6 +243,7 @@ await scheduler?.start();
 const shutdown = async () => {
   scheduler?.stop();
   await app.close();
+  await telemetry().shutdown().catch(() => {}); // writes the last summary; never blocks the exit
   await store.close(); // a promise on PostgreSQL (the pool), a plain call on SQLite
   process.exit(0);
 };
