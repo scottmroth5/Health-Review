@@ -6,10 +6,10 @@
 #
 # The deploy step stays off until the server exists: set the repository variable DEPLOY_ENABLED to true
 # (Settings > Secrets and variables > Actions > Variables) once these repository secrets are in place:
-#   DEPLOY_HOST          the server's static IP address
+#   DEPLOY_HOST          the EC2 server's Elastic IP address (since 2026-11-17)
 #   DEPLOY_USER          the SSH user deploy.sh runs as: deploy (in the docker group; owns /opt/health-review/state)
 #   DEPLOY_SSH_KEY       private half of the deploy key; its authorized_keys line forces /opt/health-review/deploy.sh
-#   DEPLOY_KNOWN_HOSTS   the server's host key line (ssh-keyscan <address>), so GitHub never trusts an impostor
+#   DEPLOY_KNOWN_HOSTS   "<address> <host key>", the key read on the server over SSM, so GitHub never trusts an impostor
 # GitHub holds nothing else: the app's secrets and data stay on the server.
 # The image holds code only (Dockerfile, .dockerignore), so its package is public: after the first build, set
 # ghcr.io/<owner>/health-review to Public (the package's settings), and the server pulls it without signing in.

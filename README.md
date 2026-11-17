@@ -13,11 +13,16 @@ computer, `npm install` turns on a pre-commit hook that blocks any commit contai
 
 ## Hosting
 
-The app runs on one Lightsail server as three containers (`deploy/compose.yml`):
+Since 2026-11-17 (v3 Phase 1H) the app runs on one EC2 server, with its database in RDS PostgreSQL, both in the owner's
+AWS account and encrypted with the owner's KMS key ([infra/README.md](infra/README.md),
+[docs/architecture/current.md](docs/architecture/current.md)). The server runs four containers (`deploy/compose.yml`):
 - **The app:** at `SITE_ADDRESS`. Only Google sign-in as an email in `AUTH_ALLOWED_EMAILS` gets in.
 - **The demo:** at `DEMO_SITE_ADDRESS`. It is public and read-only, holds made-up data only, and never sees the app's
   settings or data.
-- **Caddy:** HTTPS for both, with certificates from Let's Encrypt.
+- **Caddy:** HTTPS for both, with certificates from Let's Encrypt. While the app restarts it answers "down for
+  maintenance".
+- **Backup:** the nightly encrypted backup, the monthly restore test and the checked copy before a migration
+  (`scripts/backup-service.js`).
 
 The server's addresses, users and keys live only on the server and in GitHub's secrets, never in this repo.
 
@@ -28,21 +33,25 @@ The server's addresses, users and keys live only on the server and in GitHub's s
 4. The server starts the new image. If the app or the demo doesn't answer `/api/health` within two minutes, the server
    goes back to the last good image.
 
-**Database changes are backed up first.** Before starting an image, the server runs that image's migrations on a
-throwaway copy of the database. If any would run, it first makes the encrypted Drive backup with the image that is
-running now, and stops the deploy if that backup fails. The new app then keeps a checked copy of the database as it was
-in `data/backups/pre-migration-<time>.db` before migrating (the newest 5 are kept, none older than 14 days, so a deleted
-account ages out of them; the app prunes them each time it starts and after each nightly backup). If the new image then fails its
-health check, that copy goes back before the old image starts. The same copy is taken on this PC whenever the app or a
-script migrates the local database.
+**Database changes are backed up first.** Before starting an image, the server checks whether that image would migrate
+the database, on a throwaway copy. If it would, the server keeps a `pg_dump` of the database in
+`data/backups/pre-migration-<time>.dump`, proven by restoring it into a scratch PostgreSQL first (the newest 5 are kept,
+none older than 14 days, so a deleted account ages out of them), makes the encrypted Drive backup with the image that is
+running now, and stops the deploy if either fails. The migrations then run as their own database role. If a migration
+or the new image's health check fails, the schema is emptied and the dump restored before the old image starts. On this
+PC (SQLite), the app copies and checks the database file the same way whenever it or a script migrates it.
 
 To deploy an earlier tag or roll back by hand: Actions, Deploy, Run workflow. On the server, `./deploy.sh status` shows
 what is running.
 
 **On the server:**
-- **Data:** `/opt/health-review/data` holds the database, the MAPS catalog and PDFs, and `google/token.json`. Every
-  deploy keeps it, and the nightly encrypted backup covers it.
-- **Settings:** `/opt/health-review/.env` (owner deploy, mode 600). `deploy/cloud.env.example` lists its names.
+- **Data:** the database is in RDS (reached only from this server, over verified TLS). `/opt/health-review/data` holds
+  the MAPS catalog and PDFs and the pre-migration dumps. Every deploy keeps both, and the nightly encrypted backup
+  covers the database and the catalog.
+- **Settings:** in Parameter Store under `/health-review/`, encrypted with the owner's key; `deploy/env-from-ssm.sh`
+  rebuilds `/opt/health-review/.env` (owner deploy, mode 600) from them before every start. `deploy/cloud.env.example`
+  lists the names.
+- **Administration:** through SSM Session Manager; the only SSH key on the server is the deploy key.
 
 **Server settings:**
 
@@ -56,8 +65,9 @@ what is running.
 | `SCHEDULE_SYNC`, `SCHEDULE_REVIEW`, `SCHEDULE_BACKUP`, `SCHEDULE_RESTORE_TEST` | The in-app schedule, for example `daily 07:00`, `Sun,Mon,Tue 08:00 \| Sun 13:00`, `daily 23:00` and `monthly 1 05:00` (several times separated by `\|`). A missing line turns that job off. |
 
 **Storage and encryption.**
-- **Disks:** Lightsail encrypts the server's disk and snapshots with keys AWS manages. You accept this for now, until a
-  later move to RDS and EC2 with a key you control in KMS.
+- **Keys:** the database, its snapshots and point-in-time recovery, the server's disk and the settings are encrypted
+  with your own KMS key (`alias/health-review`). The old Lightsail server (AWS-managed keys) is kept stopped as the
+  fallback until 2026-12-01, then deleted with its snapshots, which ends that exception.
 - **Backups:** the nightly backup is still encrypted with your own passphrase before it leaves the server.
 
 **Policies and consent.** [PRIVACY.md](PRIVACY.md), [TERMS.md](TERMS.md) and
@@ -599,9 +609,9 @@ Health Review is an evolving personal project. Potential areas for continued dev
 - **Apple Health integration:** Explore ways to make connecting and updating Apple Health data more seamless.
 - **Personalized insights:** Continue improving weekly reviews and making trends easier to understand and discuss with a
   healthcare professional.
-- **Keys you control** (after the Lightsail move): RDS plus EC2 with a KMS customer-managed key, which ends the
-  temporary AWS-managed-key exception. The Terraform is written ([infra/README.md](infra/README.md),
-  [ADR 0009](docs/adr/0009-infrastructure.md)); it isn't applied yet, and production stays on Lightsail until the cutover.
+- **Keys you control:** done 2026-11-17. Production runs on RDS plus EC2 with a KMS customer-managed key
+  ([infra/README.md](infra/README.md), [ADR 0009](docs/adr/0009-infrastructure.md)); the temporary AWS-managed-key
+  exception ends when the stopped Lightsail fallback is deleted (2026-12-01).
 - **v3 architecture:** the decisions are in [docs/adr](docs/adr) and today's system in
   [docs/architecture/current.md](docs/architecture/current.md).
 

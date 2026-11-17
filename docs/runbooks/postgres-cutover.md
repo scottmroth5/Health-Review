@@ -1,6 +1,6 @@
 # Cutover runbook: Lightsail (SQLite) to EC2 and RDS (PostgreSQL)
 
-v3 Phase 1H. The owner runs every step; Claude guides live. Names in angle brackets are the owner's own values (the app
+v3 Phase 1H, run 2026-11-17 (the fixes found that day are folded in). The owner runs every step; Claude guides live. Names in angle brackets are the owner's own values (the app
 and demo names, the staging names, the Lightsail address, the Elastic IP, the running image tag). None of them belong in
 this repository.
 
@@ -30,14 +30,21 @@ Lightsail (from the repository folder): `ssh -i <Lightsail key file> ubuntu@<Lig
   it to the new server if not.
 - Tell the other users the window (a short email from the owner).
 - Check Lightsail's last nightly backup on the Activity tab.
+- Install the current `deploy/Caddyfile` on both servers (deploys never copy it), so a stopped app shows the
+  maintenance line; the reload doesn't interrupt the sites:
+  ```bash
+  sudo curl -fsSL -o Caddyfile https://raw.githubusercontent.com/scottmroth5/Health-Review/<commit>/deploy/Caddyfile
+  sudo -u deploy docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+  ```
 
 ## 1. Freeze Lightsail
-1. In the Lightsail console, take a manual snapshot of the instance.
-2. Stop the app (the demo keeps running; Caddy answers "down for maintenance" with a 503):
+1. Stop the app (the demo keeps running; Caddy answers "down for maintenance" with a 503):
    ```bash
    cd /opt/health-review
    sudo -u deploy docker compose stop app
    ```
+2. In the Lightsail console, take a manual snapshot of the instance (after the stop, so nothing is writing to the file).
+
 From here on nothing writes to the SQLite database. Health Auto Export's posts fail with the 503; step 8 sends those
 days again.
 
@@ -84,14 +91,26 @@ deleted, so backups go to production's folder. Nothing on the server changes unt
 4. Open both names over https.
 
 ## 7. Move the deploys
-GitHub's deploy job still points at Lightsail.
-1. On the new server, the host key's fingerprint: `sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
-2. On the PC: `ssh-keyscan -t ed25519 <Elastic IP> > $env:TEMP\kh.txt`, then `ssh-keygen -lf $env:TEMP\kh.txt`. The
-   fingerprints must match.
-3. The deploy key works: `ssh -i <deploy key file> deploy@<Elastic IP> status` (prints the status).
-4. Update the secrets: `gh secret set DEPLOY_HOST --body "<Elastic IP>"` and
-   `gh secret set DEPLOY_KNOWN_HOSTS < $env:TEMP\kh.txt`; delete the temp file.
-5. Run the deploy workflow by hand with the current tag; it must end with the server healthy.
+GitHub's deploy job still points at Lightsail. In PowerShell, from `infra\` (Windows' own ssh-keyscan is too old for the
+server's key exchange, and PowerShell has no `<` redirect, hence these forms):
+1. On the new server (SSM), the public host key: `sudo cat /etc/ssh/ssh_host_ed25519_key.pub`. Over SSM it comes through
+   an authenticated channel, so no fingerprint comparison is needed.
+2. On the PC, the known-hosts line from it:
+   ```powershell
+   $ip = terraform output -raw server_public_ip
+   $pub = "<the ssh-ed25519 line from step 1>"
+   "$ip $pub" | Out-File -Encoding ascii <known hosts file>
+   ```
+3. The deploy key works and the network shows the same host key (the no-passphrase key, whose private half is the
+   `DEPLOY_SSH_KEY` secret; Windows' ssh ignores a key file other accounts can read, which
+   `icacls <deploy key file> /inheritance:r /grant:r "$($env:USERNAME):R"` fixes):
+   ```powershell
+   ssh -i <deploy key file> -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<known hosts file> deploy@$ip status
+   ```
+4. Update the secrets: `gh secret set DEPLOY_HOST --body $ip` and
+   `Get-Content <known hosts file> -Raw | gh secret set DEPLOY_KNOWN_HOSTS`.
+5. Run the deploy workflow by hand with the current tag (`gh workflow run deploy.yml -f action=deploy -f tag=<tag>`); it
+   must end with the server healthy.
 
 ## 8. Reopen and check
 - Sign in on the real name.

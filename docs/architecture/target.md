@@ -1,8 +1,9 @@
-# Where production is moving (v3 Phase 1, written 2026-11-13)
+# The AWS network and keys (v3 Phase 1, written 2026-11-13; reached 2026-11-17)
 
-This is the target after the cutover (Phase 1H), from the Terraform in `infra/` ([ADR 0009](../adr/0009-infrastructure.md)).
-Until then, production runs as in [current.md](current.md). The containers don't change: the app, the demo and Caddy move
-to the new server as they are, and only the database moves out of the app's data folder. No addresses or account details
+Production has run like this since the cutover (Phase 1H, 2026-11-17), from the Terraform in `infra/`
+([ADR 0009](../adr/0009-infrastructure.md)). [current.md](current.md) shows the containers and how data moves inside
+them. The containers didn't change in the move: the app, the demo and Caddy moved to the new server as they were, a
+backup container joined them, and the database moved out of the app's data folder. No addresses or account details
 appear here.
 
 ```mermaid

@@ -59,7 +59,8 @@ Remove-Item terraform.tfstate*                   # after "Successfully configure
 ### 2. Plan the main stack
 ```powershell
 cd ..
-copy terraform.tfvars.example terraform.tfvars   # the alert email and the deploy key's public half
+copy terraform.tfvars.example terraform.tfvars   # the alert email and the deploy key's public half (the
+                                                 # no-passphrase key whose private half is DEPLOY_SSH_KEY)
 terraform init "-backend-config=backend.hcl"      # quoted: PowerShell splits the argument otherwise
 terraform plan "-out=main.tfplan"
 ```

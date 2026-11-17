@@ -169,8 +169,8 @@ Health specific logic stays in this repo; never add it to agent-core.
                     findings carry an inline #trivy:ignore with the reason). Locally the same through docker run
                     hashicorp/terraform:1.17.2 (copy the folder inside the container: the Windows mount is too slow to
                     start the provider). Bootstrapped and planned 2026-11-16 (the account is now an organization the owner
-                    runs: advanced features, for KMS keys); applied just before staging; production stays on Lightsail
-                    until 1H. user-data.sh writes server.conf (DB_ENGINE=postgres, ENV_SOURCE=ssm, AWS_REGION), state/,
+                    runs: advanced features, for KMS keys); applied just before staging; production moved here
+                    2026-11-17 (1H, docs/runbooks/postgres-cutover.md). user-data.sh writes server.conf (DB_ENGINE=postgres, ENV_SOURCE=ssm, AWS_REGION), state/,
                     and empty .env and backup.env for the deploy user. The owner's scripts (Claude never runs them):
                     db-setup.ps1 (roles and URLs) and env-to-ssm.ps1 (Lightsail's settings into Parameter Store, staging or
                     production mode; staging: its own names, no SCHEDULE_ or SMTP_, BACKUP_DRIVE_FOLDER of its own)
@@ -769,13 +769,14 @@ cover the whole database as the owner. Guards: test/user-scope.test.js (static: 
 each statement) and test/user-isolation.test.js (every route from app.routeList as a second user shows and changes none of
 the first user's data); a new query or route must keep both passing.
 The owner's machine is the owner's own computer plus the servers the owner runs in their own AWS account (owner's choice,
-2026-10-23): today one Lightsail instance at SITE_ADDRESS (deploy/), reached only over TLS (Caddy, Let's Encrypt) and
-only after Google sign-in as an allowed email, with Health Auto Export posting over HTTPS with INGEST_TOKEN. Its address,
-IP, users and keys stay out of the repo (public).
-Health data and the MAPS catalog and PDFs may live there (/opt/health-review/data, never in the image, the repo, CI,
-GitHub secrets, logs or the demo). After the move the PC is the development machine. Lightsail encrypts its disks and
-snapshots with AWS-managed keys, not keys the owner controls: an accepted temporary exception (2026-10-23) until the
-move to RDS plus EC2 with a KMS customer-managed key; nothing else is excepted.
+2026-10-23): since 2026-11-17 (1H) one EC2 server at SITE_ADDRESS (deploy/) with its database in RDS PostgreSQL, both
+encrypted with the owner's KMS key, reached only over TLS (Caddy, Let's Encrypt) and only after Google sign-in as an
+allowed email, with Health Auto Export posting over HTTPS with INGEST_TOKEN. Its address, IP, users and keys stay out of
+the repo (public).
+Health data and the MAPS catalog and PDFs may live there (RDS and /opt/health-review/data, never in the image, the repo,
+CI, GitHub secrets, logs or the demo). The PC is the development machine. The old Lightsail instance (stopped) and its
+snapshots use AWS-managed keys: the accepted temporary exception (2026-10-23) lasts only until they are deleted on
+2026-12-01 (day 14 of the fallback); nothing else is excepted.
 Anywhere else, health data may be stored or synced (cloud storage, backups) only if it is encrypted at rest and in
 transit (owner's choice, 2026-10-05): TLS for every transfer, and encryption at rest with keys the owner controls. For
 files in consumer cloud storage (Google Drive and the like), encrypt before upload, and never store the key or password

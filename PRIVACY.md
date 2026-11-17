@@ -44,10 +44,10 @@ Health Review is a personal project run by its owner (the operator). It is not a
 ## Where data is kept
 
 - Health Review answers only in the United States (the public demo, which holds made-up data only, is open everywhere): the server looks up the country of the address a request comes from (IP to City Lite by DB-IP, https://db-ip.com, CC BY 4.0). For iCloud Private Relay addresses, it uses the country in Apple's published list of relay addresses. It keeps no record of that check; the only location it keeps is in the daily totals described under Usage totals.
-- In a database on a server in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
-- The server's disk is encrypted by Amazon with keys Amazon manages. The operator accepts this for now; a later move will use encryption keys the operator controls.
+- In a database (Amazon's managed PostgreSQL service) and on a server, both in the operator's own Amazon Web Services account, reached only over HTTPS and only after you sign in. A separate public demo holds made-up data only.
+- The database, the server's disk and the settings the server reads are encrypted with a key the operator controls in that account. The connection between the server and the database is encrypted and its certificate is checked.
 - Backups are encrypted before they leave the server, with a key only the operator holds, and sent over HTTPS to the operator's Google Drive. Seven nightly, three weekly and one monthly backup are kept, so a backup ages out within about two months.
-- Two short-lived copies also exist on Amazon's side: before each update the server keeps a copy of the database for at most 14 days, and Amazon keeps a daily snapshot of the server's disk for 7 days. Both are encrypted by Amazon with keys Amazon manages.
+- Two short-lived copies also exist on Amazon's side, encrypted with the same key: before each update the server keeps a copy of the database for at most 14 days, and the database service keeps the last 7 days so it can be restored to any moment in that time.
 
 ## Usage totals
 
