@@ -4,14 +4,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { sign, sessionKey } from '../server/session.js';
 import { loadDemoCatalog } from '../demo/generate.js';
-import { USER_TABLES } from '../db/migrations-users.js';
-import { OWNER_ID } from '../db/users.js';
-import { primaryKey } from '../db/dialect.js';
+import { USER_TABLES } from '../db/migrations-users.ts';
+import { OWNER_ID } from '../db/users.ts';
+import { primaryKey } from '../db/dialect.ts';
 import { demoStore, openTestStore } from './helpers.js';
 
 const TODAY = '2026-10-07';

@@ -1,16 +1,16 @@
 // Starts the Health Review UI: npm start, then open http://localhost:5188
 // Locally AUTH_MODE=none binds to 127.0.0.1. On the server AUTH_MODE=google (or demo for the public demo) with HOST=0.0.0.0
 // behind Caddy (TRUST_PROXY). Google sign-in for the sync loads on the first sync.
-import { openHealthStore, openStore } from '../db/store.js';
-import { scopeStore } from '../db/scope.js';
-import { OWNER_ID, getUser, startUserRun, syncOwnerEmail, timeZoneOf } from '../db/users.js';
-import { open } from '../tools/secret-box.js';
+import { openHealthStore, openStore } from '../db/store.ts';
+import { scopeStore } from '../db/scope.ts';
+import { OWNER_ID, getUser, startUserRun, syncOwnerEmail, timeZoneOf } from '../db/users.ts';
+import { open } from '../tools/secret-box.ts';
 import { OAuth2Client } from 'google-auth-library';
 import { createSheetsSource } from '../ingest/sheets.js';
 import { createWorkoutSheet, ensureYearTab } from '../ingest/create-sheet.js';
-import { createMailer } from '../tools/mail.js';
-import { repoPath, dataPath } from '../tools/paths.js';
-import { localDate as ownerDate, withTimeZone, zonedInstant, zonedParts } from '../tools/time.js';
+import { createMailer } from '../tools/mail.ts';
+import { repoPath, dataPath } from '../tools/paths.ts';
+import { localDate as ownerDate, withTimeZone, zonedInstant, zonedParts } from '../tools/time.ts';
 import { createAlerts } from './alerts.js';
 import { appleSource } from '../ingest/sync.js';
 import { syncJob } from '../jobs/sync.js';

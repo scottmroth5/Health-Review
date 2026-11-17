@@ -2,10 +2,10 @@
 // PostgreSQL. Made-up rows only; the PostgreSQL half is skipped without DATABASE_URL (test/pg.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore, openStore } from '../db/store.js';
-import { isUniqueViolation, jsonText, listTables, primaryKey, tableColumns } from '../db/dialect.js';
-import { OWNER_ID } from '../db/users.js';
-import { scopeStore } from '../db/scope.js';
+import { openHealthStore, openStore } from '../db/store.ts';
+import { isUniqueViolation, jsonText, listTables, primaryKey, tableColumns } from '../db/dialect.ts';
+import { OWNER_ID } from '../db/users.ts';
+import { scopeStore } from '../db/scope.ts';
 import { listChat } from '../agent/advisor-chat.js';
 import { fixSessionTimes } from '../ingest/session-times.js';
 import { freshPgDatabase, pgSkip } from './pg.js';
@@ -79,7 +79,7 @@ test('openStore opens SQLite without a url and brings the owner email in step wi
       assert.equal(store.db.engine, 'sqlite');
       assert.equal(await store.db.prepare('SELECT email FROM users WHERE id = ?').pluck().get(OWNER_ID), 'owner@example.test');
     } finally {
-      store.close();
+      await store.close();
     }
   } finally {
     if (before === undefined) delete process.env.OWNER_EMAIL;

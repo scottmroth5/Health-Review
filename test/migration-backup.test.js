@@ -7,10 +7,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { openSqliteStore as openStore } from '../db/migrate.js';
-import { MIGRATIONS } from '../db/migrations.js';
-import { migrationCopiesDir, openHealthStore, pendingMigrations, pruneMigrationCopies } from '../db/store.js';
-import { repoPath } from '../tools/paths.js';
+import { openSqliteStore as openStore } from '../db/migrate.ts';
+import { MIGRATIONS } from '../db/migrations.ts';
+import { migrationCopiesDir, openHealthStore, pendingMigrations, pruneMigrationCopies } from '../db/store.ts';
+import { repoPath } from '../tools/paths.ts';
 
 const quiet = { info() {} };
 const copies = (dir) => (existsSync(join(dir, 'backups')) ? readdirSync(join(dir, 'backups')).filter((n) => n.startsWith('pre-migration-')) : []);

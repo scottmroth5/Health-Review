@@ -4,7 +4,7 @@
 //   npm run google:exports
 import { getGoogleAuth } from '../tools/google/auth.js';
 import { createSheetsSource } from '../ingest/sheets.js';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { EXPORT_FILES_PER_SYNC } from '../ingest/sync.js';
 
 const FOLDERS = [

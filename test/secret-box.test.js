@@ -1,8 +1,8 @@
 // User secrets (their Claude key): sealed per user, never readable with the wrong key or on another user's row.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { boxKey, open, seal } from '../tools/secret-box.js';
-import { createMailer } from '../tools/mail.js';
+import { boxKey, open, seal } from '../tools/secret-box.ts';
+import { createMailer } from '../tools/mail.ts';
 
 const key = boxKey('a-test-secret-that-is-long-enough-32+');
 

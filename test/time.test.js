@@ -2,9 +2,9 @@
 // results below are the same whether the suite runs under TZ=UTC or TZ=America/New_York (CI runs both).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ownerTz, zonedParts, localDate, localStamp, DEFAULT_TZ } from '../tools/time.js';
+import { ownerTz, zonedParts, localDate, localStamp, DEFAULT_TZ } from '../tools/time.ts';
 import { lastWeekEnd } from '../metrics/stats.js';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { parseWorkoutJson, localStamp as fileStamp } from '../ingest/parsers.js';
 import { partialDays } from '../metrics/dataquality.js';

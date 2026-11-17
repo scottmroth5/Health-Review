@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openSqliteStore as openStore } from '../db/migrate.js';
-import { MIGRATIONS } from '../db/migrations.js';
-import { openHealthStore } from '../db/store.js';
-import { OWNER_ID } from '../db/users.js';
-import { USER_TABLES } from '../db/migrations-users.js';
+import { openSqliteStore as openStore } from '../db/migrate.ts';
+import { MIGRATIONS } from '../db/migrations.ts';
+import { openHealthStore } from '../db/store.ts';
+import { OWNER_ID } from '../db/users.ts';
+import { USER_TABLES } from '../db/migrations-users.ts';
 
 test('024 and 025: rows kept and given to the owner, children intact, user_id required from then on', () => {
   const dir = mkdtempSync(join(tmpdir(), 'health-users-mig-'));

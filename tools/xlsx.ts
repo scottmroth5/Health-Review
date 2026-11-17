@@ -9,20 +9,48 @@ import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
 
 export const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 export const LIMITS = { entries: 200, entryBytes: 10 * 1024 * 1024, totalBytes: 40 * 1024 * 1024, ratio: 200, sheets: 50, rows: 20000, columns: 60, cellChars: 2000 };
+export type Limits = typeof LIMITS;
+
+/** A cell as Google Sheets gives it unformatted: a number (dates as serial numbers), a string, a boolean, '' when empty. */
+export type Cell = string | number | boolean;
+export interface Sheet {
+  name: string;
+  rows: Cell[][];
+}
+/** A tab to write: strings become inline strings; dateColumn (0-based) shows as m/d/yyyy below row 1. */
+export interface SheetSpec {
+  name: string;
+  rows: Array<Array<string | number | null | undefined>>;
+  boldFirstRow?: boolean;
+  freezeFirstRow?: boolean;
+  widths?: number[];
+  dateColumn?: number;
+}
+interface ZipEntry {
+  method: number;
+  compSize: number;
+  size: number;
+  dataStart: number;
+}
+interface Element {
+  attrs: string;
+  inner: string | null;
+}
 
 export class XlsxError extends Error {
-  constructor(message) {
+  constructor(message: string) {
     super(message);
     this.name = 'XlsxError';
   }
 }
-const fail = (message) => { throw new XlsxError(message); };
+// Typed on the name (not only its return), so TypeScript treats a call as ending the path.
+const fail: (message: string) => never = (message) => { throw new XlsxError(message); };
 
 // ---------------- zip ----------------
 const SIG = { local: 0x04034b50, central: 0x02014b50, end: 0x06054b50 };
 
 /** The zip's entries from its central directory: Map name -> { method, compSize, size, dataStart }. */
-function zipEntries(buf, limits) {
+function zipEntries(buf: Buffer, limits: Limits): Map<string, ZipEntry> {
   if (buf.length >= 4 && buf.readUInt32BE(0) === 0xd0cf11e0) fail('This is an old Excel file (.xls). In Excel choose Save As, Excel Workbook (.xlsx), then upload that.');
   if (buf.length < 22 || buf.readUInt32LE(0) !== SIG.local) fail('This is not an Excel workbook (.xlsx).');
   let end = -1;
@@ -36,7 +64,7 @@ function zipEntries(buf, limits) {
   if (count === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) fail('This workbook is too large.');
   if (count > limits.entries) fail('This workbook has too many parts.');
   if (cdOffset + cdSize > end) fail('This is not an Excel workbook (.xlsx): the file is damaged.');
-  const entries = new Map();
+  const entries = new Map<string, ZipEntry>();
   let p = cdOffset;
   for (let n = 0; n < count; n += 1) {
     if (p + 46 > buf.length || buf.readUInt32LE(p) !== SIG.central) fail('This is not an Excel workbook (.xlsx): the file is damaged.');
@@ -63,17 +91,17 @@ function zipEntries(buf, limits) {
 }
 
 /** Reads entries on demand, capping each and all of them together (a small file that inflates hugely is refused). */
-function zipReader(buf, limits) {
+function zipReader(buf: Buffer, limits: Limits) {
   const entries = zipEntries(buf, limits);
   let total = 0;
   return {
     names: [...entries.keys()],
-    has: (name) => entries.has(name),
-    text(name) {
+    has: (name: string): boolean => entries.has(name),
+    text(name: string): string | null {
       const e = entries.get(name);
       if (!e) return null;
       const raw = buf.subarray(e.dataStart, e.dataStart + e.compSize);
-      let out;
+      let out: Buffer;
       if (e.method === 0) out = raw;
       else {
         try { out = inflateRawSync(raw, { maxOutputLength: limits.entryBytes }); } catch { fail('This workbook is too large or damaged to read.'); }
@@ -88,14 +116,14 @@ function zipReader(buf, limits) {
 }
 
 // ---------------- xml ----------------
-function safeXml(text, part) {
+function safeXml(text: string | null, part: string): string | null {
   if (text === null) return null;
   if (/<!DOCTYPE|<!ENTITY/i.test(text)) fail(`This workbook has a part (${part}) Health Review will not read.`);
   return text;
 }
-const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
-function decode(s) {
-  return s.replace(/&(#x[0-9a-fA-F]{1,6}|#\d{1,7}|amp|lt|gt|quot|apos);/g, (m, k) => {
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+function decode(s: string): string {
+  return s.replace(/&(#x[0-9a-fA-F]{1,6}|#\d{1,7}|amp|lt|gt|quot|apos);/g, (m: string, k: string) => {
     if (k[0] !== '#') return ENTITIES[k];
     const code = k[1] === 'x' ? parseInt(k.slice(2), 16) : Number(k.slice(1));
     return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : '';
@@ -106,8 +134,8 @@ function decode(s) {
 const SPACE = new Set([' ', '\t', '\r', '\n']);
 const NAME_CHAR = /[\w:.-]/;
 /** A tag's attributes: Map name -> decoded value. */
-function attrs(text) {
-  const out = new Map();
+function attrs(text: string): Map<string, string> {
+  const out = new Map<string, string>();
   const n = text.length;
   let i = 0;
   while (i < n) {
@@ -130,7 +158,7 @@ function attrs(text) {
   return out;
 }
 /** Each <name ...>inner</name> or <name .../> in order: { attrs: the tag's attribute text, inner: text or null }. */
-function* elements(xml, name) {
+function* elements(xml: string, name: string): Generator<Element> {
   const open = `<${name}`;
   const close = `</${name}>`;
   let i = 0;
@@ -147,9 +175,9 @@ function* elements(xml, name) {
     i = end + close.length;
   }
 }
-const first = (xml, name) => elements(xml, name).next().value ?? null;
+const first = (xml: string, name: string): Element | null => elements(xml, name).next().value ?? null;
 /** The text of a string item: its <t> runs joined, leaving out phonetic guides (<rPh>). */
-function textOf(xml) {
+function textOf(xml: string): string {
   let plain = '';
   let i = 0;
   for (let at; (at = xml.indexOf('<rPh', i)) !== -1;) {
@@ -161,7 +189,7 @@ function textOf(xml) {
   plain += xml.slice(i);
   return [...elements(plain, 't')].map((e) => decode(e.inner ?? '')).join('');
 }
-const colIndex = (ref) => {
+const colIndex = (ref: string | undefined): number | null => {
   const letters = /^([A-Z]{1,3})\d*$/.exec(ref ?? '')?.[1];
   if (!letters) return null;
   let n = 0;
@@ -175,7 +203,7 @@ const EXCEL_EPOCH = Date.UTC(1899, 11, 30);
  * date1904 says the workbook counts dates from 1904 (the caller shifts its date columns by 1462 days).
  * Throws XlsxError with a message fit to show the user.
  */
-export function readXlsx(buf, limits = LIMITS) {
+export function readXlsx(buf: Buffer, limits: Limits = LIMITS): { sheets: Sheet[], date1904: boolean } {
   const zip = zipReader(buf, limits);
   const lower = zip.names.map((n) => n.toLowerCase());
   if (lower.some((n) => n.endsWith('vbaproject.bin'))) fail('This workbook has macros (.xlsm). Save it as an Excel Workbook (.xlsx) without macros, then upload that.');
@@ -188,7 +216,7 @@ export function readXlsx(buf, limits = LIMITS) {
   const workbook = safeXml(zip.text('xl/workbook.xml'), 'workbook') ?? fail('This is not an Excel workbook (.xlsx): it has no workbook part.');
   const rels = safeXml(zip.text('xl/_rels/workbook.xml.rels'), 'workbook links') ?? fail('This is not an Excel workbook (.xlsx): the file is damaged.');
   const date1904 = ['1', 'true'].includes(String(attrs(first(workbook, 'workbookPr')?.attrs ?? '').get('date1904') ?? '').toLowerCase());
-  const targets = new Map();
+  const targets = new Map<string | undefined, string>();
   for (const rel of elements(rels, 'Relationship')) {
     const a = attrs(rel.attrs);
     if (a.get('TargetMode') === 'External') continue;
@@ -197,18 +225,18 @@ export function readXlsx(buf, limits = LIMITS) {
     if (path.split('/').includes('..')) fail('This workbook has a part with an unsafe name.');
     targets.set(a.get('Id'), path);
   }
-  const shared = [];
+  const shared: string[] = [];
   const sst = safeXml(zip.text('xl/sharedStrings.xml'), 'shared strings');
   if (sst) for (const si of elements(sst, 'si')) shared.push(textOf(si.inner ?? ''));
   const sheetTags = [...elements(workbook, 'sheet')].map((e) => attrs(e.attrs));
   if (sheetTags.length > limits.sheets) fail(`This workbook has more than ${limits.sheets} tabs.`);
-  const cut = (s) => (s.length > limits.cellChars ? s.slice(0, limits.cellChars) : s);
-  const sheets = sheetTags.map((a) => {
+  const cut = (s: string): string => (s.length > limits.cellChars ? s.slice(0, limits.cellChars) : s);
+  const sheets = sheetTags.map((a): Sheet => {
     const name = a.get('name') ?? '';
     const rid = [...a].find(([k]) => k === 'r:id' || k.endsWith(':id'))?.[1];
     const xml = safeXml(zip.text(targets.get(rid) ?? ''), `tab ${name}`);
     if (xml === null) return { name, rows: [] };
-    const rows = [];
+    const rows: Cell[][] = [];
     let nextRow = 0;
     for (const rm of elements(xml, 'row')) {
       const r = Number(attrs(rm.attrs).get('r'));
@@ -216,7 +244,7 @@ export function readXlsx(buf, limits = LIMITS) {
       nextRow = at + 1;
       if (!rm.inner) continue;
       if (at >= limits.rows + 1) fail(`Tab ${name} has more than ${limits.rows} rows.`);
-      const row = [];
+      const row: Cell[] = [];
       let nextCol = 0;
       for (const cm of elements(rm.inner, 'c')) {
         const ca = attrs(cm.attrs);
@@ -225,7 +253,7 @@ export function readXlsx(buf, limits = LIMITS) {
         if (col >= limits.columns) continue;
         const inner = cm.inner ?? '';
         const v = first(inner, 'v')?.inner ?? undefined;
-        let value = '';
+        let value: Cell = '';
         switch (ca.get('t')) {
           case 's': value = shared[Number(v)] ?? ''; break;
           case 'inlineStr': value = textOf(first(inner, 'is')?.inner ?? ''); break;
@@ -255,17 +283,18 @@ export function readXlsx(buf, limits = LIMITS) {
 }
 
 // ---------------- writing ----------------
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
-const colName = (i) => {
+const XML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+const esc = (s: unknown): string => String(s).replace(/[&<>"]/g, (c) => XML_ESCAPES[c]).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+const colName = (i: number): string => {
   let s = '';
   for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
   return s;
 };
 
 /** A zip of [name, text] parts, deflated (exported for tests that build hostile files). */
-export function zipParts(files) {
-  const locals = [];
-  const centrals = [];
+export function zipParts(files: Array<[string, string]>): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
   let offset = 0;
   for (const [name, content] of files) {
     const data = Buffer.from(content, 'utf8');
@@ -294,13 +323,13 @@ export function zipParts(files) {
  * A workbook from sheets: [{ name, rows: [[string|number]], boldFirstRow?, freezeFirstRow?, widths?: number[] (characters),
  * dateColumn?: number (0-based; that column's cells below row 1 show as m/d/yyyy) }]. Strings are inline strings.
  */
-export function writeXlsx(sheets) {
+export function writeXlsx(sheets: SheetSpec[]): Buffer {
   return zipParts(workbookParts(sheets));
 }
 
 /** The workbook's parts as [name, text] (writeXlsx zips them). */
-export function workbookParts(sheets) {
-  const sheetXml = (s) => {
+export function workbookParts(sheets: SheetSpec[]): Array<[string, string]> {
+  const sheetXml = (s: SheetSpec): string => {
     const cols = (s.widths ?? []).map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"${i === s.dateColumn ? ' style="2"' : ''}/>`).join('');
     const rows = s.rows.map((row, r) => `<row r="${r + 1}">${row.map((v, c) => {
       if (v === '' || v === null || v === undefined) return '';
@@ -311,13 +340,13 @@ export function workbookParts(sheets) {
     const pane = s.freezeFirstRow ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' : '';
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${pane}${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${rows}</sheetData></worksheet>`;
   };
-  const files = [
+  const files: Array<[string, string]> = [
     ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`],
     ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
     ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`],
     ['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
     ['xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="m/d/yyyy"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
-    ...sheets.map((s, i) => [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)]),
+    ...sheets.map((s, i): [string, string] => [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)]),
   ];
   return files;
 }

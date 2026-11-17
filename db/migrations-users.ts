@@ -7,10 +7,11 @@
 // first copied to a temp table, then dropped children first, created again parents first, and refilled with the owner's
 // id. The runs table (agent-core's when this ran; db/migrate.js since 1D) gets a nullable user_id instead (db/runs.js
 // startUserRun inserts it); run_calls is reached through runs.
-import { OWNER_ID, ownerEmailFromEnv } from './users.js';
+import { OWNER_ID, ownerEmailFromEnv } from './users.ts';
+import type { SqliteMigration } from './migrate.ts';
 
 // Final shapes, parents before children. Column names match the old tables plus user_id, so rows copy by name.
-const TABLES = [
+const TABLES: Array<[name: string, sql: string, indexes?: string[]]> = [
   ['daily_metrics', `CREATE TABLE daily_metrics (
     user_id TEXT NOT NULL REFERENCES users(id),
     date TEXT NOT NULL,
@@ -214,7 +215,7 @@ const TABLES = [
  * (usage_totals, migration 032) are deliberately not here: they are no one's to export or delete. */
 export const USER_TABLES = [...TABLES.map(([name]) => name), 'user_programs', 'feedback', 'review_versions'];
 
-export const USER_MIGRATIONS = [
+export const USER_MIGRATIONS: SqliteMigration[] = [
   {
     id: '024-users',
     up: (db) => {
@@ -236,7 +237,7 @@ export const USER_MIGRATIONS = [
   {
     id: '025-user-id-everywhere',
     up: (db) => {
-      const exists = (t) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t));
+      const exists = (t: string): boolean => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t));
       for (const [name] of TABLES) db.exec(`CREATE TEMP TABLE "old_${name}" AS SELECT * FROM main."${name}"`);
       for (const [name] of [...TABLES].reverse()) if (exists(name)) db.exec(`DROP TABLE main."${name}"`);
       for (const [, create, indexes = []] of TABLES) {

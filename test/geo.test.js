@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { countryLookup, geoAllowFromEnv, geoBlocker, isPrivateAddress, parseRelayRanges } from '../server/geo.js';
 import { openTestStore } from './helpers.js';

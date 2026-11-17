@@ -4,8 +4,8 @@
 //   npm run prompts:import-v1
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { dataPath } from '../tools/paths.js';
-import { openOwnerStore } from '../db/store.js';
+import { dataPath } from '../tools/paths.ts';
+import { openOwnerStore } from '../db/store.ts';
 import { listSections, createSection, updateSection } from '../server/queries.js';
 
 const DIR = dataPath('v1-export', 'prompts');

@@ -5,8 +5,8 @@
 import { writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { repoPath } from '../tools/paths.js';
-import { openHealthStore } from '../db/store.js';
+import { repoPath } from '../tools/paths.ts';
+import { openHealthStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 
 export const SNAPSHOT_PATH = repoPath('docs', 'api', 'openapi.json');

@@ -16,15 +16,21 @@
 
 /** The database the app uses, and the collation recipe db/pg/migrate.js checkCollation requires. */
 export const DATABASE = 'health_review';
+
+/** A pg client (or a fake in tests): queries, and escapeLiteral for the passwords. */
+export interface SqlClient {
+  query(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
+  escapeLiteral(s: string): string;
+}
 const ROLE_PREFIX = /^[a-z][a-z0-9_]{0,20}$/;
 const DB_NAME = /^[a-z][a-z0-9_]{0,40}$/;
 
-export function roleNames(prefix = 'hr') {
+export function roleNames(prefix = 'hr'): { migrate: string, app: string, backup: string } {
   if (!ROLE_PREFIX.test(prefix)) throw new TypeError('role prefix: lowercase letters, digits and _ only');
   return { migrate: `${prefix}_migrate`, app: `${prefix}_app`, backup: `${prefix}_backup` };
 }
 
-const ident = (s) => `"${s}"`; // only ever our own checked names
+const ident = (s: string): string => `"${s}"`; // only ever our own checked names
 
 /**
  * Step 1, connected to any database (postgres) as the master user: the roles (created, or their passwords reset) and the
@@ -32,7 +38,7 @@ const ident = (s) => `"${s}"`; // only ever our own checked names
  * @param {{ query: Function, escapeLiteral: (s: string) => string }} client  a pg client
  * @param {{ prefix?: string, database?: string, passwords: { migrate: string, app: string, backup: string } }} o
  */
-export async function setupRoles(client, { prefix = 'hr', database = DATABASE, passwords }) {
+export async function setupRoles(client: SqlClient, { prefix = 'hr', database = DATABASE, passwords }: { prefix?: string, database?: string, passwords: Record<string, string | undefined> }) {
   if (!DB_NAME.test(database)) throw new TypeError('database name: lowercase letters, digits and _ only');
   const roles = roleNames(prefix);
   for (const [key, name] of Object.entries(roles)) {
@@ -62,7 +68,7 @@ export async function setupRoles(client, { prefix = 'hr', database = DATABASE, p
  * Step 2, connected to the new database as the migration role: the app's grants, now and for every table and sequence
  * the migration role creates later.
  */
-export async function setupGrants(client, { prefix = 'hr' } = {}) {
+export async function setupGrants(client: Pick<SqlClient, 'query'>, { prefix = 'hr' }: { prefix?: string } = {}): Promise<void> {
   const { migrate, app, backup } = roleNames(prefix);
   await client.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
   await client.query(`GRANT USAGE ON SCHEMA public TO ${ident(app)}, ${ident(backup)}`);

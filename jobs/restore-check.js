@@ -7,7 +7,7 @@ import { createDriveClient } from '../tools/backup/drive.js';
 import { DRIVE_FOLDER } from '../tools/backup/run.js';
 import { newestBackup, restoreTest } from '../tools/backup/restore-check.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
-import { startUserRun } from '../db/users.js';
+import { startUserRun } from '../db/users.ts';
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} };
 

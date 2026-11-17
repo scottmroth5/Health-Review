@@ -4,10 +4,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
-import { localDate, withTimeZone, isTimeZone } from '../tools/time.js';
+import { localDate, withTimeZone, isTimeZone } from '../tools/time.ts';
 import { openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';

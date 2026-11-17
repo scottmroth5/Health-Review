@@ -9,7 +9,7 @@ import { loadStrengthSets, programMatchers } from '../metrics/load.js';
 import { programOf } from '../metrics/programs.js';
 import { performed } from '../metrics/strength.js';
 import { daysBetween } from '../metrics/stats.js';
-import { OWNER_ID } from '../db/users.js';
+import { OWNER_ID } from '../db/users.ts';
 
 // UUID v5 (RFC 9562) in a fixed namespace for this app's sessions.
 const SESSION_NAMESPACE = 'a3c1f6e2-5b8d-4f0a-9c7e-2d4b6a8e0f13';

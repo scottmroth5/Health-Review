@@ -2,7 +2,7 @@
 // checks once until they clear, and again after recovery. A fake mailer; no network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore } from '../db/store.ts';
 import { createAlerts } from '../server/alerts.js';
 import { openTestStore } from './helpers.js';
 

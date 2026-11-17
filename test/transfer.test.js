@@ -6,12 +6,12 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openHealthStore } from '../db/store.js';
-import { foreignKeyParents } from '../db/dialect.js';
-import { OWNER_ID } from '../db/users.js';
-import { audit, checkSameSchema, compare, copyAll, fingerprint, reportLines, tableOrder } from '../db/transfer.js';
+import { openHealthStore } from '../db/store.ts';
+import { foreignKeyParents } from '../db/dialect.ts';
+import { OWNER_ID } from '../db/users.ts';
+import { audit, checkSameSchema, compare, copyAll, fingerprint, reportLines, tableOrder } from '../db/transfer.ts';
 import { refreshDemoDatabase } from '../demo/generate.js';
-import { exportToSqlite, migrateToPostgres } from '../db/transfer-jobs.js';
+import { exportToSqlite, migrateToPostgres } from '../db/transfer-jobs.ts';
 import { openTestStore } from './helpers.js';
 import { freshPgDatabase, pgSkip } from './pg.js';
 

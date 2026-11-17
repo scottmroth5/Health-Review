@@ -3,14 +3,14 @@
 // as a 'backup' run with the file name, size and counts only (tools/backup). On PostgreSQL (pgUrl, the backup
 // container's BACKUP_DATABASE_URL; v3 Phase 1G) a checked pg_dump replaces the SQLite snapshot.
 import { existsSync } from 'node:fs';
-import { migrationCopiesDir, pruneMigrationCopies } from '../db/store.js';
+import { migrationCopiesDir, pruneMigrationCopies } from '../db/store.ts';
 import { checkPassphrase } from '../tools/backup/crypto.js';
 import { createDriveClient } from '../tools/backup/drive.js';
 import { runBackup } from '../tools/backup/run.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
-import { dataPath } from '../tools/paths.js';
-import { localDate } from '../tools/time.js';
-import { startUserRun } from '../db/users.js';
+import { dataPath } from '../tools/paths.ts';
+import { localDate } from '../tools/time.ts';
+import { startUserRun } from '../db/users.ts';
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} };
 

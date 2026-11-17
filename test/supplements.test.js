@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { openHealthStore, openOwnerStore } from '../db/store.js';
+import { openHealthStore, openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { limitEntry, overLimit, parseAmount, renderSuggestions, SUPPLEMENT_DISCLAIMER, SUPPLEMENT_RULES, SUPPLEMENTS_TITLE } from '../agent/supplements.js';

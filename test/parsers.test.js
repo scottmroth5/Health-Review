@@ -12,8 +12,8 @@ import {
   sessionDuration,
   mergeHealthDays,
 } from '../ingest/parsers.js';
-import { openOwnerStore } from '../db/store.js';
-import { MIGRATIONS } from '../db/migrations.js';
+import { openOwnerStore } from '../db/store.ts';
+import { MIGRATIONS } from '../db/migrations.ts';
 import { serial, ownerStore } from './helpers.js';
 
 const at = (header, rows) => ({ header, rows, firstRowNumber: 2, tab: 'Sheet1' });
@@ -96,7 +96,7 @@ test('migration 012 repairs stored session durations with the same rule', async 
     await add.run('Outdoor Walk', '2026-03-02T06:00:00', '2026-03-02T07:00:00', 2250 + 10800);
     await add.run('Outdoor Run', '2026-03-03T06:00:00', '2026-03-03T06:30:00', 1790);
     await add.run('Hiking', '2026-03-04T06:00:00', '2026-03-04T06:30:00', 9 * 3600);
-    store.db.exec(MIGRATIONS.find((m) => m.id === '012-session-duration-fix').up);
+    await store.db.exec(MIGRATIONS.find((m) => m.id === '012-session-duration-fix').up);
     const got = (await store.db.prepare('SELECT type, duration_sec FROM workout_sessions ORDER BY start').all());
     assert.deepEqual(got.map((r) => r.duration_sec), [2250, 1790, null]);
   } finally {

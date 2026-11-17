@@ -3,8 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { openHealthStore } from '../db/store.js';
-import { scopeDatabase } from '../db/scope.js';
+import { openHealthStore } from '../db/store.ts';
+import { scopeDatabase } from '../db/scope.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { TILES, cleanGoals, goalWeights, orderFor, tileOrder } from '../server/public/goals.js';

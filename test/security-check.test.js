@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { securityProblems, files, SOURCE } from '../scripts/security-check.js';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 import { openTestStore } from './helpers.js';
 
 test('the code passes the security check', () => {
@@ -51,7 +51,7 @@ test('cookie and spreadsheet names can never reach an object prototype', async (
   assert.equal(Object.getPrototypeOf(c), null);
   assert.equal(Object.keys(c).join(','), 'hr_session', 'unsafe or malformed cookies are dropped');
   assert.equal(({}).x, undefined);
-  const { readXlsx, workbookParts, zipParts } = await import('../tools/xlsx.js');
+  const { readXlsx, workbookParts, zipParts } = await import('../tools/xlsx.ts');
   const parts = workbookParts([{ name: '2026', rows: [['a']] }]);
   const sheet = '<worksheet><sheetData><row r="1" __proto__="1" constructor="2"><c r="A1" __proto__="x" t="inlineStr"><is><t>ok</t></is></c></row></sheetData></worksheet>';
   const book = readXlsx(zipParts([...parts.filter(([n]) => n !== 'xl/worksheets/sheet1.xml'), ['xl/worksheets/sheet1.xml', sheet]]));
@@ -60,7 +60,7 @@ test('cookie and spreadsheet names can never reach an object prototype', async (
 });
 
 test('every route has a per-address ceiling (429 past it); the deploy check is exempt', async () => {
-  const { openHealthStore } = await import('../db/store.js');
+  const { openHealthStore } = await import('../db/store.ts');
   const { buildApp } = await import('../server/app.js');
   const app = await buildApp({ store: await openTestStore(), authMode: 'demo', instance: 'demo', features: { chat: false } });
   let last;

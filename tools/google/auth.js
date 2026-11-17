@@ -1,7 +1,7 @@
 // Copied from Job-Agent's tools/google/auth.js; only the scopes differ. Candidate to move into agent-core.
 import { existsSync, readFileSync } from 'node:fs';
 import { OAuth2Client } from 'google-auth-library';
-import { dataPath } from '../paths.js';
+import { dataPath } from '../paths.ts';
 
 /**
  * Read the health spreadsheets, and manage only the files this app creates in Google Drive (the encrypted

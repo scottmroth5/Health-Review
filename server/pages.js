@@ -2,7 +2,7 @@
 // in so someone can read them before requesting access. A small Markdown subset (headings, paragraphs, bullets, bold,
 // code and links), escaped first.
 import { readFileSync } from 'node:fs';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 
 const escape = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const inline = (s) => escape(s)

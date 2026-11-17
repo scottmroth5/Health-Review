@@ -3,7 +3,7 @@
 // program's structure only (name, weeks, phases, workouts, exercises with sets and reps); the result is a draft that the
 // user checks in the builder, and nothing is saved here. The PDF is held in memory for this call only: never stored,
 // logged or put in the run record, which keeps metadata only (size, model, counts, cost).
-import { startUserRun } from '../db/users.js';
+import { startUserRun } from '../db/users.ts';
 import { programProblems } from '../metrics/catalog.js';
 
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;

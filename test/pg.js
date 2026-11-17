@@ -9,8 +9,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import { createPostgresPool } from '../db/postgres.ts';
-import { openPostgresStore } from '../db/pg/migrate.js';
-import { OWNER_ID, ownerEmailFromEnv } from '../db/users.js';
+import { openPostgresStore } from '../db/pg/migrate.ts';
+import { OWNER_ID, ownerEmailFromEnv } from '../db/users.ts';
 
 export const pgSkip = process.env.DATABASE_URL ? false : 'DATABASE_URL is not set (PostgreSQL tests run in CI and with a local server)';
 
@@ -74,7 +74,7 @@ export async function freshPgDatabase({ options = C_LOCALE } = {}) {
 
 const SCHEMA_HASH = createHash('sha256')
   .update(readFileSync(new URL('../db/pg/001-baseline.sql', import.meta.url)))
-  .update(readFileSync(new URL('../db/pg/migrate.js', import.meta.url)))
+  .update(readFileSync(new URL('../db/pg/migrate.ts', import.meta.url)))
   .digest('hex').slice(0, 12);
 const TEMPLATE = `hr_tpl_${SCHEMA_HASH}`;
 let templateReady;

@@ -6,7 +6,7 @@
 // DB-IP City Lite database (server/geo.js). Only the signed-in app counts (google mode); never the demo or local mode.
 import { isIP } from 'node:net';
 import { isPrivateAddress } from './geo.js';
-import { localDate } from '../tools/time.js';
+import { localDate } from '../tools/time.ts';
 
 export const DEVICES = ['phone', 'tablet', 'computer'];
 export const SOURCES = ['linkedin', 'github', 'site', 'demo', 'google_signin_return', 'other', 'direct'];

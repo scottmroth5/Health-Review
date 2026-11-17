@@ -1,7 +1,7 @@
 // Shared test helpers. Synthetic data only.
-import { scopeStore } from '../db/scope.js';
-import { openHealthStore } from '../db/store.js';
-import { OWNER_ID } from '../db/users.js';
+import { scopeStore } from '../db/scope.ts';
+import { openHealthStore } from '../db/store.ts';
+import { OWNER_ID } from '../db/users.ts';
 
 const EPOCH_MS = Date.UTC(1899, 11, 30);
 
@@ -115,7 +115,7 @@ export async function demoStore({ today } = {}) {
   const built = openHealthStore(':memory:');
   await refreshDemoDatabase(built, { today });
   if (TEST_ENGINE === 'sqlite') return built;
-  const { copyAll } = await import('../db/transfer.js');
+  const { copyAll } = await import('../db/transfer.ts');
   const store = await openTestStore();
   try {
     await copyAll(built, store);

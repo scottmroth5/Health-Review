@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { runSync } from '../ingest/sync.js';
 import { buildApp } from '../server/app.js';
 import { fakeSource, jsonWorkout, serial, silentLogger, ownerStore } from './helpers.js';

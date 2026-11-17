@@ -4,7 +4,7 @@
 import * as q from '../queries.js';
 import { addDays, lastWeekEnd } from '../../metrics/stats.js';
 import { loadGoals } from '../../metrics/load.js';
-import { isUniqueViolation } from '../../db/dialect.js';
+import { isUniqueViolation } from '../../db/dialect.ts';
 import { GOALS as GOAL_LABELS } from '../public/goals.js';
 import { MAX_ANSWER_CHARS, SECTION_KINDS, builderSpec, claudeDraft, templateDraft } from '../../agent/prompt-draft.js';
 import { anyObject, idParams, sectionFields } from './schemas.js';

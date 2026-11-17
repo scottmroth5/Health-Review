@@ -4,10 +4,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { openHealthStore, openOwnerStore } from '../db/store.js';
+import { openHealthStore, openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
-import { repoPath } from '../tools/paths.js';
-import { OWNER_ID } from '../db/users.js';
+import { repoPath } from '../tools/paths.ts';
+import { OWNER_ID } from '../db/users.ts';
 import { ownerStore, openTestStore } from './helpers.js';
 
 const page = readFileSync(repoPath('server', 'public', 'index.html'), 'utf8');

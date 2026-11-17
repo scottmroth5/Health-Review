@@ -8,14 +8,14 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 const VERSION = 'v1';
 
 /** The 32-byte key from the secret (at least 32 characters). Throws when it is missing or short. */
-export function boxKey(secret = process.env.USER_KEY_SECRET) {
+export function boxKey(secret: string | undefined = process.env.USER_KEY_SECRET): Buffer {
   const s = String(secret ?? '');
   if (s.length < 32) throw new Error('USER_KEY_SECRET must be set to at least 32 characters to store user keys');
   return createHash('sha256').update(`health-review user secrets\n${s}`).digest();
 }
 
 /** Encrypts text for one user. */
-export function seal(text, uid, key = boxKey()) {
+export function seal(text: string, uid: string, key: Buffer = boxKey()): string {
   const nonce = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, nonce);
   cipher.setAAD(Buffer.from(String(uid)));
@@ -24,7 +24,7 @@ export function seal(text, uid, key = boxKey()) {
 }
 
 /** Decrypts a value sealed for this user. Throws on a wrong key, another user's value or any change to it. */
-export function open(sealed, uid, key = boxKey()) {
+export function open(sealed: string | null | undefined, uid: string, key: Buffer = boxKey()): string {
   const [version, nonce, tag, body] = String(sealed ?? '').split('.');
   if (version !== VERSION || !nonce || !tag || body === undefined) throw new Error('Not a sealed value');
   const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(nonce, 'base64'));

@@ -14,8 +14,8 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { createSqliteDatabase } from '../../db/database.ts';
 import { createPostgresDatabase, createPostgresPool } from '../../db/postgres.ts';
-import { listTables } from '../../db/dialect.js';
-import { schemaVersion } from '../../db/transfer.js';
+import { listTables } from '../../db/dialect.ts';
+import { schemaVersion } from '../../db/transfer.ts';
 import { decrypt, unpack } from './crypto.js';
 import { restoreBackup } from './run.js';
 

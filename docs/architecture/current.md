@@ -20,7 +20,7 @@ flowchart LR
       I["Ingest routes<br/>bearer token per user"]
       S["Scheduler in the web process<br/>sync, review"]
       AI["Claude calls<br/>review, chat, help,<br/>program extraction"]
-      T["run tracer (db/runs.js)<br/>runs, run_calls"]
+      T["run tracer (db/runs.ts)<br/>runs, run_calls"]
     end
     BK["backup container<br/>nightly backup, restore test,<br/>pre-migration dump"]
     D["demo container<br/>made-up data, read-only root,<br/>no secrets, no sign-in"]
@@ -70,10 +70,10 @@ flowchart LR
   - In-memory sets keep sync, review and chat to one at a time per user. A 30-minute stale check on `runs` stops a job overlapping itself.
   - Failures email the admin (`server/alerts.js`).
 - **AI:** each Claude call happens in the request or job that needs it, on that user's AI access (their own key, or the owner's with a monthly cap).
-  - The run tracer (`db/runs.js`) records metadata, tokens and cost in `runs` and `run_calls`. The monthly caps are computed from those.
+  - The run tracer (`db/runs.ts`) records metadata, tokens and cost in `runs` and `run_calls`. The monthly caps are computed from those.
   - Prompts and replies are never logged.
 - **Data:** one RDS PostgreSQL database, private, TLS only with the certificate verified, 7 days of point-in-time recovery.
-  - Every user table carries `user_id`. Every query binds it through `db/scope.js`, checked by a static guard and a route-by-route isolation test.
+  - Every user table carries `user_id`. Every query binds it through `db/scope.ts`, checked by a static guard and a route-by-route isolation test.
   - Three roles: `hr_app` (rows only, no DDL), `hr_migrate` (owns the schema; migrations run as it, from the backup container), `hr_backup` (read only).
   - Migrations are append-only, and before any of them runs a `pg_dump` is taken and proven in a scratch cluster.
   - The same code still runs on SQLite (this PC, tests and the 14-day rollback path); `test/cross-engine.test.js` keeps the two answering byte for byte alike.

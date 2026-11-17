@@ -11,14 +11,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 import { toPositional } from '../db/placeholders.ts';
-import { openPostgresStore } from '../db/pg/migrate.js';
+import { openPostgresStore } from '../db/pg/migrate.ts';
 import { freshPgDatabase, pgSkip } from './pg.js';
 import { scannedFiles, stringLiterals } from './source-scan.js';
 
 /** Files that refuse PostgreSQL or never meet it: SQLite's migrations and runner, and a one-off keyed on rowid. */
-const SQLITE_ONLY = new Set(['db/migrations.js', 'db/migrations-users.js', 'db/migrate.js', 'db/store.js',
+const SQLITE_ONLY = new Set(['db/migrations.ts', 'db/migrations-users.ts', 'db/migrate.ts', 'db/store.ts',
   'ingest/session-times.js']);
 const STATEMENT = /^\s*(SELECT|INSERT|UPDATE|DELETE|WITH)\s/; // upper case, as the code writes SQL (help text is not)
 const SQLITE_CATALOG = /\bsqlite_(master|sequence)\b/;

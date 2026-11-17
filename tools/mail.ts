@@ -4,19 +4,42 @@
 // "[mail] not configured" line is logged; the app works the same. Never logs the password or a message body.
 import nodemailer from 'nodemailer';
 
+/** One message: names, addresses and links only, never health data. */
+export interface MailMessage {
+  to: string;
+  subject: string;
+  text: string;
+  replyTo?: string;
+}
+
+/** What the app sends through (a fake in tests). */
+export interface MailTransport {
+  sendMail(message: { from?: string, to: string, subject: string, text: string, replyTo?: string }): Promise<unknown>;
+}
+
+export interface Mailer {
+  configured: boolean;
+  send(message: MailMessage): Promise<boolean>;
+}
+
+interface Log {
+  info?: (line: string) => void;
+  warn?: (line: string) => void;
+}
+
 /**
  * A mailer: send({ to, subject, text }) resolves true when sent, false when not configured or it failed.
- * @param {{ env?: object, transport?: object, log?: { info: Function, warn: Function } }} [options]  transport: a fake for tests
+ * @param options  transport: a fake for tests
  */
-export function createMailer({ env = process.env, transport, log = console } = {}) {
+export function createMailer({ env = process.env, transport, log = console }: { env?: NodeJS.ProcessEnv, transport?: MailTransport, log?: Log } = {}): Mailer {
   const user = env.SMTP_USER?.trim();
   const pass = env.SMTP_APP_PASSWORD?.replace(/\s+/g, ''); // Google shows app passwords in groups of four
-  const t = transport ?? (user && pass
+  const t: MailTransport | null = transport ?? (user && pass
     ? nodemailer.createTransport({ host: env.SMTP_HOST || 'smtp.gmail.com', port: Number(env.SMTP_PORT || 465), secure: true, auth: { user, pass } })
     : null);
   return {
     configured: Boolean(t),
-    async send({ to, subject: rawSubject, text, replyTo }) {
+    async send({ to, subject: rawSubject, text, replyTo }: MailMessage) {
       // Header values never carry line breaks or other control characters (no header injection from user text).
       const subject = String(rawSubject ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
       if (!t) {
@@ -28,7 +51,7 @@ export function createMailer({ env = process.env, transport, log = console } = {
         log.info?.(`[mail] sent "${subject}"`);
         return true;
       } catch (err) {
-        log.warn?.(`[mail] "${subject}" failed: ${err.name}`);
+        log.warn?.(`[mail] "${subject}" failed: ${err instanceof Error ? err.name : 'Error'}`);
         return false;
       }
     },

@@ -6,12 +6,12 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { copyDatabase, openHealthStore } from './store.js';
-import { openPostgresStore } from './pg/migrate.js';
-import { audit, reportLines, transfer } from './transfer.js';
+import { copyDatabase, openHealthStore } from './store.ts';
+import { openPostgresStore } from './pg/migrate.ts';
+import { audit, reportLines, transfer } from './transfer.ts';
 
 const quiet = { info() {} };
-const removeFile = (path) => { for (const suffix of ['', '-wal', '-shm']) rmSync(path + suffix, { force: true }); };
+const removeFile = (path: string): void => { for (const suffix of ['', '-wal', '-shm']) rmSync(path + suffix, { force: true }); };
 
 /**
  * PostgreSQL back into a NEW SQLite file: the rollback path. The file is made with the SQLite migrations, filled in one
@@ -21,7 +21,7 @@ const removeFile = (path) => { for (const suffix of ['', '-wal', '-shm']) rmSync
  *   migrating (a role with no DDL rights, such as the backup role; refuses a database with pending migrations)
  * @returns {Promise<number>} the exit code: 0 pass, 1 fail
  */
-export async function exportToSqlite({ url, out, log = console.log, migrate = true }) {
+export async function exportToSqlite({ url, out, log = console.log, migrate = true }: { url?: string, out?: string, log?: (line: string) => void, migrate?: boolean }): Promise<number> {
   if (!url) throw new Error('Set DATABASE_URL to the PostgreSQL database to export');
   if (!out) throw new Error('Give --out <new SQLite file>');
   if (existsSync(out)) throw new Error('The --out file already exists; give a new file name');
@@ -52,7 +52,7 @@ export async function exportToSqlite({ url, out, log = console.log, migrate = tr
  * @param {{ from: string, url?: string, auditOnly?: boolean, log?: (line: string) => void }} o
  * @returns {Promise<number>} the exit code: 0 pass (or a clean audit), 1 fail, 2 audit failures
  */
-export async function migrateToPostgres({ from, url, auditOnly = false, log = console.log }) {
+export async function migrateToPostgres({ from, url, auditOnly = false, log = console.log }: { from: string, url?: string, auditOnly?: boolean, log?: (line: string) => void }): Promise<number> {
   const tmp = mkdtempSync(join(tmpdir(), 'hr-migrate-'));
   let source = null;
   let target = null;

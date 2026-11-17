@@ -3,12 +3,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { buildApp, INGEST_BODY_LIMIT, INGEST_RATE_LIMIT } from '../server/app.js';
 import { runSync } from '../ingest/sync.js';
 import { parseHealthJson } from '../ingest/health-json.js';
 import { applyHealthDays } from '../ingest/apply.js';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 import { fakeSource, silentLogger, ownerStore } from './helpers.js';
 
 const fixture = (name) => JSON.parse(readFileSync(repoPath('test', 'fixtures', 'ingest', `${name}.json`), 'utf8'));

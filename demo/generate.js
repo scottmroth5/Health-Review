@@ -8,14 +8,14 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore } from '../db/store.ts';
 import { loadDictionary } from '../metrics/dictionary.js';
 import { createCatalog } from '../metrics/catalog.js';
 import { addDays, daysBetween } from '../metrics/stats.js';
 import { normalizeAll } from '../ingest/normalize.js';
 import { detect, writeDetected, refreshPhases } from '../ingest/program-blocks.js';
-import { repoPath, dataPath } from '../tools/paths.js';
-import { localDate as ownerDate } from '../tools/time.js';
+import { repoPath, dataPath } from '../tools/paths.ts';
+import { localDate as ownerDate } from '../tools/time.ts';
 import { writeTraining } from './training.js';
 import { writeDemoReview } from './reviews.js';
 import { computeWeek } from '../metrics/index.js';
@@ -23,8 +23,8 @@ import { loadWeekData, loadMetricSettings, loadWeekNotes, loadAdvisorInput } fro
 import { buildSummary } from '../agent/summary.js';
 import { renderReport } from '../agent/instructions.js';
 import { recommendPrograms } from '../metrics/advisor.js';
-import { scopeDatabase } from '../db/scope.js';
-import { OWNER_ID } from '../db/users.js';
+import { scopeDatabase } from '../db/scope.ts';
+import { OWNER_ID } from '../db/users.ts';
 
 export const DEMO_DB_PATH = dataPath('demo', 'demo.db');
 export const DEMO_CATALOG_PATH = repoPath('demo', 'catalog.json');

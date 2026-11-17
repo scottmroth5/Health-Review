@@ -7,13 +7,13 @@
 //   npm run log:unmapped -- --accept data/exercise-proposals.json   add the proposals you kept to the dictionary
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { canonicalSetCounts, unmappedNames } from '../ingest/normalize.js';
 import { typoCandidates } from '../metrics/name-typos.js';
 import { DICTIONARY_PATH, createDictionary, loadDictionary } from '../metrics/dictionary.js';
 import { applySuggestions, suggestMappings, SUGGEST_MODEL } from '../agent/suggest-exercises.js';
 import { createReviewClaude } from '../agent/claude.js';
-import { dataPath } from '../tools/paths.js';
+import { dataPath } from '../tools/paths.ts';
 
 const PROPOSALS = dataPath('exercise-proposals.json');
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };

@@ -2,7 +2,7 @@
 // TypeScript file in the code folders, and the string literals in each.
 import { readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 
 export const FOLDERS = ['server', 'metrics', 'ingest', 'agent', 'jobs', 'tools', 'demo', 'scripts', 'db', 'evals'];
 // Source files the guard reads: JavaScript and TypeScript (v3 moves code to .ts; a guard that skipped it would pass silently).

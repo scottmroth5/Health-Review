@@ -6,12 +6,12 @@
 
 import { RUNNING_STALE_MINUTES } from './scheduler.js';
 import { monthStartIso } from './ai-access.js';
-import { USER_TABLES } from '../db/migrations-users.js';
-import { listTables, primaryKey, tableColumns } from '../db/dialect.js';
+import { USER_TABLES } from '../db/migrations-users.ts';
+import { listTables, primaryKey, tableColumns } from '../db/dialect.ts';
 import { setupSteps } from './setup.js';
-import { DEFAULT_TZ, localDate } from '../tools/time.js';
+import { DEFAULT_TZ, localDate } from '../tools/time.ts';
 import { addDays } from '../metrics/stats.js';
-import { OWNER_ID } from '../db/users.js';
+import { OWNER_ID } from '../db/users.ts';
 
 /**
  * The shared database in all-users mode (row-level security, v3 Phase 1I, docs/adr/0011): on PostgreSQL every user's

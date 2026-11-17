@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, posix } from 'node:path';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 import { scannedFiles } from './source-scan.js';
 
 // Pure modules the browser loads as they are (no build step), so they live in server/public; any layer may import them.

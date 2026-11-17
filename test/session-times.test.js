@@ -1,7 +1,7 @@
 // The consolidated Workout Sessions sheet ran 3 hours late; the one-off fix of stored rows. Synthetic values only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { fixSessionTimes, moveHours } from '../ingest/session-times.js';
 
 const EXPORT_STAMP = '2026-10-15T16:10:54.853Z';

@@ -5,7 +5,7 @@
 // fingerprinted and compared, and deleted if they do not match. An existing file is never touched. Prints table names,
 // counts and PASS or FAIL only. Exit 0 pass, 1 fail.
 import { resolve } from 'node:path';
-import { exportToSqlite } from '../db/transfer-jobs.js';
+import { exportToSqlite } from '../db/transfer-jobs.ts';
 
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };
 

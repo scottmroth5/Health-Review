@@ -8,7 +8,7 @@
 //   HR_MIGRATE_PASSWORD, HR_APP_PASSWORD, HR_BACKUP_PASSWORD   the three roles' new passwords
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
-import { DATABASE, setupGrants, setupRoles } from '../db/pg/roles.js';
+import { DATABASE, setupGrants, setupRoles } from '../db/pg/roles.ts';
 
 const need = (name) => {
   const v = process.env[name];

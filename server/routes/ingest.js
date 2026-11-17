@@ -7,14 +7,14 @@ import { loadDictionary } from '../../metrics/dictionary.js';
 import { loadUserPrograms } from '../../metrics/load.js';
 import { WorkoutError, deleteWorkout, listWorkouts, saveWorkout, workoutSuggestions } from '../../ingest/app-workouts.js';
 import { MAX_UPLOAD_BYTES, TEMPLATE_NAME, UploadError, ingestWorkbook, workoutTemplate } from '../../ingest/excel-upload.js';
-import { XLSX_TYPE, XlsxError } from '../../tools/xlsx.js';
+import { XLSX_TYPE, XlsxError } from '../../tools/xlsx.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createRateLimiter } from '../security.js';
 import { parseHealthJson } from '../../ingest/health-json.js';
 import { parseWorkoutJson } from '../../ingest/parsers.js';
 import { applyHealthDays, applyWorkouts } from '../../ingest/apply.js';
-import { localStamp } from '../../tools/time.js';
-import { OWNER_ID, startUserRun, userByIngestToken } from '../../db/users.js';
+import { localStamp } from '../../tools/time.ts';
+import { OWNER_ID, startUserRun, userByIngestToken } from '../../db/users.ts';
 import { INGEST_BODY_LIMIT, INGEST_RATE_LIMIT, anyObject, badRequest } from './schemas.js';
 
 /** @param {import('fastify').FastifyInstance} app @param {object} ctx  shared state and helpers from buildApp */

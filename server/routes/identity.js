@@ -4,14 +4,14 @@
 import * as q from '../queries.js';
 import { loadGoals } from '../../metrics/load.js';
 import { currentProgram } from '../../ingest/program-blocks.js';
-import { isTimeZone, ownerTz, withTimeZone } from '../../tools/time.js';
-import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, timeZoneOf } from '../../db/users.js';
+import { isTimeZone, ownerTz, withTimeZone } from '../../tools/time.ts';
+import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, timeZoneOf } from '../../db/users.ts';
 import { exportUserData, setUserStatus } from '../admin-queries.js';
 import { GOAL_KEYS, LAYOUT_ITEMS, TILES, cleanGoals } from '../public/goals.js';
 import { SUPPLEMENT_DISCLAIMER, supplementAdviceSince } from '../../agent/supplements.js';
 import { SESSION_COOKIE, cookie } from '../session.js';
 import { spentThisMonth } from '../ai-access.js';
-import { boxKey, seal } from '../../tools/secret-box.js';
+import { boxKey, seal } from '../../tools/secret-box.ts';
 import { SETUP_STEPS, loadSetupFacts, setupSteps } from '../setup.js';
 import { anyObject, badRequest } from './schemas.js';
 

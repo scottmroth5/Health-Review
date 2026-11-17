@@ -14,7 +14,7 @@
 // job has not run since. A job never overlaps itself: not while it is running here, and not while a run of the same name
 // started in the last 30 minutes is still marked running (a terminal command, Sync now).
 import { addDays } from '../metrics/stats.js';
-import { localDate, ownerTz, zonedInstant } from '../tools/time.js';
+import { localDate, ownerTz, zonedInstant } from '../tools/time.ts';
 
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const FULL_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];

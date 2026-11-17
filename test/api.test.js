@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { assertSafeBinding } from '../server/auth.js';
 import { normalizeAll } from '../ingest/normalize.js';
 import { loadDictionary } from '../metrics/dictionary.js';
 import { ownerStore } from './helpers.js';
-import { isUniqueViolation } from '../db/dialect.js';
+import { isUniqueViolation } from '../db/dialect.ts';
 
 const TODAY = new Date(2026, 2, 9, 12, 0); // local 2026-03-09
 
@@ -431,9 +431,9 @@ test('training: each view returns its bars, totals and breakdowns; planned sets 
   const { app, db, adb, done } = await setup();
   const ex = db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2026, ?, ?, ?) RETURNING id");
   const set = db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, per_hand, reps, reps_text) VALUES (@uid, ?, 1, ?, ?, ?, ?)');
-  set.run((await ex.get(2, '2026-03-09', 'Squat')).id, 100, 0, 5, '5'); // today
-  set.run((await ex.get(3, '2026-03-05', 'DB Press')).id, 50, 1, 10, '10');
-  set.run((await ex.get(4, '2026-03-10', 'Squat')).id, 120, 0, null, null); // planned, after today
+  await set.run((await ex.get(2, '2026-03-09', 'Squat')).id, 100, 0, 5, '5'); // today
+  await set.run((await ex.get(3, '2026-03-05', 'DB Press')).id, 50, 1, 10, '10');
+  await set.run((await ex.get(4, '2026-03-10', 'Squat')).id, 120, 0, null, null); // planned, after today
   await normalizeAll(adb, loadDictionary()); // the real dictionary: Squat is Barbell Squat; DB Press has no entry
 
   const week = (await app.inject('/api/training?view=week')).json();

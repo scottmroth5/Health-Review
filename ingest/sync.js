@@ -26,10 +26,10 @@ import { typoCandidates } from '../metrics/name-typos.js';
 import { assignForward, refreshPhases } from './program-blocks.js';
 import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
 import { existsSync } from 'node:fs';
-import { localDate, zonedParts } from '../tools/time.js';
+import { localDate, zonedParts } from '../tools/time.ts';
 import { applyHealthDays, applyWorkouts } from './apply.js';
 import { parseHealthJson } from './health-json.js';
-import { startUserRun } from '../db/users.js';
+import { startUserRun } from '../db/users.ts';
 
 /** Where Apple Health comes from: drive (Health Auto Export's files, this computer) or rest (its posts, the server). */
 export const appleSource = (env = process.env) => (env.APPLE_SOURCE === 'rest' ? 'rest' : 'drive');

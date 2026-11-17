@@ -2,7 +2,7 @@
 // fields, and only the demo, with a valid token and https host, sends anything or widens connect-src. Made-up values.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { analyticsConfig, siteHostname, CONTENT_SECURITY_POLICY } from '../server/security.js';
 import { analyticsEvent, createTracker, trafficSource, APP, SECTIONS, SOURCES } from '../server/public/analytics.js';

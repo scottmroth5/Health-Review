@@ -5,10 +5,10 @@
 import { randomUUID } from 'node:crypto';
 import { addDays, lastWeekEnd } from '../metrics/stats.js';
 import { reviewStatus } from './review-status.js';
-import { localDate } from '../tools/time.js';
+import { localDate } from '../tools/time.ts';
 import { DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { runReview } from '../agent/review.js';
-import { startUserRun } from '../db/users.js';
+import { startUserRun } from '../db/users.ts';
 
 const quiet = { info() {}, warn() {}, error() {} };
 

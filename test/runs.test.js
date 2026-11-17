@@ -2,8 +2,8 @@
 // going through the async interface's lock rather than into another request's open transaction.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { startUserRun } from '../db/runs.js';
-import { OWNER_ID } from '../db/users.js';
+import { startUserRun } from '../db/runs.ts';
+import { OWNER_ID } from '../db/users.ts';
 import { memoryStore } from './helpers.js';
 
 const quiet = { info() {}, warn() {}, error() {} };

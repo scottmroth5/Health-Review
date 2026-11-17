@@ -2,7 +2,7 @@
 // Each takes { header, rows, firstRowNumber, tab } and returns { records, warnings }.
 // Warnings carry sheet row numbers and a kind, never cell text, so they are safe to print.
 import { serialToDate, serialToDateTime, serialToSeconds, parseUsDate } from './serial.js';
-import { localStamp as ownerStamp } from '../tools/time.js';
+import { localStamp as ownerStamp } from '../tools/time.ts';
 
 const isEmpty = (v) => v === '' || v === null || v === undefined;
 const isBlankRow = (row) => !row?.some((c) => !isEmpty(c));

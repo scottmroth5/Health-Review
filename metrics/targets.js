@@ -5,7 +5,7 @@
 // owner is "your current value, improved by a step" (based on their data only). Computed here, never by the model; the
 // owner can replace any suggestion (health_targets).
 import { readFileSync } from 'node:fs';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 import { round } from './stats.js';
 
 export const TARGETS_PATH = repoPath('config', 'health-targets.json');

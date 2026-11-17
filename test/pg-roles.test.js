@@ -7,11 +7,11 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { dropWhenIdle, pgSkip } from './pg.js';
-import { setupRoles, setupGrants } from '../db/pg/roles.js';
-import { openPostgresStore, migratePostgres, PG_MIGRATIONS } from '../db/pg/migrate.js';
+import { setupRoles, setupGrants } from '../db/pg/roles.ts';
+import { openPostgresStore, migratePostgres, PG_MIGRATIONS } from '../db/pg/migrate.ts';
 import { createPostgresPool } from '../db/postgres.ts';
-import { OWNER_ID } from '../db/users.js';
-import { scopeDatabase } from '../db/scope.js';
+import { OWNER_ID } from '../db/users.ts';
+import { scopeDatabase } from '../db/scope.ts';
 
 const pw = () => randomBytes(24).toString('base64url');
 

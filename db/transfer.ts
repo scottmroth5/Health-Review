@@ -2,24 +2,50 @@
 // new SQLite file during the rollback window. Both directions run on the async interface (db/database.ts), so one copy
 // and one fingerprint serve both. Nothing here prints or returns a stored value, a user id or an email: findings and
 // reports carry table and column names, counts, and pass or fail only.
-import { createHash } from 'node:crypto';
-import { columnKinds, foreignKeyParents, listTables, primaryKey, tableColumns } from './dialect.js';
-import { BASELINE_THROUGH, PG_MIGRATIONS } from './pg/migrate.js';
-import { OWNER_ID } from './users.js';
+import { createHash, type Hash } from 'node:crypto';
+import type BetterSqlite3 from 'better-sqlite3';
+import type { Database } from './database.ts';
+import { columnKinds, foreignKeyParents, listTables, primaryKey, tableColumns, type Queryable } from './dialect.ts';
+import { BASELINE_THROUGH, PG_MIGRATIONS } from './pg/migrate.ts';
+import { OWNER_ID } from './users.ts';
 
 const APP = 'health-review';
 /** Bind parameters per INSERT (PostgreSQL allows 65,535 and SQLite 32,766). */
 const MAX_PARAMS = 30000;
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 
+/** One thing the audit found: names and a count, never a value. */
+export interface Finding {
+  table: string;
+  column: string;
+  kind: string;
+  severity: 'fail' | 'warn';
+  count: number;
+}
+/** Per table: its row count and a hash per user group (user ids hashed, never named). */
+export type Fingerprint = Record<string, { rows: number, groups: Record<string, string> }>;
+/** One table compared across the two sides. */
+export interface TableResult {
+  table: string;
+  rowsA: number | null;
+  rowsB: number | null;
+  differingGroups: number;
+  ok: boolean;
+}
+export interface TransferResult {
+  ok: boolean;
+  counts: Record<string, number>;
+  tables: TableResult[];
+}
+
 /** Every table but schema_migrations, parents before the tables whose foreign keys name them. */
-export async function tableOrder(db) {
+export async function tableOrder(db: Queryable): Promise<string[]> {
   const tables = (await listTables(db)).filter((t) => t !== 'schema_migrations');
-  const parents = new Map();
+  const parents = new Map<string, string[]>();
   for (const t of tables) parents.set(t, await foreignKeyParents(db, t));
-  const done = new Set();
-  const out = [];
-  const visit = (t, path) => {
+  const done = new Set<string>();
+  const out: string[] = [];
+  const visit = (t: string, path: Set<string>): void => {
     if (done.has(t)) return;
     if (path.has(t)) throw new Error(`Foreign key cycle at ${t}`);
     path.add(t);
@@ -33,8 +59,8 @@ export async function tableOrder(db) {
 }
 
 /** The newest schema a database is at, named by the SQLite migration id (PostgreSQL's baseline stands for BASELINE_THROUGH). */
-export async function schemaVersion(db) {
-  const ids = await db.prepare('SELECT id FROM schema_migrations WHERE app = ? ORDER BY id').pluck().all(APP);
+export async function schemaVersion(db: Queryable): Promise<string | null> {
+  const ids: string[] = await db.prepare('SELECT id FROM schema_migrations WHERE app = ? ORDER BY id').pluck().all(APP);
   if (db.engine !== 'postgres') return ids.at(-1) ?? null;
   const known = PG_MIGRATIONS.map((m) => m.id).filter((id) => ids.includes(id));
   const last = known.at(-1);
@@ -45,7 +71,7 @@ export async function schemaVersion(db) {
  * Refuses unless both databases hold the same tables with the same columns in the same order, at the same migration.
  * Names tables and columns only.
  */
-export async function checkSameSchema(source, target) {
+export async function checkSameSchema(source: { db: Queryable }, target: { db: Queryable }): Promise<void> {
   const [va, vb] = [await schemaVersion(source.db), await schemaVersion(target.db)];
   if (!va || va !== vb) throw new Error(`The two databases are at different migrations (${va ?? 'none'} and ${vb ?? 'none'}); bring both to the same one first`);
   const [ta, tb] = [await tableOrder(source.db), await tableOrder(target.db)];
@@ -58,7 +84,7 @@ export async function checkSameSchema(source, target) {
 }
 
 /** Every identity column's next value past the largest id in its table (PostgreSQL; SQLite's rowid does this itself). */
-export async function resetSequences(db) {
+export async function resetSequences(db: Queryable): Promise<void> {
   if (db.engine !== 'postgres') return;
   const cols = await db.prepare(`SELECT table_name AS t, column_name AS c FROM information_schema.columns
     WHERE table_schema = 'public' AND is_identity = 'YES' ORDER BY table_name`).all();
@@ -67,13 +93,13 @@ export async function resetSequences(db) {
   }
 }
 
-const orderBy = async (db, t) => (await primaryKey(db, t)).map((c) => `"${c}"`).join(', ');
+const orderBy = async (db: Queryable, t: string): Promise<string> => (await primaryKey(db, t)).map((c) => `"${c}"`).join(', ');
 
 /** A table's rows in primary key order, as arrays in column order. */
-async function rowsOf(db, table, cols) {
+async function rowsOf(db: Queryable, table: string, cols: string[]): Promise<unknown[][]> {
   const order = await orderBy(db, table);
   const rows = await db.prepare(`SELECT ${cols.map((c) => `"${c}"`).join(', ')} FROM "${table}"${order ? ` ORDER BY ${order}` : ''}`).all();
-  return rows.map((r) => cols.map((c) => r[c]));
+  return rows.map((r: Record<string, unknown>) => cols.map((c) => r[c]));
 }
 
 /**
@@ -83,10 +109,10 @@ async function rowsOf(db, table, cols) {
  * @param {{ db: import('./database.ts').Database }} target  unscoped
  * @returns {Promise<Record<string, number>>} rows copied per table
  */
-export async function copyAll(source, target) {
+export async function copyAll(source: { db: Queryable }, target: { db: Database }): Promise<Record<string, number>> {
   const tables = await tableOrder(target.db);
   /** @type {Record<string, number>} */
-  const counts = {};
+  const counts: Record<string, number> = {};
   await target.db.tx(async () => {
     for (const t of tables) {
       const n = await target.db.prepare(`SELECT COUNT(*) FROM "${t}"`).pluck().get();
@@ -107,7 +133,8 @@ export async function copyAll(source, target) {
         } catch (err) {
           // A database's message can quote the value it refused (PostgreSQL's "invalid input syntax ... "): the table and
           // the error code only, so a value never reaches a log or the screen.
-          throw new Error(`Copying ${t} failed (${err.code ?? err.name}); nothing was kept`, { cause: err });
+          const e = err as { code?: string, name?: string };
+          throw new Error(`Copying ${t} failed (${e.code ?? e.name}); nothing was kept`, { cause: err });
         }
       }
       counts[t] = rows.length;
@@ -126,17 +153,17 @@ export async function copyAll(source, target) {
  * @param {import('better-sqlite3').Database} raw
  * @returns {Array<{ table: string, column: string, kind: string, severity: 'fail'|'warn', count: number }>}
  */
-export function audit(raw) {
+export function audit(raw: BetterSqlite3.Database): Finding[] {
   /** @type {Array<{ table: string, column: string, kind: string, severity: 'fail'|'warn', count: number }>} */
-  const findings = [];
-  const tables = /** @type {string[]} */ (raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations' ORDER BY name").pluck().all());
+  const findings: Finding[] = [];
+  const tables = raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations' ORDER BY name").pluck().all() as string[];
   for (const t of tables) {
-    const columns = /** @type {Array<{ name: string, type: string, notnull: number, pk: number }>} */ (raw.prepare(`PRAGMA table_info("${t}")`).all());
+    const columns = raw.prepare(`PRAGMA table_info("${t}")`).all() as Array<{ name: string, type: string, notnull: number, pk: number }>;
     for (const c of columns) {
       const type = String(c.type).toUpperCase();
       const kind = type.includes('INT') ? 'integer' : /REAL|FLOA|DOUB/.test(type) ? 'real' : 'text';
       const col = `"${c.name}"`;
-      const checks = [];
+      const checks: Array<[string, Finding['severity'], string]> = [];
       if (kind === 'integer') {
         checks.push(['not an integer', 'fail', `typeof(${col}) IN ('text', 'real', 'blob')`]);
         checks.push(['integer past 2^53', 'fail', `typeof(${col}) = 'integer' AND (${col} > ${MAX_SAFE} OR ${col} < -${MAX_SAFE})`]);
@@ -148,7 +175,7 @@ export function audit(raw) {
         checks.push(['number in a text column', 'warn', `typeof(${col}) IN ('integer', 'real')`]);
       }
       if (c.notnull || c.pk) checks.push(['NULL in a required column', 'fail', `${col} IS NULL`]);
-      for (const [label, severity, where] of /** @type {Array<[string, 'fail'|'warn', string]>} */ (checks)) {
+      for (const [label, severity, where] of checks) {
         const count = Number(raw.prepare(`SELECT COUNT(*) FROM "${t}" WHERE ${where}`).pluck().get());
         if (count) findings.push({ table: t, column: c.name, kind: label, severity, count });
       }
@@ -157,7 +184,7 @@ export function audit(raw) {
   return findings;
 }
 
-const sha = (s) => createHash('sha256').update(s).digest('hex');
+const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
 
 /**
  * Row counts per table, and a SHA-256 per (table, user) over the rows in primary key order, each value normalized by
@@ -165,20 +192,20 @@ const sha = (s) => createHash('sha256').update(s).digest('hex');
  * of the user id (or "all" for tables without one), so a report never names a user.
  * @returns {Promise<Record<string, { rows: number, groups: Record<string, string> }>>}
  */
-export async function fingerprint(db) {
+export async function fingerprint(db: Queryable): Promise<Fingerprint> {
   /** @type {Record<string, { rows: number, groups: Record<string, string> }>} */
-  const out = {};
+  const out: Fingerprint = {};
   for (const t of await tableOrder(db)) {
     const kinds = await columnKinds(db, t);
     const cols = kinds.map((k) => k.name);
     const uidAt = cols.indexOf('user_id');
-    const norm = kinds.map((k) => (k.kind === 'text' ? (v) => (v === null || v === undefined ? null : String(v)) : (v) => (v === null || v === undefined ? null : Number(v))));
-    const hashes = new Map();
+    const norm = kinds.map((k) => (k.kind === 'text' ? (v: unknown) => (v === null || v === undefined ? null : String(v)) : (v: unknown) => (v === null || v === undefined ? null : Number(v))));
+    const hashes = new Map<string, Hash>();
     const rows = await rowsOf(db, t, cols);
     for (const row of rows) {
       const group = uidAt >= 0 ? sha(`user:${row[uidAt]}`).slice(0, 16) : 'all';
       if (!hashes.has(group)) hashes.set(group, createHash('sha256'));
-      hashes.get(group).update(`${JSON.stringify(row.map((v, i) => norm[i](v)))}\n`);
+      hashes.get(group)!.update(`${JSON.stringify(row.map((v, i) => norm[i](v)))}\n`);
     }
     out[t] = { rows: rows.length, groups: Object.fromEntries([...hashes].map(([g, h]) => [g, h.digest('hex')])) };
   }
@@ -186,9 +213,9 @@ export async function fingerprint(db) {
 }
 
 /** Table by table: row counts on each side and how many user groups differ. */
-export function compare(a, b) {
+export function compare(a: Fingerprint, b: Fingerprint): { ok: boolean, tables: TableResult[] } {
   const tables = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
-  const rows = tables.map((t) => {
+  const rows = tables.map((t): TableResult => {
     const ga = a[t]?.groups ?? {};
     const gb = b[t]?.groups ?? {};
     const keys = new Set([...Object.keys(ga), ...Object.keys(gb)]);
@@ -203,7 +230,7 @@ export function compare(a, b) {
  * The whole move: same schema, copy, then the fingerprints of both sides compared.
  * @returns {Promise<{ ok: boolean, counts: Record<string, number>, tables: ReturnType<typeof compare>['tables'] }>}
  */
-export async function transfer(source, target) {
+export async function transfer(source: { db: Queryable }, target: { db: Database }): Promise<TransferResult> {
   await checkSameSchema(source, target);
   const counts = await copyAll(source, target);
   const result = compare(await fingerprint(source.db), await fingerprint(target.db));
@@ -211,8 +238,8 @@ export async function transfer(source, target) {
 }
 
 /** Report lines for the scripts: names, counts, pass or fail; never a value or an id. */
-export function reportLines({ findings = [], result = null } = {}) {
-  const lines = [];
+export function reportLines({ findings = [], result = null }: { findings?: Finding[], result?: { ok: boolean, tables: TableResult[] } | null } = {}): string[] {
+  const lines: string[] = [];
   for (const f of findings) lines.push(`audit ${f.severity}: ${f.table}.${f.column}: ${f.kind} (${f.count} rows)`);
   if (findings.length === 0) lines.push('audit: clean');
   if (result) {

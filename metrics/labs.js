@@ -3,7 +3,7 @@
 // ones (config/lab-ranges.json) until then (owner's choice, 2026-10-15). Code marks below and above range only, never
 // normal or abnormal; any interpretation belongs to physician discussion.
 import { readFileSync } from 'node:fs';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 import { round, inRange, addDays, daysBetween } from './stats.js';
 
 export const LAB_RANGES_PATH = repoPath('config', 'lab-ranges.json');

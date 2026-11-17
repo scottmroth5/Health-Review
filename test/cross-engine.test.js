@@ -4,10 +4,10 @@
 // SQLite and last on PostgreSQL unless a query says otherwise). Made-up data only; needs DATABASE_URL.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore } from '../db/store.ts';
 import { refreshDemoDatabase } from '../demo/generate.js';
 import { answers, TODAY } from './route-answers.js';
-import { copyAll } from '../db/transfer.js';
+import { copyAll } from '../db/transfer.ts';
 import { freshPgStore, pgSkip } from './pg.js';
 
 test('every GET route answers the same on SQLite and on PostgreSQL, given the same rows', { skip: pgSkip, timeout: 300_000 }, async () => {

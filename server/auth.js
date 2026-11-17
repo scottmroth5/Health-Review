@@ -12,7 +12,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { SESSION_COOKIE, LOGIN_COOKIE, sessionKey, sign, verify, parseCookies, cookie } from './session.js';
-import { needsHealthConsent } from '../db/users.js';
+import { needsHealthConsent } from '../db/users.ts';
 
 export const LOOPBACK = ['127.0.0.1', '::1', 'localhost'];
 export const MODES = ['none', 'google', 'demo'];

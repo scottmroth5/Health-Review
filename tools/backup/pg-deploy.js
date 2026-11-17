@@ -19,8 +19,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, sta
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { createPostgresPool } from '../../db/postgres.ts';
-import { migratePostgres, pendingPostgres, PG_MIGRATIONS } from '../../db/pg/migrate.js';
-import { setupGrants } from '../../db/pg/roles.js';
+import { migratePostgres, pendingPostgres, PG_MIGRATIONS } from '../../db/pg/migrate.ts';
+import { setupGrants } from '../../db/pg/roles.ts';
 import Database from 'better-sqlite3';
 import { checkPassphrase, decrypt, unpack } from './crypto.js';
 import { restoreBackup, runBackup } from './run.js';
@@ -147,7 +147,7 @@ export async function rollbackExport({ backupUrl, passphrase, date, drive, toDir
   const tmp = mkdtempSync(join(tmpdir(), 'hr-rollback-'));
   try {
     const out = join(tmp, 'health.db');
-    const { exportToSqlite } = await import('../../db/transfer-jobs.js');
+    const { exportToSqlite } = await import('../../db/transfer-jobs.ts');
     if (await exportToSqlite({ url: backupUrl, out, migrate: false, log }) !== 0) {
       throw new Error('The export did not match the database; nothing was uploaded');
     }
@@ -226,7 +226,7 @@ export async function loadFromBackup({ file, passphrase, migrateUrl, catalogPath
         log('load-from-backup: the program catalog is already there; kept it');
       }
     }
-    const { migrateToPostgres } = await import('../../db/transfer-jobs.js');
+    const { migrateToPostgres } = await import('../../db/transfer-jobs.ts');
     return await migrateToPostgres({ from: database, url: migrateUrl, log });
   } finally {
     rmSync(tmp, { recursive: true, force: true });

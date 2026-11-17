@@ -1,8 +1,8 @@
 // Whether a week's review exists and whether its data is complete enough to write it (the review gate): shared by the
 // scheduled and manual review job (jobs/review.js), npm run review, and the Reviews notice (server/queries.js re-exports
 // it). Lives under jobs, not server, so the job never imports the UI's queries (docs/adr/0012).
-import { jsonText } from '../db/dialect.js';
-import { zonedParts } from '../tools/time.js';
+import { jsonText } from '../db/dialect.ts';
+import { zonedParts } from '../tools/time.ts';
 import { addDays, lastWeekEnd } from '../metrics/stats.js';
 import { weekDataQuality } from '../metrics/dataquality.js';
 

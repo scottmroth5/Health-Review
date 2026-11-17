@@ -8,7 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { repoPath, dataPath } from '../tools/paths.js';
+import { repoPath, dataPath } from '../tools/paths.ts';
 
 const FLOW = dataPath('evals', 'review');
 const STATE = {
@@ -77,7 +77,7 @@ function summarize() {
 async function regrade(variant) {
   const { gradeDraft, SPEC } = await import('../evals/grade-review.js');
   const { allowedNumbers, checkReport, stripDashes, findDashes } = await import('../agent/validate.js');
-  const { openOwnerStore } = await import('../db/store.js');
+  const { openOwnerStore } = await import('../db/store.ts');
   const { medicationNames } = await import('../metrics/load.js');
   const { NIGHT_BREATHING_NAMES } = await import('../agent/review.js');
   const store = openOwnerStore();

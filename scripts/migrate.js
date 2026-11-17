@@ -3,7 +3,7 @@
 // the backup container's pre-migrate step has taken a checked pg_dump and migrated a scratch copy without error.
 //   MIGRATE_DATABASE_URL=postgres://hr_migrate:...@host/health_review?sslmode=verify-full&sslrootcert=... node scripts/migrate.js
 // Prints the ids applied (or none) and never the URL. Exit 0 done, 1 failed (each migration rolls back on its own).
-import { checkCollation, migratePostgres } from '../db/pg/migrate.js';
+import { checkCollation, migratePostgres } from '../db/pg/migrate.ts';
 import { createPostgresPool } from '../db/postgres.ts';
 
 const url = process.env.MIGRATE_DATABASE_URL;

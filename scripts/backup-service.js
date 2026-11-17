@@ -16,22 +16,22 @@
 // Database URLs (never logged): DATABASE_URL (hr_app: runs, alerts, live counts), BACKUP_DATABASE_URL (hr_backup:
 // pg_dump), MIGRATE_DATABASE_URL (hr_migrate: restore and load only).
 import { readFileSync, statSync } from 'node:fs';
-import { openStore } from '../db/store.js';
-import { scopeStore } from '../db/scope.js';
-import { OWNER_ID, getUser } from '../db/users.js';
+import { openStore } from '../db/store.ts';
+import { scopeStore } from '../db/scope.ts';
+import { OWNER_ID, getUser } from '../db/users.ts';
 import { backupJob } from '../jobs/backup.js';
 import { restoreTestJob } from '../jobs/restore-check.js';
 import { createScheduler, schedulesFromEnv } from '../server/scheduler.js';
 import { jobRunsLookup } from '../server/admin-queries.js';
 import { createAlerts } from '../server/alerts.js';
-import { createMailer } from '../tools/mail.js';
-import { dataPath } from '../tools/paths.js';
+import { createMailer } from '../tools/mail.ts';
+import { dataPath } from '../tools/paths.ts';
 import { createDriveClient } from '../tools/backup/drive.js';
 import { PRODUCTION_DRIVE_FOLDER } from '../tools/backup/run.js';
 import { newestBackup } from '../tools/backup/restore-check.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
 import { loadFromBackup, newestDumpSince, preMigrate, resetDatabase, restorePreMigration, rollbackExport } from '../tools/backup/pg-deploy.js';
-import { localDate } from '../tools/time.js';
+import { localDate } from '../tools/time.ts';
 
 const [command = 'serve', ...rest] = process.argv.slice(2);
 const arg = (flag) => { const i = rest.indexOf(flag); return i >= 0 ? rest[i + 1] : undefined; };

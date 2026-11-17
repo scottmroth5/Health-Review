@@ -2,12 +2,12 @@
 // Synthetic values only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { reviewStatus } from '../server/queries.js';
 import { withArchive } from '../jobs/review.js';
 import { addDays } from '../metrics/stats.js';
-import { OWNER_ID } from '../db/users.js';
+import { OWNER_ID } from '../db/users.ts';
 import { ownerStore } from './helpers.js';
 
 // Monday 2026-03-09: the review week is Sunday Mar 1 to Saturday Mar 7.

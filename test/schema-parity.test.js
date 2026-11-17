@@ -4,9 +4,9 @@
 // PostgreSQL twin fails here. Made-up schema only, no rows. Skipped without DATABASE_URL (test/pg.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
-import { MIGRATIONS } from '../db/migrations.js';
-import { BASELINE_THROUGH, PG_MIGRATIONS, migratePostgres, openPostgresStore } from '../db/pg/migrate.js';
+import { openHealthStore } from '../db/store.ts';
+import { MIGRATIONS } from '../db/migrations.ts';
+import { BASELINE_THROUGH, PG_MIGRATIONS, migratePostgres, openPostgresStore } from '../db/pg/migrate.ts';
 import { createPostgresPool } from '../db/postgres.ts';
 import { freshPgDatabase, pgSkip } from './pg.js';
 

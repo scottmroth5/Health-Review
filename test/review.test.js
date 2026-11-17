@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ClaudeTruncatedError } from '@scottmroth5/agent-core/claude';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { addDays } from '../metrics/stats.js';
 import { findDashes, stripDashes, allowedNumbers, ungroundedNumbers, misroutedTopics } from '../agent/validate.js';
 import { buildSystem, renderReport, CONTRACT } from '../agent/instructions.js';
@@ -11,7 +11,7 @@ import { runReview, prepareReview } from '../agent/review.js';
 import { computeWeek } from '../metrics/index.js';
 import { fakeClaudeClient, silentLogger, ownerStore } from './helpers.js';
 import { weeklyReview } from '../jobs/review.js';
-import { OWNER_ID } from '../db/users.js';
+import { OWNER_ID } from '../db/users.ts';
 
 // A report in the review's shape; the opening holds one plain highlight unless a test sets its own.
 const report = (sections, physicianDiscussion = []) => ({

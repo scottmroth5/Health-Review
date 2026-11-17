@@ -4,13 +4,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { openHealthStore, openOwnerStore } from '../db/store.js';
+import { openHealthStore, openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { sign, sessionKey } from '../server/session.js';
 import { nextReviewDay, setupSteps, sheetProblem } from '../server/setup.js';
 import { reviewStatus, dataCheckWarnings } from '../server/queries.js';
-import { scopeDatabase } from '../db/scope.js';
+import { scopeDatabase } from '../db/scope.ts';
 import { computeWeek } from '../metrics/index.js';
 import { ownerStore, openTestStore } from './helpers.js';
 

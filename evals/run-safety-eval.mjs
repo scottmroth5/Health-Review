@@ -15,10 +15,10 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { openHealthStore } from '../db/store.js';
-import { scopeDatabase } from '../db/scope.js';
+import { openHealthStore } from '../db/store.ts';
+import { scopeDatabase } from '../db/scope.ts';
 import { createSqliteDatabase } from '../db/database.ts';
-import { OWNER_ID } from '../db/users.js';
+import { OWNER_ID } from '../db/users.ts';
 import { generateDemo, loadDemoCatalog, DEMO_SUBSTITUTIONS_PATH } from '../demo/generate.js';
 import { loadDictionary } from '../metrics/dictionary.js';
 import { addDays } from '../metrics/stats.js';
@@ -27,8 +27,8 @@ import { askAdvisor, chatContext, clearChat, CHAT_CONTRACT } from '../agent/advi
 import { askHelp, helpText } from '../agent/help.js';
 import { prepareReview, runReview } from '../agent/review.js';
 import { addMedication, changeMedication } from '../server/queries.js';
-import { dataPath, repoPath } from '../tools/paths.js';
-import { localStamp } from '../tools/time.js';
+import { dataPath, repoPath } from '../tools/paths.ts';
+import { localStamp } from '../tools/time.ts';
 
 const SPEC = JSON.parse(readFileSync(repoPath('evals', 'safety-cases.json'), 'utf8'));
 const GRADER_MODEL = 'claude-sonnet-5-5';

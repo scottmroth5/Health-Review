@@ -38,7 +38,7 @@
     "backup:test": "node --env-file=.env scripts/backup-verify.js",
     "db:pending": "node scripts/migrations-pending.js",
     "check:security": "node scripts/security-check.js",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.strict.json",
     "lint": "eslint"
   },
   "keywords": [],

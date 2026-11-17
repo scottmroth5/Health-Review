@@ -6,7 +6,7 @@ agent-core comes from the public Agent-Core repo as a git dependency pinned to a
 ("@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.4.1"). Upgrade with npm install "github:scottmroth5/Agent-Core#semver:^<x.y.z>" (a caret on 0.x never crosses a minor version, so npm update will not); test unreleased changes with npm link ../Agent-Core.
 Only two entry points are imported (v3 Phase 1D): @scottmroth5/agent-core/claude (createClaude and its errors, which never
 loads agent-core's SQLite store) and @scottmroth5/agent-core/pricing (costFromUsage); the tracer and the migration runner
-are this repo's (db/runs.js, db/migrate.js).
+are this repo's (db/runs.ts, db/migrate.ts).
 Health specific logic stays in this repo; never add it to agent-core.
 
 
@@ -28,15 +28,15 @@ Health specific logic stays in this repo; never add it to agent-core.
 /config             exercise-dictionary.json: canonical exercises and name variants (names only; see README.md);
                     substitutions.json: home equipment, what fills a cable or machine slot, and the avoid list;
                     supplement-limits.json: adult tolerable upper intake levels (NIH ODS) checked on supplement suggestions
-/db                 migrations.js (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides; the data folder
-                    is DATA_DIR when set, tools/paths.js dataPath, which the container mounts at /app/data).
-                    This repo owns its whole schema (v3 Phase 1D, 2026-11-11): migrate.js openSqliteStore (the migration
+/db                 migrations.ts (append only) and openHealthStore (data/health.db, HEALTH_DB_PATH overrides; the data folder
+                    is DATA_DIR when set, tools/paths.ts dataPath, which the container mounts at /app/data).
+                    This repo owns its whole schema (v3 Phase 1D, 2026-11-11): migrate.ts openSqliteStore (the migration
                     runner taken over from agent-core's openStore; runs and run_calls keep their old name, agent-core:001-runs)
-                    and runs.js startUserRun, the async run tracer (agent-core 0.4.0's columns, totals and log line; the run
+                    and runs.ts startUserRun, the async run tracer (agent-core 0.4.0's columns, totals and log line; the run
                     row carries user_id from its insert; never start or finish a run inside a db.tx).
-                    Users (multi-user, phase 1 of 6, plan 2026-10-24): users.js (OWNER_ID, the owner as user 1 and admin;
-                    re-exports startUserRun), migrations-users.js (024 users; 025 rebuilt every user table with
-                    user_id NOT NULL, no default, and per-user keys; USER_TABLES), scope.js (scopeDb/scopeStore: one user's
+                    Users (multi-user, phase 1 of 6, plan 2026-10-24): users.ts (OWNER_ID, the owner as user 1 and admin;
+                    re-exports startUserRun), migrations-users.ts (024 users; 025 rebuilt every user table with
+                    user_id NOT NULL, no default, and per-user keys; USER_TABLES), scope.ts (scopeDb/scopeStore: one user's
                     view, binding @uid into every statement that names it), openOwnerStore (the scripts act as the owner).
                     openHealthStore copies an existing database file before opening it (VACUUM INTO, integrity checked) and
                     keeps the copy as data/backups/pre-migration-<stamp>.db only when a migration ran (newest 5 kept, none
@@ -45,7 +45,7 @@ Health specific logic stays in this repo; never add it to agent-core.
                     pendingMigrations runs the migrations on a throwaway temp copy (npm run db:pending: exit 0 none, 10 some)
                     Async interface (v3 Phase 1, docs/adr/0006): database.ts (the first TypeScript; prepare gives get, all,
                     run ({ changes } only; inserts use RETURNING id, never lastInsertRowid) and pluck, as promises; tx(async fn),
-                    one at a time behind a lock, nested as a savepoint), scope.js scopeDatabase (the same @uid binding).
+                    one at a time behind a lock, nested as a savepoint), scope.ts scopeDatabase (the same @uid binding).
                     The store is { db, tx, syncDb, raw } (Phase 1B done 2026-11-10): db and tx are the async interface and
                     every caller awaits each statement; syncDb is the guarded sync handle (a statement throws
                     TransactionConflictError while another request holds an async transaction), used only by the backup
@@ -58,7 +58,7 @@ Health specific logic stays in this repo; never add it to agent-core.
                     and resume, registration (test/server-concurrency.test.js). Tests (slice 4: the whole suite runs on
                     either engine, TEST_DB=postgres for PostgreSQL): test/helpers.js openTestStore (unscoped, like
                     openHealthStore(':memory:')), ownerStore, memoryStore (owner or a second user) and demoStore (the
-                    demo's made-up data, copied row for row into PostgreSQL by db/transfer.js copyAll), all async; a test
+                    demo's made-up data, copied row for row into PostgreSQL by db/transfer.ts copyAll), all async; a test
                     seeds through await store.db, never syncDb, and awaits close(). Tests of SQLite itself (its
                     migrations, the sync guard, backup, restore, demo refresh, the one-off session-times fix) open
                     openHealthStore(':memory:') or a file directly. test/cross-engine.test.js answers every GET route
@@ -72,7 +72,7 @@ Health specific logic stays in this repo; never add it to agent-core.
                     errors. One SQL text serves both engines. Tests needing a server use test/pg.js (a fresh C-collation
                     database each, skipped without DATABASE_URL). Schema (slice 2): pg/001-baseline.sql is the SQLite
                     schema through 033 (INTEGER bigint, a rowid key an identity, REAL double precision, NOCASE citext,
-                    SQLite's column order); pg/migrate.js openPostgresStore checks the database sorts and folds text as
+                    SQLite's column order); pg/migrate.ts openPostgresStore checks the database sorts and folds text as
                     SQLite does (C collation and ctype; refused otherwise), then applies PG_MIGRATIONS under an advisory
                     lock, each in its own transaction. Every new SQLite migration needs its PostgreSQL twin in
                     PG_MIGRATIONS under the same id: test/schema-parity.test.js compares the two schemas table by table
@@ -82,21 +82,21 @@ Health specific logic stays in this repo; never add it to agent-core.
                     GREATEST; every selected column grouped or aggregated; LOWER(x) LIKE for a case-blind match (SQLite's
                     LIKE ignores case, PostgreSQL's does not); a flag as CASE WHEN ... THEN 1 ELSE 0 END, never a bare
                     comparison or EXISTS (PostgreSQL returns true and false); a duplicate is ON CONFLICT or
-                    dialect.js isUniqueViolation (error codes, never message text); an ORDER BY that names enough
+                    dialect.ts isUniqueViolation (error codes, never message text); an ORDER BY that names enough
                     columns to break every tie (rows tied on the sort keys come back in no set order, which differs by
                     engine); a bound value selected back as a column wrapped in CAST (PostgreSQL types a bare parameter
                     as text); an insert's new id from RETURNING id with get(), never lastInsertRowid. What cannot be
-                    shared is in dialect.js (jsonText, listTables, tableColumns, primaryKey). test/sql-postgres.test.js
+                    shared is in dialect.ts (jsonText, listTables, tableColumns, primaryKey). test/sql-postgres.test.js
                     prepares every SQL statement written out in the code on PostgreSQL (no rows needed) and fails on one
                     that would not run or returns a boolean; statements built with ${} are covered by the full suite and
                     the cross-engine routes.
-                    openStore() (db/store.js) opens PostgreSQL when DATABASE_URL is set, else SQLite, then
+                    openStore() (db/store.ts) opens PostgreSQL when DATABASE_URL is set, else SQLite, then
                     syncOwnerEmail (async, on db). The server opens PostgreSQL only with DB_ENGINE=postgres and
                     DATABASE_URL both set (else openHealthStore and syncOwnerEmail itself), so a stray DATABASE_URL never
                     moves a SQLite server. The account export lists rows in primary key order
                     Running on RDS (v3 Phase 1G, docs/adr/0010): db/postgres.ts checkTls (production refuses a remote URL
                     without sslmode=verify-full and sslrootcert; the image has /app/certs/rds-global-bundle.pem);
-                    db/pg/roles.js (database health_review, C collation, owned by hr_migrate; hr_app rows only, no DDL,
+                    db/pg/roles.ts (database health_review, C collation, owned by hr_migrate; hr_app rows only, no DDL,
                     default privileges for later tables; hr_backup SELECT only; created by the owner's infra/db-setup.ps1
                     through scripts/db-setup.js); the app opens with migrate: false (openPostgresStore refuses pending
                     migrations, pendingPostgres); scripts/migrate.js applies them as hr_migrate (MIGRATE_DATABASE_URL). On
@@ -115,13 +115,13 @@ Health specific logic stays in this repo; never add it to agent-core.
                     pooled connections after rollbacks, every GET route byte for byte as hr_app, pg_dump as hr_backup).
                     An image older than 035 shows empty screens on PostgreSQL: never deploy.sh rollback past it
                     Moving the data (v3 Phase 1E, docs/adr/0008; the two whole-database runs, exportToSqlite and
-                    migrateToPostgres, are db/transfer-jobs.js, under the scripts and the backup container's rollback
-                    export and load): transfer.js on the async interface for both directions:
-                    tableOrder (parents first, dialect.js foreignKeyParents), checkSameSchema (tables, columns and order,
+                    migrateToPostgres, are db/transfer-jobs.ts, under the scripts and the backup container's rollback
+                    export and load): transfer.ts on the async interface for both directions:
+                    tableOrder (parents first, dialect.ts foreignKeyParents), checkSameSchema (tables, columns and order,
                     same migration), copyAll (only into a freshly migrated database, its owner row replaced; one
                     transaction; resetSequences), audit (SQLite typeof() per column: text, real or blob in INTEGER, past
                     2^53, NUL or blob in TEXT, NULL in required columns fail; numbers in TEXT warn), fingerprint (row
-                    counts and a SHA-256 per table and user, values normalized by dialect.js columnKinds, user ids hashed)
+                    counts and a SHA-256 per table and user, values normalized by dialect.ts columnKinds, user ids hashed)
                     and compare. Reports carry table and column names, counts and PASS or FAIL only, never a value, id,
                     email or connection string. test/transfer.test.js rehearses the demo data to PostgreSQL and back
 /server             Fastify API (app.js: setup, hooks, sign-in and the helpers routes share, handed to each route module as
@@ -212,8 +212,13 @@ node scripts/migrate-to-postgres.js --audit [--from <file>]   what PostgreSQL wo
                                   database) it copies a checked temp copy of the file there and verifies it: PASS or FAIL
 DATABASE_URL=... node scripts/export-to-sqlite.js --out <new file>   PostgreSQL back to a new SQLite file (the rollback
                                   path), verified; never over an existing file, and deleted if verification fails
-npm run typecheck                 tsc, checking only (tsconfig.json: db/ for now, a folder at a time; TypeScript 6.0.x, as
-                                  typescript-eslint supports below 6.1; .ts runs through Node's type stripping, docs/adr/0005)
+npm run typecheck                 tsc, checking only: tsconfig.json (db/ JavaScript, not strict) and tsconfig.strict.json
+                                  (strict: true over the converted TypeScript, db/**/*.ts and tools/*.ts so far; each
+                                  conversion step adds its folder; v3 Phase 2). TypeScript 6.0.x, as typescript-eslint
+                                  supports below 6.1; .ts runs through Node's type stripping, docs/adr/0005. Converted files
+                                  are imported by their .ts name; db/store.js, scope.js, users.js and tools/paths.js are
+                                  one-line re-exports kept only for the review eval's harness-gated files (removed with the
+                                  agent/ step and its re-approval; eslint.config.js leaves them out)
 npm run lint                      eslint, promise rules only (no-floating-promises, no-misused-promises) with type information
                                   (tsconfig.lint.json); a deliberate fire-and-forget is `void` with a reason; the browser code
                                   and the harness-gated review eval runner are left out (eslint.config.js says why)
@@ -307,7 +312,7 @@ Scripts that need secrets load .env through node --env-file. GOOGLE_CLIENT_ID, G
 GOOGLE_REFRESH_TOKEN in the environment override the files in data/google.
 
 ## Data
-Time zone: the user's zone (tools/time.js, Intl, no library) decides every "today", the review week, file write times
+Time zone: the user's zone (tools/time.ts, Intl, no library) decides every "today", the review week, file write times
 (localStamp), the January Workout Log tab rule and spend months, never the host's zone, so a server on UTC gives the same
 results. A user's zone is their settings row time_zone (PUT /api/account/time-zone, Settings), else OWNER_TZ (default
 America/New_York); the owner is always OWNER_TZ. Requests run in their user's zone (app.js preHandler withTimeZone), as do
@@ -554,7 +559,7 @@ Scheduling (server/scheduler.js, ported from Job-Agent; test/scheduler.test.js):
 ("daily 07:00"), SCHEDULE_REVIEW ("Sun,Mon,Tue 08:00 | Sun 13:00": several parts separated by "|", the earliest next
 run wins), SCHEDULE_BACKUP ("daily 23:00") and SCHEDULE_RESTORE_TEST
 ("monthly 1 05:00") run the same jobs as the npm scripts (jobs/sync.js syncJob, jobs/review.js weeklyReview with
-scheduled true, jobs/backup.js backupJob). Times are in OWNER_TZ (tools/time.js zonedInstant), never the host's zone. A
+scheduled true, jobs/backup.js backupJob). Times are in OWNER_TZ (tools/time.ts zonedInstant), never the host's zone. A
 missing or blank line turns that job off, so the PC (lines commented out) runs nothing and keeps its Windows tasks until
 the move; a bad spec stops the server rather than silently disabling a job. A run missed within 12 hours runs on start
 when the job has not run since; a job never overlaps itself (in this process, or a run of that name marked running in the
@@ -601,7 +606,7 @@ for GET /api/account/export and nothing else, never counted as a visit) and Dele
 after access ends); approved and paused get in (req.uid, req.role). AUTH_ALLOWED_EMAILS's first address is the owner
 (user 1, admin; syncOwnerEmail). /auth/login is a sign-in page (the three policy links, Continue with Google to
 /auth/login?go=1, which does the Google redirect). Health data consent (PostHog guide section 7, 2026-11-03; migration
-031 users.health_consent_at and health_consent_version, HEALTH_CONSENT_VERSION in db/users.js; text in auth.js
+031 users.health_consent_at and health_consent_version, HEALTH_CONSENT_VERSION in db/users.ts; text in auth.js
 healthConsentHtml, word for word from the owner's brief): an approved or paused user other than the owner with none is
 sent to /auth/consent (Agree, or Delete my account with the typed email; the API answers 403 consentRequired except GET
 /api/account/export); until then their ingest token is refused, aiAccess gives reason consent, and activeUserIds skips
@@ -631,7 +636,7 @@ sensitive sections are included in the weekly review (WEEKLY_INCLUDES_SENSITIVE 
 buildInstructions leaves them out unless a caller opts in.
 The Activity tab opens with Status (each feed's latest data from GET /api/home, each scheduled job's last result and next
 run, the data issue count), then Claude API spend, then a collapsed "Run history and technical details": the runs (GET
-/api/runs, /api/runs/:id: db/runs.js's runs and run_calls, metadata only), each job's earlier runs (sync, review, backup,
+/api/runs, /api/runs/:id: db/runs.ts's runs and run_calls, metadata only), each job's earlier runs (sync, review, backup,
 restore-test) and the last Health Auto Export posts (GET /api/jobs, queries.js jobsActivity: runs and ingest_log only). It reads no log files (the Windows tasks still write
 data/logs until the move, but nothing serves them). The server logs one line per event to stdout through buildApp's log
 (console by default): [sync] ok with counts, [review] ok or failed with the week, [ingest] route ok or error; counts and
@@ -725,9 +730,9 @@ forcing a fresh download per build) it fails open and the admin is emailed. Week
 patch-level updates auto-merge once CI passes, dependabot-automerge.yml), the scheduled rebuild in deploy.yml
 (Mondays 13:00 UTC: checks, newest base image and country database, Trivy, deploy, tag sha-<7>-<date>), and the OWASP ZAP
 baseline scan of the demo (zap.yml, vars.DEMO_URL). Third-party actions are pinned to commit SHAs. Email subjects drop
-control characters (tools/mail.js). Every route has a per-address ceiling (@fastify/rate-limit, 600 a minute; 6000 locally;
+control characters (tools/mail.ts). Every route has a per-address ceiling (@fastify/rate-limit, 600 a minute; 6000 locally;
 /api/health exempt) under the tighter sign-in, refused-request, ingest and demo limits. The first CodeQL run (18 high)
-led to: that ceiling, cookie and spreadsheet attribute names kept off object prototypes (parseCookies, tools/xlsx.js
+led to: that ceiling, cookie and spreadsheet attribute names kept off object prototypes (parseCookies, tools/xlsx.ts
 attrs as a Map), the Excel reader's XML read by linear scans instead of backtracking regexes (no ReDoS), and
 check-then-read file code replaced by single-step opens; two reviewed exceptions are listed in codeql-accepted.txt.
 TRUST_PROXY is loopback,linklocal,uniquelocal (deploy/compose.yml), never a hop count: with TRUST_PROXY=1 Fastify reported
@@ -757,7 +762,7 @@ docs/guides/prompts.md (guidance and examples per section).
 Excel Workout Log (2026-10-25): GET /api/workout-log/template.xlsx (ingest/excel-upload.js workoutTemplate: the year tab with
 WORKOUT_LOG_HEADER, bold and frozen, Date as m/d/yyyy, and How to use) and POST /api/workout-log/upload: the raw body with
 the .xlsx content type only (its own parser, 5 MB; anything else 415), an X-File-Name ending .xlsx, never the demo, the
-owner, a paused user or one with a Google Sheet Workout Log set, 10 an hour per user. tools/xlsx.js (no dependency; Node
+owner, a paused user or one with a Google Sheet Workout Log set, 10 an hour per user. tools/xlsx.ts (no dependency; Node
 zlib) reads it strictly: the central directory, no encryption or zip64, safe part names, at most 200 parts, inflation
 capped (10 MB a part, 40 MB in all, ratio 200), a spreadsheetml workbook only (no .xls, macros, external links or
 embedded objects), no DOCTYPE or ENTITY, at most 50 tabs, 20,000 rows and 60 columns, cells cut at 2,000 characters,
@@ -794,22 +799,22 @@ guides are public pages /guides and /guides/<name> (docs/guides/*.md through ser
 render time, so the repo never names the live address).
 Users, phase 2 (2026-10-24): admin routes /api/admin/users (+ /:id/approve, /:id/reject; server/admin-queries.js; role
 admin only, never in the demo) approve with the default prompt sections (agent/default-prompts.js) and an email
-(tools/mail.js: Gmail SMTP with SMTP_USER and SMTP_APP_PASSWORD; names, addresses and links only; without them nothing is
+(tools/mail.ts: Gmail SMTP with SMTP_USER and SMTP_APP_PASSWORD; names, addresses and links only; without them nothing is
 sent). A user's Claude key (PUT/DELETE /api/account/claude-key) is checked with Anthropic's free model list, sealed with
-AES-256-GCM under USER_KEY_SECRET bound to the user id (tools/secret-box.js), decrypted only in memory for that user's
+AES-256-GCM under USER_KEY_SECRET bound to the user id (tools/secret-box.ts), decrypted only in memory for that user's
 own call (server/index.js claudeFor), and never returned, logged or shown to the admin (only "set"). No key, no AI: chat
 and review answer needsKey, and the scheduled review records a skipped run (reason no_key). The owner's key is
 ANTHROPIC_API_KEY. The owner's MAPS catalog file is the owner's and maps_shared users' only (phase 5 adds each user's own).
 Users (owner's choice, 2026-10-24: one shared database, user_id on every user table, ahead of the RDS move): every query
 on a user table is scoped to one user, writing "user_id = @uid" (inserts include user_id with @uid) and run on a scoped
-database (db/scope.js); joins and subqueries scope each user table too. Only server/admin-queries.js reads across users
+database (db/scope.ts); joins and subqueries scope each user table too. Only server/admin-queries.js reads across users
 (system checks, the admin's screens). Requests run as their signed-in user (server/app.js preHandler, AsyncLocalStorage;
 none and demo modes are the owner), scheduled sync and review loop over approved users, and backup and the restore test
 cover the whole database as the owner. Guards: test/user-scope.test.js (static: user_id at least once per user table in
 each statement, named as @uid outside server/admin-queries.js and the migrations) and test/user-isolation.test.js (every
 route from app.routeList as a second user shows and changes none of the first user's data); a new query or route must
 keep both passing. On PostgreSQL row-level security backs them (v3 Phase 1I, docs/adr/0011; test/rls.test.js): a new
-user table needs the user_rows policy in its own PostgreSQL migration (db/pg/migrate.js userRowsPolicy).
+user table needs the user_rows policy in its own PostgreSQL migration (db/pg/migrate.ts userRowsPolicy).
 The owner's machine is the owner's own computer plus the servers the owner runs in their own AWS account (owner's choice,
 2026-10-23): since 2026-11-17 (1H) one EC2 server at SITE_ADDRESS (deploy/) with its database in RDS PostgreSQL, both
 encrypted with the owner's KMS key, reached only over TLS (Caddy, Let's Encrypt) and only after Google sign-in as an
@@ -888,7 +893,7 @@ Help still sends no user data. Prescription medications are never recommended, d
 Blood oxygen and breathing disturbances (values and targets) appear in the review only in physicianDiscussion.
 Never output em dashes, en dashes, or double hyphens in generated text.
 Back up before every database change (owner's rule, 2026-10-24): a migration never runs on a database without a checked
-copy taken first (SQLite: the VACUUM INTO copy, db/store.js; PostgreSQL: a pg_dump restored into a scratch cluster and
+copy taken first (SQLite: the VACUUM INTO copy, db/store.ts; PostgreSQL: a pg_dump restored into a scratch cluster and
 migrated there first, kept in data/backups for the failed-deploy restore, tools/backup/pg-deploy.js), and a deploy whose
 image would migrate makes the encrypted Drive backup first and stops if it fails (deploy/deploy.sh).
 Never commit anything under /data, or any .csv or .xml file. Never log or print API keys.

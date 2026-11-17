@@ -3,11 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings, CALLBACK_PATH } from '../server/auth.js';
-import { boxKey, open } from '../tools/secret-box.js';
-import { HEALTH_CONSENT_VERSION, userByEmail } from '../db/users.js';
+import { boxKey, open } from '../tools/secret-box.ts';
+import { HEALTH_CONSENT_VERSION, userByEmail } from '../db/users.ts';
 import { openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';

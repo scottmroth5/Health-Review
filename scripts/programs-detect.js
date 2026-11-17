@@ -1,7 +1,7 @@
 // Proposes program blocks from the Workout Log history. Prints programs, dates and session counts only.
 //   npm run programs:detect              show the proposal
 //   npm run programs:detect -- --write   save it (replaces earlier detected blocks; confirmed ones are kept)
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { detect, writeDetected, sessionCoverage, refreshPhases } from '../ingest/program-blocks.js';
 import { userCatalog } from '../metrics/load.js';
 import { weekOf } from '../metrics/blocks.js';

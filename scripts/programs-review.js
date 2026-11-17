@@ -7,7 +7,7 @@
 //   npm run programs:review -- merge <id> <id>        the second block joins the first
 //   npm run programs:review -- split <id> <date>      sessions from <date> on become a new block
 //   npm run programs:review -- unassign <date> [<to date>]
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import {
   ReviewError, blockStatus, confirmBlocks, editBlock, listBlocks, mergeBlocks, refreshPhases, sessionCoverage, splitBlock, unassignDays,
 } from '../ingest/program-blocks.js';

@@ -4,11 +4,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { openHealthStore } from '../db/store.js';
-import { scopeDatabase } from '../db/scope.js';
+import { openHealthStore } from '../db/store.ts';
+import { scopeDatabase } from '../db/scope.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
-import { OWNER_ID } from '../db/users.js';
+import { OWNER_ID } from '../db/users.ts';
 import { programOf, userMatchers, PROGRAMS } from '../metrics/programs.js';
 import { createCatalog, mergeCatalogs, programProblems } from '../metrics/catalog.js';
 import { draftToProgram, DRAFT_SCHEMA } from '../agent/extract-program.js';

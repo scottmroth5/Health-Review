@@ -2,7 +2,7 @@
 // with tools/xlsx.js (strict limits; never stored or logged), each tab named with a year goes through the same parser as
 // the Google Sheet (parseWorkoutLogTab), and replaces that year's rows, as a sheet sync does. Years not in the file and
 // workouts logged in the app (tab_year 0) are left alone. Takes a scoped async database (docs/adr/0006).
-import { readXlsx, writeXlsx } from '../tools/xlsx.js';
+import { readXlsx, writeXlsx } from '../tools/xlsx.ts';
 import { parseWorkoutLogTab } from './parsers.js';
 import { WORKOUT_LOG_HEADER, HOW_TO_USE } from './create-sheet.js';
 import { afterChange } from './app-workouts.js';

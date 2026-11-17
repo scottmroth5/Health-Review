@@ -2,9 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSqliteDatabase, guardSyncDatabase, TransactionConflictError } from '../db/database.ts';
-import { scopeDatabase } from '../db/scope.js';
-import { OWNER_ID } from '../db/users.js';
-import { openHealthStore } from '../db/store.js';
+import { scopeDatabase } from '../db/scope.ts';
+import { OWNER_ID } from '../db/users.ts';
+import { openHealthStore } from '../db/store.ts';
 import { memoryStore } from './helpers.js';
 
 const deferred = () => {

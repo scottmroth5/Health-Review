@@ -5,7 +5,7 @@
 // it is 'inferred' when exactly one implement word names its implement (canonical exercise still unknown),
 // otherwise 'unmapped'. Names listed under "ignore" are notes typed into the exercise column.
 import { readFileSync } from 'node:fs';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 import { baseKey } from './exercises.js';
 
 export const IMPLEMENTS = ['barbell', 'dumbbell', 'machine', 'cable', 'landmine', 'bodyweight', 'kettlebell', 'band', 'suspension', 'other'];

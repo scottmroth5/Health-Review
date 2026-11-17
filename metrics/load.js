@@ -15,8 +15,8 @@ import { liftProgress } from './plateau.js';
 import { advisorDue } from './advisor.js';
 import { suggestTarget, loadTargetConfig } from './targets.js';
 import { loadLabRanges } from './labs.js';
-import { repoPath } from '../tools/paths.js';
-import { localStamp } from '../tools/time.js';
+import { repoPath } from '../tools/paths.ts';
+import { localStamp } from '../tools/time.ts';
 
 export const SUBSTITUTIONS_PATH = repoPath('config', 'substitutions.json');
 /** config/substitutions.json: home equipment, swaps and the avoid list. */

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPostgresDatabase } from '../db/postgres.ts';
-import { scopeDatabase } from '../db/scope.js';
+import { scopeDatabase } from '../db/scope.ts';
 import { freshPgDatabase, pgSkip } from './pg.js';
 
 const deferred = () => {

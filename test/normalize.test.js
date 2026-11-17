@@ -1,7 +1,7 @@
 // Normalizing the Workout Log against the exercise dictionary. Synthetic names and values only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { createDictionary } from '../metrics/dictionary.js';
 import { normalizeAll, unmappedNames } from '../ingest/normalize.js';
 import { runSync } from '../ingest/sync.js';

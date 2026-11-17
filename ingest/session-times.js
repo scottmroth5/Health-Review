@@ -3,7 +3,7 @@
 // by the owner against Fitness, 2026-10-15). Rows written from the export files (updated_at equal to a workout file's
 // synced_at in drive_exports) are kept as they are. Every other row came from the sheet: a late twin of an export row is
 // deleted, and the rest move back 3 hours. Counts only; never workout details.
-import { startUserRun } from '../db/users.js';
+import { startUserRun } from '../db/users.ts';
 
 export const SHEET_LATE_HOURS = 3;
 const RUN_NAME = 'fix-session-times';

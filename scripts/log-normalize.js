@@ -1,7 +1,7 @@
 // Applies config/exercise-dictionary.json to the whole Workout Log history and prints coverage.
 // Prints counts only: no names, weights or dates.
 //   npm run log:normalize
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { loadDictionary } from '../metrics/dictionary.js';
 import { normalizeAll } from '../ingest/normalize.js';
 

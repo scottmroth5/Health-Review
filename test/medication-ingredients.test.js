@@ -1,7 +1,7 @@
 // Items with ingredients (a compounded pill, a blend) and combining items taken as one pill. Synthetic names only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { dayMedications } from '../server/queries.js';
 import { medicationNames } from '../metrics/load.js';

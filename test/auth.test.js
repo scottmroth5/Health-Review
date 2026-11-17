@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { assertSafeBinding, authSettings, CALLBACK_PATH, DEMO_REFUSAL, SESSION_DAYS } from '../server/auth.js';
 import { ownerStore } from './helpers.js';

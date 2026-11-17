@@ -42,3 +42,16 @@ Update, 2026-11-11: the image, CI and the PC moved to Node 26 (`node:26-bookworm
   - an enum is refused at load (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`).
 
   The Dockerfile now checks for stripping in the runtime stage, so a base image without it fails the build.
+
+## Update, 2026-11-17: strict, folder by folder
+- **Conversion order:** Phase 2 converts the code bottom layer first (ADR 0012). `db/` and `tools/` (top level) are now
+  TypeScript.
+- **Strict checking:** `tsconfig.strict.json` checks the converted files with `strict: true`, and `npm run typecheck`
+  runs it after `tsconfig.json`. Each later step adds its folder.
+- **Imports:** a converted file is imported by its `.ts` name.
+- **The review eval's harness gate:** its files still import `db/store.js`, `db/scope.js`, `db/users.js` and
+  `tools/paths.js`, and editing them needs the owner's re-approval. Those four paths are one-line re-exports of the
+  `.ts` files until the `agent/` step. TypeScript leaves a `.js` beside a `.ts` of the same name out of its project, so
+  ESLint skips them.
+- **What strict mode turned up:** four tests had statements they never awaited (`api`, `metrics`, `dialect` and
+  `parsers`), which the new types exposed to the promise lint. They are awaited now.

@@ -7,15 +7,15 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export const DEFAULT_TZ = 'America/New_York';
 
 // The zone of the user a request or job is running for (multi-user); none outside withTimeZone.
-const zone = new AsyncLocalStorage();
+const zone = new AsyncLocalStorage<string>();
 
 /** Runs fn with tz as every default zone below (a user's own time zone); a falsy tz runs it unchanged. */
-export function withTimeZone(tz, fn) {
+export function withTimeZone<T>(tz: string | null | undefined, fn: () => T): T {
   return tz ? zone.run(tz, fn) : fn();
 }
 
 /** Whether a name is an IANA time zone this platform knows. */
-export function isTimeZone(tz) {
+export function isTimeZone(tz: unknown): tz is string {
   if (typeof tz !== 'string' || !tz) return false;
   try { formatter(tz); return true; } catch { return false; }
 }
@@ -24,24 +24,35 @@ export function isTimeZone(tz) {
  * The current IANA time zone: the user's within withTimeZone, else OWNER_TZ. Checked once per value; an unknown OWNER_TZ
  * throws rather than falling back.
  */
-export function ownerTz(env = process.env) {
+export function ownerTz(env: NodeJS.ProcessEnv = process.env): string {
   const tz = zone.getStore() || env.OWNER_TZ || DEFAULT_TZ;
   formatter(tz);
   return tz;
 }
 
-const formatters = new Map();
-function formatter(tz) {
+const formatters = new Map<string, Intl.DateTimeFormat>();
+function formatter(tz: string): Intl.DateTimeFormat {
   if (!formatters.has(tz)) {
     formatters.set(tz, new Intl.DateTimeFormat('en-US', {
       timeZone: tz, hourCycle: 'h23', weekday: 'short',
       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
     }));
   }
-  return formatters.get(tz);
+  return formatters.get(tz)!;
 }
 
-const WEEKDAYS = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+const WEEKDAYS: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+/** Wall-clock parts: month 1 to 12, weekday 0 (Sunday) to 6. */
+export interface ZonedParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  weekday: number;
+}
 
 /**
  * The wall-clock parts of an instant in a time zone.
@@ -49,7 +60,7 @@ const WEEKDAYS = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
  * @returns {{ year: number, month: number, day: number, hour: number, minute: number, second: number, weekday: number }}
  *   month 1 to 12; weekday 0 (Sunday) to 6
  */
-export function zonedParts(instant = new Date(), tz = ownerTz()) {
+export function zonedParts(instant: Date | string | number = new Date(), tz: string = ownerTz()): ZonedParts {
   const d = instant instanceof Date ? instant : new Date(instant);
   const p = Object.fromEntries(formatter(tz).formatToParts(d).map((x) => [x.type, x.value]));
   return {
@@ -58,16 +69,16 @@ export function zonedParts(instant = new Date(), tz = ownerTz()) {
   };
 }
 
-const pad = (n) => String(n).padStart(2, '0');
+const pad = (n: number): string => String(n).padStart(2, '0');
 
 /** The owner's calendar date of an instant, YYYY-MM-DD. */
-export function localDate(instant = new Date(), tz = ownerTz()) {
+export function localDate(instant: Date | string | number = new Date(), tz: string = ownerTz()): string {
   const p = zonedParts(instant, tz);
   return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
 }
 
 /** The owner's wall-clock minute of an instant (such as Drive's modifiedTime), YYYY-MM-DDTHH:MM. */
-export function localStamp(instant, tz = ownerTz()) {
+export function localStamp(instant: Date | string | number, tz: string = ownerTz()): string {
   const p = zonedParts(instant, tz);
   return `${p.year}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}`;
 }
@@ -77,7 +88,7 @@ export function localStamp(instant, tz = ownerTz()) {
  * missing time (2:30 that day) gives the instant an hour later; in the repeated fall-back hour it gives the first.
  * @param {string} date  YYYY-MM-DD in the owner's zone
  */
-export function zonedInstant(date, hour, minute, tz = ownerTz()) {
+export function zonedInstant(date: string, hour: number, minute: number, tz: string = ownerTz()): Date {
   const [y, m, d] = date.split('-').map(Number);
   const wanted = Date.UTC(y, m - 1, d, hour, minute);
   // Start from the wall clock read as UTC, then correct by the zone's offset at that instant (twice, for DST edges).

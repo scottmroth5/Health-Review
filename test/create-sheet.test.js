@@ -3,11 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings, SHEETS_CALLBACK_PATH, SHEETS_SCOPE, DRIVE_FILE_SCOPE } from '../server/auth.js';
-import { boxKey } from '../tools/secret-box.js';
-import { OWNER_ID } from '../db/users.js';
+import { boxKey } from '../tools/secret-box.ts';
+import { OWNER_ID } from '../db/users.ts';
 import { createWorkoutSheet, workoutSheetBody, WORKOUT_LOG_HEADER, WORKOUT_LOG_TITLE } from '../ingest/create-sheet.js';
 import { parseWorkoutLogTab } from '../ingest/parsers.js';
 import { openTestStore } from './helpers.js';
@@ -133,7 +133,7 @@ test('each new year: a created sheet gets its year tab with the column row; a pr
 
 test('sync: the year tab is checked first for a created sheet only; a failure is a warning, the sync goes on', async () => {
   const { syncJob } = await import('../jobs/sync.js');
-  const { scopeStore } = await import('../db/scope.js');
+  const { scopeStore } = await import('../db/scope.ts');
   const store = await openTestStore();
   await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();
   await store.db.prepare("UPDATE users SET health_consent_at = 'x' WHERE health_consent_at IS NULL").run(); // consent given (the step has its own tests)

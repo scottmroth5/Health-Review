@@ -10,6 +10,9 @@ export default tseslint.config(
       // Under the eval harness sha gate (CLAUDE.md, Eval): any edit needs the owner's re-approval, so it is linted when
       // Phase 1B changes it anyway.
       'evals/run-review-eval.mjs',
+      // One-line re-exports kept for those gated files (v3 Phase 2 step 4): TypeScript leaves a .js beside a .ts of the
+      // same name out of the project, so they cannot be linted with type information. Removed with the agent/ step.
+      'db/store.js', 'db/scope.js', 'db/users.js', 'tools/paths.js',
       // Browser code: UI loaders started from clicks and timers, outside the async database move. Linted when the
       // browser code gets its own pass (docs/adr/0005).
       'server/public/**',

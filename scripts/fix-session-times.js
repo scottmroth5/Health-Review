@@ -3,7 +3,7 @@
 // Prints counts only.
 //   npm run fix:session-times             dry run: what would change
 //   npm run fix:session-times -- --apply  do it (once; back up data/health.db first)
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { fixSessionTimes } from '../ingest/session-times.js';
 
 const apply = process.argv.includes('--apply');

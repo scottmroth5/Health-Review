@@ -10,7 +10,7 @@ import { changeBlockDates, confirmBlocks, currentProgram, endBlock, listBlocks, 
 import { ProgramError, SOURCES, deleteProgram, exportPrograms, importPrograms, saveProgram } from '../../ingest/user-programs.js';
 import { MAX_PDF_BYTES, extractProgram, isPdf } from '../../agent/extract-program.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../../agent/advisor-chat.js';
-import { OWNER_ID } from '../../db/users.js';
+import { OWNER_ID } from '../../db/users.ts';
 import { anyObject, badRequest } from './schemas.js';
 
 /** @param {import('fastify').FastifyInstance} app @param {object} ctx  shared state and helpers from buildApp */

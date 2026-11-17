@@ -3,9 +3,9 @@
 // two requests at once never interleave. Made-up rows only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
-import { scopeDatabase } from '../db/scope.js';
-import { USER_TABLES } from '../db/migrations-users.js';
+import { openHealthStore } from '../db/store.ts';
+import { scopeDatabase } from '../db/scope.ts';
+import { USER_TABLES } from '../db/migrations-users.ts';
 import { deleteUserData } from '../server/admin-queries.js';
 import { createAiAccess } from '../server/ai-access.js';
 import { createAlerts } from '../server/alerts.js';

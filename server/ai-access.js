@@ -4,9 +4,9 @@
 // the owner's key reaches the cap, their AI stops and the admin and the user each get one email that month (recorded in
 // the user's settings row owner_key_cap_notified, YYYY-MM). Spend is every AI run of theirs that month (runs.cost_usd),
 // so a run that starts under the cap may finish a little over it.
-import { OWNER_ID, getUser } from '../db/users.js';
-import { scopeDatabase, scopeDb } from '../db/scope.js';
-import { localDate, zonedInstant } from '../tools/time.js';
+import { OWNER_ID, getUser } from '../db/users.ts';
+import { scopeDatabase, scopeDb } from '../db/scope.ts';
+import { localDate, zonedInstant } from '../tools/time.ts';
 import { supportEmailFrom } from './pages.js';
 
 // Either handle, scoped to one user: the async one (db/database.ts, which has tx) or the sync one.

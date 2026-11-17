@@ -9,7 +9,7 @@ import Ajv from 'ajv';
 import { CHANGELOG_PATH, SNAPSHOT_PATH, currentDocument, snapshotHash, snapshotText } from '../scripts/api-snapshot.js';
 import { apiV1Alias, buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
-import { openHealthStore } from '../db/store.js';
+import { openHealthStore } from '../db/store.ts';
 import { refreshDemoDatabase } from '../demo/generate.js';
 import { answers, TODAY } from './route-answers.js';
 

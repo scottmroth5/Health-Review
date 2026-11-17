@@ -3,9 +3,9 @@
 // (server/app.js).
 import { addDays } from '../../metrics/stats.js';
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_TZ, localDate as zonedDate } from '../../tools/time.js';
-import { scopeDatabase } from '../../db/scope.js';
-import { OWNER_ID, getUser } from '../../db/users.js';
+import { DEFAULT_TZ, localDate as zonedDate } from '../../tools/time.ts';
+import { scopeDatabase } from '../../db/scope.ts';
+import { OWNER_ID, getUser } from '../../db/users.ts';
 import { deleteUserData, listFeedback, listUsers, newFeedbackCount, setFeedbackStatus, setMapsShared, setOwnerKey, setUserStatus, usageByWeek, usageTotals } from '../admin-queries.js';
 import { OWNER_KEY_CAP, clearCapNotice } from '../ai-access.js';
 import { addDefaultPromptSections } from '../../agent/default-prompts.js';

@@ -3,7 +3,7 @@
 // data fails here, before the real file is touched. Only reads the real database.
 //   npm run db:pending        exit 0: none pending; 10: some pending (listed); 1: a migration failed on the copy
 import { tmpdir } from 'node:os';
-import { DEFAULT_DB_PATH, pendingMigrations } from '../db/store.js';
+import { DEFAULT_DB_PATH, pendingMigrations } from '../db/store.ts';
 
 const path = process.env.HEALTH_DB_PATH || DEFAULT_DB_PATH;
 try {

@@ -3,9 +3,9 @@
 // per kind of problem per day (the day is kept in the owner's settings row alert:<key>, so a restart never resends), and
 // none again until it has recovered and failed afresh. Emails carry names, dates and error names only, never health
 // values, like the server's log lines.
-import { OWNER_ID } from '../db/users.js';
-import { scopeDatabase } from '../db/scope.js';
-import { localDate } from '../tools/time.js';
+import { OWNER_ID } from '../db/users.ts';
+import { scopeDatabase } from '../db/scope.ts';
+import { localDate } from '../tools/time.ts';
 
 /** The data checks (metrics/dataquality.js) worth an email after the owner's scheduled sync. */
 export const ALERT_CHECKS = ['health_stale', 'export_stale', 'workout_export_stale'];

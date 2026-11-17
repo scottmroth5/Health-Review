@@ -15,7 +15,7 @@ import { DEFAULT_REVIEW_MODEL } from './claude.js';
 import { EMERGENCY_LINE } from './emergency.js';
 import { renderSuggestions, supplementAdviceSince, supplementContext, SUPPLEMENT_RULES, withSuggestions } from './supplements.js';
 import { loadProfile } from '../metrics/load.js';
-import { startUserRun } from '../db/users.js';
+import { startUserRun } from '../db/users.ts';
 
 export const CHAT_EFFORT = 'medium';
 export const THREAD_TURNS = 10;

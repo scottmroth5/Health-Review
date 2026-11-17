@@ -1,7 +1,8 @@
 // App migrations for openStore(..., { app: 'health-review' }). Append only; never edit an applied one.
 // Dates are local wall-clock text as the source sheets show them: 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM:SS'.
-import { USER_MIGRATIONS } from './migrations-users.js';
-export const MIGRATIONS = [
+import { USER_MIGRATIONS } from './migrations-users.ts';
+import type { SqliteMigration } from './migrate.ts';
+export const MIGRATIONS: SqliteMigration[] = [
   {
     id: '001-health-data',
     up: `

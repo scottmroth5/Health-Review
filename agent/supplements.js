@@ -3,7 +3,7 @@
 // changing or stopping a supplement, with reasons and precautions, under SUPPLEMENT_DISCLAIMER, which code adds word
 // for word. Prescription medications are never recommended, and amounts are checked against config/supplement-limits.json.
 import { readFileSync } from 'node:fs';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 import { EMERGENCY_LINE } from './emergency.js';
 import { loadMedications, medicationNames } from '../metrics/load.js';
 import { medicationsWeek } from '../metrics/medications.js';

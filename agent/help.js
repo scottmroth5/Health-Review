@@ -2,8 +2,8 @@
 // (docs/guides/*.md). Sends the guides and the question only, never any of the user's data, on the user's own AI. The
 // answer is returned, not stored; the run keeps metadata only (model, lengths, cost).
 import { readFileSync } from 'node:fs';
-import { repoPath } from '../tools/paths.js';
-import { startUserRun } from '../db/users.js';
+import { repoPath } from '../tools/paths.ts';
+import { startUserRun } from '../db/users.ts';
 import { stripDashes } from './validate.js';
 import { EMERGENCY_LINE } from './emergency.js';
 import { HELP_SUPPLEMENT_RULES, SUPPLEMENT_DISCLAIMER, limitEntry, supplementAdviceSince } from './supplements.js';

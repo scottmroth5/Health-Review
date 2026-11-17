@@ -4,12 +4,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { openHealthStore } from '../db/store.js';
-import { scopeStore } from '../db/scope.js';
+import { openHealthStore } from '../db/store.ts';
+import { scopeStore } from '../db/scope.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings, SHEETS_CALLBACK_PATH } from '../server/auth.js';
-import { boxKey, open } from '../tools/secret-box.js';
-import { OWNER_ID } from '../db/users.js';
+import { boxKey, open } from '../tools/secret-box.ts';
+import { OWNER_ID } from '../db/users.ts';
 import { syncJob } from '../jobs/sync.js';
 import { openTestStore } from './helpers.js';
 

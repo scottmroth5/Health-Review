@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectBlocks, phaseOf, weekOf } from '../metrics/blocks.js';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { detect, writeDetected, sessionCoverage, uuidV5, sessionId } from '../ingest/program-blocks.js';
 import { addDays } from '../metrics/stats.js';
 import { ownerStore } from './helpers.js';

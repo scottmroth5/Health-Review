@@ -1,7 +1,7 @@
 // Schema pieces and constants the route modules share (moved from server/app.js, v3 Phase 2 step 2, docs/adr/0012).
 import { readFileSync } from 'node:fs';
 import * as q from '../queries.js';
-import { repoPath } from '../../tools/paths.js';
+import { repoPath } from '../../tools/paths.ts';
 
 /** Health Auto Export's posts: the largest daily workout file is about 165 KB, so 5 MB holds weeks of them. */
 export const INGEST_BODY_LIMIT = 5 * 1024 * 1024;

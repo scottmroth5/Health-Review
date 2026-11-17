@@ -12,7 +12,15 @@
 // (v3 Phase 1G, docs/adr/0010). Tests and the transfer scripts still migrate on open.
 import { readFileSync } from 'node:fs';
 import { createPostgresDatabase, createPostgresPool } from '../postgres.ts';
-import { OWNER_ID, ownerEmailFromEnv } from '../users.js';
+import { OWNER_ID, ownerEmailFromEnv } from '../users.ts';
+import type pg from 'pg';
+import type { Store } from '../store.ts';
+
+/** One PostgreSQL migration: SQL text, or a function given the migration's client (inside its transaction). */
+export interface PgMigration {
+  id: string;
+  up: string | ((client: pg.PoolClient) => Promise<void>);
+}
 
 /** The app's migration namespace, the same as SQLite's (db/store.js). */
 export const APP = 'health-review';
@@ -28,7 +36,7 @@ const BASELINE_SQL = readFileSync(new URL('./001-baseline.sql', import.meta.url)
  * all-users mode. A missing setting reads as NULL and an empty one as '', so neither matches a row. With no WITH CHECK,
  * the same test applies to the rows an insert or update writes.
  */
-export const userRowsPolicy = (table) => `
+export const userRowsPolicy = (table: string): string => `
       ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
       CREATE POLICY user_rows ON ${table}
         USING (user_id = current_setting('app.user_id', true) OR current_setting('app.all_users', true) = 'on');`;
@@ -39,11 +47,11 @@ const RLS_TABLES_035 = ['daily_metrics', 'workout_sessions', 'workout_hr_samples
   'log_sessions', 'medications', 'medication_periods', 'medication_doses', 'lab_tests', 'lab_results', 'user_programs',
   'feedback', 'review_versions', 'runs'];
 
-export const PG_MIGRATIONS = [
+export const PG_MIGRATIONS: PgMigration[] = [
   {
     id: '000-baseline',
     // The schema, then the rows SQLite's migrations leave in a new database: the owner as user 1 and admin (024).
-    up: async (client) => {
+    up: async (client: pg.PoolClient) => {
       await client.query(BASELINE_SQL);
       const now = new Date().toISOString();
       await client.query("INSERT INTO users (id, email, role, status, created_at, approved_at) VALUES ($1, $2, 'admin', 'approved', $3, $3)",
@@ -92,7 +100,7 @@ const CREATE_DATABASE = "CREATE DATABASE <name> TEMPLATE template0 ENCODING 'UTF
  * folds ASCII case only (LOWER, NOCASE), which on PostgreSQL is the C collation and ctype. Checked by behavior, so any
  * locale provider that sorts or folds otherwise is refused.
  */
-export async function checkCollation(pool) {
+export async function checkCollation(pool: pg.Pool): Promise<void> {
   const { rows: [r] } = await pool.query(
     "SELECT ('a' < 'B') AS a_first, lower('É') = 'É' AS ascii_fold, " +
     'datcollate, datctype FROM pg_database WHERE datname = current_database()');
@@ -108,7 +116,7 @@ export async function checkCollation(pool) {
  * @param {Array<{ id: string, up: string | ((client: import('pg').PoolClient) => Promise<void>) }>} migrations
  * @returns {Promise<string[]>} the ids applied now
  */
-export async function migratePostgres(pool, migrations = PG_MIGRATIONS) {
+export async function migratePostgres(pool: pg.Pool, migrations: PgMigration[] = PG_MIGRATIONS): Promise<string[]> {
   const seen = new Set();
   for (const m of migrations) {
     if (!m?.id || !m.up) throw new TypeError('openPostgresStore: every migration needs an id and an up');
@@ -116,7 +124,7 @@ export async function migratePostgres(pool, migrations = PG_MIGRATIONS) {
     seen.add(m.id);
   }
   const client = await pool.connect();
-  const added = [];
+  const added: string[] = [];
   let failed = false;
   try {
     await client.query('SELECT pg_advisory_lock($1)', [MIGRATE_LOCK_KEY]);
@@ -124,7 +132,7 @@ export async function migratePostgres(pool, migrations = PG_MIGRATIONS) {
       await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
         app text NOT NULL, id text NOT NULL, applied_at text NOT NULL, PRIMARY KEY (app, id))`);
       const { rows } = await client.query('SELECT id FROM schema_migrations WHERE app = $1', [APP]);
-      const applied = new Set(rows.map((r) => r.id));
+      const applied = new Set(rows.map((r: { id: string }) => r.id));
       for (const m of migrations) {
         if (applied.has(m.id)) continue;
         await client.query('BEGIN');
@@ -136,7 +144,7 @@ export async function migratePostgres(pool, migrations = PG_MIGRATIONS) {
           await client.query('COMMIT');
         } catch (err) {
           await client.query('ROLLBACK');
-          throw new Error(`migration ${APP}:${m.id} failed and was rolled back: ${err.message}`, { cause: err });
+          throw new Error(`migration ${APP}:${m.id} failed and was rolled back: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
         }
         added.push(m.id);
       }
@@ -158,11 +166,11 @@ export async function migratePostgres(pool, migrations = PG_MIGRATIONS) {
  * @param {import('pg').Pool} pool
  * @returns {Promise<string[]>}
  */
-export async function pendingPostgres(pool, migrations = PG_MIGRATIONS) {
+export async function pendingPostgres(pool: pg.Pool, migrations: PgMigration[] = PG_MIGRATIONS): Promise<string[]> {
   const { rows: [t] } = await pool.query("SELECT to_regclass('schema_migrations') IS NOT NULL AS present");
   if (!t.present) return migrations.map((m) => m.id);
   const { rows } = await pool.query('SELECT id FROM schema_migrations WHERE app = $1', [APP]);
-  const applied = new Set(rows.map((r) => r.id));
+  const applied = new Set(rows.map((r: { id: string }) => r.id));
   return migrations.filter((m) => !applied.has(m.id)).map((m) => m.id);
 }
 
@@ -176,9 +184,9 @@ export async function pendingPostgres(pool, migrations = PG_MIGRATIONS) {
  *   pool: extra pool settings (the tests'); allUsers: every user's rows unscoped (row-level security, v3 Phase 1I),
  *   for the whole-database tools only (the backup service, the transfer scripts), never the app
  */
-export async function openPostgresStore(connectionString, { migrations = PG_MIGRATIONS, pool: poolOptions = {}, migrate = true, allUsers = false } = {}) {
+export async function openPostgresStore(connectionString: string, { migrations = PG_MIGRATIONS, pool: poolOptions = {}, migrate = true, allUsers = false }: { migrations?: PgMigration[], pool?: pg.PoolConfig, migrate?: boolean, allUsers?: boolean } = {}): Promise<Store> {
   const pool = createPostgresPool(connectionString, poolOptions);
-  let applied = [];
+  let applied: string[] = [];
   try {
     await checkCollation(pool);
     if (migrate) applied = await migratePostgres(pool, migrations);

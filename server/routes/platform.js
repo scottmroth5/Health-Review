@@ -2,7 +2,7 @@
 // docs/adr/0012). register(app, ctx) adds these routes; ctx is what buildApp shares with every route module
 // (server/app.js).
 import * as q from '../queries.js';
-import { OWNER_ID } from '../../db/users.js';
+import { OWNER_ID } from '../../db/users.ts';
 import { askHelp, MAX_QUESTION_CHARS } from '../../agent/help.js';
 import { anyObject, idParams, badRequest } from './schemas.js';
 

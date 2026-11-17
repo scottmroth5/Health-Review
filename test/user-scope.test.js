@@ -4,13 +4,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { repoPath } from '../tools/paths.js';
-import { USER_TABLES } from '../db/migrations-users.js';
+import { repoPath } from '../tools/paths.ts';
+import { USER_TABLES } from '../db/migrations-users.ts';
 import { FOLDERS, SOURCE, scannedFiles, stringLiterals } from './source-scan.js';
 
 // scripts/baseline.js reads run durations and row counts across users (counts and milliseconds only, like the admin's
 // usage queries).
-const EXEMPT = new Set(['db/migrations.js', 'db/migrations-users.js', 'db/pg/migrate.js', 'server/admin-queries.js', 'scripts/baseline.js']);
+const EXEMPT = new Set(['db/migrations.ts', 'db/migrations-users.ts', 'db/pg/migrate.ts', 'server/admin-queries.js', 'scripts/baseline.js']);
 
 // runs (agent-core's) carries a nullable user_id: each user's run history is theirs too.
 const tableRef = new RegExp(`\\b(FROM|INTO|UPDATE|JOIN)\\s+"?(${[...USER_TABLES, 'runs'].join('|')})\\b`, 'gi');
@@ -54,8 +54,8 @@ test('every query on a user table names its user as @uid (except admin queries a
 // All-users mode (row-level security, docs/adr/0011) reads every user's rows, so only these files may turn it on: the
 // admin queries (everyone()), the adapter that defines it, the store openers that pass it through, and the whole-database
 // tools. A new caller is a decision to review, not a quiet addition.
-const ALL_USERS_ALLOWED = new Set(['server/admin-queries.js', 'db/postgres.ts', 'db/database.ts', 'db/pg/migrate.js', 'db/store.js',
-  'db/transfer-jobs.js', 'scripts/backup-service.js', 'tools/backup/pg.js']);
+const ALL_USERS_ALLOWED = new Set(['server/admin-queries.js', 'db/postgres.ts', 'db/database.ts', 'db/pg/migrate.ts', 'db/store.ts',
+  'db/transfer-jobs.ts', 'scripts/backup-service.js', 'tools/backup/pg.js']);
 test('all-users mode is turned on only by the admin queries and the whole-database tools', () => {
   const found = scannedFiles().filter((rel) => /\ballUsers\b|app\.all_users/.test(readFileSync(repoPath(rel), 'utf8')));
   assert.deepEqual(found.filter((rel) => !ALL_USERS_ALLOWED.has(rel)), [], 'review a new all-users caller, then list it here');

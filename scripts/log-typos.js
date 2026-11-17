@@ -5,7 +5,7 @@
 //   npm run log:typos -- --distinct 2,7     record those as different exercises (never offered again)
 // The numbers come from the list printed with no arguments; run it again after a merge, since numbers shift.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { DICTIONARY_PATH, createDictionary } from '../metrics/dictionary.js';
 import { typoCandidates, applyTypoMerges, markDistinct } from '../metrics/name-typos.js';
 import { canonicalSetCounts, normalizeAll, unmappedNames } from '../ingest/normalize.js';

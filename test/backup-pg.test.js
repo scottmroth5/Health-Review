@@ -15,12 +15,12 @@ import { restoreBackup, runBackup } from '../tools/backup/run.js';
 import { decrypt, encrypt, pack, unpack } from '../tools/backup/crypto.js';
 import { restoreTest } from '../tools/backup/restore-check.js';
 import { loadFromBackup, newestDumpSince, preMigrate, resetDatabase, restorePreMigration, rollbackExport } from '../tools/backup/pg-deploy.js';
-import { migratePostgres, openPostgresStore, PG_MIGRATIONS } from '../db/pg/migrate.js';
+import { migratePostgres, openPostgresStore, PG_MIGRATIONS } from '../db/pg/migrate.ts';
 import Database from 'better-sqlite3';
-import { setupGrants, setupRoles } from '../db/pg/roles.js';
+import { setupGrants, setupRoles } from '../db/pg/roles.ts';
 import { createPostgresPool } from '../db/postgres.ts';
-import { openOwnerStore } from '../db/store.js';
-import { OWNER_ID } from '../db/users.js';
+import { openOwnerStore } from '../db/store.ts';
+import { OWNER_ID } from '../db/users.ts';
 
 const skip = pgSkip || pgToolsSkip;
 // Its own temp folder: test/backup.test.js counts hr-backup- folders in the shared one while this file runs in parallel.

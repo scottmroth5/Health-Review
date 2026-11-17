@@ -4,7 +4,7 @@
 import { getGoogleAuth } from '../tools/google/auth.js';
 import { createSheetsSource } from '../ingest/sheets.js';
 import { runSync } from '../ingest/sync.js';
-import { OWNER_ID } from '../db/users.js';
+import { OWNER_ID } from '../db/users.ts';
 
 const quiet = { info() {}, warn() {}, error() {} };
 

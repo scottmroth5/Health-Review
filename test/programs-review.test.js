@@ -1,7 +1,7 @@
 // Reviewing program blocks: confirm, edit, merge, split, unassign. Synthetic names and dates only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import {
   ReviewError, assignForward, blockStatus, changeBlockDates, confirmBlocks, detect, editBlock, endBlock, findBlock, listBlocks, mergeBlocks,
   sessionCoverage, splitBlock, startBlock, unassignDays, writeDetected,

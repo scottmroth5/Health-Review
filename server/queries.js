@@ -1,8 +1,8 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isUniqueViolation } from '../db/dialect.js';
-import { localDate as ownerDate } from '../tools/time.js';
+import { isUniqueViolation } from '../db/dialect.ts';
+import { localDate as ownerDate } from '../tools/time.ts';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact, doseText, ingredientsOf, weeklyCheckoffs } from '../metrics/medications.js';
 import { loadAdherenceInput, loadConfirmedBlocks, loadAdvisorInput, loadDataCheckInput, loadMedications, loadMetricSettings, loadPrimarySets, loadProfile, loadSessionPhases, loadStrengthSets, programMatchers } from '../metrics/load.js';

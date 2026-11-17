@@ -1,8 +1,8 @@
 // The v3 baseline (scripts/baseline.js) keeps counts and milliseconds only, never anything read from a row.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openHealthStore } from '../db/store.js';
-import { OWNER_ID } from '../db/users.js';
+import { openHealthStore } from '../db/store.ts';
+import { OWNER_ID } from '../db/users.ts';
 import { baseline } from '../scripts/baseline.js';
 
 test('baseline: sizes, run durations and query timings, with no row content', async () => {

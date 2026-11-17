@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { repoPath } from '../tools/paths.js';
+import { repoPath } from '../tools/paths.ts';
 import { computeWeek } from '../metrics/index.js';
 import { loadWeekData, loadMetricSettings } from '../metrics/load.js';
 import { round, mean, sd, pearson, lastWeekEnd, windows } from '../metrics/stats.js';
@@ -30,7 +30,7 @@ function expandDaily({ from, to, skip = [], override = {}, ...values }) {
   }
   return rows;
 }
-import { openOwnerStore } from '../db/store.js';
+import { openOwnerStore } from '../db/store.ts';
 import { saveSettings } from '../server/queries.js';
 import { ownerStore } from './helpers.js';
 
@@ -227,9 +227,9 @@ test('from the database: settings, joined strength sets, and planned sets left o
 
   const ex = db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise) VALUES (@uid, 2026, ?, ?, ?) RETURNING id");
   const set = db.prepare('INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, per_hand, reps, reps_text) VALUES (@uid, ?, 1, ?, ?, ?, ?)');
-  set.run((await ex.get(2, '2026-03-03', 'Squat')).id, 175, 0, 3, '3');
-  set.run((await ex.get(3, '2026-03-06', 'Deadlift')).id, 225, 0, null, null); // planned
-  set.run((await ex.get(4, '2026-03-09', 'Squat')).id, 185, 0, 5, '5'); // after the week
+  await set.run((await ex.get(2, '2026-03-03', 'Squat')).id, 175, 0, 3, '3');
+  await set.run((await ex.get(3, '2026-03-06', 'Deadlift')).id, 225, 0, null, null); // planned
+  await set.run((await ex.get(4, '2026-03-09', 'Squat')).id, 185, 0, 5, '5'); // after the week
   await db.prepare("INSERT INTO daily_metrics (user_id, date, hrv_ms, updated_at) VALUES (@uid, '2026-03-02', 50, 'x'), (@uid, '2026-03-08', 60, 'x')").run();
 
   const data = await loadWeekData(db, '2026-03-07');

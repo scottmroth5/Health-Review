@@ -9,7 +9,21 @@ import { dirname } from 'node:path';
 /** The namespace the runs tables were migrated under while agent-core owned them; kept for existing databases. */
 export const RUNS_NAMESPACE = 'agent-core';
 
-const RUNS_MIGRATIONS = [
+/** One SQLite migration: SQL text, or a function given the database; foreignKeys false runs it with enforcement off. */
+export interface SqliteMigration {
+  id: string;
+  up: string | ((db: Database.Database) => void);
+  foreignKeys?: boolean;
+}
+
+/** What openSqliteStore opens: the sync database, a sync transaction, and close. */
+export interface SqliteStore {
+  db: Database.Database;
+  tx: <T>(fn: () => T) => T;
+  close: () => void;
+}
+
+const RUNS_MIGRATIONS: SqliteMigration[] = [
   {
     id: '001-runs',
     up: `
@@ -68,7 +82,7 @@ const RUNS_MIGRATIONS = [
  * @param {Array<{id: string, up: string | ((db: import('better-sqlite3').Database) => void), foreignKeys?: boolean}>} [options.migrations]
  * @returns {{ db: import('better-sqlite3').Database, tx: <T>(fn: () => T) => T, close: () => void }}
  */
-export function openSqliteStore(path, { app, migrations = [] } = {}) {
+export function openSqliteStore(path: string, { app, migrations = [] }: { app?: string, migrations?: SqliteMigration[] } = {}): SqliteStore {
   if (migrations.length && !app) throw new TypeError('openSqliteStore: app is required when migrations are given');
   if (app === RUNS_NAMESPACE) throw new TypeError(`openSqliteStore: "${RUNS_NAMESPACE}" is a reserved migration namespace`);
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -85,7 +99,7 @@ export function openSqliteStore(path, { app, migrations = [] } = {}) {
 
   try {
     migrate(db, RUNS_NAMESPACE, RUNS_MIGRATIONS);
-    if (migrations.length) migrate(db, app, migrations);
+    if (migrations.length) migrate(db, app!, migrations); // app is checked above whenever migrations are given
   } catch (err) {
     db.close();
     throw err;
@@ -93,19 +107,19 @@ export function openSqliteStore(path, { app, migrations = [] } = {}) {
 
   return {
     db,
-    tx: (fn) => db.transaction(fn)(),
+    tx: <T>(fn: () => T): T => db.transaction(fn)(),
     close: () => db.close(),
   };
 }
 
-function migrate(db, app, migrations) {
+function migrate(db: Database.Database, app: string, migrations: SqliteMigration[]): void {
   const seen = new Set();
   for (const m of migrations) {
     if (!m?.id || !m.up) throw new TypeError(`openSqliteStore: every ${app} migration needs an id and an up`);
     if (seen.has(m.id)) throw new TypeError(`openSqliteStore: duplicate ${app} migration id "${m.id}"`);
     seen.add(m.id);
   }
-  const applied = new Set(db.prepare('SELECT id FROM schema_migrations WHERE app = ?').pluck().all(app));
+  const applied = new Set(db.prepare('SELECT id FROM schema_migrations WHERE app = ?').pluck().all(app) as string[]);
   const mark = db.prepare('INSERT INTO schema_migrations (app, id, applied_at) VALUES (?, ?, ?)');
   for (const m of migrations) {
     if (applied.has(m.id)) continue;
@@ -120,12 +134,12 @@ function migrate(db, app, migrations) {
 }
 
 // PRAGMA foreign_keys is ignored inside a transaction, so it is switched off before the migration's transaction starts.
-function withoutForeignKeys(db, name, apply) {
+function withoutForeignKeys(db: Database.Database, name: string, apply: () => void): void {
   db.pragma('foreign_keys = OFF');
   try {
     db.transaction(() => {
       apply();
-      const broken = db.pragma('foreign_key_check');
+      const broken = db.pragma('foreign_key_check') as Array<{ table: string }>;
       if (broken.length) {
         const tables = [...new Set(broken.map((b) => b.table))].join(', ');
         throw new Error(`migration ${name}: ${broken.length} row(s) in ${tables} would break a foreign key; rolled back`);

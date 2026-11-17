@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { readXlsx, writeXlsx, workbookParts, zipParts, XlsxError, LIMITS } from '../tools/xlsx.js';
+import { readXlsx, writeXlsx, workbookParts, zipParts, XlsxError, LIMITS } from '../tools/xlsx.ts';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/excel/${name}`, import.meta.url));
 const refused = (buf, pattern) => assert.throws(() => readXlsx(buf), (err) => err instanceof XlsxError && pattern.test(err.message), String(pattern));

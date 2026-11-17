@@ -4,8 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { openHealthStore } from '../db/store.js';
-import { scopeDatabase } from '../db/scope.js';
+import { openHealthStore } from '../db/store.ts';
+import { scopeDatabase } from '../db/scope.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { templateDraft } from '../agent/prompt-draft.js';
@@ -75,7 +75,7 @@ test('a subject can never add an email header: line breaks and control character
   const lee = await signIn('lee@example.com');
   await lee.send('POST', '/api/feedback', { kind: 'feedback', subject: 'Hi\r\nBcc: someone@example.com\tthere', body: 'y' });
   assert.equal(mail[0].subject, 'Health Review [feedback] Hi Bcc: someone@example.com there');
-  const { createMailer } = await import('../tools/mail.js');
+  const { createMailer } = await import('../tools/mail.ts');
   const sent = [];
   const m = createMailer({ env: {}, transport: { sendMail: async (x) => { sent.push(x); } }, log: {} });
   await m.send({ to: 'a@example.com', subject: 'One\nTwo\u0000', text: 'x' });

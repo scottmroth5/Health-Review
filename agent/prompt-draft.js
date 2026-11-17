@@ -2,7 +2,7 @@
 // and saves. "Build without AI" fills a template from the answers; "Draft with Claude" sends only the answers and the
 // section's guidance (never the user's data) on the user's own AI. Nothing is saved here; the run keeps lengths and
 // cost only. Guidance with examples: docs/guides/prompts.md.
-import { startUserRun } from '../db/users.js';
+import { startUserRun } from '../db/users.ts';
 import { stripDashes } from './validate.js';
 
 export const DRAFT_MODEL = 'claude-sonnet-5-5';
