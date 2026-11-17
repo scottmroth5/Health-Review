@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.js';
 import { buildApp } from '../server/app.js';
 import { reviewStatus } from '../server/queries.js';
+import { withArchive } from '../jobs/review.js';
 import { addDays } from '../metrics/stats.js';
 import { OWNER_ID } from '../db/users.js';
 import { ownerStore } from './helpers.js';
@@ -163,5 +164,56 @@ test('api: a complete week runs without force; a failure is kept as its error na
 test('api: the run body is checked', async () => {
   const { app, done } = await setup({ review: async () => ({}) });
   assert.equal((await run(app, { force: 'yes' })).statusCode, 400);
+  await done();
+});
+
+const saveReview = (db, week, report, created = '2026-03-01T13:00:00.000Z') => db.prepare(`INSERT INTO reviews (user_id, week_ending, summary_json, report_md, created_at, model)
+  VALUES (@uid, ?, '{}', ?, ?, 'model-a') ON CONFLICT (user_id, week_ending) DO UPDATE SET report_md = excluded.report_md, created_at = excluded.created_at`).run(week, report, created);
+
+test('withArchive: writing a week again keeps the review it replaces; a failed write keeps nothing extra', async () => {
+  const s = await store();
+  await saveReview(s.db, '2026-02-28', '## First\n- old');
+  const out = await withArchive(s.db, '2026-02-28', async () => { await saveReview(s.db, '2026-02-28', '## Second\n- new', '2026-03-09T12:00:00.000Z'); return 'written'; },
+    { now: new Date('2026-03-09T12:00:00.000Z') });
+  assert.equal(out, 'written');
+  assert.deepEqual(await s.db.prepare('SELECT week_ending, report_md, created_at, model, archived_at FROM review_versions').all(),
+    [{ week_ending: '2026-02-28', report_md: '## First\n- old', created_at: '2026-03-01T13:00:00.000Z', model: 'model-a', archived_at: '2026-03-09T12:00:00.000Z' }]);
+  assert.equal((await s.db.prepare("SELECT report_md FROM reviews WHERE week_ending = '2026-02-28'").get()).report_md, '## Second\n- new');
+
+  await assert.rejects(() => withArchive(s.db, '2026-02-28', async () => { throw new Error('refused'); }), /refused/);
+  assert.equal((await s.db.prepare('SELECT COUNT(*) AS n FROM review_versions').get()).n, 1, 'the failed run archived nothing');
+  assert.equal((await s.db.prepare("SELECT report_md FROM reviews WHERE week_ending = '2026-02-28'").get()).report_md, '## Second\n- new');
+
+  await withArchive(s.db, '2026-02-21', async () => saveReview(s.db, '2026-02-21', 'first time'));
+  assert.equal((await s.db.prepare('SELECT COUNT(*) AS n FROM review_versions').get()).n, 1, 'a first review has nothing to archive');
+  await s.close();
+});
+
+test('api: run again for an earlier week that has a review; refusals; earlier versions listed and opened', async () => {
+  const calls = [];
+  const { db, app, done } = await setup({ review: async (o) => { calls.push(o); return new Promise(() => {}); } });
+  await fillDays(db);
+  await saveReview(db, '2026-02-28', '## Week\n- first');
+
+  assert.equal((await run(app, { weekEnd: '2026-03-01' })).statusCode, 400, 'a Sunday is not a week end');
+  assert.equal((await run(app, { weekEnd: '2026-03-14' })).statusCode, 400, 'a week that has not ended');
+  assert.equal((await run(app, { weekEnd: '2026-02-30' })).statusCode, 400, 'not a real date');
+  assert.equal((await run(app, { weekEnd: '2026-02-21' })).statusCode, 404, 'no review to write again');
+  assert.equal(calls.length, 0);
+
+  const started = await run(app, { weekEnd: '2026-02-28' });
+  assert.equal(started.statusCode, 202);
+  assert.deepEqual(calls, [{ uid: OWNER_ID, weekEnd: '2026-02-28', today: '2026-03-09' }]);
+  const s = (await app.inject('/api/reviews/status')).json();
+  assert.deepEqual([s.running, s.runningWeekEnd, s.weekEnd], [true, '2026-02-28', WEEK_END], 'the notice names the week being written');
+
+  // What the service's withArchive leaves behind, then what the Reviews tab reads.
+  await db.prepare(`INSERT INTO review_versions (id, user_id, week_ending, report_md, created_at, model, archived_at)
+    VALUES ('v1', @uid, '2026-02-28', '## Week\n- first', '2026-03-01T13:00:00.000Z', 'model-a', '2026-03-09T12:00:00.000Z')`).run();
+  const [listed] = (await app.inject('/api/reviews')).json();
+  assert.deepEqual(listed.versions, [{ id: 'v1', created_at: '2026-03-01T13:00:00.000Z', archived_at: '2026-03-09T12:00:00.000Z', model: 'model-a' }]);
+  const version = (await app.inject('/api/reviews/versions/v1')).json();
+  assert.deepEqual([version.week_ending, version.report_md, version.warnings], ['2026-02-28', '## Week\n- first', []]);
+  assert.equal((await app.inject('/api/reviews/versions/nope')).statusCode, 404);
   await done();
 });

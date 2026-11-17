@@ -160,12 +160,13 @@ test('the runner applies each migration once, also when two processes open the d
   const fresh = await freshPgDatabase();
   try {
     const [a, b] = await Promise.all([openPostgresStore(fresh.url), openPostgresStore(fresh.url)]);
-    assert.deepEqual([...a.applied, ...b.applied], ['000-baseline'], 'one of them applied it, the other found it done');
+    const all = PG_MIGRATIONS.map((m) => m.id);
+    assert.deepEqual([...a.applied, ...b.applied].sort(), [...all].sort(), 'one of them applied each, the other found it done');
     await Promise.all([a.close(), b.close()]);
     const again = await openPostgresStore(fresh.url);
     assert.deepEqual(again.applied, []);
-    assert.deepEqual(await again.db.prepare('SELECT app, id FROM schema_migrations').all(),
-      [{ app: 'health-review', id: '000-baseline' }]);
+    assert.deepEqual(await again.db.prepare('SELECT app, id FROM schema_migrations ORDER BY id').all(),
+      all.map((id) => ({ app: 'health-review', id })));
     await again.close();
   } finally {
     await fresh.drop();
@@ -179,7 +180,7 @@ test('a failing migration rolls back whole and is not recorded; the ones before 
     const bad = { id: '999-bad', up: 'CREATE TABLE half_done (a bigint); SELECT no_such_column FROM half_done' };
     await assert.rejects(migratePostgres(pool, [...PG_MIGRATIONS, bad]), /migration health-review:999-bad failed and was rolled back/);
     const { rows } = await pool.query("SELECT to_regclass('half_done') AS t, (SELECT array_agg(id) FROM schema_migrations) AS ids");
-    assert.deepEqual(rows[0], { t: null, ids: ['000-baseline'] });
+    assert.deepEqual(rows[0], { t: null, ids: PG_MIGRATIONS.map((m) => m.id) }, 'the bad one rolled back; every one before it stays');
     await assert.rejects(migratePostgres(pool, [PG_MIGRATIONS[0], PG_MIGRATIONS[0]]), /duplicate migration id/);
   } finally {
     await pool.end();

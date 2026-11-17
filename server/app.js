@@ -10,7 +10,7 @@ import { registerSecurityHeaders, registerRateLimits, errorReply, DEMO_REQUEST_L
 import * as q from './queries.js';
 import { TIMINGS } from '../metrics/medications.js';
 import { VIEWS } from '../metrics/volume.js';
-import { addDays } from '../metrics/stats.js';
+import { addDays, lastWeekEnd } from '../metrics/stats.js';
 import { VO2_VIEWS } from '../metrics/vo2max.js';
 import { repoPath } from '../tools/paths.js';
 import { loadCatalog } from '../metrics/catalog.js';
@@ -768,8 +768,15 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     return await q.history(db, from, to);
   });
 
-  app.get('/api/reviews', { schema: { summary: 'Weekly reviews, newest first', response: { 200: { type: 'array', items: anyObject } } } },
+  app.get('/api/reviews', { schema: { summary: 'Weekly reviews, newest first, each with its earlier versions (ids and dates)', response: { 200: { type: 'array', items: anyObject } } } },
     async () => await q.listReviews(db));
+  app.get('/api/reviews/versions/:id', {
+    schema: {
+      summary: "An earlier version of a week's review, kept when the week was written again",
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64 } } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => (await q.reviewVersion(db, req.params.id)) ?? reply.code(404).send({ error: 'No such earlier version' }));
 
   const reviewState = async (req) => {
     const status = await q.reviewStatus(db, q.localDate(clock()), clock());
@@ -777,6 +784,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     return {
       ...status,
       running: reviewRunOf(req).running,
+      runningWeekEnd: reviewRunOf(req).running ? reviewRunOf(req).weekEnd ?? null : null,
       error: reviewRunOf(req).error,
       canRun: access !== null && access.source !== null,
       needsKey: access !== null && access.source === null,
@@ -790,8 +798,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
   app.post('/api/reviews/run', {
     schema: {
-      summary: "Write last week's review now (syncs first; refused while Apple Health days are missing unless force). Returns 202 and runs in the background",
-      body: { type: 'object', additionalProperties: false, properties: { force: { type: 'boolean' } } },
+      summary: "Write last week's review now, or write an earlier week's again (weekEnd; the review it replaces is kept as an earlier version). Syncs first; refused while Apple Health days are missing unless force. Returns 202 and runs in the background",
+      body: { type: 'object', additionalProperties: false, properties: { force: { type: 'boolean' }, weekEnd: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } } },
       response: { 202: anyObject },
     },
   }, async (req, reply) => {
@@ -801,6 +809,16 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     const reviewRun = reviewRunOf(req);
     const uid = uidOf(req);
     if (reviewRun.running) return reply.code(409).send({ error: 'A review is already being written' });
+    // An earlier week: a Saturday no later than last week's end, and one that already has a review to write again.
+    const lastWeek = lastWeekEnd(q.localDate(clock()));
+    const asked = req.body?.weekEnd ? requireDate(req.body.weekEnd) : null;
+    if (asked !== null && asked !== lastWeek) {
+      if (lastWeekEnd(addDays(asked, 1)) !== asked) return reply.code(400).send({ error: 'weekEnd must be a Saturday (the last day of a review week)' });
+      if (asked > lastWeek) return reply.code(400).send({ error: 'That week has not ended yet' });
+      if (!(await db.prepare('SELECT 1 AS found FROM reviews WHERE user_id = @uid AND week_ending = ?').get(asked))) {
+        return reply.code(404).send({ error: 'No review for that week to write again' });
+      }
+    }
     reviewRun.running = true;
     reviewRun.error = null;
     try {
@@ -808,7 +826,8 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
         syncing.add(uid);
         try { await services.sync({ uid }); } catch { /* review the data already stored, as npm run review does */ } finally { syncing.delete(uid); }
       }
-      const status = await q.reviewStatus(db, q.localDate(clock()), clock());
+      // The data gate for the week asked (as of the Sunday after it, as jobs/review.js does for an explicit week).
+      const status = await q.reviewStatus(db, asked && asked !== lastWeek ? addDays(asked, 1) : q.localDate(clock()), clock());
       if (!status.ready && !req.body?.force) {
         reviewRun.running = false;
         return reply.code(409).send({ error: status.reason === 'no_data' ? 'No data for that week yet' : 'Apple Health data is incomplete for the week', reason: status.reason, missingDays: status.missingDays, partialDays: status.partialDays });

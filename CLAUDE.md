@@ -511,6 +511,13 @@ medication names, lab values (a lab name with a number next to it) and symptom w
 at most 3,000 words (the owner's rules ask for under 2,000; the margin avoids paying for a retry over small overruns). Failed checks get one retry listing the problems; dashes left after that are
 replaced in code, and anything else is saved with the report as warnings. Runs record metadata only, including the names
 of sensitive sections sent; prompt and report text never go to logs or run records.
+Run again (2026-11-17): POST /api/reviews/run takes weekEnd, a Saturday up to last week's end with a review already
+(400 otherwise, 404 with none), gated for that week (reviewStatus as of the Sunday after); status carries
+runningWeekEnd. Writing a week that has a review keeps the old one in review_versions (migration 034, a user table:
+report, model, warnings and dates, never the summary sent): jobs/review.js withArchive copies it before the call and
+removes the copy if the run fails, wrapping both the app's services.review and weeklyReview (npm run review -- --week);
+agent/ is unchanged, so the eval harness gate is too. GET /api/reviews lists each week's versions (ids and dates) and GET
+/api/reviews/versions/:id opens one, shown on the Reviews tab marked Archived.
 Data gate (reviewStatus in server/queries.js, weekDataQuality underneath): without --force, a week with any day missing
 from daily_metrics or a likely partial export is skipped, recorded as a 'skipped' review run with the dates, and nothing is
 sent. GET /api/reviews/status (overdue: no review and a run was tried or it is past 9am on the Sunday after) drives a notice

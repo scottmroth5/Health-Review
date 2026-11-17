@@ -2932,6 +2932,7 @@ async function loadReviewNotice() {
   } catch {
     return;
   }
+  reviewsView.status = s;
   if (s.needsKey) {
     for (const node of document.querySelectorAll('[data-review-notice]')) {
       node.hidden = currentView !== 'reviews';
@@ -2960,7 +2961,7 @@ function reviewNoticeContent(s) {
     s.missingDays.length ? `no Apple Health data for ${dayList(s.missingDays)}` : '',
     s.partialDays.length ? `a likely partial export on ${dayList(s.partialDays)}` : '',
   ].filter(Boolean).join('; ');
-  if (s.running) return [h('p', {}, `Writing the review for ${week}… This takes 1 to 3 minutes.`)];
+  if (s.running) return [h('p', {}, `Writing the review for the week ending ${fmtDay(s.runningWeekEnd ?? s.weekEnd)}… This takes 1 to 3 minutes.`)];
   if (s.rewriteAvailable) return rewriteNotice(s, week);
   const run = s.lastRun;
   const why = s.error ? `The manual run failed (${s.error}).`
@@ -3056,8 +3057,8 @@ window.matchMedia('(max-width: 720px)').addEventListener('change', () => {
 });
 
 async function loadReviews() {
-  loadReviewNotice();
-  reviewsView.list = await api('GET', '/api/reviews');
+  const [list] = await Promise.all([api('GET', '/api/reviews'), loadReviewNotice()]);
+  reviewsView.list = list;
   renderReviews();
 }
 
@@ -3098,7 +3099,8 @@ function renderReviews() {
     card.append(h('p', { class: 'meta' }, 'An earlier week. ', back));
   }
   card.append(h('h2', {}, `Week ending ${niceDate(r.week_ending)}`),
-    h('p', { class: 'meta' }, `Generated ${new Date(r.created_at).toLocaleString()}${r.model ? ` by ${r.model}` : ''}`));
+    h('p', { class: 'meta' }, `Generated ${new Date(r.created_at).toLocaleString()}${r.model ? ` by ${r.model}` : ''}`),
+    ...reviewControls(card, r));
   if (r.warnings.length) {
     card.append(h('div', { class: 'review-warnings' },
       h('strong', {}, 'Checks that still failed after a retry:'),
@@ -3109,6 +3111,67 @@ function renderReviews() {
 
   fill(container, h('div', { class: 'review-layout' }, nav, card));
   if (phone && asked) card.scrollIntoView({ block: 'start' });
+}
+
+/** Run again (when this account can write reviews and none is being written) and the week's earlier versions. */
+function reviewControls(card, r) {
+  const s = reviewsView.status;
+  const out = [];
+  if (s?.canRun && !s.running) {
+    const button = h('button', { type: 'button', class: 'ghost' }, 'Run again');
+    const status = h('span', { class: 'status', role: 'status' });
+    button.addEventListener('click', async () => {
+      if (!confirm(`Write the review for the week ending ${fmtDay(r.week_ending)} again with your current prompts and data? About $0.35 and 1 to 3 minutes. The current review is kept as an earlier version.`)) return;
+      button.disabled = true;
+      setStatus(status, 'Syncing, then starting…');
+      const start = (force) => api('POST', '/api/reviews/run', { weekEnd: r.week_ending, force });
+      try {
+        try {
+          await start(false);
+        } catch (err) {
+          if (err.data?.reason !== 'incomplete') throw err;
+          if (!confirm('Apple Health data is incomplete for that week. Write it anyway? Those days will be treated as incomplete.')) { setStatus(status, ''); button.disabled = false; return; }
+          await start(true);
+        }
+        setStatus(status, 'Writing… the review appears here when it is done.');
+        reviewNotice.wasRunning = true;
+        loadReviewNotice();
+      } catch (err) {
+        setStatus(status, err.message, 'error');
+        button.disabled = false;
+      }
+    });
+    out.push(h('div', { class: 'actions' }, button, status));
+  }
+  if (r.versions?.length) {
+    out.push(h('details', { class: 'review-versions' },
+      h('summary', { class: 'small' }, `Earlier versions (${r.versions.length})`),
+      h('ul', { class: 'plain-list' }, r.versions.map((v) => h('li', {},
+        h('button', { type: 'button', class: 'link', onclick: () => showReviewVersion(card, r, v.id) },
+          `Written ${new Date(v.created_at).toLocaleString()}, archived ${new Date(v.archived_at).toLocaleString()}`))))));
+  }
+  return out;
+}
+
+/** An earlier version in the review card, marked Archived, with the way back to the current review. */
+async function showReviewVersion(card, r, id) {
+  let v;
+  try {
+    v = await api('GET', `/api/reviews/versions/${encodeURIComponent(id)}`);
+  } catch (err) {
+    card.append(h('p', { class: 'status error' }, err.message));
+    return;
+  }
+  fill(card,
+    h('p', { class: 'meta' }, h('span', { class: 'badge' }, 'Archived'), ' An earlier version, replaced when the week was written again. ',
+      h('button', { type: 'button', class: 'link', onclick: () => renderReviews() }, 'Back to the current review')),
+    h('h2', {}, `Week ending ${niceDate(r.week_ending)}`),
+    h('p', { class: 'meta' }, `Generated ${new Date(v.created_at).toLocaleString()}${v.model ? ` by ${v.model}` : ''}; archived ${new Date(v.archived_at).toLocaleString()}`),
+    v.warnings.length ? h('div', { class: 'review-warnings' }, h('strong', {}, 'Checks that still failed after a retry:'),
+      h('ul', {}, v.warnings.map((w) => h('li', {}, w)))) : null);
+  renderMarkdown(state.demo ? redactReview(v.report_md) : v.report_md, card);
+  card.append(h('p', { class: 'meta' }, 'An analytical aid, not medical advice. Discuss medications, lab results and symptoms with your physician.'));
+  card.scrollIntoView({ block: 'start' });
 }
 
 // ---------------- prompt admin ----------------

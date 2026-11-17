@@ -34,6 +34,25 @@ export const PG_MIGRATIONS = [
         [OWNER_ID, ownerEmailFromEnv(), now]);
     },
   },
+  {
+    // SQLite's 034: earlier versions of a week's review.
+    id: '034-review-versions',
+    up: `
+      CREATE TABLE review_versions (
+        id text PRIMARY KEY,
+        user_id text NOT NULL REFERENCES users(id),
+        week_ending text NOT NULL,
+        report_md text NOT NULL,
+        run_id bigint,
+        created_at text NOT NULL,
+        model text,
+        warnings text,
+        sensitive_sections text,
+        archived_at text NOT NULL
+      );
+      CREATE INDEX review_versions_week ON review_versions(user_id, week_ending);
+    `,
+  },
 ];
 
 const CREATE_DATABASE = "CREATE DATABASE <name> TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'";

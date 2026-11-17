@@ -14,7 +14,7 @@ import { localDate as ownerDate, withTimeZone, zonedInstant, zonedParts } from '
 import { createAlerts } from './alerts.js';
 import { appleSource } from '../ingest/sync.js';
 import { syncJob } from '../jobs/sync.js';
-import { weeklyReview } from '../jobs/review.js';
+import { weeklyReview, withArchive } from '../jobs/review.js';
 import { backupJob } from '../jobs/backup.js';
 import { restoreTestJob } from '../jobs/restore-check.js';
 import { createScheduler, schedulesFromEnv } from './scheduler.js';
@@ -146,10 +146,16 @@ if (demo) {
     hasAi,
     aiAccess: (uid) => ai.check(uid),
     // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.
-    review: async ({ uid = OWNER_ID, weekEnd, today }) => runReview({
-      store: forUser(uid), claude: await claudeFor(uid), catalog: await catalogFor(uid), weekEnd, today, logger: quiet,
-      model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
-    }),
+    // Writing a week again keeps the review it replaces as an earlier version (jobs/review.js withArchive).
+    review: async ({ uid = OWNER_ID, weekEnd, today }) => {
+      const store = forUser(uid);
+      const claude = await claudeFor(uid);
+      const catalog = await catalogFor(uid);
+      return await withArchive(store.db, weekEnd, () => runReview({
+        store, claude, catalog, weekEnd, today, logger: quiet,
+        model: process.env.REVIEW_MODEL || DEFAULT_REVIEW_MODEL, effort: process.env.REVIEW_EFFORT || DEFAULT_REVIEW_EFFORT,
+      }));
+    },
   };
   // The in-app schedule (SCHEDULE_* in .env; none set, nothing runs). The same jobs as the npm scripts (jobs/).
   // Sync and the review run for each approved user in turn (one user's failure never stops the rest; logs name the owner

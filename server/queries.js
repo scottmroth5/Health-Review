@@ -91,8 +91,22 @@ export async function history(db, from, to) {
 }
 
 export async function listReviews(db) {
+  // Earlier versions of each week (kept when a week is written again), newest first: ids and dates only here.
+  const versions = new Map();
+  for (const v of await db.prepare(`SELECT id, week_ending, created_at, archived_at, model FROM review_versions WHERE user_id = @uid
+    ORDER BY week_ending DESC, archived_at DESC, id`).all()) {
+    if (!versions.has(v.week_ending)) versions.set(v.week_ending, []);
+    versions.get(v.week_ending).push({ id: v.id, created_at: v.created_at, archived_at: v.archived_at, model: v.model });
+  }
   return (await db.prepare('SELECT week_ending, report_md, created_at, model, warnings FROM reviews WHERE user_id = @uid ORDER BY week_ending DESC').all())
-    .map((r) => ({ ...r, warnings: r.warnings ? JSON.parse(r.warnings) : [] }));
+    .map((r) => ({ ...r, warnings: r.warnings ? JSON.parse(r.warnings) : [], versions: versions.get(r.week_ending) ?? [] }));
+}
+
+/** One earlier version of a week's review, the user's own; null when there is none. */
+export async function reviewVersion(db, id) {
+  const v = await db.prepare(`SELECT id, week_ending, report_md, created_at, archived_at, model, warnings FROM review_versions
+    WHERE user_id = @uid AND id = ?`).get(id);
+  return v ? { ...v, warnings: v.warnings ? JSON.parse(v.warnings) : [] } : null;
 }
 
 // ---- activity: runs recorded by the tracer and the scheduled tasks' logs (metadata only by the hard rules) ----

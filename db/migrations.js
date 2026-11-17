@@ -545,4 +545,25 @@ export const MIGRATIONS = [
       ALTER TABLE usage_totals_new RENAME TO usage_totals;
     `,
   },
+  {
+    // Earlier versions of a week's review, kept when the week is written again (Reviews tab's Run again; jobs/review.js
+    // withArchive). The report as it was, not the summary sent to Claude. A user table (USER_TABLES): exported and
+    // deleted with the account.
+    id: '034-review-versions',
+    up: `
+      CREATE TABLE review_versions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        week_ending TEXT NOT NULL,
+        report_md TEXT NOT NULL,
+        run_id INTEGER,
+        created_at TEXT NOT NULL,
+        model TEXT,
+        warnings TEXT,
+        sensitive_sections TEXT,
+        archived_at TEXT NOT NULL
+      );
+      CREATE INDEX review_versions_week ON review_versions(user_id, week_ending);
+    `,
+  },
 ];
