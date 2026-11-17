@@ -10,7 +10,7 @@ import { FOLDERS, SOURCE, scannedFiles, stringLiterals } from './source-scan.js'
 
 // scripts/baseline.js reads run durations and row counts across users (counts and milliseconds only, like the admin's
 // usage queries).
-const EXEMPT = new Set(['db/migrations.js', 'db/migrations-users.js', 'server/admin-queries.js', 'scripts/baseline.js']);
+const EXEMPT = new Set(['db/migrations.js', 'db/migrations-users.js', 'db/pg/migrate.js', 'server/admin-queries.js', 'scripts/baseline.js']);
 
 // runs (agent-core's) carries a nullable user_id: each user's run history is theirs too.
 const tableRef = new RegExp(`\\b(FROM|INTO|UPDATE|JOIN)\\s+"?(${[...USER_TABLES, 'runs'].join('|')})\\b`, 'gi');
@@ -31,6 +31,35 @@ test('every query on a user table names user_id once per user table (except admi
     }
   }
   assert.deepEqual(misses, [], `${misses.length} unscoped queries:\n${misses.join('\n')}`);
+});
+
+// Row-level security (v3 Phase 1I): on PostgreSQL the unscoped app database sees no user's rows, so a user table is read
+// or written only through a scoped database, whose statements name the user as @uid. A positional "user_id = ?" on the
+// unscoped database would find nothing in production while passing on SQLite and in the superuser test suite.
+test('every query on a user table names its user as @uid (except admin queries and migrations)', () => {
+  const misses = [];
+  for (const rel of scannedFiles()) {
+    if (EXEMPT.has(rel)) continue;
+    for (const lit of stringLiterals(readFileSync(repoPath(rel), 'utf8'))) {
+      if (!/\b(SELECT|INSERT|UPDATE|DELETE)\b/.test(lit)) continue;
+      const refs = [...lit.matchAll(tableRef)].map((m) => m[2]);
+      // A fragment correlated to its outer statement ("s.user_id = daily_metrics.user_id") takes that statement's @uid.
+      const positional = /\buser_id\s*(=|IN)\s*(\?|\$|@(?!uid\b))/i.test(lit) || /\bINSERT\b/i.test(lit);
+      if (refs.length && positional && !lit.includes('@uid')) misses.push(`${rel}: ${refs.join('+')}: ${lit.replace(/\s+/g, ' ').slice(0, 110)}`);
+    }
+  }
+  assert.deepEqual(misses, [], `${misses.length} queries on user tables without @uid:\n${misses.join('\n')}`);
+});
+
+// All-users mode (row-level security, docs/adr/0011) reads every user's rows, so only these files may turn it on: the
+// admin queries (everyone()), the adapter that defines it, the store openers that pass it through, and the whole-database
+// tools. A new caller is a decision to review, not a quiet addition.
+const ALL_USERS_ALLOWED = new Set(['server/admin-queries.js', 'db/postgres.ts', 'db/database.ts', 'db/pg/migrate.js', 'db/store.js',
+  'scripts/backup-service.js', 'scripts/export-to-sqlite.js', 'scripts/migrate-to-postgres.js', 'tools/backup/pg.js']);
+test('all-users mode is turned on only by the admin queries and the whole-database tools', () => {
+  const found = scannedFiles().filter((rel) => /\ballUsers\b|app\.all_users/.test(readFileSync(repoPath(rel), 'utf8')));
+  assert.deepEqual(found.filter((rel) => !ALL_USERS_ALLOWED.has(rel)), [], 'review a new all-users caller, then list it here');
+  assert.ok(found.includes('server/admin-queries.js') && found.includes('tools/backup/pg.js'), 'the guard sees the known callers');
 });
 
 // The guard only protects what it reads. A floor on the count catches a filter that quietly stops matching (as a .js-only

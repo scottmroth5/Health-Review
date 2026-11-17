@@ -37,7 +37,7 @@ export async function migrateToPostgres({ from, url, auditOnly = false, log = co
       return failed ? 2 : 0;
     }
     if (!url) throw new Error('Set DATABASE_URL to the new PostgreSQL database (or pass --audit)');
-    target = await openPostgresStore(url);
+    target = await openPostgresStore(url, { allUsers: true }); // every user's rows (row-level security, v3 Phase 1I)
     const result = await transfer(source, target);
     for (const line of reportLines({ findings, result })) log(line);
     return result.ok ? 0 : 1;

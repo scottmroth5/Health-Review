@@ -1,6 +1,7 @@
 // The only queries that read across users (multi-user, phase 1): system checks such as the scheduler's, and later the
 // admin's user list. test/user-scope.test.js exempts this file; every other query is scoped to one user (db/scope.js).
-// Takes the shared, unscoped database. Metadata only: names, statuses and times, never health or report text.
+// Takes the shared, unscoped database and reads it through everyone() (all-users mode under row-level security).
+// Metadata only: names, statuses and times, never health or report text.
 // Async (v3 Phase 1B slice 4b, docs/adr/0006): every statement is awaited, so each runs on either handle.
 
 import { RUNNING_STALE_MINUTES } from './scheduler.js';
@@ -13,11 +14,21 @@ import { addDays } from '../metrics/stats.js';
 import { OWNER_ID } from '../db/users.js';
 
 /**
+ * The shared database in all-users mode (row-level security, v3 Phase 1I, docs/adr/0011): on PostgreSQL every user's
+ * rows, which the unscoped app database does not see. The one way the app reads across users; SQLite has no row-level
+ * security, so there it is the database itself.
+ */
+export function everyone(db) {
+  const base = db.unscoped ?? db;
+  return base.allUsers ? base.allUsers() : base;
+}
+
+/**
  * When each job last ran and whether one is running now, for any user (a scheduled job runs for every user in turn, so
  * catch-up and overlap are judged on the job as a whole).
  */
 export function jobRunsLookup(db) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   const last = raw.prepare('SELECT started_at FROM runs WHERE name = ? ORDER BY id DESC LIMIT 1').pluck();
   const running = raw.prepare("SELECT 1 FROM runs WHERE name = ? AND status = 'running' AND started_at >= ? LIMIT 1").pluck();
   return {
@@ -32,7 +43,7 @@ export function jobRunsLookup(db) {
  * reviews. Never health values or report text.
  */
 export async function listUsers(db, { now = new Date() } = {}) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   return (await raw.prepare(`SELECT u.id, u.email, u.name, u.role, u.status, u.created_at, u.approved_at, u.last_seen_at,
       CASE WHEN u.claude_key_enc IS NOT NULL THEN 1 ELSE 0 END AS has_key, u.uses_owner_key, u.owner_key_cap_usd, u.maps_shared, u.feeds,
       CASE WHEN u.ingest_token_hash IS NOT NULL THEN 1 ELSE 0 END AS has_token,
@@ -85,7 +96,7 @@ export async function listUsers(db, { now = new Date() } = {}) {
 
 /** A new pending user from a registration (their Google name and address); returns the row. */
 export async function createPendingUser(db, { email, name, id, now = new Date().toISOString(), healthConsentVersion = null }) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   await raw.prepare(`INSERT INTO users (id, email, name, role, status, created_at, terms_accepted_at, health_consent_at, health_consent_version)
     VALUES (?, ?, ?, 'user', 'pending', ?, ?, ?, ?)`)
     .run(id, String(email).toLowerCase(), name ?? null, now, now, healthConsentVersion ? now : null, healthConsentVersion);
@@ -94,7 +105,7 @@ export async function createPendingUser(db, { email, name, id, now = new Date().
 
 /** Sets a user's status (approve, reject, pause, resume); the owner's own status never changes. Returns the row or null. */
 export async function setUserStatus(db, id, status, now = new Date().toISOString()) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   const { changes: changed } = await raw.prepare(`UPDATE users SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN COALESCE(approved_at, ?) ELSE approved_at END
     WHERE id = ? AND role <> 'admin'`).run(status, status, now, id);
   return changed ? await raw.prepare('SELECT * FROM users WHERE id = ?').get(id) : null;
@@ -102,19 +113,19 @@ export async function setUserStatus(db, id, status, now = new Date().toISOString
 
 /** Users who get scheduled jobs: approved, not paused. The owner is first. */
 export async function activeUserIds(db) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   // A user who has not given the health data consent gets no scheduled jobs until they do.
   return await raw.prepare("SELECT id FROM users WHERE status = 'approved' AND (role = 'admin' OR health_consent_at IS NOT NULL) ORDER BY role = 'admin' DESC, created_at").pluck().all();
 }
 
 /** The administrator's Claude key for a user: on with a monthly cap in dollars, or off (cap cleared). Never an admin. */
 export async function setOwnerKey(db, id, { on, cap = null }) {
-  await (db.unscoped ?? db).prepare("UPDATE users SET uses_owner_key = ?, owner_key_cap_usd = ? WHERE id = ? AND role <> 'admin'").run(on ? 1 : 0, on ? cap : null, id);
+  await everyone(db).prepare("UPDATE users SET uses_owner_key = ?, owner_key_cap_usd = ? WHERE id = ? AND role <> 'admin'").run(on ? 1 : 0, on ? cap : null, id);
 }
 
 /** Shares the owner's MAPS catalog with a user, or stops. Never an admin. */
 export async function setMapsShared(db, id, shared) {
-  await (db.unscoped ?? db).prepare("UPDATE users SET maps_shared = ? WHERE id = ? AND role <> 'admin'").run(shared ? 1 : 0, id);
+  await everyone(db).prepare("UPDATE users SET maps_shared = ? WHERE id = ? AND role <> 'admin'").run(shared ? 1 : 0, id);
 }
 
 /** Every table with a user_id column, read from the schema (so a new user table is never missed), parents first. */
@@ -135,7 +146,7 @@ const SECRET_USER_COLUMNS = ['claude_key_enc', 'ingest_token_hash', 'google_refr
  * in every table with a user_id, plus their runs' call metadata. Never their sealed keys, Google permission or token hash.
  */
 export async function exportUserData(db, uid, { now = new Date() } = {}) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   const user = await raw.prepare('SELECT * FROM users WHERE id = ?').get(uid);
   if (!user) return null;
   for (const c of SECRET_USER_COLUMNS) delete user[c];
@@ -156,7 +167,7 @@ export async function exportUserData(db, uid, { now = new Date() } = {}) {
  * check runs inside the transaction, so a change to the user between the check and the deletes cannot slip through.
  */
 export async function deleteUserData(db, uid) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   return raw.tx(async () => {
     const user = await raw.prepare('SELECT role FROM users WHERE id = ?').get(uid);
     if (!user || user.role === 'admin') return null;
@@ -187,7 +198,7 @@ export async function deleteUserData(db, uid) {
  * Totals only: never a user, an entry's date, a value or any text. UTC times are read as the owner's dates.
  */
 export async function usageByWeek(db, { weeks = 12, now = new Date(), tz = process.env.OWNER_TZ || DEFAULT_TZ } = {}) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   const today = localDate(now, tz);
   const dayOfWeek = (date) => new Date(`${date}T00:00:00Z`).getUTCDay();
   const thisEnd = addDays(today, 6 - dayOfWeek(today));
@@ -244,7 +255,7 @@ export async function usageByWeek(db, { weeks = 12, now = new Date(), tz = proce
  * Counts only, largest first.
  */
 export async function usageTotals(db, { from, to, topCities = 15 }) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   const sum = (dimension) => raw.prepare(`SELECT value, SUM(count) AS count FROM usage_totals
     WHERE dimension = ? AND day BETWEEN ? AND ? GROUP BY value ORDER BY count DESC, value`).all(dimension, from, to);
   const ranked = (map) => [...map].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
@@ -267,7 +278,7 @@ export async function usageTotals(db, { from, to, topCities = 15 }) {
 
 /** Feedback from every user for the administrator, newest first, with who sent it. */
 export async function listFeedback(db) {
-  const raw = db.unscoped ?? db;
+  const raw = everyone(db);
   return (await raw.prepare(`SELECT f.id, f.kind, f.subject, f.body, f.context, f.status, f.created_at, u.email, u.name
     FROM feedback f JOIN users u ON u.id = f.user_id ORDER BY f.created_at DESC LIMIT 500`).all())
     .map((r) => ({ ...r, context: r.context ? JSON.parse(r.context) : null }));
@@ -275,10 +286,10 @@ export async function listFeedback(db) {
 
 /** Marks a feedback item new or done; returns whether it existed. */
 export async function setFeedbackStatus(db, id, status) {
-  return (await (db.unscoped ?? db).prepare('UPDATE feedback SET status = ? WHERE id = ?').run(status, id)).changes > 0;
+  return (await everyone(db).prepare('UPDATE feedback SET status = ? WHERE id = ?').run(status, id)).changes > 0;
 }
 
 /** How many feedback items are new (the Users tile badge). */
 export async function newFeedbackCount(db) {
-  return await (db.unscoped ?? db).prepare("SELECT COUNT(*) FROM feedback WHERE status = 'new'").pluck().get();
+  return await everyone(db).prepare("SELECT COUNT(*) FROM feedback WHERE status = 'new'").pluck().get();
 }

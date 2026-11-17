@@ -33,6 +33,16 @@ if (!skip) {
 }
 const PASS = 'correct horse battery staple';
 const quiet = () => {};
+// The app role as the owner: under row-level security (v3 Phase 1I) its sessions see and write only the user they name,
+// set on each new connection as db/postgres.ts does per statement.
+const ownerAppPool = (url) => {
+  const pool = createPostgresPool(url, { max: 1 });
+  pool.on('connect', (client) => {
+    // pg queues this ahead of any statement sent on the new client; a failure surfaces as that statement's error
+    void client.query("SELECT set_config('app.user_id', $1, false)", [OWNER_ID]).catch(() => {});
+  });
+  return pool;
+};
 const scratchLeft = () => readdirSync(tmpdir()).filter((n) => n.startsWith('hr-scratch-pg-')).length;
 
 async function seed(store, days = 12) {
@@ -122,7 +132,7 @@ test('restore-pre-migration: a migrated database goes back to its dump, grants i
     const c = await migrate.connect();
     try { await setupGrants(c, { prefix }); } finally { c.release(); }
     await migratePostgres(migrate);
-    const app = createPostgresPool(urlAs('app'), { max: 1 });
+    const app = ownerAppPool(urlAs('app'));
     pools.push(app);
     await app.query("INSERT INTO settings (user_id, key, value, updated_at) VALUES ($1, 'before', 'v', 'x')", [OWNER_ID]);
 
@@ -175,7 +185,7 @@ test('reset-database: typed name, no other connections, a checked dump kept, the
     try { await setupGrants(c, { prefix }); } finally { c.release(); }
     await migratePostgres(migrate);
     await migrate.end();
-    let app = createPostgresPool(urlAs('app'), { max: 1 });
+    let app = ownerAppPool(urlAs('app'));
     pools.push(app);
     await app.query("INSERT INTO settings (user_id, key, value, updated_at) VALUES ($1, 'staging', 'v', 'x')", [OWNER_ID]);
     await app.query("INSERT INTO users (id, email, role, status, created_at) VALUES ('second', 'second@example.com', 'user', 'approved', 'x')");
@@ -198,7 +208,7 @@ test('reset-database: typed name, no other connections, a checked dump kept, the
     assert.equal(kept.length, 1);
     assert.match(kept[0], /^pre-migration-\d{8}T\d{9}Z\.dump$/);
 
-    app = createPostgresPool(urlAs('app'), { max: 1 });
+    app = ownerAppPool(urlAs('app'));
     pools.push(app);
     assert.equal(await settingsCount(app), 0);
     assert.deepEqual((await app.query('SELECT id FROM users')).rows.map((r) => r.id), [OWNER_ID]);

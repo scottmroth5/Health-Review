@@ -29,7 +29,7 @@ export async function exportToSqlite({ url, out, log = console.log, migrate = tr
   let ok = false;
   let created = false; // only a file this run made is ever removed
   try {
-    source = await openPostgresStore(url, { migrate });
+    source = await openPostgresStore(url, { migrate, allUsers: true }); // every user's rows (row-level security, v3 Phase 1I)
     created = true;
     target = openHealthStore(out, { snapshot: false, log: quiet });
     const result = await transfer(source, target);

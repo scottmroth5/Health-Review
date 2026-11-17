@@ -5,9 +5,11 @@
 //   <p>_migrate  owns the database, its public schema and every table: the migrations (scripts/migrate.js) and the
 //                pre-migration restore only. Creates citext (a trusted extension) as the database owner.
 //   <p>_app      the server: CONNECT, USAGE on public, read and write rows, use sequences. No CREATE, no DDL, no
-//                BYPASSRLS (row-level security comes in 1I). Tables a later migration adds follow through default privileges.
+//                BYPASSRLS: held to row-level security (v3 Phase 1I, docs/adr/0011), so each statement sees its own user's rows
+//                (or every user's in all-users mode). Tables a later migration adds follow through default privileges.
 //   <p>_backup   the backup container's pg_dump: SELECT on every table and sequence in public (granted here and by
 //                default privileges, rather than pg_read_all_data, which RDS's master may not be allowed to grant), nothing else.
+//                Held to row-level security too: its dumps and counts run in all-users mode (tools/backup/pg.js dump).
 //
 // Passwords arrive as values and are quoted with escapeLiteral; they are never logged, and errors name roles only.
 // Role names are cluster-wide, so the prefix lets tests use their own (production: hr).

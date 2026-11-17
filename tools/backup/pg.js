@@ -53,9 +53,15 @@ function run(tool, args, env = {}) {
   });
 }
 
-/** pg_dump in custom format (compressed, restorable table by table) to file. */
+/**
+ * pg_dump in custom format (compressed, restorable table by table) to file. Every user's rows under row-level security
+ * (v3 Phase 1I): hr_backup is held to the policies, so the dump runs in all-users mode (app.all_users on) with
+ * --enable-row-security; without the flag pg_dump turns row security off, which stops with an error for a role the
+ * policies apply to, and without the setting it would dump no user's rows.
+ */
 export function dump(url, file) {
-  return run('pg_dump', ['--format=custom', '--no-password', `--file=${file}`], pgEnv(url));
+  return run('pg_dump', ['--format=custom', '--no-password', '--enable-row-security', `--file=${file}`],
+    { ...pgEnv(url), PGOPTIONS: '-c app.all_users=on' });
 }
 
 /**

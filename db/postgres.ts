@@ -8,6 +8,10 @@
 // keep their guarantee. Statements outside a transaction run in parallel on the pool. Never hold a transaction across an
 // external call (Claude, Google).
 //
+// Row-level security (v3 Phase 1I): every statement first makes its client's session settings its own scope (one user,
+// every user, or none), sent only when they differ from what that client last had and forgotten on any rollback, so a
+// pooled client never carries one user's settings into another's statement.
+//
 // Numbers: count and sum (int8) and avg (numeric) come back as JS numbers, as better-sqlite3 gives them; an int8 past
 // 2^53 throws rather than round. Set on this pool only (createPostgresPool), never on pg's global parsers.
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -66,37 +70,80 @@ export function checkTls(connectionString: string, env: NodeJS.ProcessEnv = proc
   }
 }
 
+/**
+ * Whose rows a statement may see under row-level security (v3 Phase 1I, docs/adr/0011, migration
+ * 035-row-level-security): one user's (their id), every user's (ALL_USERS: the admin screens, backups and the
+ * whole-database tools), or none (NO_USER: the unscoped app database, which reads only app-wide tables such as users).
+ * It reaches the server as the session settings app.user_id and app.all_users, which the policies read.
+ */
+type Scope = string;
+const NO_USER: Scope = '';
+const ALL_USERS: Scope = '*all';
+
+/** The scope each pooled client's settings hold, so the settings are sent only when a statement needs others. */
+const lastScope = new WeakMap<pg.PoolClient, Scope>();
+
+async function applyScope(client: pg.PoolClient, scope: Scope): Promise<void> {
+  if (lastScope.get(client) === scope) return;
+  lastScope.delete(client); // unknown until the call succeeds
+  const all = scope === ALL_USERS;
+  await client.query("SELECT set_config('app.user_id', $1, false), set_config('app.all_users', $2, false)",
+    [all ? '' : scope, all ? 'on' : '']);
+  lastScope.set(client, scope);
+}
+
 interface TxState {
   client: pg.PoolClient;
   savepoints: number;
 }
 
-/** The async interface over a pool. The caller owns the pool (and ends it). */
-export function createPostgresDatabase(pool: pg.Pool): Database {
+/**
+ * The async interface over a pool. The caller owns the pool (and ends it). Unscoped, it sees no user's rows on a table
+ * under row-level security; forUser(uid) (db/scope.js scopeDatabase) gives one user's view and allUsers() everyone's.
+ * allUsers true makes everyone's the default: only for whole-database tools (backups, the transfer scripts), never the app.
+ */
+export function createPostgresDatabase(pool: pg.Pool, { allUsers = false }: { allUsers?: boolean } = {}): Database {
   const context = new AsyncLocalStorage<TxState>();
 
-  /** Runs on the open transaction's client when this context holds one, else on the pool. */
-  const query = (text: string, values?: unknown[], rowMode?: 'array') => {
-    const state = context.getStore();
+  /**
+   * Runs on the open transaction's client when this context holds one, else on a client of its own. Either way the
+   * client's settings are made this statement's scope first, so a pooled client never carries another user's into it.
+   */
+  const query = async (scope: Scope, text: string, values?: unknown[], rowMode?: 'array') => {
     const config: pg.QueryArrayConfig | pg.QueryConfig = rowMode ? { text, values, rowMode } : { text, values };
-    return state ? state.client.query(config) : pool.query(config);
+    const state = context.getStore();
+    if (state) {
+      await applyScope(state.client, scope);
+      return state.client.query(config);
+    }
+    const client = await pool.connect();
+    let broken = false;
+    try {
+      await applyScope(client, scope);
+      return await client.query(config);
+    } catch (err) {
+      broken = !lastScope.has(client); // its settings call failed: the session is in an unknown state, so discard it
+      throw err;
+    } finally {
+      client.release(broken);
+    }
   };
 
-  const prepare = (sql: string): Statement => {
+  const prepareIn = (scope: Scope) => (sql: string): Statement => {
     const { text, bind } = toPositional(sql);
     let pluck = false;
     const statement: Statement = {
       get source() { return sql; },
       get: async (...params) => {
-        const res = await query(text, bind(params), pluck ? 'array' : undefined);
+        const res = await query(scope, text, bind(params), pluck ? 'array' : undefined);
         const row = res.rows[0];
         return pluck ? row?.[0] : row;
       },
       all: async (...params) => {
-        const res = await query(text, bind(params), pluck ? 'array' : undefined);
+        const res = await query(scope, text, bind(params), pluck ? 'array' : undefined);
         return pluck ? res.rows.map((r) => r[0]) : res.rows;
       },
-      run: async (...params) => ({ changes: (await query(text, bind(params))).rowCount ?? 0 }),
+      run: async (...params) => ({ changes: (await query(scope, text, bind(params))).rowCount ?? 0 }),
       pluck: (on = true) => { pluck = on; return statement; },
     };
     return statement;
@@ -113,6 +160,7 @@ export function createPostgresDatabase(pool: pg.Pool): Database {
         await open.client.query(`RELEASE SAVEPOINT ${name}`);
         return result;
       } catch (err) {
+        lastScope.delete(open.client); // a rollback undoes settings made inside it: set them again before the next statement
         await open.client.query(`ROLLBACK TO SAVEPOINT ${name}`);
         await open.client.query(`RELEASE SAVEPOINT ${name}`);
         throw err;
@@ -130,6 +178,7 @@ export function createPostgresDatabase(pool: pg.Pool): Database {
         await client.query('COMMIT');
         return result;
       } catch (err) {
+        lastScope.delete(client);
         try {
           await client.query('ROLLBACK');
         } catch {
@@ -142,11 +191,25 @@ export function createPostgresDatabase(pool: pg.Pool): Database {
     }
   }
 
-  return {
-    engine: 'postgres',
-    raw: null,
-    prepare,
-    exec: async (sql) => { await query(sql); },
-    tx,
+  const views = new Map<Scope, Database>();
+  const view = (scope: Scope): Database => {
+    let v = views.get(scope);
+    if (!v) {
+      v = {
+        engine: 'postgres',
+        raw: null,
+        prepare: prepareIn(scope),
+        exec: async (sql) => { await query(scope, sql); },
+        tx,
+        forUser: (uid: string) => {
+          if (typeof uid !== 'string' || !uid || uid === ALL_USERS) throw new TypeError('forUser: a user id is required');
+          return view(uid);
+        },
+        allUsers: () => view(ALL_USERS),
+      };
+      views.set(scope, v);
+    }
+    return v;
   };
+  return view(allUsers ? ALL_USERS : NO_USER);
 }

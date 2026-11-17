@@ -34,6 +34,13 @@ export interface Database {
   exec(sql: string): Promise<void>;
   /** Runs fn in a transaction: committed when it resolves, rolled back when it throws. Nested, a savepoint. */
   tx<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Row-level security views (PostgreSQL only, v3 Phase 1I): this database as one user sees it (db/scope.js
+   * scopeDatabase uses it), or as every user (server/admin-queries.js everyone). SQLite has no row-level security and
+   * leaves both undefined.
+   */
+  forUser?(uid: string): Database;
+  allUsers?(): Database;
 }
 
 /** A sync statement ran while another async context held a transaction on the same connection. */

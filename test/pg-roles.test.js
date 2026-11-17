@@ -11,6 +11,7 @@ import { setupRoles, setupGrants } from '../db/pg/roles.js';
 import { openPostgresStore, migratePostgres, PG_MIGRATIONS } from '../db/pg/migrate.js';
 import { createPostgresPool } from '../db/postgres.ts';
 import { OWNER_ID } from '../db/users.js';
+import { scopeDatabase } from '../db/scope.js';
 
 const pw = () => randomBytes(24).toString('base64url');
 
@@ -53,9 +54,11 @@ test('roles: app reads and writes only, backup reads only, migrate owns the sche
     // The app: opens without migrating, reads and writes rows, cannot create or drop.
     const appStore = await openPostgresStore(urlAs(roles.app, passwords.app, database), { migrate: false, pool: { max: 2 } });
     try {
-      await appStore.db.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (?, 'k', 'v', 'now')").run(OWNER_ID);
-      assert.equal(await appStore.db.prepare("SELECT value FROM settings WHERE key = 'k'").pluck().get(), 'v');
-      await appStore.db.prepare("DELETE FROM settings WHERE key = 'k'").run();
+      // As a user (row-level security, v3 Phase 1I: the unscoped app database sees no user's rows).
+      const owner = scopeDatabase(appStore.db, OWNER_ID);
+      await owner.prepare("INSERT INTO settings (user_id, key, value, updated_at) VALUES (@uid, 'k', 'v', 'now')").run();
+      assert.equal(await owner.prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'k'").pluck().get(), 'v');
+      await owner.prepare("DELETE FROM settings WHERE user_id = @uid AND key = 'k'").run();
     } finally {
       await appStore.close();
     }

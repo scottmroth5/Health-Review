@@ -566,4 +566,10 @@ export const MIGRATIONS = [
       CREATE INDEX review_versions_week ON review_versions(user_id, week_ending);
     `,
   },
+  {
+    // Row-level security (v3 Phase 1I, docs/adr/0011) is PostgreSQL's (db/pg/migrate.js); SQLite has none. This keeps the
+    // two engines' migration ids in step (test/schema-parity.test.js) and changes nothing.
+    id: '035-row-level-security',
+    up: () => {},
+  },
 ];

@@ -94,6 +94,7 @@ flowchart LR
    - only the app's own files go to Drive, and backups are encrypted first;
    - email carries names, dates and links only.
 5. **The demo:** made-up data, no secrets, every write refused. Anonymous counts go to PostHog only when enabled, and never with Global Privacy Control on.
+6. **The app to the database (row-level security, ADR 0011):** each statement runs as its user, so the database returns only that user's rows even if a query forgets its filter. The admin screens, backups and transfer tools read every user's rows in an explicit all-users mode. This guards against mistakes in code, not against a compromised server.
 
 ## Known limits that v3 addresses
 - The old Lightsail server, stopped, and its snapshots keep AWS-managed keys until they are deleted on 2026-12-01; then the exception (ADR 0003) ends.

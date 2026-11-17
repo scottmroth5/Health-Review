@@ -95,13 +95,14 @@ export function openHealthStore(path = process.env.HEALTH_DB_PATH || DEFAULT_DB_
  * (db/pg/migrate.js), else SQLite (openHealthStore), then brings the owner's email in step with the environment. The
  * server calls it only with DB_ENGINE=postgres (server/index.js), so a stray DATABASE_URL never moves a SQLite server.
  * migrate false (the server, as hr_app): pending PostgreSQL migrations refuse the open instead of running.
- * @param {{ url?: string, path?: string, snapshot?: boolean, migrate?: boolean, log?: { info: Function } }} [options]
+ * allUsers (PostgreSQL): every user's rows unscoped, for the whole-database tools (the backup service), never the app.
+ * @param {{ url?: string, path?: string, snapshot?: boolean, migrate?: boolean, allUsers?: boolean, log?: { info: Function } }} [options]
  */
-export async function openStore({ url = process.env.DATABASE_URL, path, migrate = true, ...options } = {}) {
+export async function openStore({ url = process.env.DATABASE_URL, path, migrate = true, allUsers = false, ...options } = {}) {
   let store;
   if (url) {
     const { openPostgresStore } = await import('./pg/migrate.js');
-    store = await openPostgresStore(url, { migrate });
+    store = await openPostgresStore(url, { migrate, allUsers });
   } else {
     store = openHealthStore(path, options);
   }

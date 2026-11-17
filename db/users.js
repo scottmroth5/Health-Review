@@ -4,6 +4,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 // The run tracer lives in db/runs.js; re-exported here, where its callers have always imported it.
 export { startUserRun } from './runs.js';
+import { scopeDatabase } from './scope.js';
 
 export const OWNER_ID = '00000000-0000-4000-8000-000000000001';
 
@@ -90,5 +91,6 @@ export async function setGoogleToken(db, uid, sealed) {
 /** A user's own time zone (their settings row time_zone, set in Settings), or null for OWNER_TZ. Never for the owner. */
 export async function timeZoneOf(db, uid) {
   if (!uid || uid === OWNER_ID) return null;
-  return (await (db.unscoped ?? db).prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'time_zone'").pluck().get(uid)) ?? null;
+  // Read as that user (scopeDatabase), so row-level security lets it through on PostgreSQL (v3 Phase 1I).
+  return (await scopeDatabase(db, uid).prepare("SELECT value FROM settings WHERE user_id = @uid AND key = 'time_zone'").pluck().get()) ?? null;
 }

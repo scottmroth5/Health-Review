@@ -9,7 +9,9 @@
 #                                    data/backups, and a failed deploy puts that copy back before the old image starts.
 #   ./deploy.sh deploy <tag> --no-backup        the same without the Drive backup (emergency only)
 #   ./deploy.sh deploy <tag> --skip-db-check    deploy an image that has no migration check (an old tag)
-#   ./deploy.sh rollback             start the previous good image again
+#   ./deploy.sh rollback             start the previous good image again. On PostgreSQL, not to an image older than
+#                                    migration 035 (row-level security, docs/adr/0011): it would sign in to empty screens
+#                                    and have its writes refused (nothing is lost; deploy the newer tag again)
 #   ./deploy.sh up                   start the current good image (after a reboot or a .env change)
 #   ./deploy.sh pull                 download the current good image again without restarting anything
 #   ./deploy.sh status               the running tag and each container's health

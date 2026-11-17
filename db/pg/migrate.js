@@ -23,6 +23,22 @@ export const MIGRATE_LOCK_KEY = 7120260002;
 
 const BASELINE_SQL = readFileSync(new URL('./001-baseline.sql', import.meta.url), 'utf8');
 
+/**
+ * The row-level security policy for a table with a user_id column (v3 Phase 1I): its user's rows, or every row in
+ * all-users mode. A missing setting reads as NULL and an empty one as '', so neither matches a row. With no WITH CHECK,
+ * the same test applies to the rows an insert or update writes.
+ */
+export const userRowsPolicy = (table) => `
+      ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY user_rows ON ${table}
+        USING (user_id = current_setting('app.user_id', true) OR current_setting('app.all_users', true) = 'on');`;
+
+const RLS_TABLES_035 = ['daily_metrics', 'workout_sessions', 'workout_hr_samples', 'stand_hour_samples', 'strength_exercises',
+  'strength_sets', 'workout_log_notes', 'sync_state', 'drive_exports', 'ingest_log', 'checkins', 'drinking_days', 'settings',
+  'health_targets', 'reviews', 'prompt_sections', 'prompt_section_versions', 'advisor_notes', 'program_blocks',
+  'log_sessions', 'medications', 'medication_periods', 'medication_doses', 'lab_tests', 'lab_results', 'user_programs',
+  'feedback', 'review_versions', 'runs'];
+
 export const PG_MIGRATIONS = [
   {
     id: '000-baseline',
@@ -52,6 +68,20 @@ export const PG_MIGRATIONS = [
       );
       CREATE INDEX review_versions_week ON review_versions(user_id, week_ending);
     `,
+  },
+  {
+    // Row-level security (v3 Phase 1I, docs/adr/0011): every user table and runs answer only the rows of the user the
+    // session names (app.user_id, set per statement by db/postgres.ts), or every row in all-users mode (app.all_users
+    // 'on': the admin screens, backups, whole-database tools). Neither set (the unscoped app database), no rows.
+    // run_calls follows its run. No role is named, so dumps restore anywhere. ENABLE, not FORCE: the owner (hr_migrate)
+    // still sees every row, as its data migrations need; hr_app and hr_backup are held to the policies.
+    // The tables are listed here, not taken from USER_TABLES, so this migration never changes: a later user table
+    // enables RLS and adds the same policy in its own migration (test/rls.test.js checks every table with user_id).
+    id: '035-row-level-security',
+    up: [...RLS_TABLES_035.map(userRowsPolicy), `
+      ALTER TABLE run_calls ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY user_rows ON run_calls USING (EXISTS (SELECT 1 FROM runs r WHERE r.id = run_calls.run_id));
+    `].join('\n'),
   },
 ];
 
@@ -142,10 +172,11 @@ export async function pendingPostgres(pool, migrations = PG_MIGRATIONS) {
  * container (tools/backup/pg.js), and the demo stays on SQLite.
  * With migrate false (production's app, as hr_app) nothing is applied: pending migrations refuse the open, naming the ids.
  * @param {string} connectionString  postgres://... (never logged)
- * @param {{ migrations?: typeof PG_MIGRATIONS, pool?: import('pg').PoolConfig, migrate?: boolean }} [options]
- *   pool: extra pool settings (the tests')
+ * @param {{ migrations?: typeof PG_MIGRATIONS, pool?: import('pg').PoolConfig, migrate?: boolean, allUsers?: boolean }} [options]
+ *   pool: extra pool settings (the tests'); allUsers: every user's rows unscoped (row-level security, v3 Phase 1I),
+ *   for the whole-database tools only (the backup service, the transfer scripts), never the app
  */
-export async function openPostgresStore(connectionString, { migrations = PG_MIGRATIONS, pool: poolOptions = {}, migrate = true } = {}) {
+export async function openPostgresStore(connectionString, { migrations = PG_MIGRATIONS, pool: poolOptions = {}, migrate = true, allUsers = false } = {}) {
   const pool = createPostgresPool(connectionString, poolOptions);
   let applied = [];
   try {
@@ -159,6 +190,6 @@ export async function openPostgresStore(connectionString, { migrations = PG_MIGR
     await pool.end();
     throw err;
   }
-  const db = createPostgresDatabase(pool);
+  const db = createPostgresDatabase(pool, { allUsers });
   return { db, tx: db.tx, raw: null, syncDb: null, applied, close: () => pool.end() };
 }

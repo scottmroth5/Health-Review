@@ -65,6 +65,9 @@ export function scopeDb(db, uid) {
 export function scopeDatabase(database, uid) {
   if (!uid) throw new TypeError('scopeDatabase: uid is required');
   const base = database.unscoped ?? database;
+  // On PostgreSQL the statements run as this user under row-level security too (v3 Phase 1I), so one that forgets
+  // user_id = @uid still sees only this user's rows.
+  const inner = base.forUser ? base.forUser(uid) : base;
   const scopeAsync = (stmt) => {
     const bind = uidBinder(stmt.source, uid);
     const scoped = {
@@ -79,8 +82,8 @@ export function scopeDatabase(database, uid) {
   return {
     engine: base.engine,
     raw: base.raw,
-    prepare: (sql) => scopeAsync(base.prepare(sql)),
-    exec: (sql) => base.exec(sql),
+    prepare: (sql) => scopeAsync(inner.prepare(sql)),
+    exec: (sql) => inner.exec(sql),
     tx: (fn) => base.tx(fn),
     uid,
     unscoped: base,

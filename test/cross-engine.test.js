@@ -5,42 +5,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openHealthStore } from '../db/store.js';
-import { buildApp } from '../server/app.js';
-import { loadDemoCatalog, refreshDemoDatabase } from '../demo/generate.js';
+import { refreshDemoDatabase } from '../demo/generate.js';
+import { answers, TODAY } from './route-answers.js';
 import { copyAll } from '../db/transfer.js';
 import { freshPgStore, pgSkip } from './pg.js';
-
-const TODAY = '2026-10-07';
-const PARAMS = { date: '2026-10-06', id: '1', metric: 'hrv_ms' };
-const QUERIES = {
-  '/api/history': `?from=2024-01-01&to=${TODAY}`, '/api/training': '?view=all', '/api/vo2max': '?view=all',
-  '/api/cardio-zones': '?view=1y', '/api/runs': '?limit=100', '/api/medications/checkoffs': '?weeks=52',
-};
-// Each view of the routes that take one, so every query behind them runs.
-const VIEWS = {
-  '/api/training': ['week', 'month', '3m', '6m', 'year', '2y', '5y', 'all'].map((v) => `?view=${v}`),
-  '/api/vo2max': ['90d', '1y', '2y', '5y', 'all'].map((v) => `?view=${v}`),
-  '/api/cardio-zones': ['30d', '90d', '1y'].flatMap((v) => ['day', 'week', 'month'].map((g) => `?view=${v}&group=${g}`)),
-};
-
-async function answers(store) {
-  const catalog = loadDemoCatalog();
-  const app = await buildApp({ store, clock: () => new Date(`${TODAY}T16:00:00Z`), catalog, log: { info() {}, warn() {}, error() {} } });
-  const out = {};
-  try {
-    const gets = app.routeList.filter((r) => r.method === 'GET' && r.url.startsWith('/api/')).sort((a, b) => a.url.localeCompare(b.url));
-    for (const r of gets) {
-      for (const q of VIEWS[r.url] ?? [QUERIES[r.url] ?? '']) {
-        const url = r.url.replace(/:(\w+)/g, (_, k) => PARAMS[k] ?? '1') + q;
-        const res = await app.inject({ url, headers: { host: 'localhost:5188' } });
-        out[url] = `${res.statusCode} ${res.body}`;
-      }
-    }
-  } finally {
-    await app.close();
-  }
-  return out;
-}
 
 test('every GET route answers the same on SQLite and on PostgreSQL, given the same rows', { skip: pgSkip, timeout: 300_000 }, async () => {
   const sqlite = openHealthStore(':memory:');

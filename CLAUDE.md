@@ -102,6 +102,18 @@ Health specific logic stays in this repo; never add it to agent-core.
                     migrations, pendingPostgres); scripts/migrate.js applies them as hr_migrate (MIGRATE_DATABASE_URL). On
                     PostgreSQL the app's scheduler shows backup and restore-test (run: null) but the backup container runs
                     them
+                    Row-level security (v3 Phase 1I, docs/adr/0011; owner's choice 2026-11-17: an explicit all-users mode, no
+                    fourth login): migration 035 enables it (ENABLE, not FORCE: hr_migrate, the owner, still sees every row) on
+                    every user table and runs, policy user_rows (user_id = app.user_id, or app.all_users on; run_calls follows
+                    its run; no role names, so dumps restore anywhere). db/postgres.ts sets both session settings before each
+                    statement whose scope differs from its client's last (forgotten on any rollback, so a pooled client never
+                    carries a user into the next statement): scopeDatabase prepares through forUser(uid); the unscoped app
+                    database sees no user rows (users and other app-wide tables only); allUsers() is reached only through
+                    server/admin-queries.js everyone(), openStore/openPostgresStore allUsers: true (the backup service, the
+                    transfer scripts) and pg_dump (--enable-row-security, PGOPTIONS app.all_users=on). The test suite's
+                    superuser bypasses it, so test/rls.test.js runs as the real roles (forgotten filters, refused writes,
+                    pooled connections after rollbacks, every GET route byte for byte as hr_app, pg_dump as hr_backup).
+                    An image older than 035 shows empty screens on PostgreSQL: never deploy.sh rollback past it
                     Moving the data (v3 Phase 1E, docs/adr/0008): transfer.js on the async interface for both directions:
                     tableOrder (parents first, dialect.js foreignKeyParents), checkSameSchema (tables, columns and order,
                     same migration), copyAll (only into a freshly migrated database, its owner row replaced; one
@@ -783,8 +795,10 @@ database (db/scope.js); joins and subqueries scope each user table too. Only ser
 (system checks, the admin's screens). Requests run as their signed-in user (server/app.js preHandler, AsyncLocalStorage;
 none and demo modes are the owner), scheduled sync and review loop over approved users, and backup and the restore test
 cover the whole database as the owner. Guards: test/user-scope.test.js (static: user_id at least once per user table in
-each statement) and test/user-isolation.test.js (every route from app.routeList as a second user shows and changes none of
-the first user's data); a new query or route must keep both passing.
+each statement, named as @uid outside server/admin-queries.js and the migrations) and test/user-isolation.test.js (every
+route from app.routeList as a second user shows and changes none of the first user's data); a new query or route must
+keep both passing. On PostgreSQL row-level security backs them (v3 Phase 1I, docs/adr/0011; test/rls.test.js): a new
+user table needs the user_rows policy in its own PostgreSQL migration (db/pg/migrate.js userRowsPolicy).
 The owner's machine is the owner's own computer plus the servers the owner runs in their own AWS account (owner's choice,
 2026-10-23): since 2026-11-17 (1H) one EC2 server at SITE_ADDRESS (deploy/) with its database in RDS PostgreSQL, both
 encrypted with the owner's KMS key, reached only over TLS (Caddy, Let's Encrypt) and only after Google sign-in as an

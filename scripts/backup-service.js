@@ -44,7 +44,7 @@ const backupsDir = dataPath('backups');
 const DEPLOY_MARKER = dataPath('.deploy-started');
 
 async function withAppStore(fn) {
-  const store = await openStore({ url: need('DATABASE_URL'), migrate: false });
+  const store = await openStore({ url: need('DATABASE_URL'), migrate: false, allUsers: true });
   try { return await fn(store); } finally { await store.close(); }
 }
 
@@ -52,7 +52,7 @@ const backupOnce = (store) => backupJob({ store: scopeStore(store, OWNER_ID), pg
 const restoreTestOnce = (store) => restoreTestJob({ store: scopeStore(store, OWNER_ID) });
 
 async function serve() {
-  const store = await openStore({ url: need('DATABASE_URL'), migrate: false });
+  const store = await openStore({ url: need('DATABASE_URL'), migrate: false, allUsers: true });
   const mailer = createMailer();
   const adminEmail = async () => process.env.ADMIN_EMAIL || (await getUser(store.db, OWNER_ID))?.email;
   const alerts = createAlerts({ db: store.db, mailer, adminEmail, appUrl: () => process.env.PUBLIC_URL || '' });
