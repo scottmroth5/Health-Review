@@ -1807,17 +1807,17 @@ function timingFieldset(selected) {
   return fs;
 }
 
-async function medAction(statusNode, fn) {
+async function medAction(statusNode, fn, after = loadMeds) {
   try {
     await fn();
-    await loadMeds();
+    await after();
   } catch (err) {
     setStatus(statusNode, err.message, 'error');
   }
 }
 
-/** A collapsible inline form under a card; only one is open per card. */
-function inlineForm(card, title, fields, submitLabel, onSubmit) {
+/** A collapsible inline form under a card; only one is open per card. `after` reloads what the change touched. */
+function inlineForm(card, title, fields, submitLabel, onSubmit, after = loadMeds) {
   $('.inline-form', card)?.remove();
   const status = h('span', { class: 'status', role: 'status' });
   const form = h('form', { class: 'inline-form' }, h('p', { class: 'small muted' }, title), ...fields,
@@ -1825,7 +1825,7 @@ function inlineForm(card, title, fields, submitLabel, onSubmit) {
       h('button', { type: 'button', class: 'ghost', onclick: () => form.remove() }, 'Cancel'), status));
   form.addEventListener('submit', (evt) => {
     evt.preventDefault();
-    medAction(status, () => onSubmit(form));
+    medAction(status, () => onSubmit(form), after);
   });
   card.append(form);
   $('input, select', form)?.focus();
@@ -2799,10 +2799,22 @@ async function loadProgram() {
   const { program: p } = await api('GET', '/api/program');
   if (!p) {
     body.className = '';
-    fill(body, h('p', { class: 'muted small' }, 'No program in progress. Confirm your current block on the ', h('a', { href: '#programs' }, 'Programs'), ' tab.'));
+    fill(body, h('p', { class: 'muted small' }, 'No program in progress. Start one here, or confirm a block found in your log on the ',
+      h('a', { href: '#programs' }, 'Programs'), ' tab.'),
+    h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: () => startProgramForm() }, 'Start program')));
     return;
   }
   body.className = '';
+  const endButton = h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', onclick: () => endProgramForm(p) }, 'End program'));
+  if (!p.in_catalog) {
+    // A training block of the user's own naming: no phases, length or finish to show.
+    fill(body,
+      h('div', { class: 'program-title' }, h('strong', {}, p.program), ` since ${niceDate(p.start_date)}`),
+      h('div', { class: 'tiles' }, vo2Tile('Week', String(p.week ?? 1), 'since the start')),
+      h('p', { class: 'muted small' }, `${plural(p.sessions, 'session')} logged in this block. Not a catalog program, so there are no phases or finish date.`),
+      endButton);
+    return;
+  }
   const flags = [p.deload_week && 'Deload week', p.failure_week && 'Failure week', p.beyond_program && 'Past the end of the program']
     .filter(Boolean).map((f) => h('span', { class: 'badge' }, f));
   const short = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -2825,7 +2837,41 @@ async function loadProgram() {
     p.percent !== null ? h('div', { class: 'ex-bar-track program-track', role: 'img', 'aria-label': `${p.percent}% of the program` },
       h('div', { class: 'ex-bar', style: `width:${Math.max(2, p.percent)}%` })) : null,
     h('div', { class: 'tiles' }, ...tiles),
-    h('p', { class: 'muted small' }, `${plural(p.sessions, 'session')} logged in this block.`));
+    h('p', { class: 'muted small' }, `${plural(p.sessions, 'session')} logged in this block.`),
+    endButton);
+}
+
+/** After End or Start program: close the form and reload the Training cards that follow the current block. */
+async function afterProgramChange() {
+  $('.inline-form', $('#program-card'))?.remove();
+  await loadProgram();
+  await Promise.all([loadAdherence().catch(failed('#adherence-body')), loadLifts().catch(failed('#lifts-body'))]);
+}
+
+/** End program: the last day (default: the last day logged under this program's name) and the outcome. */
+function endProgramForm(p) {
+  const last = p.last_named_session ?? p.last_session ?? state.today;
+  inlineForm($('#program-card'), `End ${p.program}. Lifting days after the last day leave it.`, [
+    h('label', {}, 'Last day', h('input', { type: 'date', name: 'end', required: true, value: last, min: p.start_date, max: state.today })),
+    h('label', {}, 'Outcome', h('select', { name: 'outcome' },
+      h('option', { value: 'completed' }, 'Completed'), h('option', { value: 'abandoned' }, 'Stopped early'))),
+  ], 'End program', async (form) => {
+    await api('POST', `/api/program/blocks/${encodeURIComponent(p.id)}/end`, { end: form.elements.end.value, outcome: form.elements.outcome.value });
+  }, afterProgramChange);
+}
+
+/** Start program: any name (the catalog's names offered) and a start date. */
+async function startProgramForm() {
+  const view = await api('GET', '/api/programs').catch(() => ({ programs: [], shared: [] }));
+  const names = [...new Set([...view.programs.map((r) => r.name), ...view.shared])].sort((a, b) => a.localeCompare(b));
+  inlineForm($('#program-card'),
+    'Any name works, such as Light workout. A name that isn\'t in your catalog shows weeks since the start, without phases or a finish date.', [
+      h('label', {}, 'Name', h('input', { type: 'text', name: 'program', required: true, maxlength: 80, list: 'program-names', autocomplete: 'off' })),
+      h('datalist', { id: 'program-names' }, ...names.map((n) => h('option', { value: n }))),
+      h('label', {}, 'Start date', h('input', { type: 'date', name: 'start', required: true, value: state.today, max: state.today })),
+    ], 'Start program', async (form) => {
+      await api('POST', '/api/program/blocks', { program: form.elements.program.value.trim(), start: form.elements.start.value });
+    }, afterProgramChange);
 }
 
 async function loadTraining(view = trainingViewChoice()) {

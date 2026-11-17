@@ -176,4 +176,8 @@ test('progress: uneven logged phases give the real phase, program week and a fin
   assert.deepEqual([early.phase, early.week, early.pace, early.paceFinish], ['Phase 1', 2, null, null], 'no finished phase: no pace yet');
   const none = programProgress(block, [{ date: '2026-01-20', workout: null }], catalog, '2026-01-20');
   assert.deepEqual([none.estimated, none.phase, none.week], [true, 'Phase 2', 3], 'no names: the calendar, marked estimated');
+  const own = programProgress({ program: 'Light workout', start_date: '2026-01-05', status: 'in_progress' },
+    [{ date: '2026-01-20', workout: 'Light workout' }], catalog, '2026-01-20');
+  assert.deepEqual([own.estimated, own.phase, own.week, own.programWeeks, own.earliestFinish, own.pastProgramEnd],
+    [false, null, 3, null, null, false], 'a training block outside the catalog: weeks since the start, nothing estimated');
 });

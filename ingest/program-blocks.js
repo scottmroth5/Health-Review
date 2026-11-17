@@ -6,6 +6,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { detectBlocks, loggedPhases, phaseOnDay, programProgress, weekOf } from '../metrics/blocks.js';
 import { loadStrengthSets, programMatchers } from '../metrics/load.js';
+import { programOf } from '../metrics/programs.js';
 import { performed } from '../metrics/strength.js';
 import { daysBetween } from '../metrics/stats.js';
 import { OWNER_ID } from '../db/users.js';
@@ -126,8 +127,15 @@ export async function blockStatus(db, block, today, catalog) {
   const sessions = await db.prepare('SELECT COUNT(*) AS n, MAX(date) AS last FROM log_sessions WHERE user_id = @uid AND block_id = ?').get(block.id);
   const inProgress = block.status === 'in_progress';
   const asOf = inProgress ? today : (sessions.last ?? block.start_date);
-  const p = programProgress(block, await blockRows(db, block, asOf), catalog, asOf);
+  const rows = await blockRows(db, block, asOf);
+  const p = programProgress(block, rows, catalog, asOf);
+  // The last day whose Workout Log name belongs to this program: the End form's default, since days after it may
+  // already be something else (they join the block until it is ended).
+  const matchers = await programMatchers(db);
+  const named = rows.filter((r) => programOf(r.workout, matchers) === block.program).map((r) => r.date);
   return {
+    in_catalog: Boolean(catalog?.find(block.program)),
+    last_named_session: named.length ? named[named.length - 1] : null,
     id: block.id,
     program: block.program,
     status: block.status,
@@ -247,6 +255,47 @@ export async function editBlock(db, ref, changes, { today, now = new Date() }) {
     await reassign(db, b.id, today, stamp);
   });
   return await db.prepare('SELECT * FROM program_blocks WHERE user_id = @uid AND id = ?').get(b.id);
+}
+
+const OUTCOMES = ['completed', 'abandoned'];
+
+/**
+ * Ends the confirmed in-progress block on a day (its last), as completed or abandoned (stopped early). Lifting days
+ * after it leave the block. The app's End program.
+ */
+export async function endBlock(db, ref, { end, outcome }, { today, now = new Date() }) {
+  const b = await findBlock(db, ref);
+  if (b.source !== 'confirmed' || b.status !== 'in_progress') throw new ReviewError('Only the program in progress can be ended');
+  if (!OUTCOMES.includes(outcome)) throw new ReviewError(`Outcome must be one of ${OUTCOMES.join(', ')}`);
+  if (!isDate(end)) throw new ReviewError(`Not a date: ${end}`);
+  if (end > today) throw new ReviewError('The last day can not be after today');
+  return await editBlock(db, b.id, { end, status: outcome }, { today, now });
+}
+
+/**
+ * Starts a program or training block on a day: a confirmed in-progress block, so lifting days from the start join it
+ * and later ones follow (assignForward). Any name: one outside the catalog has no phases or finish. The app's Start
+ * program; refused while another program is in progress.
+ */
+export async function startBlock(db, { program, start }, { today, now = new Date() }) {
+  const name = String(program ?? '').trim();
+  if (!name) throw new ReviewError('Give the program a name');
+  if (name.length > 80) throw new ReviewError('The name is longer than 80 characters');
+  if (!isDate(start)) throw new ReviewError(`Not a date: ${start}`);
+  if (start > today) throw new ReviewError('The start can not be after today');
+  const stamp = now.toISOString();
+  const id = randomUUID();
+  await db.tx(async () => {
+    const current = await db.prepare(`SELECT program FROM program_blocks WHERE user_id = @uid AND source = 'confirmed' AND status = 'in_progress'
+      ORDER BY start_date DESC, id LIMIT 1`).get();
+    if (current) throw new ReviewError(`End ${current.program} first`);
+    const block = { id, program: name, start_date: start, end_date: null };
+    await assertNoOverlap(db, block);
+    await db.prepare(`INSERT INTO program_blocks (user_id, id, program, phase, start_date, end_date, status, source, notes, created_at, updated_at)
+      VALUES (@uid, ?, ?, NULL, ?, NULL, 'in_progress', 'confirmed', NULL, ?, ?)`).run(id, name, start, stamp, stamp);
+    await reassign(db, id, today, stamp);
+  });
+  return await db.prepare('SELECT * FROM program_blocks WHERE user_id = @uid AND id = ?').get(id);
 }
 
 /** Merges the second block into the first: the earlier start, the later end, and all sessions. */

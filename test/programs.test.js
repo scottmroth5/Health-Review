@@ -169,6 +169,33 @@ test('their program names their days and blocks; a confirmed block gets phases, 
   assert.deepEqual(advisor.ranking.map((r) => r.program), ['Plan Six']);
 });
 
+test('End program and Start program: only the user\'s own block in progress ends; any name starts a training block', async () => {
+  const { signIn, lift } = await setup();
+  const lee = await signIn('lee@example.com');
+  const kim = await signIn('kim@example.com');
+  await lift('lee', [['2026-03-02', 'Plan Five Phase 1 A'], ['2026-03-09', 'Plan Five Phase 1 A'], ['2026-03-16', 'Light workout'], ['2026-03-19', 'Light workout']]);
+  await lee.send('POST', '/api/programs', { program: program('Plan Five'), match: 'plan five' });
+  const [block] = (await lee.get('/api/program/blocks')).json();
+  await lee.send('POST', `/api/program/blocks/${block.id}/confirm`);
+  await lee.send('POST', '/api/program/blocks', { program: 'Light workout', start: '2026-03-16' })
+    .then((r) => assert.equal(r.statusCode, 409, 'starting while another runs is refused'));
+
+  const ended = await kim.send('POST', `/api/program/blocks/${block.id}/end`, { end: '2026-03-09', outcome: 'completed' });
+  assert.equal(ended.statusCode, 409, "another user's block is not theirs to end");
+  assert.equal((await lee.get('/api/program')).json().program.program, 'Plan Five');
+  assert.equal((await lee.send('POST', `/api/program/blocks/${block.id}/end`, { end: '2026-03-09', outcome: 'paused' })).statusCode, 400);
+
+  const end = (await lee.send('POST', `/api/program/blocks/${block.id}/end`, { end: '2026-03-09', outcome: 'completed' })).json();
+  assert.equal(end.program, null);
+  assert.deepEqual([end.blocks[0].status, end.blocks[0].end_date], ['completed', '2026-03-09']);
+
+  const started = (await lee.send('POST', '/api/program/blocks', { program: 'Light workout', start: '2026-03-16' })).json();
+  assert.deepEqual([started.program.program, started.program.in_catalog, started.program.sessions, started.program.estimated, started.program.phase],
+    ['Light workout', false, 2, false, null]);
+  assert.equal((await kim.get('/api/program')).json().program, null, 'the other user has no program');
+  assert.equal((await lee.send('POST', '/api/program/blocks', { program: '', start: '2026-03-16' })).statusCode, 400);
+});
+
 test('PDF: Claude drafts with the user\'s AI; nothing is saved, the file is never kept; refused without the right or AI', async () => {
   const draft = { name: 'Paper Plan', weeks: 4, focus: 'Made-up plan', notes: ['Week 5 bonus workout left out'], phases: [
     { name: 'Phase 1', first_week: 1, last_week: 2, workouts_per_week: 3, deload_weeks: [], failure_weeks: [], workouts: [{ name: 'Day 1', exercises: [{ name: 'Barbell Squat', sets: '3', reps: '5' }, { name: 'Planks', sets: '', reps: '30s' }] }] },

@@ -17,6 +17,10 @@ Add the programs you follow, and Health Review can show which phase and week you
 
 Each run of a program found in your log is a **block**. Confirm a block on the Programs screen so the Training tab's Current program card, phases and progress follow it.
 
+New lifting days join the program in progress until you end it. On the Training tab's Current program card:
+- **End program:** pick the last day (it suggests the last day logged under that program's name) and whether you completed it or stopped early. Days after it leave the program.
+- **Start program:** give any name and a start date. A name from your catalog gets its phases and finish date; any other name, such as "Light workout" for a lighter stretch of your own lifts, is a training block that shows weeks since the start. Lifting days from the start date join it.
+
 ## Shared programs
 
 If the administrator shares their program catalog with you, its program names are listed on the Programs screen. Their phases and lengths are used for you, but their contents are not shown or exported. A program of your own with the same name is used instead.

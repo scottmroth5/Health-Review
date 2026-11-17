@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.js';
 import {
-  ReviewError, confirmBlocks, detect, editBlock, findBlock, listBlocks, mergeBlocks, sessionCoverage, splitBlock,
-  unassignDays, writeDetected,
+  ReviewError, assignForward, blockStatus, confirmBlocks, detect, editBlock, endBlock, findBlock, listBlocks, mergeBlocks,
+  sessionCoverage, splitBlock, startBlock, unassignDays, writeDetected,
 } from '../ingest/program-blocks.js';
 import { addDays } from '../metrics/stats.js';
 import { ownerStore } from './helpers.js';
@@ -52,6 +52,44 @@ test('review: editing dates moves sessions in and out and renumbers weeks; bad e
   await assert.rejects(() => editBlock(adb, sym, { end: '2024-01-01' }, opts), /end is before the start/);
   await assert.rejects(() => editBlock(adb, sym, { status: 'paused' }, opts), /Status must be one of/);
   await assert.rejects(() => editBlock(adb, sym, { end: '' }, opts), /Only an in-progress block/);
+  await store.close();
+});
+
+test('end and start program: the app ends the block in progress and starts a training block of any name', async () => {
+  const { store, db, adb, sym, ana } = await setup();
+  await confirmBlocks(adb, 'all-detected', opts);
+  await editBlock(adb, ana, { status: 'in_progress' }, opts); // Anabolic still running: later lifting days join it
+  assert.equal((await db.prepare("SELECT block_id FROM log_sessions WHERE date = '2025-06-01'").get()).block_id, ana);
+  const status = await blockStatus(adb, await findBlock(adb, ana), TODAY, null);
+  assert.deepEqual([status.last_named_session, status.last_session, status.in_catalog], ['2025-02-08', '2025-06-01', false],
+    'the End default is the last day named for the program, not a later day that joined it');
+
+  await assert.rejects(() => endBlock(adb, sym, { end: '2025-01-20', outcome: 'completed' }, opts), /Only the program in progress/);
+  await assert.rejects(() => endBlock(adb, ana, { end: '2025-02-10', outcome: 'paused' }, opts), /Outcome must be one of/);
+  await assert.rejects(() => endBlock(adb, ana, { end: '2026-01-01', outcome: 'completed' }, opts), /after today/);
+  await assert.rejects(() => endBlock(adb, ana, { end: '2025-01-01', outcome: 'completed' }, opts), /end is before the start/);
+  await assert.rejects(() => endBlock(adb, ana, { end: 'soon', outcome: 'completed' }, opts), /Not a date/);
+  await assert.rejects(() => startBlock(adb, { program: 'Light workout', start: '2025-05-01' }, opts), /End MAPS Anabolic first/);
+
+  const ended = await endBlock(adb, ana, { end: '2025-02-08', outcome: 'abandoned' }, opts);
+  assert.deepEqual([ended.status, ended.end_date], ['abandoned', '2025-02-08']);
+  assert.deepEqual(await db.prepare("SELECT assignment, block_id FROM log_sessions WHERE date IN ('2025-02-10', '2025-06-01') ORDER BY date").all(),
+    [{ assignment: 'unassigned', block_id: null }, { assignment: 'unassigned', block_id: null }], 'days after the end leave the block');
+
+  await assert.rejects(() => startBlock(adb, { program: '  ', start: '2025-05-01' }, opts), /Give the program a name/);
+  await assert.rejects(() => startBlock(adb, { program: 'x'.repeat(81), start: '2025-05-01' }, opts), /longer than 80/);
+  await assert.rejects(() => startBlock(adb, { program: 'Light workout', start: '2026-01-01' }, opts), /after today/);
+  await assert.rejects(() => startBlock(adb, { program: 'Light workout', start: '2025-02-01' }, opts), /Overlaps confirmed block/);
+  const light = await startBlock(adb, { program: ' Light workout ', start: '2025-05-01' }, opts);
+  assert.deepEqual([light.program, light.status, light.source, light.end_date], ['Light workout', 'in_progress', 'confirmed', null]);
+  assert.deepEqual(await sessions(db, light.id), [{ date: '2025-06-01', week: 5, program: 'Light workout', source: 'confirmed' }],
+    'lifting days from the start join it');
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM program_blocks WHERE source = 'confirmed' AND status = 'in_progress'").get()).n, 1);
+
+  // A later lifting day follows the new block, as with any program in progress.
+  const exId = (await db.prepare("INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, exercise) VALUES (@uid, 2025, 99, '2025-07-01', 'Light workout', 'Squat') RETURNING id").get()).id;
+  await db.prepare("INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_lbs, reps, reps_text) VALUES (@uid, ?, 1, 80, 8, '8')").run(exId);
+  assert.deepEqual(await assignForward(adb, TODAY), { assigned: 1, block: 'Light workout' });
   await store.close();
 });
 

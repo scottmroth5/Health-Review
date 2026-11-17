@@ -411,7 +411,13 @@ between; Between programs and Home workouts are blocks, but a Between programs, 
 same program on both sides joins that run),
 then confirmed by the owner. log_sessions holds one row per lifting day (UUID v5 of the date) with its block or an
 explicit unassigned; re-detection never touches confirmed blocks, owner-unassigned days or forward sessions. After a
-sync, new lifting days join the in-progress confirmed block with program and week (source 'forward').
+sync, new lifting days join the in-progress confirmed block with program and week (source 'forward'). The app's
+Current program card ends and starts blocks (2026-11-17; ingest/program-blocks.js endBlock and startBlock; POST
+/api/program/blocks/:id/end { end, outcome completed|abandoned } and POST /api/program/blocks { program, start }):
+End is the confirmed in-progress block only, its form defaulting to last_named_session (the last day whose Workout
+Log name maps to the program); Start takes any name (80 characters), refused while a block is in progress. A name
+outside the user's catalog is a training block (in_catalog false): weeks since the start, no phases or finish, never
+estimatedFromCalendar, and advisorDue stays false while it runs.
 MAPS catalog (metrics/catalog.js, data/maps/programs.json): each program's weeks, phases with week ranges, deload and
 failure weeks and prescriptions, transcribed from the owner's Mind Pump PDFs in data/MAPS Programs. refreshPhases
 (after detection, review commands and sync) stores each session's phase and each block's program_weeks. Phases come

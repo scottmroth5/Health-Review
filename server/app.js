@@ -19,7 +19,7 @@ import { loadGoals, loadSubstitutions, loadTargets, loadProfile, loadUserProgram
 import { loadTargetConfig } from '../metrics/targets.js';
 import { loadLabRanges } from '../metrics/labs.js';
 import { GOALS, MAX_WEIGHT } from '../metrics/advisor.js';
-import { confirmBlocks, currentProgram, listBlocks, refreshPhases, ReviewError } from '../ingest/program-blocks.js';
+import { confirmBlocks, currentProgram, endBlock, listBlocks, refreshPhases, ReviewError, startBlock } from '../ingest/program-blocks.js';
 import { ProgramError, SOURCES, deleteProgram, exportPrograms, importPrograms, saveProgram } from '../ingest/user-programs.js';
 import { MAX_PDF_BYTES, extractProgram, isPdf } from '../agent/extract-program.js';
 import { WorkoutError, deleteWorkout, listWorkouts, saveWorkout, workoutSuggestions } from '../ingest/app-workouts.js';
@@ -644,6 +644,37 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
       await refreshPhases(db, await programCatalog(req));
       return { blocks: await listBlocks(db) };
     });
+  // End program and Start program on the Training tab's Current program card (ingest/program-blocks.js endBlock,
+  // startBlock). Either answers the current program and the block list after the change.
+  const blockDate = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
+  const blockChange = async (req, reply, change) => {
+    try {
+      await change({ today: q.localDate(clock()), now: clock() });
+    } catch (err) {
+      if (err instanceof ReviewError) return reply.code(409).send({ error: err.message });
+      throw err;
+    }
+    const catalog = await programCatalog(req);
+    await refreshPhases(db, catalog);
+    return { program: await currentProgram(db, q.localDate(clock()), catalog), blocks: await listBlocks(db) };
+  };
+  app.post('/api/program/blocks/:id/end', {
+    schema: {
+      summary: 'End the program in progress on its last day, as completed or abandoned (stopped early); later lifting days leave it',
+      params: programIdParams,
+      body: { type: 'object', additionalProperties: false, required: ['end', 'outcome'],
+        properties: { end: blockDate, outcome: { type: 'string', enum: ['completed', 'abandoned'] } } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => await blockChange(req, reply, (opts) => endBlock(db, req.params.id, req.body, opts)));
+  app.post('/api/program/blocks', {
+    schema: {
+      summary: 'Start a program or training block on a day (any name; one outside the catalog has no phases or finish)',
+      body: { type: 'object', additionalProperties: false, required: ['program', 'start'],
+        properties: { program: { type: 'string', minLength: 1, maxLength: 80 }, start: blockDate } },
+      response: { 200: anyObject },
+    },
+  }, async (req, reply) => await blockChange(req, reply, (opts) => startBlock(db, req.body, opts)));
 
   app.get('/api/lifts', {
     schema: {

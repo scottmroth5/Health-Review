@@ -87,7 +87,9 @@ export function programProgress(block, rows, catalog, date) {
   if (!current) {
     const week = weekOf(block.start_date, date);
     const at = catalog?.phaseAt(block.program, week) ?? null;
-    return { ...base, estimated: true, phase: at && !at.beyond ? at.phase : null, phaseStarted: null, phaseWeek: null, phaseWeeks: null,
+    // Estimated from the calendar only when the catalog knows the program; a training block of the user's own naming
+    // has no calendar to estimate from.
+    return { ...base, estimated: Boolean(program), phase: at && !at.beyond ? at.phase : null, phaseStarted: null, phaseWeek: null, phaseWeeks: null,
       week, pastProgramEnd: Boolean(at?.beyond), deloadWeek: Boolean(at?.deload) || deloadLogged, failureWeek: Boolean(at?.failure),
       earliestFinish: program ? addDays(block.start_date, program.weeks * 7 - 1) : null, paceFinish: null, pace: null };
   }
