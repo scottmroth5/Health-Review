@@ -49,17 +49,24 @@ run.
 
   | Domain | Today |
   |---|---|
-  | identity | `server/auth.js`, `session.js`, `db/users.js`, consent and registration in `server/app.js` |
-  | ingest | `ingest/` (sync, parsers, apply, Excel upload, app workouts), the ingest routes |
-  | training | `metrics/` (volume, strength, plateau, blocks, programs, advisor, adherence, zones, vo2max, targets), `ingest/program-blocks.js`, `user-programs.js`, the training queries |
-  | health-records | medications and labs in `server/queries.js` and `metrics/medications.js`, `labs.js` |
-  | reviews | `agent/` (review, chat, help, prompts, supplements), `jobs/review.js`, `review-status.js`, the review queries |
-  | admin | `server/admin-queries.js`, `usage-totals.js`, `alerts.js` |
-  | platform | `db/`, `tools/`, `jobs/` scheduling and backup, `server/scheduler.js`, `security.js`, `geo.js`, `pages.js` |
+  | Domain | Today |
+  |---|---|
+  | identity | `server/auth.js`, `session.js`, `db/users.js`, `server/routes/identity.js` (account, feeds, keys, goals, layouts, setup and Home, export, pause, delete) |
+  | ingest | `ingest/` (sync, parsers, apply, Excel upload, app workouts), `server/routes/ingest.js` |
+  | training | `metrics/` (volume, strength, plateau, blocks, programs, advisor, adherence), `ingest/program-blocks.js`, `user-programs.js`, `server/routes/training.js` |
+  | health | the daily check-in and drinks, Apple Health history, VO2 max, heart rate zones, targets, profile and settings (`metrics/recovery.js`, `zones.js`, `vo2max.js`, `targets.js`), `server/routes/health.js` |
+  | health-records | medications and labs (`metrics/medications.js`, `labs.js`), `server/routes/health-records.js` |
+  | reviews | `agent/` (review, chat, prompts, supplements), `jobs/review.js`, `review-status.js`, `server/routes/reviews.js` |
+  | admin | `server/admin-queries.js`, `usage-totals.js`, `alerts.js`, `server/routes/admin.js` (users, usage, feedback) |
+  | platform | `db/`, `tools/`, `jobs/` scheduling and backup, `server/scheduler.js`, `security.js`, `geo.js`, `pages.js`, `server/routes/platform.js` (activity, spend, sync, help) |
 
-  Step 2 splits `server/app.js` into route modules by these domains, with the OpenAPI document byte-identical before
-  and after. The `server/queries.js` split and the `metrics/load.js` move follow. The layer rules are then restated per
-  domain in the same test.
+  Health (the check-in and the Apple Health views) became its own domain when the routes were split: it fit neither
+  training nor health-records.
+
+  Step 2 (done 2026-11-17) split `server/app.js` into these route modules. `app.js` keeps the setup, hooks, sign-in and
+  the helpers several modules use, handed to each as `ctx`. The OpenAPI document was the same before and after (key
+  order aside), and so was the full route list, hidden routes included. The `server/queries.js` split and the
+  `metrics/load.js` move follow. The layer rules are then restated per domain in the same test.
 
 ## Alternatives considered
 - **dependency-cruiser.** It is a capable tool, but a new dependency with its own configuration language. The repository already scans its own source for the user-scope and SQL guards, and this check is about 100 lines.

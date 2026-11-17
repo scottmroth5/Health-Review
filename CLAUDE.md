@@ -124,7 +124,10 @@ Health specific logic stays in this repo; never add it to agent-core.
                     counts and a SHA-256 per table and user, values normalized by dialect.js columnKinds, user ids hashed)
                     and compare. Reports carry table and column names, counts and PASS or FAIL only, never a value, id,
                     email or connection string. test/transfer.test.js rehearses the demo data to PostgreSQL and back
-/server             Fastify API (app.js routes with JSON schemas, queries.js holds all UI SQL, auth.js) and the
+/server             Fastify API (app.js: setup, hooks, sign-in and the helpers routes share, handed to each route module as
+                    ctx; routes/<domain>.js register(app, ctx): platform, health, training, ingest, reviews, health-records,
+                    identity, admin, each route with its JSON schema; routes/schemas.js the shared schema pieces;
+                    queries.js holds all UI SQL, auth.js) and the
                     static UI in server/public (plain HTML, CSS and JS modules; no build step).
                     Home (#home, the default): a tile per section (Daily Check-in and Reviews tiles carry badges from /api/status
                     and /api/reviews/status), Sync now with the last sync, Demo mode and the account; wide screens keep the tab bar, phones (720 px and

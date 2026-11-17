@@ -54,7 +54,7 @@ const EXCEPTIONS = [
 // agent files it serves, under the same harness gate).
 const SQL_IN_METRICS = new Set(['metrics/load.js']);
 
-const IMPORT_FLOOR = 450;
+const IMPORT_FLOOR = 500; // 519 on 2026-11-17 after the route modules
 const IMPORT = /\b(?:import|export)\s[^'"`;]*?\bfrom\s*['"]([^'"]+)['"]|\bimport\s*['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]\s*\)/g;
 
 /** Every relative import in the code: { from, to } as repository paths. */
@@ -74,7 +74,7 @@ function imports() {
 
 test('every import follows the layer rules (docs/adr/0012)', () => {
   const all = imports();
-  // A floor on what the guard sees (470 on 2026-11-17; raise it as code grows, never lower it to let a change pass), like the user-scope guard: a reader that quietly stops matching would pass everything.
+  // A floor on what the guard sees (519 on 2026-11-17; raise it as code grows, never lower it to let a change pass), like the user-scope guard: a reader that quietly stops matching would pass everything.
   assert.ok(all.length >= IMPORT_FLOOR, `the guard reads ${all.length} imports, under its floor of ${IMPORT_FLOOR}`);
   const misses = [];
   const seen = new Set();
