@@ -114,7 +114,9 @@ Health specific logic stays in this repo; never add it to agent-core.
                     superuser bypasses it, so test/rls.test.js runs as the real roles (forgotten filters, refused writes,
                     pooled connections after rollbacks, every GET route byte for byte as hr_app, pg_dump as hr_backup).
                     An image older than 035 shows empty screens on PostgreSQL: never deploy.sh rollback past it
-                    Moving the data (v3 Phase 1E, docs/adr/0008): transfer.js on the async interface for both directions:
+                    Moving the data (v3 Phase 1E, docs/adr/0008; the two whole-database runs, exportToSqlite and
+                    migrateToPostgres, are db/transfer-jobs.js, under the scripts and the backup container's rollback
+                    export and load): transfer.js on the async interface for both directions:
                     tableOrder (parents first, dialect.js foreignKeyParents), checkSameSchema (tables, columns and order,
                     same migration), copyAll (only into a freshly migrated database, its owner row replaced; one
                     transaction; resetSequences), audit (SQLite typeof() per column: text, real or blob in INTEGER, past
@@ -163,7 +165,8 @@ Health specific logic stays in this repo; never add it to agent-core.
                     place (refreshDemoDatabase) on start and within 10 minutes of the owner's midnight. The demo's clock
                     is noon on demo_built_for, so a late refresh never shows "data stopped"
 /jobs               the scheduled jobs shared by the npm scripts and the in-app scheduler: sync, review, backup,
-                    restore-check (the monthly restore test)
+                    restore-check (the monthly restore test), review-status (the review gate, reviewStatus; server/queries.js
+                    re-exports it)
 /scripts            command-line entry points
 /test               node:test suites with synthetic fixtures only
 /docs               guides/ (public setup guides, served at /guides), adr/ (decision records: 0000-template.md, one per
@@ -892,6 +895,12 @@ characters), CodeQL (security-extended; an open high or critical alert fails CI 
 .github/codeql-accepted.txt with a reason), and Trivy on the image (fixable high or
 critical stops the publish; accepted exceptions in .trivyignore with a reason).
 Every new tool gets a JSON schema, a handler, and a unit test.
+Imports follow the layers in docs/adr/0012 (v3 Phase 2), checked by test/boundaries.test.js: tools, then db, then
+metrics (pure, no SQL), then ingest and agent, then jobs, then server; scripts may import anything; nothing imports
+scripts, and only scripts import evals. server/public/goals.js and zone-defaults.js are shared with the browser and import
+only each other. A wrong-way import is fixed by moving code down a layer, never by adding an exception; the exceptions
+listed in the test (the eval runners' medication writes, metrics/load.js) leave with the agent/ step and its harness
+re-approval.
 The guards read TypeScript too: test/user-scope.test.js and scripts/security-check.js scan .js, .mjs, .ts, .mts and .cts,
 with a floor on the files each scans (raise it as code grows, never lower it to let a change pass), and user-scope fails
 on source in a top-level folder it does not list. Before code in a new language lands, give these guards (or an

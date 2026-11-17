@@ -4,7 +4,8 @@
 //              nothing is sent, and a 'skipped' review run is recorded with the dates only
 import { randomUUID } from 'node:crypto';
 import { addDays, lastWeekEnd } from '../metrics/stats.js';
-import { localDate, reviewStatus } from '../server/queries.js';
+import { reviewStatus } from './review-status.js';
+import { localDate } from '../tools/time.js';
 import { DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { runReview } from '../agent/review.js';
 import { startUserRun } from '../db/users.js';

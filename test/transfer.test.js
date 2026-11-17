@@ -1,4 +1,4 @@
-// Moving the database between engines (db/transfer.js, scripts/migrate-to-postgres.js, scripts/export-to-sqlite.js;
+// Moving the database between engines (db/transfer.js, db/transfer-jobs.js and the scripts over it;
 // v3 Phase 1E): the audit, table order, the schema check, the empty-target rule, the fingerprint, and the full rehearsal
 // on the demo's made-up data (SQLite to PostgreSQL and back). Made-up rows only; the rehearsal needs DATABASE_URL.
 import { test } from 'node:test';
@@ -11,8 +11,7 @@ import { foreignKeyParents } from '../db/dialect.js';
 import { OWNER_ID } from '../db/users.js';
 import { audit, checkSameSchema, compare, copyAll, fingerprint, reportLines, tableOrder } from '../db/transfer.js';
 import { refreshDemoDatabase } from '../demo/generate.js';
-import { migrateToPostgres } from '../scripts/migrate-to-postgres.js';
-import { exportToSqlite } from '../scripts/export-to-sqlite.js';
+import { exportToSqlite, migrateToPostgres } from '../db/transfer-jobs.js';
 import { openTestStore } from './helpers.js';
 import { freshPgDatabase, pgSkip } from './pg.js';
 

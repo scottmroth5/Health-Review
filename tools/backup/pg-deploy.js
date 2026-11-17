@@ -8,7 +8,7 @@
 //                           the migration role (schema dropped and recreated, then restored; RDS's point-in-time recovery
 //                           and the Drive backup remain if this fails).
 //   loadFromBackup          a Drive backup's SQLite database into an empty PostgreSQL database (staging now, the 1H
-//                           cutover later): audited, copied and verified by fingerprint (scripts/migrate-to-postgres.js).
+//                           cutover later): audited, copied and verified by fingerprint (db/transfer-jobs.js migrateToPostgres).
 //   resetDatabase           before a load: the typed database name, no other connections, a checked dump kept, then the
 //                           schema dropped and migrated afresh (the freshly migrated state the load requires).
 //   rollbackExport          the 14 days after cutover: the database as a verified SQLite file in an ordinary encrypted
@@ -133,7 +133,7 @@ async function refuseOtherConnections(url, waitMs) {
 
 /**
  * The rollback path in the 14 days after cutover (v3 Phase 1H): the PostgreSQL database back into a SQLite file
- * (scripts/export-to-sqlite.js: fingerprint-verified, deleted if it does not match), packed with the catalog as an
+ * (db/transfer-jobs.js exportToSqlite: fingerprint-verified, deleted if it does not match), packed with the catalog as an
  * ordinary encrypted SQLite backup, health-<date>.hrbk, which the old server restores with backup:restore --file latest.
  * Refuses while anything else is connected, so nothing written after the export is lost. Plaintext only in the OS temp
  * folder, deleted on every path.
@@ -147,7 +147,7 @@ export async function rollbackExport({ backupUrl, passphrase, date, drive, toDir
   const tmp = mkdtempSync(join(tmpdir(), 'hr-rollback-'));
   try {
     const out = join(tmp, 'health.db');
-    const { exportToSqlite } = await import('../../scripts/export-to-sqlite.js');
+    const { exportToSqlite } = await import('../../db/transfer-jobs.js');
     if (await exportToSqlite({ url: backupUrl, out, migrate: false, log }) !== 0) {
       throw new Error('The export did not match the database; nothing was uploaded');
     }
@@ -226,7 +226,7 @@ export async function loadFromBackup({ file, passphrase, migrateUrl, catalogPath
         log('load-from-backup: the program catalog is already there; kept it');
       }
     }
-    const { migrateToPostgres } = await import('../../scripts/migrate-to-postgres.js');
+    const { migrateToPostgres } = await import('../../db/transfer-jobs.js');
     return await migrateToPostgres({ from: database, url: migrateUrl, log });
   } finally {
     rmSync(tmp, { recursive: true, force: true });

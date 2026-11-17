@@ -1,8 +1,8 @@
 // All SQL behind the UI API. Routes validate input with JSON schemas before calling these.
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isUniqueViolation, jsonText } from '../db/dialect.js';
-import { localDate as ownerDate, zonedParts } from '../tools/time.js';
+import { isUniqueViolation } from '../db/dialect.js';
+import { localDate as ownerDate } from '../tools/time.js';
 import { buildInstructions, WEEKLY_INCLUDES_SENSITIVE } from '../agent/prompts.js';
 import { medicationEvents, eventImpact, doseText, ingredientsOf, weeklyCheckoffs } from '../metrics/medications.js';
 import { loadAdherenceInput, loadConfirmedBlocks, loadAdvisorInput, loadDataCheckInput, loadMedications, loadMetricSettings, loadPrimarySets, loadProfile, loadSessionPhases, loadStrengthSets, programMatchers } from '../metrics/load.js';
@@ -10,10 +10,10 @@ import { cardioZones, zoneBounds, zoneBuckets } from '../metrics/zones.js';
 import { trainingView } from '../metrics/volume.js';
 import { vo2maxReport } from '../metrics/vo2max.js';
 import { liftProgress } from '../metrics/plateau.js';
-import { addDays, lastWeekEnd } from '../metrics/stats.js';
+import { addDays } from '../metrics/stats.js';
 import { recommendPrograms } from '../metrics/advisor.js';
 import { blockAdherence } from '../metrics/adherence.js';
-import { dataChecks, partialDays, weekDataQuality } from '../metrics/dataquality.js';
+import { dataChecks, partialDays } from '../metrics/dataquality.js';
 import { effectiveRange, rangeStatus, typicalRange } from '../metrics/labs.js';
 
 export const SCALE_FIELDS = ['readiness', 'energy', 'mood', 'stress', 'nutrition'];
@@ -272,57 +272,8 @@ export async function spend(db, { evalDir, price, today }) {
   };
 }
 
-/** The hour on the Sunday after a review week from which a missing review counts as overdue (the task runs at 8). */
-export const REVIEW_DUE_HOUR = 9;
-
-/**
- * Whether last week's review exists, and whether its Apple Health data is complete enough to write it: every day of
- * the week has a row and none looks like a partial export. Shared by npm run review (the gate) and the Reviews notice.
- * Dates only, never values.
- * @param {Date} now  local clock, for overdue (no review, and a run was tried or it is past 9am on the Sunday after)
- */
-export async function reviewStatus(db, today, now = new Date()) {
-  const weekEnd = lastWeekEnd(today);
-  const weekFrom = addDays(weekEnd, -6);
-  const daily = await db.prepare('SELECT date, steps, exported_through FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(addDays(weekFrom, -28), weekEnd);
-  // The Apple Health gate applies only to someone with Apple Health days in the week or its baseline; someone entering by
-  // hand gets their review from what they have. A week with no data of any kind is never sent (no_data).
-  const usesApple = daily.length > 0;
-  const { missingDays, suspectedPartialDays } = usesApple ? weekDataQuality(daily, weekFrom, weekEnd) : { missingDays: [], suspectedPartialDays: [] };
-  let anyData = usesApple;
-  for (const sql of usesApple ? [] : [
-    'SELECT 1 FROM checkins WHERE user_id = @uid AND date BETWEEN ? AND ? LIMIT 1',
-    'SELECT 1 FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? LIMIT 1',
-    'SELECT 1 FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ? LIMIT 1',
-    'SELECT 1 FROM medication_doses WHERE user_id = @uid AND date BETWEEN ? AND ? LIMIT 1',
-  ]) {
-    if (await db.prepare(sql).get(weekFrom, weekEnd)) { anyData = true; break; }
-  }
-  const saved = await db.prepare('SELECT summary_json FROM reviews WHERE user_id = @uid AND week_ending = ?').get(weekEnd);
-  const hasReview = !!saved;
-  // The saved summary carries dataQuality only when the review was written with missing or partial days.
-  let gaps = null;
-  try { gaps = saved ? JSON.parse(saved.summary_json).dataQuality ?? null : null; } catch { gaps = null; }
-  const writtenWithGaps = gaps ? { missingDays: gaps.missingDays ?? [], partialDays: gaps.suspectedPartialDays ?? [] } : null;
-  const run = await db.prepare(`SELECT status, started_at, finished_at, summary FROM runs
-    WHERE user_id = @uid AND name = 'review' AND ${jsonText(db, 'meta', 'weekEnd')} = ? ORDER BY id DESC LIMIT 1`).get(weekEnd);
-  const lastRun = run ? { ...run, summary: run.summary ? JSON.parse(run.summary) : null } : null;
-  const due = today > addDays(weekEnd, 1) || zonedParts(now).hour >= REVIEW_DUE_HOUR;
-  return {
-    weekEnd,
-    hasReview,
-    lastRun,
-    missingDays,
-    partialDays: suspectedPartialDays,
-    ready: anyData && !missingDays.length && !suspectedPartialDays.length,
-    reason: !anyData ? 'no_data' : missingDays.length || suspectedPartialDays.length ? 'incomplete' : null,
-    // A week with no data of any kind is never due: there is nothing to review.
-    overdue: !hasReview && anyData && (!!lastRun || due),
-    writtenWithGaps,
-    // Written while days were missing or partial, and the week is complete now: offer to write it again.
-    rewriteAvailable: !!writtenWithGaps && !missingDays.length && !suspectedPartialDays.length,
-  };
-}
+// The review gate lives in jobs/review-status.js (docs/adr/0012); re-exported for the routes, scripts and tests.
+export { REVIEW_DUE_HOUR, reviewStatus } from '../jobs/review-status.js';
 
 // ---- settings ----
 

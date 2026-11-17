@@ -9,7 +9,7 @@ import { createDriveClient } from '../tools/backup/drive.js';
 import { runBackup } from '../tools/backup/run.js';
 import { getGoogleAuth } from '../tools/google/auth.js';
 import { dataPath } from '../tools/paths.js';
-import { localDate } from '../server/queries.js';
+import { localDate } from '../tools/time.js';
 import { startUserRun } from '../db/users.js';
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} };

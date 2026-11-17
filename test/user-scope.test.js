@@ -55,7 +55,7 @@ test('every query on a user table names its user as @uid (except admin queries a
 // admin queries (everyone()), the adapter that defines it, the store openers that pass it through, and the whole-database
 // tools. A new caller is a decision to review, not a quiet addition.
 const ALL_USERS_ALLOWED = new Set(['server/admin-queries.js', 'db/postgres.ts', 'db/database.ts', 'db/pg/migrate.js', 'db/store.js',
-  'scripts/backup-service.js', 'scripts/export-to-sqlite.js', 'scripts/migrate-to-postgres.js', 'tools/backup/pg.js']);
+  'db/transfer-jobs.js', 'scripts/backup-service.js', 'tools/backup/pg.js']);
 test('all-users mode is turned on only by the admin queries and the whole-database tools', () => {
   const found = scannedFiles().filter((rel) => /\ballUsers\b|app\.all_users/.test(readFileSync(repoPath(rel), 'utf8')));
   assert.deepEqual(found.filter((rel) => !ALL_USERS_ALLOWED.has(rel)), [], 'review a new all-users caller, then list it here');
