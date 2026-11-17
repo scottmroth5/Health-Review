@@ -36,6 +36,23 @@ import { register as adminRoutes } from './routes/admin.js';
 
 export { INGEST_BODY_LIMIT, INGEST_RATE_LIMIT } from './routes/schemas.js';
 
+/**
+ * /api/v1 (v3 Phase 2 step 3): the stable, versioned prefix for the same API. Fastify's rewriteUrl runs before routing
+ * and before every hook, so a /api/v1 request is the /api request in every check (sign-in, same origin, the geo block,
+ * rate limits, the demo's write refusal, usage totals, the user's scope): they all read the rewritten req.url.
+ * Health Auto Export's ingest keeps its one permanent URL, /api/ingest/*, so /api/v1/ingest/* is not rewritten (404).
+ * @param {{ url?: string }} req
+ */
+export function apiV1Alias(req) {
+  const url = req.url ?? '/';
+  if (!url.startsWith('/api/v1/') || url.startsWith('/api/v1/ingest/')) return url;
+  return `/api/${url.slice('/api/v1/'.length)}`;
+}
+
+export const API_DESCRIPTION = 'Health tracking and a weekly review. Every path below is also served under /api/v1/ '
+  + '(the stable, versioned prefix: /api/v1/status is /api/status), except Health Auto Export\'s ingest, which stays at '
+  + '/api/ingest/*. Contract changes are listed in docs/api/CHANGELOG.md.';
+
 /** Checks a Claude API key with Anthropic's free model list (the key goes only to Anthropic; nothing is logged). */
 export async function anthropicKeyCheck(key) {
   try {
@@ -71,7 +88,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   // The published support address (SUPPORT_EMAIL), never written in the repo; null shows "the administrator".
   const support = supportEmailFrom(supportEmail);
   const supportLine = support ? `\nQuestions or problems: ${support}\n` : '';
-  const app = Fastify({ logger, trustProxy });
+  const app = Fastify({ logger, trustProxy, rewriteUrl: apiV1Alias });
   // US-only access (server/geo.js): refused before anything else runs; ingest posts and the health check always pass.
   const blocked = geoBlocker(geo);
   const blockedPage = support ? BLOCKED_PAGE.replace('</p></body>', `</p><p>Questions: <a href="mailto:${support}">${support}</a></p></body>`) : BLOCKED_PAGE;
@@ -107,7 +124,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
   };
 
   await app.register(swagger, {
-    openapi: { info: { title: 'Health Review API', version: '1.0.0', description: 'Local health tracking and weekly review' } },
+    openapi: { info: { title: 'Health Review API', version: '1.0.0', description: API_DESCRIPTION } },
   });
   // Security headers always; rate limits once the server can be reached from outside (sign-in, refused requests, and every
   // request in the public demo); then the sign-in check (server/auth.js).

@@ -242,6 +242,11 @@ npm run programs:detect           propose program blocks from history (-- --writ
 npm run programs:review -- list   confirm, edit, merge, split blocks and unassign days (see README.md)
 npm run programs:catalog          validate data/maps/programs.json and print each program's weeks and phases
 npm start                         UI and API at http://localhost:5188 (API contract: /api/openapi.json)
+npm run api:snapshot              rewrite docs/api/openapi.json (the recorded contract, canonical JSON) and print its hash;
+                                  every contract change gets an entry naming that hash at the top of docs/api/CHANGELOG.md
+                                  (test/api-contract.test.js fails until both match the running API). /api/v1/* is the
+                                  same API (server/app.js apiV1Alias, Fastify rewriteUrl before routing and every hook);
+                                  /api/ingest/* stays the one ingest URL, never under v1. The browser still calls /api/*
 npm run server:restart            stop the server (task and its node process) and start the task again; run after code changes
 npm run server:stop               stop it (ending the task alone leaves node running; stop-server.ps1 stops the process too)
 npm run demo                      the demo instance on http://localhost:5189: data/demo/demo.db only (built when missing,

@@ -16,7 +16,13 @@ export const VIEWS = {
   '/api/cardio-zones': ['30d', '90d', '1y'].flatMap((v) => ['day', 'week', 'month'].map((g) => `?view=${v}&group=${g}`)),
 };
 
-export async function answers(store) {
+/**
+ * @param {object} store
+ * @param {{ prefix?: string, onAnswer?: (route: { method: string, url: string }, url: string, res: object) => void }} [o]
+ *   prefix: what replaces /api/ in each request (/api/v1/ for the versioned prefix); answers stay keyed by the /api/ URL.
+ *   onAnswer: sees each route, the URL asked and the response (the contract test checks bodies against the document).
+ */
+export async function answers(store, { prefix = '/api/', onAnswer } = {}) {
   const catalog = loadDemoCatalog();
   const app = await buildApp({ store, clock: () => new Date(`${TODAY}T16:00:00Z`), catalog, log: { info() {}, warn() {}, error() {} } });
   const out = {};
@@ -25,7 +31,8 @@ export async function answers(store) {
     for (const r of gets) {
       for (const q of VIEWS[r.url] ?? [QUERIES[r.url] ?? '']) {
         const url = r.url.replace(/:(\w+)/g, (_, k) => PARAMS[k] ?? '1') + q;
-        const res = await app.inject({ url, headers: { host: 'localhost:5188' } });
+        const res = await app.inject({ url: prefix + url.slice('/api/'.length), headers: { host: 'localhost:5188' } });
+        onAnswer?.(r, url, res);
         out[url] = `${res.statusCode} ${res.body}`;
       }
     }

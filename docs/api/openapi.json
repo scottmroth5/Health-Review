@@ -1,0 +1,4538 @@
+{
+  "components": {
+    "schemas": {}
+  },
+  "info": {
+    "description": "Health tracking and a weekly review. Every path below is also served under /api/v1/ (the stable, versioned prefix: /api/v1/status is /api/status), except Health Auto Export's ingest, which stays at /api/ingest/*. Contract changes are listed in docs/api/CHANGELOG.md.",
+    "title": "Health Review API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/api/account": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "The signed-in user's account: name, email, role, and whether a Claude key is set (never the key)"
+      }
+    },
+    "/api/account/claude-key": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Remove your Claude API key (no AI is used without one)"
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "key": {
+                    "maxLength": 300,
+                    "minLength": 20,
+                    "pattern": "^sk-ant-[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "key"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Save your Claude API key: checked with Anthropic (free), stored encrypted, never shown again"
+      }
+    },
+    "/api/account/delete": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "confirmEmail": {
+                    "maxLength": 320,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "confirmEmail"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete your account and everything stored for you (confirm with your email); signs you out"
+      }
+    },
+    "/api/account/export": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Everything stored for you, as one JSON file (never your sealed key, tokens or Google permission)"
+      }
+    },
+    "/api/account/feeds": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "appleHealth": {
+                    "type": "boolean"
+                  },
+                  "manual": {
+                    "type": "boolean"
+                  },
+                  "workoutLog": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Which data feeds you use (Apple Health, Workout Log, entering in the app)"
+      }
+    },
+    "/api/account/goals": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "primary": {
+                    "enum": [
+                      "strength",
+                      "cardio",
+                      "weight",
+                      "endurance",
+                      "health",
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "secondary": {
+                    "enum": [
+                      "strength",
+                      "cardio",
+                      "weight",
+                      "endurance",
+                      "health",
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "primary"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Your training goals: primary and an optional secondary (strength, cardio, weight, endurance, health), or null"
+      }
+    },
+    "/api/account/google": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Disconnect Google Sheets: forgets your permission and your sheet"
+      }
+    },
+    "/api/account/ingest-token": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Turn off your Health Auto Export token"
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "A new Health Auto Export token for your account, shown once (replaces any earlier one)"
+      }
+    },
+    "/api/account/layout": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "area": {
+                    "enum": [
+                      "training",
+                      "health",
+                      "charts"
+                    ],
+                    "type": "string"
+                  },
+                  "order": {
+                    "items": {
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "maxItems": 40,
+                    "nullable": true,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "area",
+                  "order"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Your order of the Training cards, the Health cards or the Health charts, or null for the default"
+      }
+    },
+    "/api/account/log-workout": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "hidden": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "hidden"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Hide or show the Training tab's Log workout card"
+      }
+    },
+    "/api/account/pause": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Pause your account: posts, syncs and AI stop until you resume; your data stays"
+      }
+    },
+    "/api/account/resume": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Resume your account after pausing it yourself (a pause by the administrator stays)"
+      }
+    },
+    "/api/account/setup": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "dismiss": {
+                    "enum": [
+                      "goals",
+                      "profile",
+                      "data",
+                      "ai",
+                      "firstResult"
+                    ],
+                    "type": "string"
+                  },
+                  "hidden": {
+                    "type": "boolean"
+                  },
+                  "restore": {
+                    "enum": [
+                      "goals",
+                      "profile",
+                      "data",
+                      "ai",
+                      "firstResult"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "The setup checklist: skip or bring back a step, or hide the checklist"
+      }
+    },
+    "/api/account/supplement-advice": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "accept": {
+                    "type": "boolean"
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "on"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Turn supplement suggestions on (accept: true, after reading the statement) or off"
+      }
+    },
+    "/api/account/tile-order": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "tiles": {
+                    "items": {
+                      "enum": [
+                        "today",
+                        "training",
+                        "programs",
+                        "health",
+                        "meds",
+                        "labs",
+                        "reviews",
+                        "prompt",
+                        "settings",
+                        "help",
+                        "users",
+                        "activity"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 30,
+                    "nullable": true,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "tiles"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Your Home tile order (view names), or null for the default"
+      }
+    },
+    "/api/account/time-zone": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "timeZone": {
+                    "maxLength": 64,
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timeZone"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Set your time zone (an IANA name such as America/Chicago), or null for the server default"
+      }
+    },
+    "/api/account/workout-sheet": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "sheet": {
+                    "maxLength": 500,
+                    "minLength": 10,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sheet"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Your Workout Log sheet: its link or ID, checked for year tabs with your Google permission"
+      }
+    },
+    "/api/admin/feedback": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "All feedback, newest first (administrators)"
+      }
+    },
+    "/api/admin/feedback/{id}/status": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "new",
+                      "done"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Mark feedback new or done (administrators)"
+      }
+    },
+    "/api/admin/usage": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "weeks",
+            "required": false,
+            "schema": {
+              "default": 12,
+              "maximum": 52,
+              "minimum": 4,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "arrivals": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "count": {
+                            "type": "integer"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "count"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "visits": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "browser": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "count": {
+                                "type": "integer"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "count"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "device": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "count": {
+                                "type": "integer"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "count"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "location": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "cities": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "count": {
+                                    "type": "integer"
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "count"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "countries": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "count": {
+                                    "type": "integer"
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "count"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "states": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "count": {
+                                    "type": "integer"
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "count"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "countries",
+                            "states",
+                            "cities"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "device",
+                        "browser",
+                        "location"
+                      ],
+                      "type": "object"
+                    },
+                    "weeks": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "activeUsers": {
+                            "type": "integer"
+                          },
+                          "checkins": {
+                            "type": "integer"
+                          },
+                          "feedback": {
+                            "type": "integer"
+                          },
+                          "liftingDays": {
+                            "type": "integer"
+                          },
+                          "reviews": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "completed": {
+                                "type": "integer"
+                              },
+                              "failed": {
+                                "type": "integer"
+                              },
+                              "skipped": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "completed",
+                              "failed",
+                              "skipped"
+                            ],
+                            "type": "object"
+                          },
+                          "spendUsd": {
+                            "type": "number"
+                          },
+                          "syncs": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "completed": {
+                                "type": "integer"
+                              },
+                              "failed": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "completed",
+                              "failed"
+                            ],
+                            "type": "object"
+                          },
+                          "weekEnding": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "weekEnding",
+                          "activeUsers",
+                          "reviews",
+                          "checkins",
+                          "liftingDays",
+                          "syncs",
+                          "spendUsd",
+                          "feedback"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "weeks",
+                    "visits",
+                    "arrivals"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Usage totals across users (counts only): weekly activity, and for the same period visits by device and location and arrivals by source"
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Every user (account facts only, never keys or health data), pending first"
+      }
+    },
+    "/api/admin/users/{id}/approve": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Approve a user: they get in, start from the default prompt sections, and get an email"
+      }
+    },
+    "/api/admin/users/{id}/delete": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "confirmEmail": {
+                    "maxLength": 320,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "confirmEmail"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete a user's account and all of their data (confirm with their email)"
+      }
+    },
+    "/api/admin/users/{id}/maps": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "shared": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "shared"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Share your MAPS program catalog with a user, or stop"
+      }
+    },
+    "/api/admin/users/{id}/owner-key": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "cap": {
+                    "maximum": 100,
+                    "minimum": 1,
+                    "type": "number"
+                  },
+                  "confirmEmail": {
+                    "maxLength": 320,
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "on"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Pay for a user's AI with your Claude key up to a monthly cap (confirm with their email), or stop"
+      }
+    },
+    "/api/admin/users/{id}/pause": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Pause a user: posts, syncs, reviews and chat stop; they can still sign in and see their data"
+      }
+    },
+    "/api/admin/users/{id}/reject": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Reject a pending user (or end access)"
+      }
+    },
+    "/api/admin/users/{id}/resume": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Resume a paused user"
+      }
+    },
+    "/api/advisor": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "strength",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "joint",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "time",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vo2",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Program Advisor ranking for the next block: goal scores (0 to 1), total, reasons and flags per program; weights 0 to 3 per goal (default 1) change the total; available false without the MAPS catalog"
+      }
+    },
+    "/api/advisor/chat": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Clear the whole thread"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "aiReason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "needsKey": {
+                      "type": "boolean"
+                    },
+                    "notes": {
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "The Next program chat thread, oldest first, and whether the chat is on"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "maxLength": 4000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "weights": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "joint": {
+                        "maximum": 3,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "strength": {
+                        "maximum": 3,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "time": {
+                        "maximum": 3,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "vo2": {
+                        "maximum": 3,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Ask Claude about the next program: saves the note, sends computed training facts plus the note and recent thread, saves the checked reply"
+      }
+    },
+    "/api/advisor/chat/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete one note or reply from the thread"
+      }
+    },
+    "/api/cardio-zones": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "view",
+            "required": true,
+            "schema": {
+              "enum": [
+                "30d",
+                "90d",
+                "1y"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "enum": [
+                "day",
+                "week",
+                "month"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Cardio minutes by heart rate zone over 30 days, 90 days or 1 year, by day, week (Sunday to Saturday) or calendar month (default: days for 30d and 90d, weeks for 1y): minutes per zone from per-minute heart rate, minutes with no heart rate detail, and the zone bounds"
+      }
+    },
+    "/api/checkins/{date}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete a check-in"
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "body_fat_pct": {
+                    "maximum": 75,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "energy": {
+                    "maximum": 10,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "mood": {
+                    "maximum": 10,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "muscle_mass_lbs": {
+                    "maximum": 400,
+                    "minimum": 20,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "notes": {
+                    "maxLength": 2000,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "nutrition": {
+                    "maximum": 10,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "readiness": {
+                    "maximum": 10,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "stress": {
+                    "maximum": 10,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "visceral_fat": {
+                    "maximum": 59,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "weight_lbs": {
+                    "maximum": 700,
+                    "minimum": 50,
+                    "nullable": true,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Save a daily check-in"
+      }
+    },
+    "/api/days/{date}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Check-in and drinks for a day"
+      }
+    },
+    "/api/doses/{date}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "Clear the day's check-off (back to not logged)"
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "doses": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dose": {
+                          "maxLength": 100,
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "medication_id": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "moved_to": {
+                          "enum": [
+                            "morning",
+                            "afternoon",
+                            "before_bed",
+                            "before_workout",
+                            "during_workout",
+                            "after_workout",
+                            "daily",
+                            null
+                          ],
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "taken": {
+                          "type": "boolean"
+                        },
+                        "timing": {
+                          "enum": [
+                            "morning",
+                            "afternoon",
+                            "before_bed",
+                            "before_workout",
+                            "during_workout",
+                            "after_workout",
+                            "daily"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "medication_id",
+                        "timing",
+                        "taken"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 200,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "doses"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Save the day's check-off: each slot sent is recorded taken or skipped (slots not sent stay not logged), with optional one-day dose and slot adjustments"
+      }
+    },
+    "/api/drinking/{date}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete a drinking day"
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "beers": {
+                    "maximum": 50,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "bourbon": {
+                    "maximum": 50,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cbd": {
+                    "maximum": 50,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "mood_after": {
+                    "maximum": 10,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "mood_before": {
+                    "maximum": 10,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "notes": {
+                    "maxLength": 2000,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "other": {
+                    "maximum": 50,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "setting": {
+                    "maxLength": 200,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "wine": {
+                    "maximum": 50,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Save drinks for a day (all zeros means no drinks)"
+      }
+    },
+    "/api/feedback": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "What you have sent, newest first, with its status"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "body": {
+                    "maxLength": 5000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "doing": {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "feedback",
+                      "enhancement",
+                      "bug"
+                    ],
+                    "type": "string"
+                  },
+                  "screen": {
+                    "maxLength": 40,
+                    "pattern": "^[a-z-]*$",
+                    "type": "string"
+                  },
+                  "subject": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "subject",
+                  "body"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Send feedback, an enhancement request or a bug report to the administrator"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Health check for the deploy (no sign-in needed): status and version only"
+      }
+    },
+    "/api/help": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Whether Ask is on for you, and why not"
+      }
+    },
+    "/api/help/ask": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "question": {
+                    "maxLength": 1000,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "question"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Ask a question about using the app (answered from the guides with your AI; nothing of your data is sent or the answer kept)"
+      }
+    },
+    "/api/history": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Daily metrics, check-ins and drinks between two dates"
+      }
+    },
+    "/api/home": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Home: the setup checklist (goals, profile, how data comes in, AI, first result) and a summary: today's check-in, current program, the latest review's opening, each feed's freshness, data issue count"
+      }
+    },
+    "/api/ingest/health": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Health Auto Export's health metrics (JSON, Version 2, grouped by day; Apple Stand Hour grouped by hour), stored like the Drive files"
+      }
+    },
+    "/api/ingest/workouts": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Health Auto Export's workouts (JSON, Version 2, with per-minute heart rate), stored like the Drive files"
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Each scheduled job's last runs (sync, review, backup, restore test) and the last Health Auto Export posts: status, times and counts only"
+      }
+    },
+    "/api/labs": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Lab tests by panel with their results, newest first"
+      }
+    },
+    "/api/labs/results": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "drawn_on": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "panel": {
+                    "maxLength": 100,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "test_id": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "unit": {
+                    "maxLength": 40,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "maxLength": 50
+                  }
+                },
+                "required": [
+                  "drawn_on",
+                  "value"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Add a result entered in the app (existing test, or a new test by name)"
+      }
+    },
+    "/api/labs/results/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete a result added in the app, or undo a correction (restores the sheet value)"
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "drawn_on": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "maxLength": 50
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Correct a result (a sheet result becomes an app correction that sync keeps)"
+      }
+    },
+    "/api/labs/tests/{id}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "panel": {
+                    "maxLength": 100,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "ref_high": {
+                    "maximum": 1000000,
+                    "minimum": -100000,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "ref_low": {
+                    "maximum": 1000000,
+                    "minimum": -100000,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "reset_range": {
+                    "type": "boolean"
+                  },
+                  "unit": {
+                    "maxLength": 40,
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Set a test's unit, panel, or reference range (your lab report's; reset_range goes back to the typical one)"
+      }
+    },
+    "/api/lifts": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Plateau status of each primary lift (last 42 days against the 84 before, within one rep range), with trend points"
+      }
+    },
+    "/api/me": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "The signed-in user (google mode), or the open or demo mode"
+      }
+    },
+    "/api/medications": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Medications and supplements: current first, then stopped"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dose": {
+                    "maxLength": 100,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "ingredients": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dose": {
+                          "maxLength": 100,
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "nullable": true,
+                    "type": "array"
+                  },
+                  "kind": {
+                    "enum": [
+                      "medication",
+                      "supplement"
+                    ],
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "notes": {
+                    "maxLength": 1000,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "prescribed": {
+                    "type": "boolean"
+                  },
+                  "purpose": {
+                    "maxLength": 200,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "start_estimated": {
+                    "description": "Real start unknown: taken since at least started_on, with no start event",
+                    "type": "boolean"
+                  },
+                  "started_on": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "stop_reason": {
+                    "maxLength": 200,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "stopped_on": {
+                    "nullable": true,
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "timings": {
+                    "items": {
+                      "enum": [
+                        "morning",
+                        "afternoon",
+                        "before_bed",
+                        "before_workout",
+                        "during_workout",
+                        "after_workout",
+                        "daily"
+                      ],
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "name",
+                  "kind",
+                  "timings",
+                  "started_on"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Add a medication or supplement (a stop date records a past course)"
+      }
+    },
+    "/api/medications/checkoffs": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "weeks",
+            "required": false,
+            "schema": {
+              "default": 12,
+              "maximum": 52,
+              "minimum": 4,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Daily check-offs by week for each current item: taken out of logged slots, weeks ending Saturday (the last is this week so far); a week with nothing logged has logged 0"
+      }
+    },
+    "/api/medications/combine": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "ids": {
+                    "items": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "maxItems": 20,
+                    "minItems": 2,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "preview": {
+                    "type": "boolean"
+                  },
+                  "timing": {
+                    "enum": [
+                      "morning",
+                      "afternoon",
+                      "before_bed",
+                      "before_workout",
+                      "during_workout",
+                      "after_workout",
+                      "daily"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ids",
+                  "name",
+                  "timing"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Combine items taken as one pill into one item with ingredients, for past history and from now on (preview: the plan, nothing changed)"
+      }
+    },
+    "/api/medications/impact": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Each start, change and stop with before and after averages (observational, not cause)"
+      }
+    },
+    "/api/medications/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "Remove an entry added by mistake, with all its history"
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "medication",
+                      "supplement"
+                    ],
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "notes": {
+                    "maxLength": 1000,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "prescribed": {
+                    "type": "boolean"
+                  },
+                  "purpose": {
+                    "maxLength": 200,
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Edit name, type, purpose, prescribed or notes"
+      }
+    },
+    "/api/medications/{id}/changes": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "correction": {
+                    "description": "Fix a mistake in the current dose or timing; no change is recorded",
+                    "type": "boolean"
+                  },
+                  "dose": {
+                    "maxLength": 100,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "effective_on": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "ingredients": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dose": {
+                          "maxLength": 100,
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "nullable": true,
+                    "type": "array"
+                  },
+                  "timings": {
+                    "items": {
+                      "enum": [
+                        "morning",
+                        "afternoon",
+                        "before_bed",
+                        "before_workout",
+                        "during_workout",
+                        "after_workout",
+                        "daily"
+                      ],
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "timings"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Change dose or timing from a date (starts a new period), or correct the current one in place"
+      }
+    },
+    "/api/medications/{id}/start": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dose": {
+                    "maxLength": 100,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "ingredients": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dose": {
+                          "maxLength": 100,
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "nullable": true,
+                    "type": "array"
+                  },
+                  "started_on": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "timings": {
+                    "items": {
+                      "enum": [
+                        "morning",
+                        "afternoon",
+                        "before_bed",
+                        "before_workout",
+                        "during_workout",
+                        "after_workout",
+                        "daily"
+                      ],
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "timings",
+                  "started_on"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Start taking it again"
+      }
+    },
+    "/api/medications/{id}/stop": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "reason": {
+                    "maxLength": 200,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "stopped_on": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "stopped_on"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Stop taking it"
+      }
+    },
+    "/api/profile": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "birth_year": {
+                    "maximum": 2100,
+                    "minimum": 1900,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "height_in": {
+                    "maximum": 96,
+                    "minimum": 36,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "sex": {
+                    "enum": [
+                      "male",
+                      "female",
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Birth year, sex and height for age-based targets (null clears one)"
+      }
+    },
+    "/api/program": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "program": {
+                      "additionalProperties": true,
+                      "nullable": true,
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "The confirmed in-progress program block: week, phase, deload or failure week, expected end (program is null when none)"
+      }
+    },
+    "/api/program/adherence": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "block",
+            "required": false,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "What the program calls for against what was logged, per lifting day of a confirmed block (default: the one in progress, else the latest): each exercise as called for, swapped, changed, skipped or added, sets, the usual changes, and the blocks to choose from; available false without the MAPS catalog"
+      }
+    },
+    "/api/program/blocks": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Your program blocks, detected and confirmed, oldest first"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "program": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "start": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "program",
+                  "start"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Start a program or training block on a day (any name; one outside the catalog has no phases or finish)"
+      }
+    },
+    "/api/program/blocks/{id}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "end": {
+                    "nullable": true,
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "start": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "completed",
+                      "abandoned",
+                      "in_progress"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Change a block's start, last day or status (an in-progress block has no last day); sessions move to match"
+      }
+    },
+    "/api/program/blocks/{id}/confirm": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Confirm a detected program block (phases and progress then follow it)"
+      }
+    },
+    "/api/program/blocks/{id}/end": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "end": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": [
+                      "completed",
+                      "abandoned"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "end",
+                  "outcome"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "End the program in progress on its last day, as completed or abandoned (stopped early); later lifting days leave it"
+      }
+    },
+    "/api/programs": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Your own programs in full, and the names of the shared catalog's programs"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "match": {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "program": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "source": {
+                    "enum": [
+                      "manual",
+                      "import",
+                      "pdf"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "program"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Add a program of your own (checked like a catalog entry; problems listed)"
+      }
+    },
+    "/api/programs/export": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Your own programs as a catalog file (never the shared catalog)"
+      }
+    },
+    "/api/programs/extract": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "filename": {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "pdf": {
+                    "maxLength": 28730983,
+                    "minLength": 8,
+                    "type": "string"
+                  },
+                  "rightToUse": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "pdf",
+                  "rightToUse"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Draft a program from a PDF you have the right to use (Claude reads it with your AI; the PDF is never stored)"
+      }
+    },
+    "/api/programs/import": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Import one program or a catalog of programs, all or nothing"
+      }
+    },
+    "/api/programs/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete one of your programs"
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "match": {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "program": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "source": {
+                    "enum": [
+                      "manual",
+                      "import",
+                      "pdf"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "program"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Replace one of your programs"
+      }
+    },
+    "/api/prompt/builder": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "The prompt builder: kinds of section with their questions, and whether Claude can draft"
+      }
+    },
+    "/api/prompt/draft": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "answers": {
+                    "additionalProperties": {
+                      "maxLength": 600,
+                      "type": "string"
+                    },
+                    "maxProperties": 10,
+                    "type": "object"
+                  },
+                  "kind": {
+                    "enum": [
+                      "about",
+                      "coaching",
+                      "training",
+                      "cardio",
+                      "weight",
+                      "sleep",
+                      "custom"
+                    ],
+                    "type": "string"
+                  },
+                  "useClaude": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "answers"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Draft a prompt section from your answers: a template (no AI) or Claude with your AI (your answers only, never your data); nothing is saved"
+      }
+    },
+    "/api/prompt/preview": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "The weekly review instructions as the model would receive them"
+      }
+    },
+    "/api/prompt/sections": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Prompt sections in order"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9 _-]+$",
+                    "type": "string"
+                  },
+                  "position": {
+                    "maximum": 999,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "sensitive": {
+                    "type": "boolean"
+                  },
+                  "text": {
+                    "maxLength": 50000,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "position",
+                  "name",
+                  "text"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Add a prompt section"
+      }
+    },
+    "/api/prompt/sections/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete a prompt section (a copy is kept)"
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "name": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9 _-]+$",
+                    "type": "string"
+                  },
+                  "position": {
+                    "maximum": 999,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "sensitive": {
+                    "type": "boolean"
+                  },
+                  "text": {
+                    "maxLength": 50000,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Edit a prompt section (the previous version is kept)"
+      }
+    },
+    "/api/reviews": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Weekly reviews, newest first, each with its earlier versions (ids and dates)"
+      }
+    },
+    "/api/reviews/run": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "weekEnd": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Write last week's review now, or write an earlier week's again (weekEnd; the review it replaces is kept as an earlier version). Syncs first; refused while Apple Health days are missing unless force. Returns 202 and runs in the background"
+      }
+    },
+    "/api/reviews/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Last week's review: whether it exists, the last run, and Apple Health days missing or partial (dates only)"
+      }
+    },
+    "/api/reviews/versions/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "An earlier version of a week's review, kept when the week was written again"
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Recent syncs, reviews and other runs, newest first (metadata only)"
+      }
+    },
+    "/api/runs/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "One run with its counts and Claude calls (metadata only)"
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Personal settings used by the metrics, with the age defaults of the heart rate zones"
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "zone2_high_bpm": {
+                    "maximum": 220,
+                    "minimum": 40,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "zone2_low_bpm": {
+                    "maximum": 220,
+                    "minimum": 40,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "zone3_high_bpm": {
+                    "maximum": 220,
+                    "minimum": 40,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "zone4_high_bpm": {
+                    "maximum": 220,
+                    "minimum": 40,
+                    "nullable": true,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Update personal settings (null clears one; a cleared Zone 3 or 4 top takes its age default)"
+      }
+    },
+    "/api/spend": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Estimated Claude API spend by month and year (reviews, chat, evals) at list prices"
+      }
+    },
+    "/api/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Today, the last sync, and data check warnings as of today (stale or missing Apple Health days, partial days, impossible values)"
+      }
+    },
+    "/api/sync": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Copy new rows from the Google Sheets now"
+      }
+    },
+    "/api/targets": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Each Health tab metric: current (90-day average or latest), suggested target, the target in effect (yours or suggested), healthy level, reason and source"
+      }
+    },
+    "/api/targets/{metric}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9_]{1,40}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Go back to the suggested target"
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9_]{1,40}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "target": {
+                    "maximum": 100000,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "target"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Set your own target for a metric (replaces the suggestion until reset)"
+      }
+    },
+    "/api/training": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "view",
+            "required": true,
+            "schema": {
+              "enum": [
+                "week",
+                "month",
+                "3m",
+                "6m",
+                "year",
+                "2y",
+                "5y",
+                "all"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Training volume (reps x total load) for the last 7 days, 30 days, 52 weeks, or all history"
+      }
+    },
+    "/api/vo2max": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "view",
+            "required": true,
+            "schema": {
+              "enum": [
+                "90d",
+                "1y",
+                "2y",
+                "5y",
+                "all"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "VO2 max readings (90 days, 1 year) or weekly and monthly averages (2 years, 5 years, all), with latest, changes and best"
+      }
+    },
+    "/api/workout-log/template.xlsx": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "The Excel Workout Log to download: a tab for this year with the Workout Log columns, and How to use"
+      }
+    },
+    "/api/workout-log/upload": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Upload your Excel Workout Log (.xlsx only, up to 5 MB): each tab named with a year replaces that year's rows"
+      }
+    },
+    "/api/workouts": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Days with workouts, newest first: app-logged ones (editable) and Workout Log sheet ones (read only); default the last 30 days"
+      }
+    },
+    "/api/workouts/suggest": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Exercise names (yours, then the dictionary) and your own programs' workouts to start from"
+      }
+    },
+    "/api/workouts/{date}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete the day's workout logged in the app"
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "exercises": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "comment": {
+                          "maxLength": 500,
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 120,
+                          "type": "string"
+                        },
+                        "sets": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "reps": {
+                                "maxLength": 40,
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "weight": {
+                                "maxLength": 40,
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "maxItems": 8,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 30,
+                    "type": "array"
+                  },
+                  "workout": {
+                    "maxLength": 200,
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "exercises"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Save the day's workout logged in the app (replaces that day's app workout; sheet rows are left alone)"
+      }
+    }
+  }
+}
