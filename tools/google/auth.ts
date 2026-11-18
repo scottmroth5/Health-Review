@@ -20,7 +20,7 @@ export const TOKEN_PATH = dataPath('google', 'token.json');
  * OAuth client ID and secret: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET when set (cloud),
  * otherwise the Desktop-app JSON downloaded from Google Cloud.
  */
-export function loadClientCredentials({ path = CLIENT_SECRET_PATH, env = process.env } = {}) {
+export function loadClientCredentials({ path = CLIENT_SECRET_PATH, env = process.env }: { path?: string; env?: NodeJS.ProcessEnv } = {}): { clientId: string; clientSecret: string } {
   if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
     return { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };
   }
@@ -38,7 +38,7 @@ export function loadClientCredentials({ path = CLIENT_SECRET_PATH, env = process
  * GOOGLE_REFRESH_TOKEN when set (cloud), otherwise data/google/token.json from npm run google:login.
  * Access tokens are refreshed automatically by google-auth-library.
  */
-export function getGoogleAuth({ clientSecretPath, tokenPath = TOKEN_PATH, env = process.env } = {}) {
+export function getGoogleAuth({ clientSecretPath, tokenPath = TOKEN_PATH, env = process.env }: { clientSecretPath?: string; tokenPath?: string; env?: NodeJS.ProcessEnv } = {}): OAuth2Client {
   const { clientId, clientSecret } = loadClientCredentials({ path: clientSecretPath, env });
   let refreshToken = env.GOOGLE_REFRESH_TOKEN;
   if (!refreshToken && existsSync(tokenPath)) refreshToken = JSON.parse(readFileSync(tokenPath, 'utf8')).refresh_token;

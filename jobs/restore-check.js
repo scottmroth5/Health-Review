@@ -1,12 +1,12 @@
 // The monthly backup restore test as a job: npm run backup:test (scripts/backup-verify.js) and the in-app scheduler
 // (SCHEDULE_RESTORE_TEST) run this. Downloads the newest backup from Google Drive (or reads a file), runs restoreTest
-// (tools/backup/restore-check.js), and records a 'restore-test' run with the backup's name and counts; a failure is an
+// (tools/backup/restore-check.ts), and records a 'restore-test' run with the backup's name and counts; a failure is an
 // error run, which the Today tab shows as a warning until a later test passes.
 import { readFileSync } from 'node:fs';
-import { createDriveClient } from '../tools/backup/drive.js';
-import { DRIVE_FOLDER } from '../tools/backup/run.js';
-import { newestBackup, restoreTest } from '../tools/backup/restore-check.js';
-import { getGoogleAuth } from '../tools/google/auth.js';
+import { createDriveClient } from '../tools/backup/drive.ts';
+import { DRIVE_FOLDER } from '../tools/backup/run.ts';
+import { newestBackup, restoreTest } from '../tools/backup/restore-check.ts';
+import { getGoogleAuth } from '../tools/google/auth.ts';
 import { startUserRun } from '../db/users.ts';
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} };

@@ -2,7 +2,7 @@
 // WORKOUT_JSON_FOLDER_ID for JSON workouts) before the sync reads them directly. Prints counts and file dates only,
 // never file names or contents.
 //   npm run google:exports
-import { getGoogleAuth } from '../tools/google/auth.js';
+import { getGoogleAuth } from '../tools/google/auth.ts';
 import { createSheetsSource } from '../ingest/sheets.js';
 import { openOwnerStore } from '../db/store.ts';
 import { EXPORT_FILES_PER_SYNC } from '../ingest/sync.js';

@@ -29,7 +29,7 @@ The connection to RDS must be verified TLS (`rds.force_ssl` is on), and the imag
   - **`hr_backup`:** SELECT only, for pg_dump. These are plain grants rather than `pg_read_all_data`, which RDS's master may not be allowed to grant.
 - **A backup container** (`Dockerfile --target backup`, image `<tag>-backup`, compose profile `postgres`).
   - **The image:** the app's runtime plus PostgreSQL 18 from the PostgreSQL project's apt repository, whose signing key is checked against its published fingerprint. The app image never carries pg tools.
-  - **The only code that starts them:** `tools/backup/pg.js`.
+  - **The only code that starts them:** `tools/backup/pg.ts`.
     - Commands take argument arrays, with no shell.
     - Connection details go through PG* environment variables, never argv.
     - Errors give a tool and its exit code only, since pg's own output can quote row values.

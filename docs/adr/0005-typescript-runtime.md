@@ -55,3 +55,12 @@ Update, 2026-11-11: the image, CI and the PC moved to Node 26 (`node:26-bookworm
   ESLint skips them.
 - **What strict mode turned up:** four tests had statements they never awaited (`api`, `metrics`, `dialect` and
   `parsers`), which the new types exposed to the promise lint. They are awaited now.
+
+## Update, 2026-11-18: all of tools/
+- **Converted:** `tools/backup` and `tools/google`, so all of `tools/` is now TypeScript. `tsconfig.strict.json`
+  checks `tools/**/*.ts`.
+- **Shared types:** `DriveClient` is the shape tests fake. `BackupOptions` and `BackupResult` describe `runBackup`.
+  `RestoreTestResult` describes the monthly restore test.
+- **Guards:** `scripts/security-check.js` allows child processes in `tools/backup/pg.ts`.
+- **The backup image:** it runs the converted files through type stripping, checked by its backup, restore, transfer
+  and row-level security tests.

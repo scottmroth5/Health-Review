@@ -4,10 +4,10 @@
 // The catalog, if the backup has one, is written next to the database as restored-programs.json.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { createDriveClient } from '../tools/backup/drive.js';
-import { DRIVE_FOLDER, restoreBackup } from '../tools/backup/run.js';
-import { newestBackup } from '../tools/backup/restore-check.js';
-import { getGoogleAuth } from '../tools/google/auth.js';
+import { createDriveClient } from '../tools/backup/drive.ts';
+import { DRIVE_FOLDER, restoreBackup } from '../tools/backup/run.ts';
+import { newestBackup } from '../tools/backup/restore-check.ts';
+import { getGoogleAuth } from '../tools/google/auth.ts';
 
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };
 

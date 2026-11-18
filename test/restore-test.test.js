@@ -1,4 +1,4 @@
-// The monthly backup restore test (tools/backup/restore-check.js, jobs/restore-check.js). Synthetic data; Google Drive is
+// The monthly backup restore test (tools/backup/restore-check.ts, jobs/restore-check.js). Synthetic data; Google Drive is
 // faked, nothing touches the network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,9 +6,9 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openOwnerStore } from '../db/store.ts';
-import { backupName } from '../tools/backup/run.js';
-import { encrypt, pack } from '../tools/backup/crypto.js';
-import { restoreTest } from '../tools/backup/restore-check.js';
+import { backupName } from '../tools/backup/run.ts';
+import { encrypt, pack } from '../tools/backup/crypto.ts';
+import { restoreTest } from '../tools/backup/restore-check.ts';
 import { restoreTestJob } from '../jobs/restore-check.js';
 import { dataCheckWarnings } from '../server/queries.js';
 

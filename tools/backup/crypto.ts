@@ -12,20 +12,25 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 const MAGIC = Buffer.from('HRBK1');
 const HEADER_LEN = MAGIC.length + 3 + 16 + 12;
 const TAG_LEN = 16;
-export const DEFAULT_KDF = { logN: 17, r: 8, p: 1 };
+/** scrypt cost settings, stored in each file's header. */
+export interface Kdf { logN: number; r: number; p: number }
+/** A file in an archive: its name, bytes and (after unpack) SHA-256. */
+export interface ArchiveFile { name: string; data: Buffer; sha256?: string }
+
+export const DEFAULT_KDF: Kdf = { logN: 17, r: 8, p: 1 };
 export const MIN_PASSPHRASE = 16;
 
-const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
-const deriveKey = (passphrase, salt, { logN, r, p }) =>
+const sha256 = (buf: Buffer | string): string => createHash('sha256').update(buf).digest('hex');
+const deriveKey = (passphrase: string, salt: Buffer, { logN, r, p }: Kdf): Buffer =>
   scryptSync(String(passphrase).normalize('NFKC'), salt, 32, { N: 2 ** logN, r, p, maxmem: 256 * 2 ** logN * r });
 
-export function checkPassphrase(passphrase) {
+export function checkPassphrase(passphrase: string | undefined): asserts passphrase is string {
   if (!passphrase) throw new Error('HEALTH_BACKUP_PASSPHRASE is not set in .env');
   if (String(passphrase).length < MIN_PASSPHRASE) throw new Error(`The backup passphrase must be at least ${MIN_PASSPHRASE} characters`);
 }
 
-/** Packs named files into one gzipped archive. @param {Array<{name: string, data: Buffer}>} files */
-export function pack(files) {
+/** Packs named files into one gzipped archive. */
+export function pack(files: ArchiveFile[]): Buffer {
   const manifest = Buffer.from(JSON.stringify({ version: 1, files: files.map((f) => ({ name: f.name, size: f.data.length, sha256: sha256(f.data) })) }));
   const len = Buffer.alloc(4);
   len.writeUInt32BE(manifest.length);
@@ -33,10 +38,10 @@ export function pack(files) {
 }
 
 /** Unpacks an archive, checking every file's size and SHA-256. */
-export function unpack(archive) {
+export function unpack(archive: Buffer): Required<ArchiveFile>[] {
   const raw = gunzipSync(archive);
   const mlen = raw.readUInt32BE(0);
-  const { files } = JSON.parse(raw.subarray(4, 4 + mlen).toString('utf8'));
+  const { files }: { files: { name: string; size: number; sha256: string }[] } = JSON.parse(raw.subarray(4, 4 + mlen).toString('utf8'));
   let at = 4 + mlen;
   return files.map((f) => {
     const data = raw.subarray(at, at + f.size);
@@ -47,7 +52,7 @@ export function unpack(archive) {
 }
 
 /** Encrypts bytes with a passphrase. Every call uses a fresh salt and nonce. */
-export function encrypt(plain, passphrase, kdf = DEFAULT_KDF) {
+export function encrypt(plain: Buffer, passphrase: string | undefined, kdf: Kdf = DEFAULT_KDF): Buffer {
   checkPassphrase(passphrase);
   const salt = randomBytes(16);
   const nonce = randomBytes(12);
@@ -59,7 +64,7 @@ export function encrypt(plain, passphrase, kdf = DEFAULT_KDF) {
 }
 
 /** Decrypts a .hrbk file. Throws on a wrong passphrase or any change to the file. */
-export function decrypt(file, passphrase) {
+export function decrypt(file: Buffer, passphrase: string): Buffer {
   if (file.length < HEADER_LEN + TAG_LEN || !file.subarray(0, MAGIC.length).equals(MAGIC)) throw new Error('Not a Health-Review backup file');
   const header = file.subarray(0, HEADER_LEN);
   const [logN, r, p] = header.subarray(MAGIC.length, MAGIC.length + 3);

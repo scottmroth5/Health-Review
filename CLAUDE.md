@@ -213,7 +213,7 @@ node scripts/migrate-to-postgres.js --audit [--from <file>]   what PostgreSQL wo
 DATABASE_URL=... node scripts/export-to-sqlite.js --out <new file>   PostgreSQL back to a new SQLite file (the rollback
                                   path), verified; never over an existing file, and deleted if verification fails
 npm run typecheck                 tsc, checking only: tsconfig.json (db/ JavaScript, not strict) and tsconfig.strict.json
-                                  (strict: true over the converted TypeScript, db/**/*.ts and tools/*.ts so far; each
+                                  (strict: true over the converted TypeScript, db/**/*.ts and tools/**/*.ts so far; each
                                   conversion step adds its folder; v3 Phase 2). TypeScript 6.0.x, as typescript-eslint
                                   supports below 6.1; .ts runs through Node's type stripping, docs/adr/0005. Converted files
                                   are imported by their .ts name; db/store.js, scope.js, users.js and tools/paths.js are
@@ -277,11 +277,11 @@ deploy/                           the server (/opt/health-review): compose.yml (
                                   backup-service.js: the schedule, backup-now, restore-test, pre-migrate, restore-pre-migration,
                                   reset-database --confirm <database> (before every load: no other connections, a checked
                                   dump kept, then the schema dropped and migrated afresh), load-from-backup, rollback-export (1H's
-                                  14-day fallback: the database as an encrypted SQLite backup the old server restores)); a migrating deploy runs pre-migrate (tools/backup/pg-deploy.js: a pg_dump
+                                  14-day fallback: the database as an encrypted SQLite backup the old server restores)); a migrating deploy runs pre-migrate (tools/backup/pg-deploy.ts: a pg_dump
                                   to data/backups/pre-migration-<stamp>.dump, restored into a scratch cluster and migrated
                                   there first; 0 / 10 / 1), the Drive backup with the current image, then scripts/migrate.js in
                                   the backup container; a failed migration or start empties the schema and restores the dump.
-                                  tools/backup/pg.js is the only code that starts pg tools (argument arrays, PG* environment
+                                  tools/backup/pg.ts is the only code that starts pg tools (argument arrays, PG* environment
                                   variables never argv, errors name the tool and exit code only; scratch clusters on a Unix
                                   socket in the OS temp folder, deleted after). Lightsail has no server.conf and runs as before
 .github/workflows/deploy.yml      after CI passes on a push to main: build ghcr.io/scottmroth5/health-review (sha-<7>, latest;
@@ -844,7 +844,7 @@ cluster in the OS temp folder, v3 Phase 1G), packed with the MAPS catalog, gzipp
 HEALTH_BACKUP_PASSPHRASE (.env only, never uploaded or logged) and a fresh salt and nonce per file, verified by
 decrypting before it is uploaded over HTTPS with the drive.file scope (the app sees only files it created). Plaintext
 snapshots exist only in the OS temp folder and are deleted on every exit path. Kept: 7 nightly, 3 weekly, 1 monthly.
-The monthly restore test (tools/backup/restore-check.js restoreTest, jobs/restore-check.js; SCHEDULE_RESTORE_TEST,
+The monthly restore test (tools/backup/restore-check.ts restoreTest, jobs/restore-check.js; SCHEDULE_RESTORE_TEST,
 npm run backup:test) proves the newest backup can be read: decrypted into a new OS temp folder (deleted on every exit
 path), integrity checked (a PostgreSQL dump: restored into a throwaway local cluster, never the production instance), and
 compared with the live database by table row counts only. It fails on a decrypt or integrity
@@ -903,7 +903,7 @@ Blood oxygen and breathing disturbances (values and targets) appear in the revie
 Never output em dashes, en dashes, or double hyphens in generated text.
 Back up before every database change (owner's rule, 2026-10-24): a migration never runs on a database without a checked
 copy taken first (SQLite: the VACUUM INTO copy, db/store.ts; PostgreSQL: a pg_dump restored into a scratch cluster and
-migrated there first, kept in data/backups for the failed-deploy restore, tools/backup/pg-deploy.js), and a deploy whose
+migrated there first, kept in data/backups for the failed-deploy restore, tools/backup/pg-deploy.ts), and a deploy whose
 image would migrate makes the encrypted Drive backup first and stops if it fails (deploy/deploy.sh).
 Never commit anything under /data, or any .csv or .xml file. Never log or print API keys.
 

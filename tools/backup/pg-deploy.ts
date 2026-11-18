@@ -22,25 +22,27 @@ import { createPostgresPool } from '../../db/postgres.ts';
 import { migratePostgres, pendingPostgres, PG_MIGRATIONS } from '../../db/pg/migrate.ts';
 import { setupGrants } from '../../db/pg/roles.ts';
 import Database from 'better-sqlite3';
-import { checkPassphrase, decrypt, unpack } from './crypto.js';
-import { restoreBackup, runBackup } from './run.js';
+import { checkPassphrase, decrypt, unpack } from './crypto.ts';
+import { restoreBackup, runBackup } from './run.ts';
+import type { BackupResult } from './run.ts';
+import type { DriveClient } from './drive.ts';
+import type { PgMigration } from '../../db/pg/migrate.ts';
 
-const stamp = (d = new Date()) => d.toISOString().replace(/[-:.]/g, '').replace(/(\d{3})Z$/, '$1Z');
+type Log = (line: string) => void;
+
+const stamp = (d: Date = new Date()): string => d.toISOString().replace(/[-:.]/g, '').replace(/(\d{3})Z$/, '$1Z');
 const DUMP_NAME = /^pre-migration-\d{8}T\d{9}Z\.dump$/;
 
-/**
- * @param {{ backupUrl: string, dir: string, migrations?: typeof PG_MIGRATIONS, log?: (s: string) => void }} o
- * @returns {Promise<{ code: 0 | 10 | 1, pending: string[], file: string | null }>}
- */
-export async function preMigrate({ backupUrl, dir, migrations = PG_MIGRATIONS, log = console.log }) {
-  const { dump, restoreInto, withScratchCluster } = await import('./pg.js');
+/** 0 none pending, 10 pending and they succeed on the copy, 1 a migration failed on the copy. */
+export async function preMigrate({ backupUrl, dir, migrations = PG_MIGRATIONS, log = console.log }: { backupUrl: string, dir: string, migrations?: PgMigration[], log?: Log }): Promise<{ code: 0 | 10 | 1, pending: string[], file: string | null }> {
+  const { dump, restoreInto, withScratchCluster } = await import('./pg.ts');
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `pre-migration-${stamp()}.dump`);
   await dump(backupUrl, file);
   chmodSync(file, 0o600);
-  let result;
+  let result: { code: 0 | 10 | 1, pending: string[] };
   try {
-    result = await withScratchCluster(async (scratch) => {
+    result = await withScratchCluster(async (scratch): Promise<{ code: 0 | 10 | 1, pending: string[] }> => {
       await restoreInto(scratch, file);
       const pool = createPostgresPool(scratch, { max: 1 });
       try {
@@ -49,7 +51,7 @@ export async function preMigrate({ backupUrl, dir, migrations = PG_MIGRATIONS, l
         try {
           await migratePostgres(pool, migrations);
           return { code: 10, pending };
-        } catch (err) {
+        } catch (err: any) {
           log(`pre-migrate: a migration failed on the copy (${err.name}); the live database is untouched`);
           return { code: 1, pending };
         }
@@ -67,18 +69,16 @@ export async function preMigrate({ backupUrl, dir, migrations = PG_MIGRATIONS, l
 }
 
 /** The newest pre-migration dump in dir modified after `since` (a Date), or null. */
-export function newestDumpSince(dir, since) {
+export function newestDumpSince(dir: string, since: Date): string | null {
   if (!existsSync(dir)) return null;
   const dumps = readdirSync(dir).filter((n) => DUMP_NAME.test(n)).sort().reverse();
   const name = dumps.find((n) => statSync(join(dir, n)).mtime > since);
   return name ? join(dir, name) : null;
 }
 
-/**
- * @param {{ migrateUrl: string, file: string, prefix?: string, log?: (s: string) => void }} o
- */
-export async function restorePreMigration({ migrateUrl, file, prefix = 'hr', log = console.log }) {
-  const { restoreLive } = await import('./pg.js');
+/** A failed deploy: the dump goes back over the live database as the migration role. */
+export async function restorePreMigration({ migrateUrl, file, prefix = 'hr', log = console.log }: { migrateUrl: string, file: string, prefix?: string, log?: Log }): Promise<void> {
+  const { restoreLive } = await import('./pg.ts');
   // Objects a failed migration added are not in the dump, so the schema starts empty.
   await emptySchema(migrateUrl, prefix);
   await restoreLive(migrateUrl, file);
@@ -86,7 +86,7 @@ export async function restorePreMigration({ migrateUrl, file, prefix = 'hr', log
 }
 
 /** Drops and re-creates the public schema as the migration role, grants included, in one transaction. */
-async function emptySchema(migrateUrl, prefix) {
+async function emptySchema(migrateUrl: string, prefix: string): Promise<void> {
   const pool = createPostgresPool(migrateUrl, { max: 1 });
   try {
     const client = await pool.connect();
@@ -108,13 +108,13 @@ async function emptySchema(migrateUrl, prefix) {
 }
 
 /** The database a URL names (its path), or ''. */
-const databaseOf = (url) => decodeURIComponent(new URL(url).pathname.replace(/^\//, ''));
+const databaseOf = (url: string): string => decodeURIComponent(new URL(url).pathname.replace(/^\//, ''));
 
 /**
  * Throws unless nothing else is connected to the database (the app and the backup service stopped). A stopped
  * container's connections close a moment after it stops, so it waits up to waitMs before refusing.
  */
-async function refuseOtherConnections(url, waitMs) {
+async function refuseOtherConnections(url: string, waitMs: number): Promise<void> {
   const pool = createPostgresPool(url, { max: 1 });
   try {
     let others = 0;
@@ -137,11 +137,10 @@ async function refuseOtherConnections(url, waitMs) {
  * ordinary encrypted SQLite backup, health-<date>.hrbk, which the old server restores with backup:restore --file latest.
  * Refuses while anything else is connected, so nothing written after the export is lost. Plaintext only in the OS temp
  * folder, deleted on every path.
- * @param {{ backupUrl: string, passphrase: string, date: string, drive?: object, toDir?: string,
- *   extras?: { name: string, path: string }[], log?: (s: string) => void, waitMs?: number }} o
- * @returns {Promise<{ name: string, bytes: number }>}
  */
-export async function rollbackExport({ backupUrl, passphrase, date, drive, toDir, extras = [], log = console.log, waitMs = 5000 }) {
+export async function rollbackExport({ backupUrl, passphrase, date, drive, toDir, extras = [], log = console.log, waitMs = 5000 }: {
+  backupUrl: string, passphrase: string | undefined, date: string, drive?: DriveClient, toDir?: string,
+  extras?: { name: string, path: string }[], log?: Log, waitMs?: number }): Promise<BackupResult> {
   checkPassphrase(passphrase);
   await refuseOtherConnections(backupUrl, waitMs);
   const tmp = mkdtempSync(join(tmpdir(), 'hr-rollback-'));
@@ -169,16 +168,16 @@ export async function rollbackExport({ backupUrl, passphrase, date, drive, toDir
  * database) can follow: before the 1H cutover, and whenever staging is loaded again. Guarded three ways: the caller
  * types the database's name, nothing else may be connected to it (the app and the backup service stopped), and a
  * pg_dump checked in a scratch cluster is kept in dir first (pre-migration-<stamp>.dump, pruned with the others).
- * @param {{ backupUrl: string, migrateUrl: string, dir: string, confirm?: string, prefix?: string,
- *   migrations?: typeof PG_MIGRATIONS, log?: (s: string) => void, waitMs?: number }} o
  */
-export async function resetDatabase({ backupUrl, migrateUrl, dir, confirm, prefix = 'hr', migrations = PG_MIGRATIONS, log = console.log, waitMs = 5000 }) {
+export async function resetDatabase({ backupUrl, migrateUrl, dir, confirm, prefix = 'hr', migrations = PG_MIGRATIONS, log = console.log, waitMs = 5000 }: {
+  backupUrl: string, migrateUrl: string, dir: string, confirm?: string, prefix?: string,
+  migrations?: PgMigration[], log?: Log, waitMs?: number }): Promise<number> {
   const database = databaseOf(migrateUrl);
   if (!database || confirm !== database) throw new Error(`reset-database empties the whole database; type --confirm ${database || '<database>'} to go ahead`);
   await refuseOtherConnections(migrateUrl, waitMs);
 
   // Back up first (owner's rule): a dump that is proven to restore, kept until the pruning ages it out.
-  const { dump, restoreInto, withScratchCluster } = await import('./pg.js');
+  const { dump, restoreInto, withScratchCluster } = await import('./pg.ts');
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `pre-migration-${stamp()}.dump`);
   try {
@@ -192,7 +191,7 @@ export async function resetDatabase({ backupUrl, migrateUrl, dir, confirm, prefi
 
   await emptySchema(migrateUrl, prefix);
   const migrate = createPostgresPool(migrateUrl, { max: 1 });
-  let applied;
+  let applied: string[];
   try {
     applied = await migratePostgres(migrate, migrations);
   } finally {
@@ -205,9 +204,10 @@ export async function resetDatabase({ backupUrl, migrateUrl, dir, confirm, prefi
 /**
  * A backup's SQLite database into an empty PostgreSQL database, verified. Also writes the backup's program catalog to
  * catalogPath when none is there.
- * @returns {Promise<number>} the exit code (0 pass, 1 fail, 2 audit failures)
+ * Returns the exit code (0 pass, 1 fail, 2 audit failures).
  */
-export async function loadFromBackup({ file, passphrase, migrateUrl, catalogPath, log = console.log }) {
+export async function loadFromBackup({ file, passphrase, migrateUrl, catalogPath, log = console.log }: {
+  file: Buffer, passphrase: string, migrateUrl: string, catalogPath?: string, log?: Log }): Promise<number> {
   const files = unpack(decrypt(file, passphrase));
   if (!files.some((f) => f.name === 'health.db')) throw new Error('load-from-backup takes a SQLite backup (health.db); this one has none');
   const tmp = mkdtempSync(join(tmpdir(), 'hr-load-'));
@@ -221,7 +221,7 @@ export async function loadFromBackup({ file, passphrase, migrateUrl, catalogPath
       try {
         writeFileSync(catalogPath, catalog.data, { flag: 'wx', mode: 0o600 });
         log('load-from-backup: program catalog written');
-      } catch (err) {
+      } catch (err: any) {
         if (err.code !== 'EEXIST') throw err;
         log('load-from-backup: the program catalog is already there; kept it');
       }

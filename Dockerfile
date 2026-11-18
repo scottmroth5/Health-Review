@@ -108,7 +108,7 @@ CMD ["node", "server/index.js"]
 
 # The backup container (docker build --target backup): the runtime plus PostgreSQL 18 from the PostgreSQL project's apt
 # repository (pg_dump must be at least the server's major version). No default cluster is created; the scratch clusters
-# live in /tmp for one check each (tools/backup/pg.js).
+# live in /tmp for one check each (tools/backup/pg.ts).
 FROM runtime AS backup
 USER root
 COPY --from=pgkey /pgdg.asc /usr/share/keyrings/postgresql.asc

@@ -16,7 +16,7 @@ import { scopeDatabase } from '../db/scope.ts';
 import { USER_TABLES } from '../db/migrations-users.ts';
 import { OWNER_ID } from '../db/users.ts';
 import { everyone } from '../server/admin-queries.js';
-import { dump, pgToolsSkip, restoreInto } from '../tools/backup/pg.js';
+import { dump, pgToolsSkip, restoreInto } from '../tools/backup/pg.ts';
 import { openHealthStore } from '../db/store.ts';
 import { refreshDemoDatabase } from '../demo/generate.js';
 import { copyAll } from '../db/transfer.ts';

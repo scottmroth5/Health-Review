@@ -29,8 +29,8 @@ const BROWSER_SINKS = [
   [/document\.write(ln)?\s*\(/, 'document.write'], [/(^|[^.\w])eval\s*\(/, 'eval'], [/new\s+Function\s*\(/, 'new Function'],
   [/set(Timeout|Interval)\s*\(\s*['"`]/, 'a string passed to a timer'], [/createContextualFragment\s*\(/, 'createContextualFragment'],
 ];
-// tools/backup/pg.js: pg_dump, pg_restore and the scratch cluster, run only in the backup image (v3 Phase 1G).
-const CHILD_PROCESS_ALLOWED = ['scripts/check-personal.js', 'scripts/evals.js', 'scripts/google-login.js', 'test/migration-backup.test.js', 'tools/backup/pg.js'];
+// tools/backup/pg.ts: pg_dump, pg_restore and the scratch cluster, run only in the backup image (v3 Phase 1G).
+const CHILD_PROCESS_ALLOWED = ['scripts/check-personal.js', 'scripts/evals.js', 'scripts/google-login.js', 'test/migration-backup.test.js', 'tools/backup/pg.ts'];
 
 /** Every problem found: [{ file, line, rule }]. */
 export function securityProblems(root = ROOT) {

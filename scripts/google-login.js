@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { OAuth2Client, CodeChallengeMethod } from 'google-auth-library';
-import { SCOPES, TOKEN_PATH, loadClientCredentials } from '../tools/google/auth.js';
+import { SCOPES, TOKEN_PATH, loadClientCredentials } from '../tools/google/auth.ts';
 
 const TIMEOUT_MS = 5 * 60 * 1000;
 

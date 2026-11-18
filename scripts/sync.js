@@ -2,7 +2,7 @@
 // (row numbers and kinds, never cell contents).
 //   npm run sync                 incremental: new health and workout rows, current Workout Log tab
 //   npm run sync -- --backfill   one-time full import, including the drinking log and weekly check-ins
-import { getGoogleAuth } from '../tools/google/auth.js';
+import { getGoogleAuth } from '../tools/google/auth.ts';
 import { openOwnerStore } from '../db/store.ts';
 import { createSheetsSource } from '../ingest/sheets.js';
 import { runSync } from '../ingest/sync.js';

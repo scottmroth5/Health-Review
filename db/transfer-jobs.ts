@@ -1,6 +1,6 @@
 // The two whole-database copies (v3 Phase 1E, docs/adr/0008), as functions for the scripts that run them by hand
 // (scripts/export-to-sqlite.js, scripts/migrate-to-postgres.js) and the backup container's rollback export and load
-// (tools/backup/pg-deploy.js). Here, under db, so the platform code never imports a script (docs/adr/0012).
+// (tools/backup/pg-deploy.ts). Here, under db, so the platform code never imports a script (docs/adr/0012).
 // Both print table and column names, counts, and PASS or FAIL only: never a value, a user id, an email or the
 // connection string. Both read every user's rows (all-users mode under row-level security, docs/adr/0011).
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';

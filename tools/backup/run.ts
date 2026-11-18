@@ -4,12 +4,14 @@
 // and is deleted on every exit path. Nothing here logs file contents or the passphrase.
 // Two engines: SQLite (db, better-sqlite3's online backup plus its integrity check, packed as health.db) and
 // PostgreSQL (pgUrl, v3 Phase 1G: pg_dump as the backup role, restored into a throwaway local cluster as the check,
-// packed as health.dump; tools/backup/pg.js, in the backup container only).
+// packed as health.dump; tools/backup/pg.ts, in the backup container only).
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
-import { checkPassphrase, decrypt, encrypt, pack, sha256, unpack } from './crypto.js';
+import { checkPassphrase, decrypt, encrypt, pack, sha256, unpack } from './crypto.ts';
+import type { ArchiveFile } from './crypto.ts';
+import type { DriveClient } from './drive.ts';
 
 /** Production's backup folder in Google Drive. */
 export const PRODUCTION_DRIVE_FOLDER = 'Health-Review backups';
@@ -22,22 +24,20 @@ export const DRIVE_FOLDER = process.env.BACKUP_DRIVE_FOLDER?.trim() || PRODUCTIO
 export const RETENTION = { nightly: 7, weekly: 3, monthly: 1 }; // owner's choice, 2026-10-05
 const NAME = /^health-(\d{4}-\d{2}-\d{2})\.hrbk$/;
 
-export const backupName = (date) => `health-${date}.hrbk`;
-const dayOf = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
-const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
-const weekOf = (d) => addDays(d, 6 - dayOf(d)); // weeks end on Saturday, like the rest of the app
+export const backupName = (date: string): string => `health-${date}.hrbk`;
+const dayOf = (d: string): number => new Date(`${d}T00:00:00Z`).getUTCDay();
+const addDays = (d: string, n: number): string => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+const weekOf = (d: string): string => addDays(d, 6 - dayOf(d)); // weeks end on Saturday, like the rest of the app
 
 /**
  * Which backups to keep: the newest `nightly` days, then the newest backup of each of the next `weekly` weeks,
  * then of the next `monthly` months. Names that are not backups are never touched.
- * @param {string[]} names
- * @returns {{ keep: string[], remove: string[] }}
  */
-export function retention(names, { nightly, weekly, monthly } = RETENTION) {
-  const dated = names.map((n) => ({ n, d: NAME.exec(n)?.[1] })).filter((x) => x.d).sort((a, b) => b.d.localeCompare(a.d));
+export function retention(names: string[], { nightly, weekly, monthly }: typeof RETENTION = RETENTION): { keep: string[], remove: string[] } {
+  const dated = names.flatMap((n) => { const d = NAME.exec(n)?.[1]; return d ? [{ n, d }] : []; }).sort((a, b) => b.d.localeCompare(a.d));
   const keep = new Set(dated.slice(0, nightly).map((x) => x.n));
   // The newest backup of each of the next `count` weeks (or months) not already covered by a kept backup.
-  const pick = (count, keyOf) => {
+  const pick = (count: number, keyOf: (d: string) => string) => {
     const covered = new Set(dated.filter((x) => keep.has(x.n)).map((x) => keyOf(x.d)));
     let added = 0;
     for (const x of dated) {
@@ -53,17 +53,34 @@ export function retention(names, { nightly, weekly, monthly } = RETENTION) {
   return { keep: dated.filter((x) => keep.has(x.n)).map((x) => x.n), remove: dated.filter((x) => !keep.has(x.n)).map((x) => x.n) };
 }
 
-/**
- * @param {object} o
- * @param {import('better-sqlite3').Database} [o.db]  a SQLite live database (backed up online, safe while the app runs)
- * @param {string} [o.pgUrl]  or a PostgreSQL one: the backup role's URL (never logged)
- * @param {string} o.passphrase
- * @param {Array<{name: string, path: string}>} [o.extras]  other files to include when they exist
- * @param {object} [o.drive]  createDriveClient(...) or a fake; with o.toDir the upload is skipped
- * @param {string} [o.toDir]  write the encrypted file to this folder instead
- * @param {string} o.date  YYYY-MM-DD, the backup's name
- */
-export async function runBackup({ db, pgUrl, passphrase, extras = [], drive, toDir, date }) {
+export interface BackupOptions {
+  /** A SQLite live database (backed up online, safe while the app runs). */
+  db?: Database.Database;
+  /** Or a PostgreSQL one: the backup role's URL (never logged). */
+  pgUrl?: string;
+  passphrase: string | undefined;
+  /** Other files to include when they exist. */
+  extras?: { name: string, path: string }[];
+  /** createDriveClient(...) or a fake; with toDir the upload is skipped. */
+  drive?: DriveClient;
+  /** Write the encrypted file to this folder instead. */
+  toDir?: string;
+  /** YYYY-MM-DD, the backup's name. */
+  date: string;
+}
+
+/** What a backup made: its name, size and files, then where it went. */
+export interface BackupResult {
+  name: string;
+  bytes: number;
+  files: string[];
+  savedTo?: string;
+  driveFileId?: string;
+  kept?: number;
+  deleted?: number;
+}
+
+export async function runBackup({ db, pgUrl, passphrase, extras = [], drive, toDir, date }: BackupOptions): Promise<BackupResult> {
   checkPassphrase(passphrase);
   if (!drive && !toDir) throw new Error('Nowhere to put the backup');
   if (!db === !pgUrl) throw new Error('runBackup: give either a SQLite db or a PostgreSQL URL');
@@ -71,7 +88,7 @@ export async function runBackup({ db, pgUrl, passphrase, extras = [], drive, toD
   try {
     const snapshot = join(tmp, pgUrl ? 'health.dump' : 'health.db');
     if (pgUrl) await pgSnapshot(pgUrl, snapshot);
-    else {
+    else if (db) {
       await db.backup(snapshot);
       const check = new Database(snapshot, { readonly: true });
       const integrity = check.pragma('integrity_check', { simple: true });
@@ -80,7 +97,7 @@ export async function runBackup({ db, pgUrl, passphrase, extras = [], drive, toD
     }
 
     const dbBytes = readFileSync(snapshot);
-    const files = [{ name: pgUrl ? 'health.dump' : 'health.db', data: dbBytes }];
+    const files: ArchiveFile[] = [{ name: pgUrl ? 'health.dump' : 'health.db', data: dbBytes }];
     for (const x of extras) if (existsSync(x.path)) files.push({ name: x.name, data: readFileSync(x.path) });
     const encrypted = encrypt(pack(files), passphrase);
     // Prove the file restores before it goes anywhere.
@@ -94,6 +111,7 @@ export async function runBackup({ db, pgUrl, passphrase, extras = [], drive, toD
       writeFileSync(out, encrypted);
       return { ...summary, savedTo: out };
     }
+    if (!drive) throw new Error('Nowhere to put the backup');
     const folder = await drive.ensureFolder(DRIVE_FOLDER);
     const before = await drive.list(folder);
     const uploaded = await drive.upload(folder, name, encrypted);
@@ -112,15 +130,15 @@ export async function runBackup({ db, pgUrl, passphrase, extras = [], drive, toD
  * A checked PostgreSQL snapshot at file: pg_dump, then restored into a throwaway cluster, which must hold the app's tables
  * (users and schema_migrations among them). PostgreSQL's stand-in for SQLite's integrity check.
  */
-export async function pgSnapshot(url, file) {
-  const { dump, restoreInto, withScratchCluster } = await import('./pg.js');
+export async function pgSnapshot(url: string, file: string): Promise<{ tables: number }> {
+  const { dump, restoreInto, withScratchCluster } = await import('./pg.ts');
   const { createPostgresPool } = await import('../../db/postgres.ts');
   await dump(url, file);
   const tables = await withScratchCluster(async (scratch) => {
     await restoreInto(scratch, file);
     const pool = createPostgresPool(scratch, { max: 1 });
     try {
-      return (await pool.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")).rows.map((r) => r.tablename);
+      return (await pool.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")).rows.map((r: { tablename: string }) => r.tablename);
     } finally {
       await pool.end();
     }
@@ -133,10 +151,10 @@ export async function pgSnapshot(url, file) {
  * Decrypts a backup into new files: the database at outPath (never over an existing file) and any other
  * files next to it as restored-<name>. Checks the restored database's integrity.
  */
-export function restoreBackup({ file, passphrase, outPath }) {
+export function restoreBackup({ file, passphrase, outPath }: { file: Buffer, passphrase: string, outPath: string }): { database: string, others: string[] } {
   // Never over an existing file: 'wx' refuses one in the same step as the write (no check-then-write gap).
-  const writeNew = (path, data, message) => {
-    try { writeFileSync(path, data, { flag: 'wx' }); } catch (err) { throw err.code === 'EEXIST' ? new Error(message) : err; }
+  const writeNew = (path: string, data: Buffer, message: string) => {
+    try { writeFileSync(path, data, { flag: 'wx' }); } catch (err: any) { throw err.code === 'EEXIST' ? new Error(message) : err; }
   };
   const files = unpack(decrypt(file, passphrase));
   const db = files.find((f) => f.name === 'health.db');

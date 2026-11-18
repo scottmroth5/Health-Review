@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getGoogleAuth, loadClientCredentials } from '../tools/google/auth.js';
+import { getGoogleAuth, loadClientCredentials } from '../tools/google/auth.ts';
 
 test('client credentials and refresh token come from env first, then files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'health-review-'));

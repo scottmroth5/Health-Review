@@ -6,7 +6,7 @@
 //   npm run backup -- --to E:\HealthBackups  write the encrypted file to a folder (e.g. a USB drive), no upload
 //   npm run backup -- --check-passphrase    check HEALTH_BACKUP_PASSPHRASE in .env, then stop
 import { openOwnerStore } from '../db/store.ts';
-import { checkPassphrase } from '../tools/backup/crypto.js';
+import { checkPassphrase } from '../tools/backup/crypto.ts';
 import { backupJob } from '../jobs/backup.js';
 
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };

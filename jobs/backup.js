@@ -4,10 +4,10 @@
 // container's BACKUP_DATABASE_URL; v3 Phase 1G) a checked pg_dump replaces the SQLite snapshot.
 import { existsSync } from 'node:fs';
 import { migrationCopiesDir, pruneMigrationCopies } from '../db/store.ts';
-import { checkPassphrase } from '../tools/backup/crypto.js';
-import { createDriveClient } from '../tools/backup/drive.js';
-import { runBackup } from '../tools/backup/run.js';
-import { getGoogleAuth } from '../tools/google/auth.js';
+import { checkPassphrase } from '../tools/backup/crypto.ts';
+import { createDriveClient } from '../tools/backup/drive.ts';
+import { runBackup } from '../tools/backup/run.ts';
+import { getGoogleAuth } from '../tools/google/auth.ts';
 import { dataPath } from '../tools/paths.ts';
 import { localDate } from '../tools/time.ts';
 import { startUserRun } from '../db/users.ts';

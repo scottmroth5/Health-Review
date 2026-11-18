@@ -2,7 +2,7 @@
 // and row counts (never cell contents).
 //   npm run google:check
 import { sheets as sheetsApi } from '@googleapis/sheets';
-import { getGoogleAuth } from '../tools/google/auth.js';
+import { getGoogleAuth } from '../tools/google/auth.ts';
 import { SHEET_ENV } from '../ingest/sheets.js';
 
 const SHEET_ENV_KEYS = Object.values(SHEET_ENV);

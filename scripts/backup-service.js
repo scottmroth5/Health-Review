@@ -26,11 +26,11 @@ import { jobRunsLookup } from '../server/admin-queries.js';
 import { createAlerts } from '../server/alerts.js';
 import { createMailer } from '../tools/mail.ts';
 import { dataPath } from '../tools/paths.ts';
-import { createDriveClient } from '../tools/backup/drive.js';
-import { PRODUCTION_DRIVE_FOLDER } from '../tools/backup/run.js';
-import { newestBackup } from '../tools/backup/restore-check.js';
-import { getGoogleAuth } from '../tools/google/auth.js';
-import { loadFromBackup, newestDumpSince, preMigrate, resetDatabase, restorePreMigration, rollbackExport } from '../tools/backup/pg-deploy.js';
+import { createDriveClient } from '../tools/backup/drive.ts';
+import { PRODUCTION_DRIVE_FOLDER } from '../tools/backup/run.ts';
+import { newestBackup } from '../tools/backup/restore-check.ts';
+import { getGoogleAuth } from '../tools/google/auth.ts';
+import { loadFromBackup, newestDumpSince, preMigrate, resetDatabase, restorePreMigration, rollbackExport } from '../tools/backup/pg-deploy.ts';
 import { localDate } from '../tools/time.ts';
 
 const [command = 'serve', ...rest] = process.argv.slice(2);
@@ -149,7 +149,7 @@ async function main() {
 main().then((code) => {
   if (command !== 'serve') process.exitCode = code;
 }, (err) => {
-  // Names and messages written for people; a pg tool's own output never reaches here (tools/backup/pg.js).
+  // Names and messages written for people; a pg tool's own output never reaches here (tools/backup/pg.ts).
   console.error(`[backup-service] ${command} failed: ${err.name}: ${err.message}`);
   process.exitCode = 1;
 });

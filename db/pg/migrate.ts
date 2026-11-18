@@ -177,7 +177,7 @@ export async function pendingPostgres(pool: pg.Pool, migrations: PgMigration[] =
 /**
  * Opens a PostgreSQL database as a store: checks its collation, applies any new migrations, and returns the same async
  * interface as openHealthStore ({ db, tx }). syncDb and raw are null: backup and the restore test run in the backup
- * container (tools/backup/pg.js), and the demo stays on SQLite.
+ * container (tools/backup/pg.ts), and the demo stays on SQLite.
  * With migrate false (production's app, as hr_app) nothing is applied: pending migrations refuse the open, naming the ids.
  * @param {string} connectionString  postgres://... (never logged)
  * @param {{ migrations?: typeof PG_MIGRATIONS, pool?: import('pg').PoolConfig, migrate?: boolean, allUsers?: boolean }} [options]
