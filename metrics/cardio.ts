@@ -1,38 +1,37 @@
 // Apple Watch workout sessions for the week: totals by kind and type, and Zone 2.
 // Zone 2 uses each session's average heart rate against the personal range, because the export
 // has no per-minute heart rate: a session counts as Zone 2 when its average falls inside the range.
-import { round, sum, inRange, windows } from './stats.js';
+import { round, sum, inRange, windows } from './stats.ts';
+import type { Row } from './stats.ts';
 
-export function sessionKind(type) {
+export function sessionKind(type: string): 'strength' | 'mobility' | 'cardio' {
   if (/strength|core/i.test(type)) return 'strength';
   if (/yoga|flexibility|cooldown|pilates|stretch|mind/i.test(type)) return 'mobility';
   return 'cardio';
 }
 
-export const minutesOf = (s) => {
+export const minutesOf = (s: Row): number => {
   if (s.duration_sec !== null && s.duration_sec !== undefined) return s.duration_sec / 60;
   return (Date.parse(`${s.end}Z`) - Date.parse(`${s.start}Z`)) / 60000;
 };
 
 /** Duration-weighted average heart rate over sessions that have one. */
-function weightedHr(sessions) {
+function weightedHr(sessions: Row[]): number | null {
   const withHr = sessions.filter((s) => s.avg_hr !== null && s.avg_hr !== undefined);
   const minutes = sum(withHr.map(minutesOf));
   return minutes ? sum(withHr.map((s) => s.avg_hr * minutesOf(s))) / minutes : null;
 }
 
 /**
- * @param {Array<object>} sessions  workout_sessions rows
- * @param {string} weekEnd
- * @param {{ zone2?: { low: number, high: number } | null }} [options]
+ * sessions: workout_sessions rows.
  */
-export function cardio(sessions, weekEnd, { zone2 = null } = {}) {
+export function cardio(sessions: Row[], weekEnd: string, { zone2 = null }: { zone2?: { low: number, high: number } | null } = {}) {
   const w = windows(weekEnd);
-  const dayOf = (s) => s.start.slice(0, 10);
+  const dayOf = (s: Row): string => s.start.slice(0, 10);
   const week = sessions.filter((s) => inRange(dayOf(s), w.week.from, w.week.to));
   const base = sessions.filter((s) => inRange(dayOf(s), w.baseline.from, w.baseline.to));
 
-  const byType = {};
+  const byType: Record<string, Row[]> = {};
   for (const s of week) (byType[s.type] ??= []).push(s);
   const types = Object.entries(byType)
     .map(([type, list]) => ({
@@ -46,7 +45,7 @@ export function cardio(sessions, weekEnd, { zone2 = null } = {}) {
     }))
     .sort((a, b) => b.minutes - a.minutes || a.type.localeCompare(b.type));
 
-  const kindTotals = (list, kind) => {
+  const kindTotals = (list: Row[], kind: string) => {
     const k = list.filter((s) => sessionKind(s.type) === kind);
     return { sessions: k.length, minutes: sum(k.map(minutesOf)) };
   };
@@ -54,7 +53,8 @@ export function cardio(sessions, weekEnd, { zone2 = null } = {}) {
   const baseCardio = kindTotals(base, 'cardio');
   const weekStrength = kindTotals(week, 'strength');
 
-  let zone2Result = { range: null, sessions: null, minutes: null, belowSessions: null, aboveSessions: null };
+  let zone2Result: { range: { low: number, high: number } | null, sessions: number | null, minutes: number | null,
+    belowSessions: number | null, aboveSessions: number | null } = { range: null, sessions: null, minutes: null, belowSessions: null, aboveSessions: null };
   if (zone2) {
     const cardioWithHr = week.filter((s) => sessionKind(s.type) === 'cardio' && s.avg_hr !== null && s.avg_hr !== undefined);
     const inZone = cardioWithHr.filter((s) => s.avg_hr >= zone2.low && s.avg_hr <= zone2.high);
@@ -67,7 +67,7 @@ export function cardio(sessions, weekEnd, { zone2 = null } = {}) {
     };
   }
 
-  const maxHrs = week.map((s) => s.max_hr).filter((v) => typeof v === 'number');
+  const maxHrs = week.map((s) => s.max_hr).filter((v): v is number => typeof v === 'number');
   return {
     sessions: week.length,
     activeDays: new Set(week.map(dayOf)).size,

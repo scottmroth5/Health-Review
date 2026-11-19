@@ -5,7 +5,7 @@
 // swaps for the cable and machine slots a home gym lacks, the odd changed, skipped or added exercise and the odd name
 // spelled another way (the dictionary maps them); and each main lift with its own trend, so Lift progress shows
 // progressing, stalled and regressing lifts. Seeded, so the same day always gives the same log. Made-up values only.
-import { addDays, daysBetween } from '../metrics/stats.js';
+import { addDays, daysBetween } from '../metrics/stats.ts';
 
 // Back to back, newest last: [program, weeks run, strength change over the run, VO2 max change over the run].
 // Fewer weeks than the program has is a run stopped early. 'Between programs' and 'Home workouts' are named stretches.

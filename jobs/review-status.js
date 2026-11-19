@@ -3,8 +3,8 @@
 // it). Lives under jobs, not server, so the job never imports the UI's queries (docs/adr/0012).
 import { jsonText } from '../db/dialect.ts';
 import { zonedParts } from '../tools/time.ts';
-import { addDays, lastWeekEnd } from '../metrics/stats.js';
-import { weekDataQuality } from '../metrics/dataquality.js';
+import { addDays, lastWeekEnd } from '../metrics/stats.ts';
+import { weekDataQuality } from '../metrics/dataquality.ts';
 
 /** The hour on the Sunday after a review week from which a missing review counts as overdue (the task runs at 8). */
 export const REVIEW_DUE_HOUR = 9;

@@ -4,7 +4,7 @@ import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { assertSafeBinding } from '../server/auth.js';
 import { normalizeAll } from '../ingest/normalize.js';
-import { loadDictionary } from '../metrics/dictionary.js';
+import { loadDictionary } from '../metrics/dictionary.ts';
 import { ownerStore } from './helpers.js';
 import { isUniqueViolation } from '../db/dialect.ts';
 
@@ -345,7 +345,7 @@ test('daily check-off: lists slots in effect, saves taken and skipped, clears ba
 test('daily check-off records only what is marked: a morning save leaves the evening dose not logged, counted neither way (UX phase 3, option C)', async () => {
   const { app, db, done } = await setup();
   const mag = (await post(app, '/api/medications', { ...MAG, timings: ['morning', 'before_bed'] })).json();
-  const { medicationsWeek } = await import('../metrics/medications.js');
+  const { medicationsWeek } = await import('../metrics/medications.ts');
   const week = async () => medicationsWeek((await db.prepare('SELECT * FROM medications').all()), (await db.prepare('SELECT * FROM medication_periods').all()), [], [], '2026-03-14',
     (await db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses').all())).current.map((m) => [m.week.dosesTaken, m.week.dosesLogged]);
 
@@ -380,7 +380,7 @@ test('daily check-off: one-day dose and slot adjustments are saved for that day 
   assert.equal((await app.inject('/api/medications')).json()[0].current.dose, '200 mg', 'the Meds tab default is unchanged');
 
   // The weekly review counts taken or skipped only, so an adjustment changes nothing there.
-  const { medicationsWeek } = await import('../metrics/medications.js');
+  const { medicationsWeek } = await import('../metrics/medications.ts');
   const meds = (await db.prepare('SELECT * FROM medications').all());
   const periods = (await db.prepare('SELECT * FROM medication_periods').all());
   const doses = (await db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses').all());
@@ -454,7 +454,7 @@ test('training: each view returns its bars, totals and breakdowns; planned sets 
 });
 
 test('program: the confirmed in-progress block with phase from the logged workout names; null when there is none', async () => {
-  const { createCatalog } = await import('../metrics/catalog.js');
+  const { createCatalog } = await import('../metrics/catalog.ts');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 3, phases: [
     { name: 'Phase 1', weeks: [1, 1] }, { name: 'Phase 2', weeks: [2, 3], special_weeks: { failure: [2] } }] }] }, { programs: ['MAPS Symmetry'] });
   const store = await ownerStore();
@@ -487,8 +487,8 @@ test('status: data check warnings as of today; none when Apple Health data is cu
 });
 
 test('advisor: ranks the catalog without the program run last; goal weights change the order; bad weights refused', async () => {
-  const { createCatalog } = await import('../metrics/catalog.js');
-  const { createDictionary } = await import('../metrics/dictionary.js');
+  const { createCatalog } = await import('../metrics/catalog.ts');
+  const { createDictionary } = await import('../metrics/dictionary.ts');
   const phase = (exercises, extra = {}) => [{ name: 'Phase 1', weeks: [1, 4], workouts_per_week: 3, workouts: [{ name: 'A', exercises }], ...extra }];
   const names = ['MAPS Powerlift', 'HIIT', 'MAPS Symmetry'];
   const catalog = createCatalog({ version: 1, programs: [

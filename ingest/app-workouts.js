@@ -6,7 +6,7 @@
 // handle (docs/adr/0006) for saveWorkout, deleteWorkout and afterChange, which open transactions; either for the rest.
 import { parseSet, parseWeight, SET_PAIRS } from './parsers.js';
 import { detect, writeDetected, assignForward, refreshPhases } from './program-blocks.js';
-import { performed } from '../metrics/strength.js';
+import { performed } from '../metrics/strength.ts';
 
 export const APP_TAB_YEAR = 0;
 export const MAX_EXERCISES = 30;

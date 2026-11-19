@@ -4,23 +4,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { repoPath } from '../tools/paths.ts';
-import { computeWeek } from '../metrics/index.js';
-import { loadWeekData, loadMetricSettings } from '../metrics/load.js';
-import { round, mean, sd, pearson, lastWeekEnd, windows } from '../metrics/stats.js';
-import { sessionKind } from '../metrics/cardio.js';
-import { medicationEvents, medicationsWeek, doseText, weeklyCheckoffs } from '../metrics/medications.js';
-import { trainingView } from '../metrics/volume.js';
-import { exerciseKey, exerciseName } from '../metrics/exercises.js';
-import { volumeByExercise } from '../metrics/volume.js';
-import { strength } from '../metrics/strength.js';
-import { vo2maxReport } from '../metrics/vo2max.js';
-import { recommendPrograms, liftChanges } from '../metrics/advisor.js';
-import { createDictionary } from '../metrics/dictionary.js';
-import { dataChecks, weekDataQuality } from '../metrics/dataquality.js';
-import { blockAdherence, weekAdherence } from '../metrics/adherence.js';
-import { suggestTarget, loadTargetConfig } from '../metrics/targets.js';
-import { rangeStatus, effectiveRange, labsSummary, loadLabRanges } from '../metrics/labs.js';
-import { zoneBounds, zoneOf, cardioZones, zoneBuckets, weekZones } from '../metrics/zones.js';
+import { computeWeek } from '../metrics/index.ts';
+import { loadWeekData, loadMetricSettings } from '../metrics/load.ts';
+import { round, mean, sd, pearson, lastWeekEnd, windows } from '../metrics/stats.ts';
+import { sessionKind } from '../metrics/cardio.ts';
+import { medicationEvents, medicationsWeek, doseText, weeklyCheckoffs } from '../metrics/medications.ts';
+import { trainingView } from '../metrics/volume.ts';
+import { exerciseKey, exerciseName } from '../metrics/exercises.ts';
+import { volumeByExercise } from '../metrics/volume.ts';
+import { strength } from '../metrics/strength.ts';
+import { vo2maxReport } from '../metrics/vo2max.ts';
+import { recommendPrograms, liftChanges } from '../metrics/advisor.ts';
+import { createDictionary } from '../metrics/dictionary.ts';
+import { dataChecks, weekDataQuality } from '../metrics/dataquality.ts';
+import { blockAdherence, weekAdherence } from '../metrics/adherence.ts';
+import { suggestTarget, loadTargetConfig } from '../metrics/targets.ts';
+import { rangeStatus, effectiveRange, labsSummary, loadLabRanges } from '../metrics/labs.ts';
+import { zoneBounds, zoneOf, cardioZones, zoneBuckets, weekZones } from '../metrics/zones.ts';
 
 /** Expands a fixture's dailyFill (one row per day with the given values, minus skip, plus overrides). */
 function expandDaily({ from, to, skip = [], override = {}, ...values }) {
@@ -242,7 +242,7 @@ test('from the database: settings, joined strength sets, and planned sets left o
 });
 
 test('programs: workout names map to programs; specific names win; notes and one-offs map to nothing', async () => {
-  const { programOf } = await import('../metrics/programs.js');
+  const { programOf } = await import('../metrics/programs.ts');
   assert.equal(programOf('Anabolic Foundation 1 - Phase 3'), 'MAPS Anabolic');
   assert.equal(programOf('MAPS Anabolic Advanced Phase 1 Day 1'), 'MAPS Anabolic Advanced');
   assert.equal(programOf('Symmetry Foundation 1 - Performance Mobility Session 1'), 'MAPS Symmetry', 'not MAPS Performance');
@@ -253,7 +253,7 @@ test('programs: workout names map to programs; specific names win; notes and one
 });
 
 test('programs: unnamed days take the program from up to 7 days before; Trigger Sessions also look ahead', async () => {
-  const { programsByDay } = await import('../metrics/programs.js');
+  const { programsByDay } = await import('../metrics/programs.ts');
   const sets = [
     { date: '2026-03-02', workout: 'Symmetry Foundation 1' },
     { date: '2026-03-03', workout: null },
@@ -372,14 +372,14 @@ test('VO2 max: latest, changes vs the nearest earlier reading within 30 days, an
 });
 
 test('programs: MAPS 15 workouts are MAPS 15 Advanced, separate from MAPS Anabolic Advanced', async () => {
-  const { programOf } = await import('../metrics/programs.js');
+  const { programOf } = await import('../metrics/programs.ts');
   assert.equal(programOf('MAPS 15 Advanced Phase II Day 3'), 'MAPS 15 Advanced');
   assert.equal(programOf('MAPS 15 Phase 1 Day 2'), 'MAPS 15 Advanced');
   assert.equal(programOf('MAPS Anabolic Advanced Phase 1 Day 1'), 'MAPS Anabolic Advanced');
 });
 
 test('plateau: rep range edges and the Epley estimate', async () => {
-  const { rangeOf, epley } = await import('../metrics/plateau.js');
+  const { rangeOf, epley } = await import('../metrics/plateau.ts');
   assert.deepEqual([1, 5, 6, 12, 13, 20].map(rangeOf), ['1-5', '1-5', '6-12', '6-12', '13+', '13+']);
   assert.equal(epley(100, 10), 133);
   assert.equal(epley(200, 1), 207);

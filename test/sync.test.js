@@ -263,7 +263,7 @@ test('labs: a sheet result corrected in the app (value or date) is kept by sync,
 });
 
 test('after a sync, an info line counts exercise names that look like typos (npm run log:typos)', async () => {
-  const { createDictionary } = await import('../metrics/dictionary.js');
+  const { createDictionary } = await import('../metrics/dictionary.ts');
   const dictionary = createDictionary({ version: 1, exercises: [
     { id: 'single-arm-row', name: 'Single-Arm Row', implement: 'dumbbell', pattern: 'horizontal pull', primary: false },
     { id: 'sing-arm-row', name: 'Sing-Arm Row', implement: 'dumbbell', pattern: 'horizontal pull', primary: false },

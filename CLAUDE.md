@@ -17,10 +17,11 @@ Health specific logic stays in this repo; never add it to agent-core.
                     review.js (one call, one retry on failed checks, saved to reviews), suggest-exercises.js (the
                     optional exercise-name assist), advisor-chat.js (the Next program chat), supplements.js (opt-in
                     supplement suggestions: statement, rules, upper limits), emergency.js (EMERGENCY_LINE)
-/metrics            deterministic metric calculations: stats.js (windows, rounding, pearson), one module per report
-                    area (recovery, cardio, strength, drinking, checkins), index.js computeWeek, load.js (SQL),
-                    dictionary.js (exercise dictionary loader), blocks.js (program block detection), catalog.js (MAPS
-                    program catalog loader);
+/metrics            deterministic metric calculations, strict TypeScript: stats.ts (windows, rounding, pearson, the Row
+                    type), one module per report area (recovery, cardio, strength, drinking, checkins), index.ts
+                    computeWeek, load.ts (SQL), dictionary.ts (exercise dictionary loader), blocks.ts (program block
+                    detection), catalog.ts (MAPS program catalog loader); index.js, load.js and stats.js are one-line
+                    re-exports for the review eval's harness-gated files;
                     fixtures with hand-computed expectations in evals/fixtures/metrics, run by test/metrics.test.js
 /ingest             Google Sheets to SQLite: sheets.js (read-only client, fakeable), parsers.js (one per sheet), sync.js;
                     the only code touching raw source rows; normalize.js (dictionary onto the Workout Log) and
@@ -213,10 +214,11 @@ node scripts/migrate-to-postgres.js --audit [--from <file>]   what PostgreSQL wo
 DATABASE_URL=... node scripts/export-to-sqlite.js --out <new file>   PostgreSQL back to a new SQLite file (the rollback
                                   path), verified; never over an existing file, and deleted if verification fails
 npm run typecheck                 tsc, checking only: tsconfig.json (db/ JavaScript, not strict) and tsconfig.strict.json
-                                  (strict: true over the converted TypeScript, db/**/*.ts and tools/**/*.ts so far; each
-                                  conversion step adds its folder; v3 Phase 2). TypeScript 6.0.x, as typescript-eslint
+                                  (strict: true over the converted TypeScript, db/**/*.ts, tools/**/*.ts and metrics/**/*.ts so
+                                  far; each conversion step adds its folder; v3 Phase 2). TypeScript 6.0.x, as typescript-eslint
                                   supports below 6.1; .ts runs through Node's type stripping, docs/adr/0005. Converted files
-                                  are imported by their .ts name; db/store.js, scope.js, users.js and tools/paths.js are
+                                  are imported by their .ts name; db/store.js, scope.js, users.js, tools/paths.js and
+                                  metrics/index.js, load.js and stats.js are
                                   one-line re-exports kept only for the review eval's harness-gated files (removed with the
                                   agent/ step and its re-approval; eslint.config.js leaves them out)
 npm run lint                      eslint, promise rules only (no-floating-promises, no-misused-promises) with type information
@@ -350,7 +352,7 @@ Authorization: Bearer INGEST_TOKEN (SHA-256 then timingSafeEqual; no token set: 
 (413), 30 posts per 15 minutes per address (429); open without a Google session, refused in the demo. The receipt time
 (owner time) is exported_through. ingest_log (migration 023) keeps time, route, result, counts and error name, never the
 body. With rest, the "export stopped" check counts from the last accepted post of each route (test/ingest.test.js).
-Data checks (metrics/dataquality.js, pure; fixture evals/fixtures/metrics/dataquality.json) run after every sync and
+Data checks (metrics/dataquality.ts, pure; fixture evals/fixtures/metrics/dataquality.json) run after every sync and
 on GET /api/status: Apple Health data stale (nothing after a day before yesterday), the export automation stopped
 (export_stale: the latest sync that looked in the health export folder ran more than 26 hours after the newest file was
 written; workout_export_stale: the same for the workouts folder at 72 hours, as a rest day can write no file; measured to
@@ -388,7 +390,7 @@ all but heart rate min, max and average and physical effort, plus the check-in's
 fat; a chart with no data in the selected range is left out and named in one line below the charts (#charts-hidden).
 Partial days (GET /api/history partialDays, by dataquality.js partialDays) are drawn red on the Apple Health charts with a
 hover line, labeled in the table view, and left out of each card's avg; check-in and drink charts are not marked.
-Medications (metrics/medications.js): each dose or timing period is a row in medication_periods; stopped_on is the first
+Medications (metrics/medications.ts): each dose or timing period is a row in medication_periods; stopped_on is the first
 day it no longer applied, so a change closes one period and opens the next on the same date. Start, change and stop
 events are derived, never stored. Impact compares the 28 days before an event with days 7 to 34 after it (minimums 14
 days for daily metrics, 7 for check-ins; pending until the after window ends) and lists other events within 28 days.
@@ -410,16 +412,16 @@ each ingredient's dose history is the period history; change events carry ingred
 weekly summary's current list carries ingredients. POST /api/medications/combine (queries.js combineMedications;
 preview first) merges items taken as one pill into one item: periods split at every start, change and stop of any of them,
 estimated starts stay estimated, one slot for all, one check-off per logged day (taken if any was), old items removed.
-medicationNames (metrics/load.js) gives medication names plus their ingredients' names for the review and chat routing
+medicationNames (metrics/load.ts) gives medication names plus their ingredients' names for the review and chat routing
 checks. Each Meds card shows its dose history once there is more than one period, and the last 12 weeks of check-offs
 (weeklyCheckoffs; GET /api/medications/checkoffs?weeks=4..52): taken out of logged per week ending Saturday, the current
 week so far last, a week with nothing logged shown as not logged, never missed.
 
-Training volume (metrics/volume.js): reps x total load (per-hand weights x2) over performed sets dated up to today;
+Training volume (metrics/volume.ts): reps x total load (per-hand weights x2) over performed sets dated up to today;
 days without lifting are real zeros; band, bodyweight, timed and unparsed sets are counted as sets, not volume; weeks end
 on Saturday. GET /api/training?view=week|month|3m|6m|year|2y|5y|all (3m, 6m and year: 13, 26 and 52 weekly bars) feeds the Training tab, and computeWeek's
 trainingVolume (last 12 weeks and 12 months) goes to the weekly review.
-Each bar also lists its training programs (metrics/programs.js): Workout Log "Workout" names map to programs via
+Each bar also lists its training programs (metrics/programs.ts): Workout Log "Workout" names map to programs via
 PROGRAMS (first match wins); an unnamed lifting day takes the program from up to 7 days before, and a Trigger Session
 day takes the nearest named program within 14 days either way. Edit PROGRAMS to add or rename a program.
 Exercise normalization: config/exercise-dictionary.json maps every name variant to a canonical exercise with an
@@ -429,11 +431,11 @@ replacing a tab. Names match by baseKey (spelling, plural, hyphen, typo and word
 different words merge only through dictionary variants, which the owner decides. Unknown names are flagged, never
 guessed ('inferred' only when one implement word names the implement). Volume and strength group by canonical
 exercise, so barbell and dumbbell versions are never combined; unmapped names fall back to baseKey.
-Typo finder (metrics/name-typos.js, pure): two spelling keys that differ in one word 1 or 2 letters apart (at most half
+Typo finder (metrics/name-typos.ts, pure): two spelling keys that differ in one word 1 or 2 letters apart (at most half
 the longer word, 3+ letters); dictionary pairs must share implement and pattern; the keeper is the side whose word is more
 common in the dictionary, then more sets. The dictionary's distinct list (ids, or key:<baseKey> for a logged name) holds
 pairs the owner marked different. Nothing merges without the owner's numbers; each sync adds an info line with the count.
-Program blocks: one block per program run, named by program only (phases ignored); detected from workout names (metrics/blocks.js: the
+Program blocks: one block per program run, named by program only (phases ignored); detected from workout names (metrics/blocks.ts: the
 same program before and after unassigned days or a break of any length is one block unless another program comes
 between; Between programs and Home workouts are blocks, but a Between programs, HIIT or ab-program stretch with the
 same program on both sides joins that run),
@@ -450,18 +452,18 @@ start, last day and status (PUT /api/program/blocks/:id, changeBlockDates: no da
 last day; editBlock moves the sessions); an overlap refusal says to change the dates there. Settings hide_log_workout
 (PUT /api/account/log-workout { hidden }, GET /api/account logWorkoutHidden) hides the Training tab's Log workout card,
 from the card or Settings, for someone who logs in their sheet.
-MAPS catalog (metrics/catalog.js, data/maps/programs.json): each program's weeks, phases with week ranges, deload and
+MAPS catalog (metrics/catalog.ts, data/maps/programs.json): each program's weeks, phases with week ranges, deload and
 failure weeks and prescriptions, transcribed from the owner's Mind Pump PDFs in data/MAPS Programs. refreshPhases
 (after detection, review commands and sync) stores each session's phase and each block's program_weeks. Phases come
 from the logged workout names (the owner misses days, so calendar weeks drift); the catalog supplies phase lengths, and
 its calendar is only the fallback for a block with no phase names (marked estimated). blockStatus and programProgress
-(metrics/blocks.js) give the phase and when it started, week of phase and of program, the earliest finish (rest of
+(metrics/blocks.ts) give the phase and when it started, week of phase and of program, the earliest finish (rest of
 the program at full speed from the current phase's start) and the finish at this block's pace (actual over planned
 weeks of its finished phases); status stays detected or owner-set, and abandoned is never proposed.
 GET /api/program feeds the Training tab's Current program card, and the weekly summary's program block carries the
 same facts. Everything works without the catalog (phases unknown).
 New tables use portable types (UUID text keys, UTC ISO timestamps, CHECK constraints) for a later PostgreSQL move.
-Plateaus (metrics/plateau.js): each primary lift (one canonical exercise and implement) is judged within one rep range,
+Plateaus (metrics/plateau.ts): each primary lift (one canonical exercise and implement) is judged within one rep range,
 the range trained most in the last 42 days: 1-5 and 6-12 reps by the session best Epley estimated max (load x (1 + reps
 / 30), per-hand x2), 13+ by the heaviest load for 13+ reps, and bodyweight lifts with no added load by reps per set.
 Deload sessions (stored phase or workout name) and a lift's first session back after 21+ days off are left out.
@@ -469,7 +471,7 @@ Recent (42 days) against baseline (the 84 before): progressing at +2.5% or more,
 in between; fewer than 4 recent or 2 baseline sessions is not_enough_data; a range absent from the baseline is
 new_rep_range, never a stall. GET /api/lifts feeds the Training tab's Lift progress card; the weekly summary's
 lifts holds recently trained lifts only (no trend points), and CONTRACT tells the model to report these statuses as given.
-Program Advisor (metrics/advisor.js, pure; fixture evals/fixtures/metrics/advisor.json): ranks the catalog's standalone
+Program Advisor (metrics/advisor.ts, pure; fixture evals/fixtures/metrics/advisor.json): ranks the catalog's standalone
 programs (the one run last and those listed under not_ranked in config/substitutions.json left out with their reason; add-ons such as No BS 6-Pack listed apart) on the owner's goals (strength, joint
 health and balance, time, VO2 max), each 0 to 1 from the prescription (heavy and 6-12 rep shares, one-side and arm
 isolation shares, the profile's judged conditioning and mobility, the avoid list in config/substitutions.json) and past
@@ -484,16 +486,16 @@ feeds the Training tab's Next program card, whose weight buttons are saved per b
 the weekly review uses equal weights. The weekly summary carries advisor (the top 3 at equal weights, the program
 left out and add-ons, no focus text) only when advisorDue: within 21 days of the block's earliest finish, after it
 ends, or between blocks; CONTRACT tells the model to explain the ranking, never re-rank it. loadAdvisorInput
-(metrics/load.js) gathers the input for both the API and the review.
-Called for vs logged (metrics/adherence.js, pure; fixture evals/fixtures/metrics/adherence.json): each lifting day of a
+(metrics/load.ts) gathers the input for both the API and the review.
+Called for vs logged (metrics/adherence.ts, pure; fixture evals/fixtures/metrics/adherence.json): each lifting day of a
 confirmed block matches its catalog workout by program, stored phase and the number (or capital letter) in the logged
 Workout name; a phase with one workout matches every day; Focus, Trigger and Mobility sessions are focus (no fixed list); anything
 else is not_matched, never guessed. Exercises pair in order: as_called (same canonical id), swapped (substitutions swaps,
 then the fill rule), changed (same movement pattern), then skipped and added; only performed sets up to today count.
-GET /api/program/adherence?block= (loadAdherenceInput, loadConfirmedBlocks in metrics/load.js) feeds the Training tab's
+GET /api/program/adherence?block= (loadAdherenceInput, loadConfirmedBlocks in metrics/load.ts) feeds the Training tab's
 card. The weekly summary's programAdherence (weekAdherence) carries the review week's counts, sets logged against called
 for, and the names of exercises the owner logged instead or on top; never the catalog's own exercise names (MAPS rule).
-Heart rate zones (metrics/zones.js, pure; fixture evals/fixtures/metrics/zones.json): each zone is saved by its top (settings
+Heart rate zones (metrics/zones.ts, pure; fixture evals/fixtures/metrics/zones.json): each zone is saved by its top (settings
 zone2_low_bpm, zone2_high_bpm, zone3_high_bpm, zone4_high_bpm; 2026-10-31), Zone 1 below Zone 2 and each later zone from one
 above the last top, so there are never gaps; PUT /api/settings refuses tops that do not rise. An unset Zone 3 or 4 top takes
 its age default (server/public/zone-defaults.js, shared with the Settings card: Zones 3 to 5 split evenly from Zone 2's top to
@@ -504,11 +506,11 @@ with no sample (gaps, workouts before the JSON export) are noDetail, never guess
 (cardio.js sessionKind). GET /api/cardio-zones?view=30d|90d|1y&group=day|week|month (Sunday-to-Saturday weeks; calendar months overlapping the range, the current one to today; the card's Days / Weeks / Months switch is saved per browser) feeds the Health tab's
 "Cardio minutes by heart rate zone" card (stacked columnChart segments in distinct hues: sky blue, green, purple, yellow, red, gray for no detail; owner's choice 2026-10-24); bounds are null
 without a Zone 2 range, or without a birth year while a Zone 3 or 4 top is unset. The weekly summary carries heartRateZones (weekZones: the week and the 28-day baseline's weekly average per zone, noDetail apart, the bounds; absent without bounds or cardio); CONTRACT says report as given, noDetail is unknown and never Zone 1, and its Zone 2 minutes beat cardio.zone2 (whole sessions by average).
-VO2 max (metrics/vo2max.js): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
+VO2 max (metrics/vo2max.ts): GET /api/vo2max?view=90d|1y|2y|5y|all feeds the card at the top of the Health tab; short
 views plot each Apple Watch reading, 2 years weekly averages, 5 years and all monthly averages (empty weeks and months
 left out, never zero). Tiles: latest, change vs the nearest reading within 30 days before 90 days and 1 year ago, and
 best on record, plus its target (below).
-Targets (metrics/targets.js, pure; norms in config/health-targets.json with sources; fixture evals/fixtures/metrics/targets.json):
+Targets (metrics/targets.ts, pure; norms in config/health-targets.json with sources; fixture evals/fixtures/metrics/targets.json):
 every Health tab metric gets a suggested target from the owner's current value (90-day average; VO2 max's latest reading)
 and the healthy level for their sex and age (profile in settings: birth_year, sex, height_in): one step toward it, or
 straight to it when closer; past it, half a step, held at the cap; ranges get inside and hold; weight's range is BMI 18.5
@@ -519,7 +521,7 @@ invent a target. A band metric (sleeping wrist temperature, direction band) has 
 range" (90-day average plus or minus its band) shaded on the chart with nights outside it in red, nothing to edit, and the
 summary carries usualLow and usualHigh in place of target (Phase 5, 2026-10-30). Age norms on these metrics are the owner's choice (2026-10-15), replacing "values only, no
 fitness-for-age labels".
-Lab ranges (metrics/labs.js; fixture evals/fixtures/metrics/labs-ranges.json): config/lab-ranges.json holds typical adult
+Lab ranges (metrics/labs.ts; fixture evals/fixtures/metrics/labs-ranges.json): config/lab-ranges.json holds typical adult
 ranges (US conventional units, by name or alias; tests whose unit or method varies are left out); lab_tests.ref_low,
 ref_high and ref_set (migration 020) hold the owner's own, which win once set (both NULL with ref_set means no range).
 rangeStatus is below, within (bounds inclusive) or above, null without a range or a numeric value. GET /api/labs
@@ -533,7 +535,7 @@ prompt sections; the report format sections in those prompts were written for v1
 summary replaces them. Format (UX roadmap phase 4, 2026-10-29): the output schema adds highlights (1 to 3, the week's
 biggest changes, each naming its comparison) and nextSteps (up to 3, optional, never medications, labs or symptoms),
 rendered first as "This week at a glance" and "Next steps" (Home shows the first), then Supplement suggestions (only with
-the setting on, below), then the owner's sections, then the physician list. Each recovery metric and check-in scale carries trend (metrics/recovery.js trend: up or down when the week's
+the setting on, below), then the owner's sections, then the physician list. Each recovery metric and check-in scale carries trend (metrics/recovery.ts trend: up or down when the week's
 mean moved at least half the baseline's daily standard deviation, else steady; null under 14 baseline days, 7 baseline
 check-ins or 3 in the week), and CONTRACT allows improved or declined only for up or down. checkReport's opening option
 (the review, not the chat) checks the counts; dashes, grounding and routing cover the opening too. Older saved reviews keep
@@ -696,11 +698,11 @@ help-ask run keeps lengths and cost). docs/guides/using-the-app.md is the tile-b
 link to REQUEST_ACCESS_URL (deploy/compose.yml: the main app's /auth/login from SITE_ADDRESS), only in the demo.
 Users, phase 5 (2026-10-24), each user's own programs: user_programs (migration 028; in USER_TABLES, so the scope and
 isolation guards cover it) holds programs in the catalog format with match words; ingest/user-programs.js (saveProgram,
-deleteProgram, importPrograms all or nothing, exportPrograms their own only) checks each with metrics/catalog.js
+deleteProgram, importPrograms all or nothing, exportPrograms their own only) checks each with metrics/catalog.ts
 programProblems (any name, 80 characters) and re-runs detection (detected blocks only) and refreshPhases after every
-change. metrics/load.js userCatalog(db, shared) is the catalog a user gets: their own first, then the shared one (the MAPS
+change. metrics/load.ts userCatalog(db, shared) is the catalog a user gets: their own first, then the shared one (the MAPS
 file for the owner and maps_shared users; mergeCatalogs, theirs win a name clash); left undefined, every default reads
-the MAPS file plus the user's own (loadWeekData, sync, the programs scripts). programMatchers(db) (metrics/programs.js
+the MAPS file plus the user's own (loadWeekData, sync, the programs scripts). programMatchers(db) (metrics/programs.ts
 userMatchers: whole-word match words, any case, before PROGRAMS) names days in detectBlocks and trainingView. Routes:
 GET/POST /api/programs, PUT/DELETE /api/programs/:id, POST /api/programs/import, GET /api/programs/export, GET
 /api/program/blocks and POST /api/program/blocks/:id/confirm (users confirm blocks in the app; edits, merges and splits
@@ -754,7 +756,7 @@ Goals, tiles, feedback, prompt builder (2026-10-25): server/public/goals.js (pur
 holds the goals (strength, cardio, weight, endurance, health; settings goal_primary and goal_secondary, PUT
 /api/account/goals) and what each puts first: Home tiles (after Daily Check-in), Training and Health card ids, Health chart
 keys, and the Next program card's default weights (when the browser has none saved). Order only, nothing hidden. The
-review summary's goals (labels, metrics/load.js loadGoals) and a CONTRACT line make the review open with them; the chat
+review summary's goals (labels, metrics/load.ts loadGoals) and a CONTRACT line make the review open with them; the chat
 context carries them too. Arrange on Training and Health (server/public/goals.js LAYOUT_ITEMS and arranged: a saved order,
 unknown items dropped and newer ones appended, else the goals', else the usual) saves settings layout_training,
 layout_health and layout_charts (PUT /api/account/layout { area, order }, known items only; null resets); the page re-applies
@@ -921,7 +923,7 @@ Imports follow the layers in docs/adr/0012 (v3 Phase 2), checked by test/boundar
 metrics (pure, no SQL), then ingest and agent, then jobs, then server; scripts may import anything; nothing imports
 scripts, and only scripts import evals. server/public/goals.js and zone-defaults.js are shared with the browser and import
 only each other. A wrong-way import is fixed by moving code down a layer, never by adding an exception; the exceptions
-listed in the test (the eval runners' medication writes, metrics/load.js) leave with the agent/ step and its harness
+listed in the test (the eval runners' medication writes, metrics/load.ts) leave with the agent/ step and its harness
 re-approval.
 The guards read TypeScript too: test/user-scope.test.js and scripts/security-check.js scan .js, .mjs, .ts, .mts and .cts,
 with a floor on the files each scans (raise it as code grows, never lower it to let a change pass), and user-scope fails

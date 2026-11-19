@@ -1,9 +1,9 @@
-// The exercise-name typo finder (metrics/name-typos.js). Synthetic names only.
+// The exercise-name typo finder (metrics/name-typos.ts). Synthetic names only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { typoWords, typoCandidates, applyTypoMerges, markDistinct, editDistance } from '../metrics/name-typos.js';
-import { createDictionary } from '../metrics/dictionary.js';
-import { baseKey } from '../metrics/exercises.js';
+import { typoWords, typoCandidates, applyTypoMerges, markDistinct, editDistance } from '../metrics/name-typos.ts';
+import { createDictionary } from '../metrics/dictionary.ts';
+import { baseKey } from '../metrics/exercises.ts';
 
 const ex = (id, name, implement = 'dumbbell', pattern = 'vertical press', variants) => ({ id, name, implement, pattern, primary: false, ...(variants ? { variants } : {}) });
 

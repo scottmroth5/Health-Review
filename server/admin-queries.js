@@ -10,7 +10,7 @@ import { USER_TABLES } from '../db/migrations-users.ts';
 import { listTables, primaryKey, tableColumns } from '../db/dialect.ts';
 import { setupSteps } from './setup.js';
 import { DEFAULT_TZ, localDate } from '../tools/time.ts';
-import { addDays } from '../metrics/stats.js';
+import { addDays } from '../metrics/stats.ts';
 import { OWNER_ID } from '../db/users.ts';
 
 /**

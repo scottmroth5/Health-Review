@@ -9,8 +9,8 @@ import { scopeDatabase } from '../db/scope.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { OWNER_ID } from '../db/users.ts';
-import { programOf, userMatchers, PROGRAMS } from '../metrics/programs.js';
-import { createCatalog, mergeCatalogs, programProblems } from '../metrics/catalog.js';
+import { programOf, userMatchers, PROGRAMS } from '../metrics/programs.ts';
+import { createCatalog, mergeCatalogs, programProblems } from '../metrics/catalog.ts';
 import { draftToProgram, DRAFT_SCHEMA } from '../agent/extract-program.js';
 import { openTestStore } from './helpers.js';
 

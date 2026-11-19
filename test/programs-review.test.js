@@ -6,7 +6,7 @@ import {
   ReviewError, assignForward, blockStatus, changeBlockDates, confirmBlocks, detect, editBlock, endBlock, findBlock, listBlocks, mergeBlocks,
   sessionCoverage, splitBlock, startBlock, unassignDays, writeDetected,
 } from '../ingest/program-blocks.js';
-import { addDays } from '../metrics/stats.js';
+import { addDays } from '../metrics/stats.ts';
 import { ownerStore } from './helpers.js';
 
 const TODAY = '2025-12-31';
@@ -171,7 +171,7 @@ test('forward: new lifting days join the in-progress confirmed block with progra
 });
 
 test('phases: sessions take the logged phase; status reports phase week, program week and finish from the names', async () => {
-  const { createCatalog } = await import('../metrics/catalog.js');
+  const { createCatalog } = await import('../metrics/catalog.ts');
   const { refreshPhases, blockStatus, currentProgram } = await import('../ingest/program-blocks.js');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 4, phases: [
     { name: 'Phase 1', weeks: [1, 2] }, { name: 'Phase 2', weeks: [3, 4], special_weeks: { deload: [4] } }] }] }, { programs: ['MAPS Symmetry', 'MAPS Anabolic'] });

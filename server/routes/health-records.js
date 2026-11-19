@@ -2,8 +2,8 @@
 // docs/adr/0012). register(app, ctx) adds these routes; ctx is what buildApp shares with every route module
 // (server/app.js).
 import * as q from '../queries.js';
-import { TIMINGS } from '../../metrics/medications.js';
-import { loadLabRanges } from '../../metrics/labs.js';
+import { TIMINGS } from '../../metrics/medications.ts';
+import { loadLabRanges } from '../../metrics/labs.ts';
 import { nullable, text, anyObject, dateParams, idParams } from './schemas.js';
 
 /** @param {import('fastify').FastifyInstance} app @param {object} ctx  shared state and helpers from buildApp */

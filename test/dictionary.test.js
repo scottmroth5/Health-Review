@@ -1,7 +1,7 @@
 // Canonical exercise dictionary. Synthetic names only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createDictionary, implementFromName } from '../metrics/dictionary.js';
+import { createDictionary, implementFromName } from '../metrics/dictionary.ts';
 
 const DICT = {
   version: 1,

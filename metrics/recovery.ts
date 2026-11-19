@@ -1,8 +1,9 @@
 // Recovery and activity from daily_metrics: the week against the previous week and a 28-day baseline.
-import { mean, sd, round, inRange, windows, addDays } from './stats.js';
+import { mean, sd, round, inRange, windows, addDays } from './stats.ts';
+import type { Row, Window } from './stats.ts';
 
 /** Daily metrics reported, with the decimals each is rounded to. */
-export const RECOVERY_METRICS = {
+export const RECOVERY_METRICS: Record<string, number> = {
   hrv_ms: 0,
   resting_hr: 1,
   respiratory_rate: 1,
@@ -29,7 +30,7 @@ export const RECOVERY_METRICS = {
  * Blood oxygen and breathing disturbances: the same week and baseline numbers, but no unusual-day flags (no high or low
  * labels, as with labs), and in the review only for physician discussion.
  */
-export const NIGHT_BREATHING_METRICS = {
+export const NIGHT_BREATHING_METRICS: Record<string, number> = {
   spo2_pct: 1,
   breathing_disturbances: 1,
 };
@@ -42,26 +43,28 @@ const MIN_WEEK_DAYS = 3; // a trend needs at least 3 days in the week
  * baseline's day-to-day standard deviation (compared before rounding), else steady; null without enough data or spread.
  * The review may call a metric better or worse only when this says up or down.
  */
-export function trend(weekMean, weekCount, baseMean, baseSd, baseCount, { minBase = MIN_BASELINE_DAYS, minWeek = MIN_WEEK_DAYS } = {}) {
+export type Trend = 'up' | 'down' | 'steady';
+
+export function trend(weekMean: number | null, weekCount: number, baseMean: number | null, baseSd: number | null, baseCount: number,
+  { minBase = MIN_BASELINE_DAYS, minWeek = MIN_WEEK_DAYS }: { minBase?: number, minWeek?: number } = {}): Trend | null {
   if (weekMean === null || baseMean === null || !baseSd || weekCount < minWeek || baseCount < minBase) return null;
   const diff = weekMean - baseMean;
   return Math.abs(diff) >= 0.5 * baseSd ? (diff > 0 ? 'up' : 'down') : 'steady';
 }
 
 /**
- * @param {Array<object>} rows  daily_metrics rows covering at least the baseline and week
- * @param {string} weekEnd
+ * rows: daily_metrics rows covering at least the baseline and week.
  */
-export function recovery(rows, weekEnd) {
+export function recovery(rows: Row[], weekEnd: string) {
   const w = windows(weekEnd);
-  const metrics = {};
+  const metrics: Record<string, unknown> = {};
   for (const [key, d] of Object.entries(RECOVERY_METRICS)) metrics[key] = weekStats(rows, w, key, d);
 
   // VO2 max changes slowly and is sparse: latest reading, and the change from the latest one at least 28 days older.
   const vo2 = rows.filter((r) => r.vo2max !== null && r.vo2max !== undefined && r.date <= weekEnd).sort((a, b) => a.date.localeCompare(b.date));
   const latest = vo2[vo2.length - 1] ?? null;
   const cutoff = latest ? addDays(latest.date, -28) : null;
-  const older = latest ? [...vo2].reverse().find((r) => r.date <= cutoff) ?? null : null;
+  const older = latest && cutoff ? [...vo2].reverse().find((r) => r.date <= cutoff) ?? null : null;
   metrics.vo2max = {
     latest: latest ? round(latest.vo2max, 1) : null,
     latestDate: latest?.date ?? null,
@@ -73,8 +76,8 @@ export function recovery(rows, weekEnd) {
 }
 
 /** One daily metric's week against the previous week and the 28-day baseline; unusual days (2 SD) only when flagged. */
-function weekStats(rows, w, key, d, { flagUnusual = true } = {}) {
-  const pick = (range) => rows.filter((r) => inRange(r.date, range.from, range.to) && r[key] !== null && r[key] !== undefined);
+function weekStats(rows: Row[], w: ReturnType<typeof windows>, key: string, d: number, { flagUnusual = true } = {}) {
+  const pick = (range: Window) => rows.filter((r) => inRange(r.date, range.from, range.to) && r[key] !== null && r[key] !== undefined);
   const week = pick(w.week);
   const prev = pick(w.prevWeek);
   const base = pick(w.baseline);
@@ -84,11 +87,11 @@ function weekStats(rows, w, key, d, { flagUnusual = true } = {}) {
   const baseMean = mean(base.map((r) => r[key]));
   const baseSd = sd(base.map((r) => r[key]));
 
-  let unusualDays = [];
+  let unusualDays: { date: string, value: number | null, direction: 'high' | 'low' }[] = [];
   if (flagUnusual && base.length >= MIN_BASELINE_DAYS && baseSd) {
     unusualDays = week
-      .filter((r) => Math.abs(r[key] - baseMean) > 2 * baseSd)
-      .map((r) => ({ date: r.date, value: round(r[key], d), direction: r[key] > baseMean ? 'high' : 'low' }));
+      .filter((r) => Math.abs(r[key] - (baseMean as number)) > 2 * baseSd)
+      .map((r) => ({ date: r.date, value: round(r[key], d), direction: r[key] > (baseMean as number) ? 'high' as const : 'low' as const }));
   }
 
   return {
@@ -108,9 +111,9 @@ function weekStats(rows, w, key, d, { flagUnusual = true } = {}) {
 }
 
 /** Blood oxygen and breathing disturbances for the weekly review (physician discussion only); null with no data. */
-export function nightBreathing(rows, weekEnd) {
+export function nightBreathing(rows: Row[], weekEnd: string) {
   const w = windows(weekEnd);
-  const out = {};
+  const out: Record<string, ReturnType<typeof weekStats>> = {};
   for (const [key, d] of Object.entries(NIGHT_BREATHING_METRICS)) {
     const stats = weekStats(rows, w, key, d, { flagUnusual: false });
     if (stats.days || stats.baselineDays) out[key] = stats;

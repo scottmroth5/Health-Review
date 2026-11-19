@@ -3,12 +3,15 @@
 // handled) differ in exactly one word, and those two words are 1 or 2 letters apart (at most half the longer word;
 // words of 3 or more letters). Dictionary pairs must also share implement and movement pattern, so "Ball Leg Curls"
 // and "Band Leg Curls" are not offered. Pairs the owner marked distinct in the dictionary are never offered again.
-import { baseKey } from './exercises.js';
+import { baseKey } from './exercises.ts';
 
 const MAX_LETTERS = 2;
 
+interface Entry { id: string, name: string, implement?: string, pattern?: string, variants?: string[] }
+interface DictionaryJson { exercises: Entry[], distinct?: string[][], [more: string]: any }
+
 /** Levenshtein distance between two words. */
-export function editDistance(a, b) {
+export function editDistance(a: string, b: string): number {
   const row = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
     let diag = row[0];
@@ -23,7 +26,7 @@ export function editDistance(a, b) {
 }
 
 /** The two words that differ when two spelling keys differ in exactly one word and look like a typo, else null. */
-export function typoWords(keyA, keyB) {
+export function typoWords(keyA: string | null | undefined, keyB: string | null | undefined): [string, string] | null {
   if (!keyA || !keyB || keyA === keyB) return null;
   const a = keyA.split(' ');
   const b = keyB.split(' ');
@@ -38,23 +41,23 @@ export function typoWords(keyA, keyB) {
 }
 
 /**
- * @param {object} input
- * @param {{ exercises: Array<{id, name, implement, pattern, variants?}>, distinct?: string[][] }} input.dictionary  the dictionary JSON
- * @param {Array<{key: string, spellings: string[], sets: number}>} [input.unmapped]  unmappedNames groups
- * @param {Map<string, number>|Record<string, number>} [input.setCounts]  logged sets per canonical id
- * @returns {{ entries: Array<object>, unmapped: Array<object> }} each sorted most sets first
+ * dictionary: the dictionary JSON; unmapped: unmappedNames groups; setCounts: logged sets per canonical id. Each list
+ * comes back sorted most sets first.
  */
-export function typoCandidates({ dictionary, unmapped = [], setCounts = {} }) {
-  const sets = (id) => (setCounts instanceof Map ? setCounts.get(id) : setCounts[id]) ?? 0;
+export function typoCandidates({ dictionary, unmapped = [], setCounts = {} }: {
+  dictionary: DictionaryJson, unmapped?: { key: string, spellings: string[], sets: number }[],
+  setCounts?: Map<string, number> | Record<string, number>,
+}): { entries: any[], unmapped: any[] } {
+  const sets = (id: string): number => (setCounts instanceof Map ? setCounts.get(id) : setCounts[id]) ?? 0;
   const distinct = new Set((dictionary.distinct ?? []).map((p) => [...p].sort().join('|')));
   const names = dictionary.exercises.flatMap((e) => [e.name, ...(e.variants ?? [])].map((n) => ({ e, key: baseKey(n) })));
   // How often each word appears across the dictionary: the correctly spelled side of a typo is usually the common one
   // ("single" against "sing"), so it decides the keeper before set counts do.
-  const wordCount = new Map();
+  const wordCount = new Map<string, number>();
   for (const n of names) for (const w of new Set(n.key.split(' '))) wordCount.set(w, (wordCount.get(w) ?? 0) + 1);
-  const common = (w) => wordCount.get(w) ?? 0;
+  const common = (w: string): number => wordCount.get(w) ?? 0;
 
-  const entries = new Map();
+  const entries = new Map<string, any>();
   for (let i = 0; i < names.length; i++) {
     for (let j = i + 1; j < names.length; j++) {
       const a = names[i];
@@ -76,9 +79,9 @@ export function typoCandidates({ dictionary, unmapped = [], setCounts = {} }) {
     }
   }
 
-  const near = [];
+  const near: any[] = [];
   for (const g of unmapped) {
-    const matches = new Map();
+    const matches = new Map<string, { id: string, name: string, sets: number, words: [string, string] }>();
     for (const n of names) {
       if (distinct.has([n.e.id, `key:${g.key}`].sort().join('|'))) continue;
       const words = typoWords(g.key, n.key);
@@ -91,7 +94,7 @@ export function typoCandidates({ dictionary, unmapped = [], setCounts = {} }) {
       alternatives: others.map((o) => o.name) });
   }
 
-  const bySets = (x, y) => (y.dropSets ?? y.sets) - (x.dropSets ?? x.sets) || (x.dropName ?? x.spellings[0]).localeCompare(y.dropName ?? y.spellings[0]);
+  const bySets = (x: any, y: any): number => (y.dropSets ?? y.sets) - (x.dropSets ?? x.sets) || (x.dropName ?? x.spellings[0]).localeCompare(y.dropName ?? y.spellings[0]);
   return { entries: [...entries.values()].sort((x, y) => y.keepSets - x.keepSets || bySets(x, y)), unmapped: near.sort(bySets) };
 }
 
@@ -100,17 +103,17 @@ export function typoCandidates({ dictionary, unmapped = [], setCounts = {} }) {
  * into the keeper and removes it; an unmapped name's spellings become variants of the matched exercise. Pure; the
  * caller validates (createDictionary) before writing.
  */
-export function applyTypoMerges(dictionary, chosen) {
+export function applyTypoMerges(dictionary: DictionaryJson, chosen: any[]): DictionaryJson {
   const next = structuredClone(dictionary);
   const byId = new Map(next.exercises.map((e) => [e.id, e]));
-  const removed = new Set();
+  const removed = new Set<string>();
   for (const c of chosen) {
     const keep = byId.get(c.keepId);
     if (!keep) throw new Error(`Unknown exercise ${c.keepId}`);
-    const adding = c.kind === 'entry' ? [byId.get(c.dropId)?.name, ...(byId.get(c.dropId)?.variants ?? [])] : c.spellings;
+    const adding: (string | undefined)[] = c.kind === 'entry' ? [byId.get(c.dropId)?.name, ...(byId.get(c.dropId)?.variants ?? [])] : c.spellings;
     if (c.kind === 'entry') removed.add(c.dropId);
     const have = new Set([keep.name, ...(keep.variants ?? [])].map((n) => n.toLowerCase()));
-    keep.variants = [...(keep.variants ?? []), ...adding.filter((n) => n && !have.has(n.toLowerCase()))];
+    keep.variants = [...(keep.variants ?? []), ...adding.filter((n): n is string => Boolean(n) && !have.has((n as string).toLowerCase()))];
   }
   next.exercises = next.exercises.filter((e) => !removed.has(e.id));
   // A removed id no longer needs a distinct mark.
@@ -119,7 +122,7 @@ export function applyTypoMerges(dictionary, chosen) {
 }
 
 /** The dictionary with these pairs marked as different exercises. */
-export function markDistinct(dictionary, pairs) {
+export function markDistinct(dictionary: DictionaryJson, pairs: string[][]): DictionaryJson {
   const next = structuredClone(dictionary);
   const have = new Set((next.distinct ?? []).map((p) => [...p].sort().join('|')));
   for (const p of pairs) {

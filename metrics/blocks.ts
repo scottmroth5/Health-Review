@@ -8,17 +8,26 @@
 // stretch between two parts of one program's run joins that run (counted in its notes). Phases are kept on the
 // detection result only; blocks show the program name. Status: in progress when the last session is
 // within IN_PROGRESS_DAYS of today, otherwise completed; "abandoned" is only ever set by the owner.
-import { addDays, daysBetween } from './stats.js';
-import { programsByDay } from './programs.js';
+import { addDays, daysBetween } from './stats.ts';
+import { programsByDay } from './programs.ts';
+import type { Matcher } from './programs.ts';
+import type { Catalog } from './catalog.ts';
+import type { Row } from './stats.ts';
+
+/** A block as stored or proposed: its program, first day and status. */
+export interface BlockRef { program: string, start_date: string, status?: string | null, [more: string]: any }
+/** A day's Workout Log name. */
+export interface NamedDay { date: string, workout?: string | null }
+interface Run { program: string, sessions: string[], phases: string[], addons?: Record<string, number> }
 
 export const IN_PROGRESS_DAYS = 14;
 // Stretches that never split a run: add-on programs done alongside another one, and time between programs.
 // A stretch of them between two parts of the same program joins that block (counted in its notes).
 export const ADDONS = ['HIIT', 'No BS 6-Pack', 'Between programs'];
 
-const ROMAN = { i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
+const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
 /** "Phase 2" from "... Phase II Day 3", "Deload" from a deload week, or null. */
-export function phaseOf(workoutName) {
+export function phaseOf(workoutName: string | null | undefined): string | null {
   const text = String(workoutName ?? '');
   if (/deload/i.test(text)) return 'Deload';
   const m = /phase\s*([0-9]+|i{1,3}|iv|v)\b/i.exec(text);
@@ -27,30 +36,31 @@ export function phaseOf(workoutName) {
 }
 
 /** Joins Between programs, HIIT and ab-program stretches sandwiched between two parts of the same program into it. */
-function mergeAddons(blocks) {
+function mergeAddons(blocks: Run[]): void {
   for (let i = 1; i < blocks.length - 1; i++) {
     const [before, addon, after] = [blocks[i - 1], blocks[i], blocks[i + 1]];
     if (!ADDONS.includes(addon.program) || before.program !== after.program) continue;
     before.sessions.push(...addon.sessions, ...after.sessions);
     for (const ph of after.phases) if (!before.phases.includes(ph)) before.phases.push(ph);
-    before.addons = { ...before.addons };
-    before.addons[addon.program] = (before.addons[addon.program] ?? 0) + addon.sessions.length;
-    for (const [k, n] of Object.entries(after.addons ?? {})) before.addons[k] = (before.addons[k] ?? 0) + n;
+    const addons: Record<string, number> = { ...before.addons };
+    before.addons = addons;
+    addons[addon.program] = (addons[addon.program] ?? 0) + addon.sessions.length;
+    for (const [k, n] of Object.entries(after.addons ?? {})) addons[k] = (addons[k] ?? 0) + n;
     blocks.splice(i, 2);
     i -= 1;
   }
 }
 
 /** Week number within a block, starting at 1 on its first day. */
-export const weekOf = (blockStart, date) => Math.floor(daysBetween(blockStart, date) / 7) + 1;
+export const weekOf = (blockStart: string, date: string): number => Math.floor(daysBetween(blockStart, date) / 7) + 1;
 
 /**
  * The phases logged in a block, from workout names: [{ phase, start }] in order, one entry each time the named
  * phase changes. Deload weeks are markers inside a phase, not phases, so they are left out here.
- * @param {Array<{date: string, workout?: string|null}>} rows  the block's rows (any order)
+ * rows: the block's rows (any order).
  */
-export function loggedPhases(rows) {
-  const out = [];
+export function loggedPhases(rows: NamedDay[]): { phase: string, start: string }[] {
+  const out: { phase: string, start: string }[] = [];
   for (const r of [...rows].sort((x, y) => x.date.localeCompare(y.date))) {
     const p = phaseOf(r.workout);
     if (!p || p === 'Deload' || out[out.length - 1]?.phase === p) continue;
@@ -60,7 +70,7 @@ export function loggedPhases(rows) {
 }
 
 /** The phase of a day in a block: the latest logged phase on or before it, else the calendar's, else null. */
-export function phaseOnDay(block, logged, catalog, date) {
+export function phaseOnDay(block: BlockRef, logged: { phase: string, start: string }[], catalog: Catalog | null | undefined, date: string): string | null {
   const named = [...logged].reverse().find((l) => l.start <= date);
   if (named) return named.phase;
   const at = catalog?.phaseAt(block.program, weekOf(block.start_date, date));
@@ -74,10 +84,9 @@ export function phaseOnDay(block, logged, catalog, date) {
  *   week          program week: the phase's first catalog week plus weeks since the phase started
  *   earliestFinish  phase start plus the rest of this phase and all later phases at full speed
  *   paceFinish    the same, stretched by this block's pace so far (actual / planned weeks of completed phases)
- * @param {{program: string, start_date: string, status?: string}} block
- * @param {Array<{date: string, workout?: string|null}>} rows  the block's rows up to the date
+ * rows: the block's rows up to the date.
  */
-export function programProgress(block, rows, catalog, date) {
+export function programProgress(block: BlockRef, rows: NamedDay[], catalog: Catalog | null | undefined, date: string) {
   const program = catalog?.find(block.program) ?? null;
   const logged = loggedPhases(rows.filter((r) => r.date <= date));
   const current = logged[logged.length - 1] ?? null;
@@ -95,8 +104,8 @@ export function programProgress(block, rows, catalog, date) {
   }
 
   const phaseWeek = weekOf(current.start, date);
-  const ph = program?.phases.find((p) => p.name === current.phase) ?? null;
-  if (!ph) {
+  const ph = program?.phases.find((p: any) => p.name === current.phase) ?? null;
+  if (!program || !catalog || !ph) {
     return { ...base, estimated: false, phase: current.phase, phaseStarted: current.start, phaseWeek, phaseWeeks: null,
       week: null, pastProgramEnd: false, deloadWeek: deloadLogged, failureWeek: false, earliestFinish: null, paceFinish: null, pace: null };
   }
@@ -107,7 +116,7 @@ export function programProgress(block, rows, catalog, date) {
   let actual = 0;
   let planned = 0;
   for (let i = 0; i < logged.length - 1; i++) {
-    const done = program.phases.find((p) => p.name === logged[i].phase);
+    const done = program.phases.find((p: any) => p.name === logged[i].phase);
     if (!done) continue;
     actual += daysBetween(logged[i].start, logged[i + 1].start) / 7;
     planned += done.weeks[1] - done.weeks[0] + 1;
@@ -133,7 +142,7 @@ export function programProgress(block, rows, catalog, date) {
 }
 
 /** Where a program block stands on a date, for the weekly review. Computed facts only; never blueprint text. */
-export function programAt(block, catalog, date, rows = []) {
+export function programAt(block: BlockRef | null | undefined, catalog: Catalog | null | undefined, date: string, rows: NamedDay[] = []) {
   if (!block) return null;
   const p = programProgress(block, rows, catalog, date);
   return {
@@ -144,25 +153,21 @@ export function programAt(block, catalog, date, rows = []) {
 }
 
 /**
- * @param {Array<{date: string, workout?: string|null}>} sets  set rows (any order; planned rows are fine)
- * @param {string[]} liftingDates  days with performed sets, up to today
- * @param {string} today
- * @returns {{ blocks: Array<{program, phases: string[], notes, start_date, end_date, last_session, status, sessions: string[]}>,
- *             unassigned: string[] }}
+ * sets: set rows (any order; planned rows are fine); liftingDates: days with performed sets, up to today.
  */
-export function detectBlocks(sets, liftingDates, today, matchers) {
+export function detectBlocks(sets: Row[], liftingDates: string[], today: string, matchers?: Matcher[]) {
   const dates = [...new Set(liftingDates)].sort();
   const byDay = programsByDay(sets, dates, matchers);
-  const phasesByDay = new Map();
+  const phasesByDay = new Map<string, string>();
   for (const s of [...sets].sort((a, b) => a.date.localeCompare(b.date))) {
     const p = phaseOf(s.workout);
     if (p && !phasesByDay.has(s.date)) phasesByDay.set(s.date, p);
   }
 
-  const blocks = [];
-  const unassigned = [];
-  let current = null;
-  let pending = []; // days with no program since the current block's last known day
+  const blocks: Run[] = [];
+  const unassigned: string[] = [];
+  let current: Run | null = null;
+  let pending: string[] = []; // days with no program since the current block's last known day
   const close = () => {
     unassigned.push(...pending);
     pending = [];
@@ -175,15 +180,18 @@ export function detectBlocks(sets, liftingDates, today, matchers) {
       if (current) pending.push(date); else unassigned.push(date);
       continue;
     }
+    let run: Run;
     if (current && current.program === program) {
-      current.sessions.push(...pending, date);
+      run = current;
+      run.sessions.push(...pending, date);
       pending = [];
     } else {
       close();
-      current = { program, sessions: [date], phases: [] };
+      run = { program, sessions: [date], phases: [] };
+      current = run;
     }
     const phase = phasesByDay.get(date);
-    if (phase && !current.phases.includes(phase)) current.phases.push(phase);
+    if (phase && !run.phases.includes(phase)) run.phases.push(phase);
   }
   close();
   mergeAddons(blocks);

@@ -2,9 +2,9 @@
 //   npm run metrics                      the most recent full week (ending last Saturday)
 //   npm run metrics -- --week 2026-09-26 the week ending on that Saturday
 import { openOwnerStore } from '../db/store.ts';
-import { computeWeek } from '../metrics/index.js';
-import { loadWeekData, loadMetricSettings } from '../metrics/load.js';
-import { lastWeekEnd } from '../metrics/stats.js';
+import { computeWeek } from '../metrics/index.ts';
+import { loadWeekData, loadMetricSettings } from '../metrics/load.ts';
+import { lastWeekEnd } from '../metrics/stats.ts';
 import { isValidDate, localDate } from '../server/queries.js';
 
 const arg = process.argv.indexOf('--week');

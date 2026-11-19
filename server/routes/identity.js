@@ -2,7 +2,7 @@
 // (moved from server/app.js, v3 Phase 2 step 2, docs/adr/0012). register(app, ctx) adds these routes; ctx is what
 // buildApp shares with every route module (server/app.js).
 import * as q from '../queries.js';
-import { loadGoals } from '../../metrics/load.js';
+import { loadGoals } from '../../metrics/load.ts';
 import { currentProgram } from '../../ingest/program-blocks.js';
 import { isTimeZone, ownerTz, withTimeZone } from '../../tools/time.ts';
 import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, timeZoneOf } from '../../db/users.ts';

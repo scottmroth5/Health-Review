@@ -4,11 +4,11 @@
 // Async (docs/adr/0006): the functions that write open a transaction, so they take the async handle (db.tx); the
 // read-only ones (sessionCoverage, blockStatus, currentProgram, findBlock, listBlocks) run on either handle.
 import { createHash, randomUUID } from 'node:crypto';
-import { detectBlocks, loggedPhases, phaseOnDay, programProgress, weekOf } from '../metrics/blocks.js';
-import { loadStrengthSets, programMatchers } from '../metrics/load.js';
-import { programOf } from '../metrics/programs.js';
-import { performed } from '../metrics/strength.js';
-import { daysBetween } from '../metrics/stats.js';
+import { detectBlocks, loggedPhases, phaseOnDay, programProgress, weekOf } from '../metrics/blocks.ts';
+import { loadStrengthSets, programMatchers } from '../metrics/load.ts';
+import { programOf } from '../metrics/programs.ts';
+import { performed } from '../metrics/strength.ts';
+import { daysBetween } from '../metrics/stats.ts';
 import { OWNER_ID } from '../db/users.ts';
 
 // UUID v5 (RFC 9562) in a fixed namespace for this app's sessions.

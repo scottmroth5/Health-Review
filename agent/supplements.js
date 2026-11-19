@@ -5,9 +5,9 @@
 import { readFileSync } from 'node:fs';
 import { repoPath } from '../tools/paths.ts';
 import { EMERGENCY_LINE } from './emergency.js';
-import { loadMedications, medicationNames } from '../metrics/load.js';
-import { medicationsWeek } from '../metrics/medications.js';
-import { labsSummary, loadLabRanges } from '../metrics/labs.js';
+import { loadMedications, medicationNames } from '../metrics/load.ts';
+import { medicationsWeek } from '../metrics/medications.ts';
+import { labsSummary, loadLabRanges } from '../metrics/labs.ts';
 
 export const SUPPLEMENTS_TITLE = 'Supplement suggestions';
 

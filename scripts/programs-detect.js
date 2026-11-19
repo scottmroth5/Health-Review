@@ -3,8 +3,8 @@
 //   npm run programs:detect -- --write   save it (replaces earlier detected blocks; confirmed ones are kept)
 import { openOwnerStore } from '../db/store.ts';
 import { detect, writeDetected, sessionCoverage, refreshPhases } from '../ingest/program-blocks.js';
-import { userCatalog } from '../metrics/load.js';
-import { weekOf } from '../metrics/blocks.js';
+import { userCatalog } from '../metrics/load.ts';
+import { weekOf } from '../metrics/blocks.ts';
 import { localDate } from '../server/queries.js';
 
 const write = process.argv.includes('--write');

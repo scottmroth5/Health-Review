@@ -18,34 +18,61 @@
 // Goal scores are rounded to 2 places before the total. The program run last, and programs the owner listed under
 // not_ranked in config/substitutions.json, are left out with their reason; add-ons (profile.standalone false) are
 // scored and listed apart. Reasons are facts from these numbers only.
-import { addDays, daysBetween, round } from './stats.js';
-import { totalLbs } from './strength.js';
-import { epley, rangeOf } from './plateau.js';
-import { midpoint, parseReps, phaseStats } from './catalog.js';
+import { addDays, daysBetween, round } from './stats.ts';
+import { totalLbs } from './strength.ts';
+import { epley, rangeOf } from './plateau.ts';
+import { midpoint, parseReps, phaseStats } from './catalog.ts';
+import type { Program } from './catalog.ts';
+import type { Row } from './stats.ts';
 
-export const GOALS = ['strength', 'joint', 'time', 'vo2'];
+export type Goal = 'strength' | 'joint' | 'time' | 'vo2';
+export type Weights = Record<Goal, number>;
+type Lookup = (name: string) => { id: string | null, pattern: string | null, status: string };
+/** A past or current run of a program, with how much of it was reached. */
+export interface AdvisorBlock { program: string, start_date: string, end_date: string | null, status: string, percent?: number | null }
+/** What the Advisor ranks from (metrics/load.ts loadAdvisorInput). */
+export interface AdvisorInput {
+  programs: Program[];
+  lookup: Lookup;
+  substitutions?: { avoid?: { exercise: string }[], not_ranked?: { program: string, reason: string }[], [more: string]: any };
+  blocks?: AdvisorBlock[];
+  /** Primary lift sets (date, canonical_id, canonical_name, weight_lbs, per_hand, reps, workout, is_primary). */
+  sets?: Row[];
+  vo2?: { date: string, value: number }[];
+  /** Apple Watch strength minutes per lifting day. */
+  watchMinutes?: { program: string, minutes: number }[];
+  /** Current lift progress. */
+  lifts?: { status: string, range: string | null, name?: string }[];
+  /** The program run last (left out). */
+  lastProgram?: string | null;
+  asOf: string;
+  /** 0 to 3 each, default 1. */
+  weights?: Partial<Record<Goal, number>>;
+}
+
+export const GOALS: Goal[] = ['strength', 'joint', 'time', 'vo2'];
 export const MAX_WEIGHT = 3;
-export const EQUAL_WEIGHTS = Object.freeze(Object.fromEntries(GOALS.map((g) => [g, 1])));
+export const EQUAL_WEIGHTS = Object.freeze(Object.fromEntries(GOALS.map((g) => [g, 1])) as Weights);
 export const HISTORY_WINDOW_DAYS = 14; // lift change: first and last 2 weeks of a run
 export const VO2_WINDOW_DAYS = 28; // VO2 max change: first and last 4 weeks of a run
 export const MIN_WATCH_SESSIONS = 10;
 export const LOW_GOAL = 0.2; // a weighted goal scoring under this lowers the total (a 0 halves it)
-const GOAL_LABELS = { strength: 'strength', joint: 'joint health and balance', time: 'time', vo2: 'VO2 max' };
+const GOAL_LABELS: Record<Goal, string> = { strength: 'strength', joint: 'joint health and balance', time: 'time', vo2: 'VO2 max' };
 const WORK_MIN_PER_SET = 0.75;
 const DEFAULT_REST_MIN = 1.5;
-const clamp = (x) => Math.min(1, Math.max(0, x));
-const median = (xs) => {
+const clamp = (x: number): number => Math.min(1, Math.max(0, x));
+const median = (xs: number[]): number => {
   const s = [...xs].sort((a, b) => a - b);
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+const avg = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null) as number; // callers check the length
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const monthYear = (d) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
-const signed = (x, unit = '') => `${x > 0 ? '+' : ''}${x}${unit}`;
+const monthYear = (d: string): string => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
+const signed = (x: number, unit = ''): string => `${x > 0 ? '+' : ''}${x}${unit}`;
 
 /** Rest in minutes from a phase's rest text ("60-90 seconds", "3-5 minutes"); 1.5 when not stated. */
-export function restMinutes(text) {
+export function restMinutes(text: string | null | undefined): number {
   const m = /(\d+)\s*(?:-\s*(\d+))?\s*(seconds?|sec|minutes?|min)/i.exec(String(text ?? ''));
   if (!m) return /only the time/i.test(text ?? '') ? 0.25 : DEFAULT_REST_MIN;
   const v = m[2] ? (Number(m[1]) + Number(m[2])) / 2 : Number(m[1]);
@@ -56,11 +83,9 @@ export function restMinutes(text) {
  * What a program prescribes, averaged over its phases by weeks: sessions a week, estimated minutes per session
  * (0.75 min a set plus the phase's rest; superset partners share one rest; a stated session length wins), shares of
  * heavy, 6-12 rep (by the middle of the prescribed range), one-side and arm isolation sets, the main rep range, and exercises on the avoid list.
- * @param {object} program  catalog program with phases, workouts and profile
- * @param {(name: string) => {id: string|null, pattern: string|null, status: string}} lookup
- * @param {Set<string>} avoid  canonical ids
+ * program: a catalog program with phases, workouts and profile; avoid: canonical ids.
  */
-export function programProfile(program, lookup, avoid = new Set()) {
+export function programProfile(program: Program, lookup: Lookup, avoid: Set<string> = new Set()) {
   const prof = program.profile ?? {};
   let weeks = 0;
   let sessions = 0;
@@ -70,8 +95,8 @@ export function programProfile(program, lookup, avoid = new Set()) {
   let arms = 0;
   let allSets = 0;
   let moderate = 0;
-  const ranges = new Map();
-  const hits = [];
+  const ranges = new Map<string, number>();
+  const hits: { id: string, name: string, phase: string }[] = [];
   for (const ph of program.phases) {
     const w = ph.weeks[1] - ph.weeks[0] + 1;
     const perWeek = ph.workouts_per_week ?? 3;
@@ -79,8 +104,8 @@ export function programProfile(program, lookup, avoid = new Set()) {
     const rest = restMinutes(ph.rest);
     let phaseMin = 0;
     for (const wo of ph.workouts ?? []) {
-      const restGroups = new Map();
-      wo.exercises.forEach((e, i) => {
+      const restGroups = new Map<string, number>();
+      wo.exercises.forEach((e: any, i: number) => {
         const n = midpoint(e.sets ?? '1') ?? 1;
         phaseMin += WORK_MIN_PER_SET * n;
         const key = e.superset ? `superset ${e.superset}` : `exercise ${i}`;
@@ -98,7 +123,7 @@ export function programProfile(program, lookup, avoid = new Set()) {
       for (const n of restGroups.values()) phaseMin += rest * n;
     }
     const workouts = (ph.workouts ?? []).length;
-    const perSession = prof.minutes_per_session ?? (ph.minutes ? midpoint(ph.minutes) : (workouts ? phaseMin / workouts : 0));
+    const perSession: number = prof.minutes_per_session ?? (ph.minutes ? midpoint(ph.minutes) : (workouts ? phaseMin / workouts : 0));
     weeks += w;
     sessions += perWeek * w;
     minutes += perSession * perWeek * w;
@@ -130,29 +155,31 @@ export function programProfile(program, lookup, avoid = new Set()) {
  * within the rep range with the most sets across both windows (load only; deloads left out). Runs shorter than
  * 4 weeks give nothing.
  */
-export function liftChanges(sets, start, end) {
+export function liftChanges(sets: Row[], start: string, end: string) {
   if (daysBetween(start, end) < 2 * HISTORY_WINDOW_DAYS - 1) return [];
   const earlyTo = addDays(start, HISTORY_WINDOW_DAYS - 1);
   const lateFrom = addDays(end, -(HISTORY_WINDOW_DAYS - 1));
-  const lifts = new Map();
+  const lifts = new Map<string, { name: string, sets: { win: 'early' | 'late', range: string, e1rm: number }[] }>();
   for (const s of sets) {
     if (!s.is_primary || !s.canonical_id || s.date < start || s.date > end || !(s.reps >= 1)) continue;
-    if (/deload/i.test(s.workout ?? '') || !(totalLbs(s) > 0)) continue;
-    const win = s.date <= earlyTo ? 'early' : s.date >= lateFrom ? 'late' : null;
+    const load = totalLbs(s);
+    if (/deload/i.test(s.workout ?? '') || !(load !== null && load > 0)) continue;
+    const win: 'early' | 'late' | null = s.date <= earlyTo ? 'early' : s.date >= lateFrom ? 'late' : null;
     if (!win) continue;
-    if (!lifts.has(s.canonical_id)) lifts.set(s.canonical_id, { name: s.canonical_name ?? s.exercise, sets: [] });
+    const lift = lifts.get(s.canonical_id) ?? { name: s.canonical_name ?? s.exercise, sets: [] as { win: 'early' | 'late', range: string, e1rm: number }[] };
+    lifts.set(s.canonical_id, lift);
     // Only within one rep range: a submaximal 10-rep set's estimated max reads far below a near-max single, so comparing
     // across ranges made heavy-start, high-rep-finish runs look like large losses (owner's choice, 2026-10-14).
-    lifts.get(s.canonical_id).sets.push({ win, range: rangeOf(s.reps), e1rm: epley(totalLbs(s), s.reps) });
+    lift.sets.push({ win, range: rangeOf(s.reps), e1rm: epley(load, s.reps) });
   }
-  const out = [];
+  const out: { id: string, name: string, range: string, early: number, late: number, changePct: number }[] = [];
   for (const [id, { name, sets: ls }] of lifts) {
-    const counts = new Map();
+    const counts = new Map<string, number>();
     for (const s of ls) counts.set(s.range, (counts.get(s.range) ?? 0) + 1);
     const both = [...counts].filter(([r]) => ls.some((s) => s.range === r && s.win === 'early') && ls.some((s) => s.range === r && s.win === 'late'));
     if (!both.length) continue;
     const range = both.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
-    const best = (win) => Math.max(...ls.filter((s) => s.range === range && s.win === win).map((s) => s.e1rm));
+    const best = (win: string): number => Math.max(...ls.filter((s) => s.range === range && s.win === win).map((s) => s.e1rm));
     const early = best('early');
     const late = best('late');
     out.push({ id, name, range, early, late, changePct: round(((late - early) / early) * 100, 1) });
@@ -161,7 +188,7 @@ export function liftChanges(sets, start, end) {
 }
 
 /** VO2 max change over one run: mean of the readings in its last 28 days minus its first 28 (runs of 8+ weeks). */
-export function vo2Change(readings, start, end) {
+export function vo2Change(readings: { date: string, value: number }[], start: string, end: string): number | null {
   if (daysBetween(start, end) < 2 * VO2_WINDOW_DAYS - 1) return null;
   const early = readings.filter((r) => r.date >= start && r.date <= addDays(start, VO2_WINDOW_DAYS - 1)).map((r) => r.value);
   const late = readings.filter((r) => r.date >= addDays(end, -(VO2_WINDOW_DAYS - 1)) && r.date <= end).map((r) => r.value);
@@ -170,22 +197,11 @@ export function vo2Change(readings, start, end) {
 }
 
 /**
- * @param {object} input
- * @param {Array<object>} input.programs  catalog programs
- * @param {(name: string) => object} input.lookup  dictionary lookup
- * @param {{avoid?: Array<{exercise: string}>, not_ranked?: Array<{program: string, reason: string}>}} [input.substitutions]
- * @param {Array<{program: string, start_date: string, end_date: string|null, status: string, percent: number|null}>} input.blocks
- * @param {Array<object>} input.sets  primary lift sets (date, canonical_id, canonical_name, weight_lbs, per_hand, reps, workout, is_primary)
- * @param {Array<{date: string, value: number}>} input.vo2  VO2 max readings
- * @param {Array<{program: string, minutes: number}>} input.watchMinutes  Apple Watch strength minutes per lifting day
- * @param {Array<{status: string, range: string|null, name: string}>} [input.lifts]  current lift progress
- * @param {string|null} input.lastProgram  the program run last (left out)
- * @param {string} input.asOf
- * @param {{strength?: number, joint?: number, time?: number, vo2?: number}} [input.weights]  0 to 3 each, default 1
+ * The input is AdvisorInput (above).
  */
 export function recommendPrograms({ programs, lookup, substitutions = {}, blocks = [], sets = [], vo2 = [], watchMinutes = [],
-  lifts = [], lastProgram = null, asOf, weights = {} }) {
-  const w = Object.fromEntries(GOALS.map((g) => [g, weights[g] ?? 1]));
+  lifts = [], lastProgram = null, asOf, weights = {} }: AdvisorInput) {
+  const w = Object.fromEntries(GOALS.map((g) => [g, weights[g] ?? 1])) as Weights;
   for (const g of GOALS) {
     if (!Number.isInteger(w[g]) || w[g] < 0 || w[g] > MAX_WEIGHT) throw new RangeError(`weight for ${g} must be a whole number from 0 to ${MAX_WEIGHT}`);
   }
@@ -194,31 +210,32 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
   const profiles = new Map(programs.map((p) => [p.name, programProfile(p, lookup, avoid)]));
 
   // Watch minutes per program, and the owner's typical watch-to-estimate ratio from well-logged programs.
-  const watch = new Map();
+  const watch = new Map<string, number[]>();
   for (const w of watchMinutes) {
-    if (!watch.has(w.program)) watch.set(w.program, []);
-    watch.get(w.program).push(w.minutes);
+    const list = watch.get(w.program) ?? [];
+    watch.set(w.program, list);
+    list.push(w.minutes);
   }
-  const watchAvg = (name) => {
+  const watchAvg = (name: string): number | null => {
     const m = watch.get(name) ?? [];
     return m.length >= MIN_WATCH_SESSIONS ? Math.round(avg(m)) : null;
   };
-  const ratios = [...profiles].filter(([name, pr]) => watchAvg(name) && pr.estimatedMinutes).map(([name, pr]) => watchAvg(name) / pr.estimatedMinutes);
+  const ratios = [...profiles].filter(([name, pr]) => watchAvg(name) && pr.estimatedMinutes).map(([name, pr]) => (watchAvg(name) as number) / pr.estimatedMinutes);
   const ratio = ratios.length ? round(median(ratios), 2) : 1;
   const stalled = lifts.filter((l) => (l.status === 'stalled' || l.status === 'regressing') && l.range);
 
-  const past = blocks.filter((b) => b.status !== 'in_progress' && b.end_date && b.end_date <= asOf);
+  const past = blocks.filter((b): b is AdvisorBlock & { end_date: string } => b.status !== 'in_progress' && Boolean(b.end_date) && (b.end_date as string) <= asOf);
   // What a program never run is assumed to reach: the owner's average over every past run.
-  const pastPercents = past.map((b) => b.percent).filter((p) => p !== null && p !== undefined);
+  const pastPercents = past.map((b) => b.percent).filter((p): p is number => p !== null && p !== undefined);
   const usualCompletion = pastPercents.length ? Math.round(avg(pastPercents)) : null;
-  const score = (program) => {
-    const pr = profiles.get(program.name);
+  const score = (program: Program) => {
+    const pr = profiles.get(program.name) as ReturnType<typeof programProfile>;
     const runs = past.filter((b) => b.program === program.name).sort((a, b) => a.start_date.localeCompare(b.start_date));
     const runLifts = runs.map((b) => ({ block: b, lifts: liftChanges(sets, b.start_date, b.end_date) })).filter((r) => r.lifts.length);
-    const runVo2 = runs.map((b) => ({ block: b, change: vo2Change(vo2, b.start_date, b.end_date) })).filter((r) => r.change !== null);
+    const runVo2 = runs.map((b) => ({ block: b, change: vo2Change(vo2, b.start_date, b.end_date) })).filter((r): r is { block: typeof r.block, change: number } => r.change !== null);
     const liftHistory = runLifts.length ? round(avg(runLifts.map((r) => median(r.lifts.map((l) => l.changePct)))), 1) : null;
     const vo2History = runVo2.length ? round(avg(runVo2.map((r) => r.change)), 1) : null;
-    const percents = runs.map((b) => b.percent).filter((p) => p !== null && p !== undefined);
+    const percents = runs.map((b) => b.percent).filter((p): p is number => p !== null && p !== undefined);
     const completion = percents.length ? Math.round(avg(percents)) : null;
 
     const fresh = pr.mainRange && stalled.some((l) => l.range !== 'reps' && l.range !== pr.mainRange);
@@ -229,7 +246,7 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
     const minutesPerSession = watchAvg(program.name) ?? Math.round(pr.estimatedMinutes * ratio);
     const weeklyMinutes = Math.round(minutesPerSession * pr.sessionsPerWeek + pr.extraMinutesPerWeek);
     const vo2Profile = pr.conditioning / 3;
-    const scores = {
+    const scores: Weights = {
       strength: round(Math.min(1, strengthBase + (fresh ? 0.1 : 0)), 2),
       joint: round(joint, 2),
       time: round(clamp((360 - weeklyMinutes) / 240), 2),
@@ -239,18 +256,18 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
     const reached = completion ?? completionAssumed;
     const multiplier = reached === null ? 1 : 0.5 + (0.5 * reached) / 100;
     const weighted = GOALS.filter((g) => w[g] > 0).map((g) => ({ goal: g, score: scores[g] }));
-    const lowest = weighted.reduce((lo, x) => (lo === null || x.score < lo.score ? x : lo), null);
+    const lowest = weighted.reduce((lo: { goal: Goal, score: number } | null, x) => (lo === null || x.score < lo.score ? x : lo), null);
     const lowGoal = lowest && lowest.score < LOW_GOAL ? lowest : null;
     const lowFactor = lowGoal ? 0.5 + (0.5 * lowGoal.score) / LOW_GOAL : 1;
     const total = weightSum ? round((GOALS.reduce((a, g) => a + w[g] * scores[g], 0) / weightSum) * multiplier * lowFactor, 2) : null;
 
-    const reasons = [];
-    const lastLifts = runLifts.at(-1);
+    const reasons: string[] = [];
+    const lastLifts = runLifts[runLifts.length - 1];
     if (lastLifts) {
       const top = lastLifts.lifts.slice(0, 2).map((l) => `${l.name} ${signed(l.changePct, '%')}`);
       reasons.push(`Your ${monthYear(lastLifts.block.start_date)} run: ${top.join(', ')}`);
     }
-    const lastVo2 = runVo2.at(-1);
+    const lastVo2 = runVo2[runVo2.length - 1];
     if (lastVo2) reasons.push(`VO2 max ${signed(lastVo2.change)} during your ${lastVo2.block.start_date.slice(0, 4)} run`);
     reasons.push(`About ${pr.sessionsPerWeek} x ${minutesPerSession} min a week${pr.extraMinutesPerWeek ? ` plus ${pr.extraMinutesPerWeek} min of extra sessions` : ''}`);
     if (completion !== null) reasons.push(`You reached ${completion}% of it on average (${runs.length} ${runs.length === 1 ? 'run' : 'runs'})`);
@@ -286,7 +303,7 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
     };
   };
 
-  const byTotal = (a, b) => (b.total ?? 0) - (a.total ?? 0) || a.program.localeCompare(b.program);
+  const byTotal = (a: { total: number | null, program: string }, b: { total: number | null, program: string }): number => (b.total ?? 0) - (a.total ?? 0) || a.program.localeCompare(b.program);
   const excluded = [
     ...(lastProgram ? [{ program: lastProgram, reason: 'run last' }] : []),
     ...(substitutions.not_ranked ?? []).filter((n) => n.program !== lastProgram && profiles.has(n.program))
@@ -299,8 +316,8 @@ export function recommendPrograms({ programs, lookup, substitutions = {}, blocks
     weights: w,
     minutesRatio: ratio,
     excluded,
-    ranking: candidates.filter((p) => profiles.get(p.name).standalone).map(score).sort(byTotal),
-    addons: candidates.filter((p) => !profiles.get(p.name).standalone).map(score).sort(byTotal),
+    ranking: candidates.filter((p) => profiles.get(p.name)?.standalone).map(score).sort(byTotal),
+    addons: candidates.filter((p) => !profiles.get(p.name)?.standalone).map(score).sort(byTotal),
   };
 }
 
@@ -309,15 +326,15 @@ export const REVIEW_DAYS_BEFORE_FINISH = 21;
 /**
  * Whether the weekly review gets the ranking: no program block that week, a block that has ended or run past its
  * program, or one within 21 days of its earliest finish.
- * @param {{status?: string, earliestFinish?: string|null, pastProgramEnd?: boolean}|null} program  the week's block (programAt)
+ * program: the week's block (programAt).
  */
-export function advisorDue(program, weekEnd) {
+export function advisorDue(program: { status?: string | null, earliestFinish?: string | null, pastProgramEnd?: boolean } | null | undefined, weekEnd: string): boolean {
   if (!program || program.status !== 'in_progress' || program.pastProgramEnd) return true;
-  return Boolean(program.earliestFinish) && daysBetween(weekEnd, program.earliestFinish) <= REVIEW_DAYS_BEFORE_FINISH;
+  return Boolean(program.earliestFinish) && daysBetween(weekEnd, program.earliestFinish as string) <= REVIEW_DAYS_BEFORE_FINISH;
 }
 
 /** The review's copy of a ranking: the top 3 with scores, reasons and flags, the program left out and the add-ons. */
-export function advisorForReview(result, top = 3) {
+export function advisorForReview(result: ReturnType<typeof recommendPrograms>, top = 3) {
   return {
     weights: result.weights,
     leftOut: result.excluded.map((x) => `${x.program} (${x.reason})`),

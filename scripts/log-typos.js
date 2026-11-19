@@ -6,8 +6,8 @@
 // The numbers come from the list printed with no arguments; run it again after a merge, since numbers shift.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { openOwnerStore } from '../db/store.ts';
-import { DICTIONARY_PATH, createDictionary } from '../metrics/dictionary.js';
-import { typoCandidates, applyTypoMerges, markDistinct } from '../metrics/name-typos.js';
+import { DICTIONARY_PATH, createDictionary } from '../metrics/dictionary.ts';
+import { typoCandidates, applyTypoMerges, markDistinct } from '../metrics/name-typos.ts';
 import { canonicalSetCounts, normalizeAll, unmappedNames } from '../ingest/normalize.js';
 
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };

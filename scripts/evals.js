@@ -78,7 +78,7 @@ async function regrade(variant) {
   const { gradeDraft, SPEC } = await import('../evals/grade-review.js');
   const { allowedNumbers, checkReport, stripDashes, findDashes } = await import('../agent/validate.js');
   const { openOwnerStore } = await import('../db/store.ts');
-  const { medicationNames } = await import('../metrics/load.js');
+  const { medicationNames } = await import('../metrics/load.ts');
   const { NIGHT_BREATHING_NAMES } = await import('../agent/review.js');
   const store = openOwnerStore();
   const names = {

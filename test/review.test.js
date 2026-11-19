@@ -2,13 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ClaudeTruncatedError } from '@scottmroth5/agent-core/claude';
 import { openOwnerStore } from '../db/store.ts';
-import { addDays } from '../metrics/stats.js';
+import { addDays } from '../metrics/stats.ts';
 import { findDashes, stripDashes, allowedNumbers, ungroundedNumbers, misroutedTopics } from '../agent/validate.js';
 import { buildSystem, renderReport, CONTRACT } from '../agent/instructions.js';
 import { buildSummary } from '../agent/summary.js';
 import { createReviewClaude } from '../agent/claude.js';
 import { runReview, prepareReview } from '../agent/review.js';
-import { computeWeek } from '../metrics/index.js';
+import { computeWeek } from '../metrics/index.ts';
 import { fakeClaudeClient, silentLogger, ownerStore } from './helpers.js';
 import { weeklyReview } from '../jobs/review.js';
 import { OWNER_ID } from '../db/users.ts';
@@ -109,7 +109,7 @@ test('summary: nightBreathing is passed to the review only when there is data', 
 });
 
 test('summary: health targets reach the review (metrics with data only; a band metric as its usual range), and their numbers are grounded', async () => {
-  const { loadWeekData } = await import('../metrics/load.js');
+  const { loadWeekData } = await import('../metrics/load.ts');
   const store = await ownerStore();
   const add = store.db.prepare("INSERT INTO daily_metrics (user_id, date, steps, wrist_temp_f, updated_at) VALUES (@uid, ?, 6500, 97.1, 'x')");
   for (let d = '2026-07-01'; d <= '2026-09-26'; d = addDays(d, 1)) (await add.run(d));
@@ -308,8 +308,8 @@ test('summary: the weekly review gets 12 weeks and 12 months of training volume,
 });
 
 test('summary: the current program block, its logged phase and finish reach the review as grounded facts', async () => {
-  const { createCatalog } = await import('../metrics/catalog.js');
-  const { loadWeekData } = await import('../metrics/load.js');
+  const { createCatalog } = await import('../metrics/catalog.ts');
+  const { loadWeekData } = await import('../metrics/load.ts');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 11, phases: [
     { name: 'Phase 1', weeks: [1, 5] }, { name: 'Phase 2', weeks: [6, 11], special_weeks: { deload: [7] } }] }] }, { programs: ['MAPS Symmetry'] });
   const store = await ownerStore();
@@ -331,9 +331,9 @@ test('summary: the current program block, its logged phase and finish reach the 
 });
 
 test('summary: called for vs logged reaches the review as counts and logged names only, grounded; absent without a catalog', async () => {
-  const { createCatalog } = await import('../metrics/catalog.js');
-  const { createDictionary } = await import('../metrics/dictionary.js');
-  const { loadWeekData } = await import('../metrics/load.js');
+  const { createCatalog } = await import('../metrics/catalog.ts');
+  const { createDictionary } = await import('../metrics/dictionary.ts');
+  const { loadWeekData } = await import('../metrics/load.ts');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 4, phases: [
     { name: 'Phase 1', weeks: [1, 4], sets: '3', reps: '5', workouts: [{ name: 'Workout 1', exercises: [{ name: 'Press' }, { name: 'Row' }] }] }] }] },
   { programs: ['MAPS Symmetry'] });
@@ -364,10 +364,10 @@ test('summary: called for vs logged reaches the review as counts and logged name
 });
 
 test('summary: the Program Advisor ranking reaches the review only within 21 days of the block\'s earliest finish, grounded', async () => {
-  const { createCatalog } = await import('../metrics/catalog.js');
-  const { createDictionary } = await import('../metrics/dictionary.js');
-  const { loadWeekData } = await import('../metrics/load.js');
-  const { advisorDue } = await import('../metrics/advisor.js');
+  const { createCatalog } = await import('../metrics/catalog.ts');
+  const { createDictionary } = await import('../metrics/dictionary.ts');
+  const { loadWeekData } = await import('../metrics/load.ts');
+  const { advisorDue } = await import('../metrics/advisor.ts');
   const one = (exercises, extra = {}) => [{ name: 'Phase 1', weeks: [1, 4], workouts_per_week: 3, workouts: [{ name: 'A', exercises }], ...extra }];
   const catalog = createCatalog({ version: 1, programs: [
     { name: 'MAPS Symmetry', weeks: 11, phases: [{ name: 'Phase 1', weeks: [1, 5] }, { name: 'Phase 2', weeks: [6, 11] }] },
@@ -422,7 +422,7 @@ test('summary: dataQuality lists the missing and partial days of the week (dates
 });
 
 test('summary: lift plateau statuses reach the review grounded; lifts not trained recently are left out', async () => {
-  const { loadWeekData } = await import('../metrics/load.js');
+  const { loadWeekData } = await import('../metrics/load.ts');
   const store = await ownerStore();
   const db = store.db;
   const ex = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, exercise, canonical_id, implement, is_primary, map_status)

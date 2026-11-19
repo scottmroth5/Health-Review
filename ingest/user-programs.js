@@ -1,11 +1,11 @@
-// A user's own program catalog (multi-user, phase 5): programs in the MAPS catalog's format (metrics/catalog.js), each
+// A user's own program catalog (multi-user, phase 5): programs in the MAPS catalog's format (metrics/catalog.ts), each
 // with the words that tie Workout Log names to it, built in the app, imported as JSON or drafted by Claude from a PDF.
 // Every write re-runs block detection (confirmed blocks are never touched) and refreshes phases, as the matchers and
 // phase lengths may have changed. Takes a scoped database (db/scope.js): the async handle (docs/adr/0006) for the writes,
 // which open transactions; either for exportPrograms.
 import { randomUUID } from 'node:crypto';
-import { programProblems } from '../metrics/catalog.js';
-import { loadUserPrograms } from '../metrics/load.js';
+import { programProblems } from '../metrics/catalog.ts';
+import { loadUserPrograms } from '../metrics/load.ts';
 import { detect, writeDetected, refreshPhases } from './program-blocks.js';
 
 export const SOURCES = ['manual', 'import', 'pdf'];

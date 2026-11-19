@@ -2,33 +2,32 @@
 // A day with no row is unknown, not zero: only logged days (including logged zero days) count.
 // Next-morning values come from the following day's daily_metrics row (Health Auto Export dates
 // sleep and overnight HRV to the day you wake up).
-import { mean, round, sum, inRange, windows, addDays, pearson } from './stats.js';
+import { mean, round, sum, inRange, windows, addDays, pearson } from './stats.ts';
+import type { Row } from './stats.ts';
 
 export const ALCOHOL_TYPES = ['beers', 'wine', 'bourbon', 'other'];
-export const alcoholOf = (d) => sum(ALCOHOL_TYPES.map((t) => d[t] ?? 0));
+export const alcoholOf = (d: Row): number => sum(ALCOHOL_TYPES.map((t) => d[t] ?? 0));
 const MIN_GROUP = 3;
-const NEXT_MORNING = { hrv_ms: 0, resting_hr: 1, sleep_total_hr: 1 };
+const NEXT_MORNING: Record<string, number> = { hrv_ms: 0, resting_hr: 1, sleep_total_hr: 1 };
 
 /**
- * @param {Array<object>} days     drinking_days rows
- * @param {Array<object>} metrics  daily_metrics rows (for next-morning comparisons)
- * @param {string} weekEnd
+ * days: drinking_days rows; metrics: daily_metrics rows (for next-morning comparisons).
  */
-export function drinking(days, metrics, weekEnd) {
+export function drinking(days: Row[], metrics: Row[], weekEnd: string) {
   const w = windows(weekEnd);
   const week = days.filter((d) => inRange(d.date, w.week.from, w.week.to));
   const base = days.filter((d) => inRange(d.date, w.baseline.from, w.baseline.to));
   const drinkingDays = week.filter((d) => alcoholOf(d) > 0);
   const alcohol = week.map(alcoholOf);
 
-  const moods = (key) => round(mean(drinkingDays.map((d) => d[key]).filter((v) => v != null)), 1);
+  const moods = (key: string) => round(mean(drinkingDays.map((d) => d[key]).filter((v) => v != null)), 1);
 
   // Next-morning recovery over the last 90 days.
-  const byDate = new Map(metrics.map((m) => [m.date, m]));
+  const byDate = new Map<string, Row>(metrics.map((m) => [m.date, m]));
   const long = days.filter((d) => inRange(d.date, w.long.from, w.long.to));
-  const nextMorning = {};
+  const nextMorning: Record<string, unknown> = {};
   for (const [key, d] of Object.entries(NEXT_MORNING)) {
-    const after = (list) => list.map((day) => byDate.get(addDays(day.date, 1))?.[key]).filter((v) => typeof v === 'number');
+    const after = (list: Row[]): number[] => list.map((day) => byDate.get(addDays(day.date, 1))?.[key]).filter((v): v is number => typeof v === 'number');
     const onDrinking = after(long.filter((day) => alcoholOf(day) > 0));
     const onFree = after(long.filter((day) => alcoholOf(day) === 0));
     const enough = onDrinking.length >= MIN_GROUP && onFree.length >= MIN_GROUP;
@@ -37,12 +36,12 @@ export function drinking(days, metrics, weekEnd) {
       afterAlcoholFreeDays: onFree.length,
       meanAfterDrinking: enough ? round(mean(onDrinking), d) : null,
       meanAfterAlcoholFree: enough ? round(mean(onFree), d) : null,
-      difference: enough ? round(mean(onDrinking) - mean(onFree), d) : null,
+      difference: enough ? round((mean(onDrinking) as number) - (mean(onFree) as number), d) : null,
     };
   }
   const dosePairs = long
-    .map((day) => [alcoholOf(day), byDate.get(addDays(day.date, 1))?.hrv_ms])
-    .filter(([, hrv]) => typeof hrv === 'number');
+    .map((day): [number, unknown] => [alcoholOf(day), byDate.get(addDays(day.date, 1))?.hrv_ms])
+    .filter((p): p is [number, number] => typeof p[1] === 'number');
 
   return {
     week: {
@@ -57,7 +56,7 @@ export function drinking(days, metrics, weekEnd) {
       moodBeforeMean: moods('mood_before'),
       moodAfterMean: moods('mood_after'),
       // How often each setting came up on drinking days, most common first.
-      settings: Object.entries(drinkingDays.reduce((m, d) => {
+      settings: Object.entries(drinkingDays.reduce((m: Record<string, number>, d) => {
         const s = d.setting?.trim();
         if (s) m[s] = (m[s] ?? 0) + 1;
         return m;

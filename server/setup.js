@@ -2,7 +2,7 @@
 // for their data to come in, optional AI and their first result. It guides and never blocks: entering data by hand is a
 // full way to use the app (owner's choice, 2026-10-26). setupSteps is pure (the admin Users screen uses it too, with the
 // same facts read across users); loadSetupFacts reads one user's facts, counts and flags only, never values.
-import { addDays } from '../metrics/stats.js';
+import { addDays } from '../metrics/stats.ts';
 
 export const SETUP_STEPS = ['goals', 'profile', 'data', 'ai', 'firstResult'];
 const OPTIONAL = new Set(['ai']);

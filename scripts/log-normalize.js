@@ -2,7 +2,7 @@
 // Prints counts only: no names, weights or dates.
 //   npm run log:normalize
 import { openOwnerStore } from '../db/store.ts';
-import { loadDictionary } from '../metrics/dictionary.js';
+import { loadDictionary } from '../metrics/dictionary.ts';
 import { normalizeAll } from '../ingest/normalize.js';
 
 let dictionary;

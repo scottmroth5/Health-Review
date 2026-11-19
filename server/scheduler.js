@@ -13,7 +13,7 @@
 // A run missed while the server was off runs when it comes back, if the missed time was within the last 12 hours and the
 // job has not run since. A job never overlaps itself: not while it is running here, and not while a run of the same name
 // started in the last 30 minutes is still marked running (a terminal command, Sync now).
-import { addDays } from '../metrics/stats.js';
+import { addDays } from '../metrics/stats.ts';
 import { localDate, ownerTz, zonedInstant } from '../tools/time.ts';
 import { telemetry } from '../tools/telemetry.ts';
 

@@ -2,9 +2,9 @@
 // Phase 2 step 2, docs/adr/0012). register(app, ctx) adds these routes; ctx is what buildApp shares with every route
 // module (server/app.js).
 import * as q from '../queries.js';
-import { addDays } from '../../metrics/stats.js';
-import { loadDictionary } from '../../metrics/dictionary.js';
-import { loadUserPrograms } from '../../metrics/load.js';
+import { addDays } from '../../metrics/stats.ts';
+import { loadDictionary } from '../../metrics/dictionary.ts';
+import { loadUserPrograms } from '../../metrics/load.ts';
 import { WorkoutError, deleteWorkout, listWorkouts, saveWorkout, workoutSuggestions } from '../../ingest/app-workouts.js';
 import { MAX_UPLOAD_BYTES, TEMPLATE_NAME, UploadError, ingestWorkbook, workoutTemplate } from '../../ingest/excel-upload.js';
 import { XLSX_TYPE, XlsxError } from '../../tools/xlsx.ts';

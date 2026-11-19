@@ -6,15 +6,26 @@
 // otherwise 'unmapped'. Names listed under "ignore" are notes typed into the exercise column.
 import { readFileSync } from 'node:fs';
 import { repoPath } from '../tools/paths.ts';
-import { baseKey } from './exercises.js';
+import { baseKey } from './exercises.ts';
 
 export const IMPLEMENTS = ['barbell', 'dumbbell', 'machine', 'cable', 'landmine', 'bodyweight', 'kettlebell', 'band', 'suspension', 'other'];
 export const PATTERNS = ['squat', 'hinge', 'horizontal press', 'incline press', 'vertical press', 'horizontal pull', 'vertical pull',
   'arms', 'core', 'carry', 'mobility', 'other'];
 export const DICTIONARY_PATH = repoPath('config', 'exercise-dictionary.json');
 
+/** One canonical exercise in config/exercise-dictionary.json. */
+export interface DictionaryEntry {
+  id: string, name: string, implement: string, pattern: string, primary: boolean, variants?: string[], lift?: string | null,
+}
+/** What a logged name maps to. */
+export interface Lookup {
+  status: 'mapped' | 'inferred' | 'unmapped' | 'ignored', id: string | null, name: string | null,
+  implement: string | null, pattern: string | null, primary: boolean, lift: string | null,
+}
+export interface Dictionary { exercises: DictionaryEntry[], distinct: string[][], lookup(rawName: unknown): Lookup }
+
 // Words that name the implement outright, including the log's usual typos and plurals.
-const IMPLEMENT_WORDS = [
+const IMPLEMENT_WORDS: [string, RegExp][] = [
   ['barbell', /\b(barbells?|barells?|bb|ez bar|trap bar)\b/], ['dumbbell', /\b(dumbb?ells?|db)\b/],
   ['kettlebell', /\b(kettle ?bells?|ketlebells?|kb)\b/], ['landmine', /\blandmines?\b/], ['cable', /\bcables?\b/],
   ['machine', /\b(machines?|smith)\b/], ['band', /\b(bands?|banded)\b/], ['suspension', /\b(suspension|trx)\b/],
@@ -22,29 +33,27 @@ const IMPLEMENT_WORDS = [
 ];
 
 /** The implement named in an exercise name, or null when none or more than one is named. */
-export function implementFromName(name) {
+export function implementFromName(name: unknown): string | null {
   const text = String(name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
   const found = IMPLEMENT_WORDS.filter(([, re]) => re.test(text)).map(([k]) => k);
   return found.length === 1 ? found[0] : null;
 }
 
-function fail(problems) {
-  const err = new Error(`Exercise dictionary is invalid:\n  ${problems.join('\n  ')}`);
-  err.problems = problems;
-  return err;
+function fail(problems: string[]): Error & { problems: string[] } {
+  return Object.assign(new Error(`Exercise dictionary is invalid:\n  ${problems.join('\n  ')}`), { problems });
 }
 
 /**
  * Validates a parsed dictionary and builds its lookup. Throws listing every problem.
- * @param {{version: number, exercises: Array<object>, ignore?: string[]}} json
+ * json: { version: 1, exercises, ignore?, distinct? } as parsed, unchecked.
  */
-export function createDictionary(json) {
-  const problems = [];
+export function createDictionary(json: any): Dictionary {
+  const problems: string[] = [];
   if (json?.version !== 1) problems.push('version must be 1');
-  const exercises = Array.isArray(json?.exercises) ? json.exercises : (problems.push('exercises must be a list'), []);
-  const byKey = new Map();
-  const ids = new Set();
-  const claim = (name, owner) => {
+  const exercises: any[] = Array.isArray(json?.exercises) ? json.exercises : (problems.push('exercises must be a list'), []);
+  const byKey = new Map<string, string>();
+  const ids = new Set<string>();
+  const claim = (name: unknown, owner: string) => {
     const key = baseKey(name);
     if (!key) return problems.push(`${owner}: empty name`);
     const prev = byKey.get(key);
@@ -64,7 +73,7 @@ export function createDictionary(json) {
     if (e?.id && e?.name) for (const n of [e.name, ...(e.variants ?? [])]) claim(n, e.id);
   }
   for (const n of json?.ignore ?? []) claim(n, 'ignore');
-  // Pairs the owner confirmed are different exercises, so the typo finder (metrics/name-typos.js) never shows them again.
+  // Pairs the owner confirmed are different exercises, so the typo finder (metrics/name-typos.ts) never shows them again.
   // Each side is an exercise id, or "key:<spelling key>" for a logged name with no entry.
   for (const pair of json?.distinct ?? []) {
     if (!Array.isArray(pair) || pair.length !== 2 || pair[0] === pair[1]) problems.push(`distinct: ${JSON.stringify(pair)} must be two different ids`);
@@ -72,19 +81,15 @@ export function createDictionary(json) {
   }
   if (problems.length) throw fail(problems);
 
-  const entries = new Map(exercises.map((e) => [e.id, e]));
+  const entries = new Map<string, DictionaryEntry>(exercises.map((e) => [e.id, e]));
   return {
     exercises,
     distinct: json?.distinct ?? [],
-    /**
-     * @returns {{status: 'mapped'|'inferred'|'unmapped'|'ignored', id: string|null, name: string|null,
-     *   implement: string|null, pattern: string|null, primary: boolean, lift: string|null}}
-     */
-    lookup(rawName) {
+    lookup(rawName: unknown): Lookup {
       const owner = byKey.get(baseKey(rawName));
       if (owner === 'ignore') return { status: 'ignored', id: null, name: null, implement: null, pattern: null, primary: false, lift: null };
       if (owner) {
-        const e = entries.get(owner);
+        const e = entries.get(owner) as DictionaryEntry;
         return { status: 'mapped', id: e.id, name: e.name, implement: e.implement, pattern: e.pattern, primary: e.primary, lift: e.lift ?? null };
       }
       const implement = implementFromName(rawName);
@@ -94,6 +99,6 @@ export function createDictionary(json) {
 }
 
 /** Reads and validates the dictionary file. */
-export function loadDictionary(path = DICTIONARY_PATH) {
+export function loadDictionary(path = DICTIONARY_PATH): Dictionary {
   return createDictionary(JSON.parse(readFileSync(path, 'utf8')));
 }

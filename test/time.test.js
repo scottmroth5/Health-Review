@@ -3,11 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ownerTz, zonedParts, localDate, localStamp, DEFAULT_TZ } from '../tools/time.ts';
-import { lastWeekEnd } from '../metrics/stats.js';
+import { lastWeekEnd } from '../metrics/stats.ts';
 import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { parseWorkoutJson, localStamp as fileStamp } from '../ingest/parsers.js';
-import { partialDays } from '../metrics/dataquality.js';
+import { partialDays } from '../metrics/dataquality.ts';
 import { ownerStore } from './helpers.js';
 
 const NY = 'America/New_York';

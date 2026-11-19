@@ -6,7 +6,7 @@ import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { reviewStatus } from '../server/queries.js';
 import { withArchive } from '../jobs/review.js';
-import { addDays } from '../metrics/stats.js';
+import { addDays } from '../metrics/stats.ts';
 import { OWNER_ID } from '../db/users.ts';
 import { ownerStore } from './helpers.js';
 

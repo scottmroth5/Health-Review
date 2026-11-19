@@ -3,8 +3,8 @@
 // names map to the exercise dictionary.
 //   npm run programs:catalog                 the summary
 //   npm run programs:catalog -- --unmapped   also list blueprint exercise names with no dictionary entry
-import { CATALOG_PATH, loadCatalog, phaseStats } from '../metrics/catalog.js';
-import { loadDictionary } from '../metrics/dictionary.js';
+import { CATALOG_PATH, loadCatalog, phaseStats } from '../metrics/catalog.ts';
+import { loadDictionary } from '../metrics/dictionary.ts';
 
 let catalog;
 try {

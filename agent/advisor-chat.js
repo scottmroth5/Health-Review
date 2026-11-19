@@ -6,15 +6,15 @@
 // in what was sent, and medication or symptom wording only in the physician list; one retry, then warnings.
 // Runs are traced with metadata only; note and reply text stay in this database.
 import { randomUUID } from 'node:crypto';
-import { recommendPrograms } from '../metrics/advisor.js';
-import { liftsForReview } from '../metrics/plateau.js';
-import { loadAdvisorInput, loadGoals, loadPrimarySets, loadSessionPhases, programForWeek, medicationNames } from '../metrics/load.js';
+import { recommendPrograms } from '../metrics/advisor.ts';
+import { liftsForReview } from '../metrics/plateau.ts';
+import { loadAdvisorInput, loadGoals, loadPrimarySets, loadSessionPhases, programForWeek, medicationNames } from '../metrics/load.ts';
 import { GOALS } from '../server/public/goals.js';
 import { allowedNumbers, checkReport, findDashes, stripDashes } from './validate.js';
 import { DEFAULT_REVIEW_MODEL } from './claude.js';
 import { EMERGENCY_LINE } from './emergency.js';
 import { renderSuggestions, supplementAdviceSince, supplementContext, SUPPLEMENT_RULES, withSuggestions } from './supplements.js';
-import { loadProfile } from '../metrics/load.js';
+import { loadProfile } from '../metrics/load.ts';
 import { startUserRun } from '../db/users.ts';
 
 export const CHAT_EFFORT = 'medium';

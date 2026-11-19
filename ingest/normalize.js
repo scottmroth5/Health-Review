@@ -3,11 +3,11 @@
 // rewrites the normalized columns in place (no rows are added), and sync calls this after replacing a
 // year's rows, so rerunning is always safe. Async (docs/adr/0006): normalizeAll opens a transaction, so it takes the async
 // handle; the counts run on either.
-import { baseKey } from '../metrics/exercises.js';
+import { baseKey } from '../metrics/exercises.ts';
 
 /**
  * @param {import('../db/database.ts').Database} db  (scoped)
- * @param {ReturnType<import('../metrics/dictionary.js').createDictionary>} dictionary
+ * @param {ReturnType<import('../metrics/dictionary.ts').createDictionary>} dictionary
  * @returns coverage counts (no names or values)
  */
 export async function normalizeAll(db, dictionary, { now = new Date() } = {}) {

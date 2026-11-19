@@ -7,8 +7,12 @@
 // recent is the last 42 days, baseline the 84 before; progressing at +2.5% or more, regressing at -5% or
 // worse, stalled in between; at least 4 recent and 2 baseline sessions in the range, else not enough data;
 // a range trained recently but not in the baseline is a new rep range (usually a phase change), never a stall.
-import { addDays, daysBetween, round } from './stats.js';
-import { totalLbs, performed } from './strength.js';
+import { addDays, daysBetween, round } from './stats.ts';
+import { totalLbs, performed } from './strength.ts';
+import type { Row } from './stats.ts';
+
+type Status = 'regressing' | 'stalled' | 'progressing' | 'new_rep_range' | 'not_enough_data' | 'not_trained';
+interface Best { date: string, range: string, value: number }
 
 export const RECENT_DAYS = 42;
 export const BASELINE_DAYS = 84;
@@ -17,32 +21,33 @@ export const PROGRESS_PCT = 2.5;
 export const REGRESS_PCT = -5;
 const MIN_RECENT = 4;
 const MIN_BASELINE = 2;
-const ORDER = ['regressing', 'stalled', 'progressing', 'new_rep_range', 'not_enough_data', 'not_trained'];
+const ORDER: Status[] = ['regressing', 'stalled', 'progressing', 'new_rep_range', 'not_enough_data', 'not_trained'];
 
-export const rangeOf = (reps) => (reps <= 5 ? '1-5' : reps <= 12 ? '6-12' : '13+');
-export const epley = (load, reps) => round(load * (1 + reps / 30), 0);
-const weekStart = (d) => addDays(d, -new Date(`${d}T00:00:00Z`).getUTCDay()); // Sunday-start weeks ending Saturday
+export const rangeOf = (reps: number): string => (reps <= 5 ? '1-5' : reps <= 12 ? '6-12' : '13+');
+export const epley = (load: number, reps: number): number => round(load * (1 + reps / 30), 0);
+const weekStart = (d: string): string => addDays(d, -new Date(`${d}T00:00:00Z`).getUTCDay()); // Sunday-start weeks ending Saturday
 
 /** Session bests for one lift: [{ date, range, value }], deloads and returns from a break left out. */
-function sessionBests(sets, measure, phases) {
-  const byDate = new Map();
+function sessionBests(sets: Row[], measure: 'reps' | 'load', phases: Map<string, string> | undefined): Best[] {
+  const byDate = new Map<string, Row[]>();
   for (const s of sets) {
-    if (!byDate.has(s.date)) byDate.set(s.date, []);
-    byDate.get(s.date).push(s);
+    const list = byDate.get(s.date) ?? [];
+    byDate.set(s.date, list);
+    list.push(s);
   }
-  const out = [];
-  let prev = null;
+  const out: Best[] = [];
+  let prev: string | null = null;
   for (const date of [...byDate.keys()].sort()) {
-    const day = byDate.get(date);
+    const day = byDate.get(date) as Row[];
     const returning = prev && daysBetween(prev, date) >= RETURN_GAP_DAYS;
     prev = date;
     const deload = phases?.get(date) === 'Deload' || day.some((s) => /deload/i.test(s.workout ?? ''));
     if (returning || deload) continue;
-    const best = new Map();
+    const best = new Map<string, number>();
     for (const s of day) {
       if (s.reps == null || s.reps < 1) continue;
-      let range;
-      let value;
+      let range: string;
+      let value: number;
       if (measure === 'reps') {
         range = 'reps';
         value = s.reps;
@@ -52,7 +57,7 @@ function sessionBests(sets, measure, phases) {
         range = rangeOf(s.reps);
         value = range === '13+' ? round(load, 0) : epley(load, s.reps);
       }
-      if (!best.has(range) || value > best.get(range)) best.set(range, value);
+      if (!best.has(range) || value > (best.get(range) as number)) best.set(range, value);
     }
     for (const [range, value] of best) out.push({ date, range, value });
   }
@@ -60,28 +65,27 @@ function sessionBests(sets, measure, phases) {
 }
 
 /**
- * @param {Array<object>} sets  set rows with date, canonical_id, canonical_name, implement, weight_lbs, per_hand,
- *                              reps, workout, is_primary (other rows are ignored)
- * @param {string} asOf
- * @param {{ phases?: Map<string, string> }} [options]  stored session phase by date
+ * sets: set rows with date, canonical_id, canonical_name, implement, weight_lbs, per_hand, reps, workout, is_primary
+ * (other rows are ignored); phases: the stored session phase by date.
  */
-export function liftProgress(sets, asOf, { phases } = {}) {
-  const lifts = new Map();
+export function liftProgress(sets: Row[], asOf: string, { phases }: { phases?: Map<string, string> } = {}) {
+  const lifts = new Map<string, Row[]>();
   for (const s of sets) {
     if (!s.is_primary || !s.canonical_id || s.date > asOf || !performed(s)) continue;
-    if (!lifts.has(s.canonical_id)) lifts.set(s.canonical_id, []);
-    lifts.get(s.canonical_id).push(s);
+    const list = lifts.get(s.canonical_id) ?? [];
+    lifts.set(s.canonical_id, list);
+    list.push(s);
   }
   const recentFrom = addDays(asOf, -(RECENT_DAYS - 1));
   const baseFrom = addDays(recentFrom, -BASELINE_DAYS);
-  const out = [];
+  const out: any[] = [];
   for (const [id, liftSets] of lifts) {
     const withReps = liftSets.filter((s) => s.reps != null);
-    const loaded = withReps.filter((s) => totalLbs(s) != null && totalLbs(s) > 0);
-    const measure = loaded.length * 2 < withReps.length ? 'reps' : 'load';
+    const loaded = withReps.filter((s) => (totalLbs(s) ?? 0) > 0);
+    const measure: 'reps' | 'load' = loaded.length * 2 < withReps.length ? 'reps' : 'load';
     const bests = sessionBests(measure === 'reps' ? withReps : loaded, measure, phases);
     const recent = bests.filter((b) => b.date >= recentFrom);
-    const lastSession = liftSets.map((s) => s.date).sort().at(-1);
+    const lastSession: string = liftSets.map((s) => s.date).sort().at(-1);
     const base = { id, name: liftSets.find((s) => s.canonical_name)?.canonical_name ?? liftSets[0].exercise, implement: liftSets[0].implement ?? null,
       measure, lastSession, phase: phases?.get(lastSession) ?? null };
     if (!recent.length) {
@@ -90,9 +94,9 @@ export function liftProgress(sets, asOf, { phases } = {}) {
       continue;
     }
     // The range used most in the recent window (ties go to the most recent session's range).
-    const counts = new Map();
+    const counts = new Map<string, number>();
     for (const b of recent) counts.set(b.range, (counts.get(b.range) ?? 0) + 1);
-    const latest = recent.at(-1).range;
+    const latest = recent[recent.length - 1].range;
     const range = [...counts].sort((a, b) => b[1] - a[1] || (a[0] === latest ? -1 : b[0] === latest ? 1 : 0))[0][0];
     const inRange = bests.filter((b) => b.range === range);
     const r = inRange.filter((b) => b.date >= recentFrom);
@@ -100,19 +104,19 @@ export function liftProgress(sets, asOf, { phases } = {}) {
     const recentBest = Math.max(...r.map((b) => b.value));
     const baselineBest = bl.length ? Math.max(...bl.map((b) => b.value)) : null;
     const changePct = baselineBest ? round(((recentBest - baselineBest) / baselineBest) * 100, 1) : null;
-    let status;
+    let status: Status;
     if (!bl.length) status = 'new_rep_range';
     else if (r.length < MIN_RECENT || bl.length < MIN_BASELINE) status = 'not_enough_data';
-    else if (changePct >= PROGRESS_PCT) status = 'progressing';
-    else if (changePct <= REGRESS_PCT) status = 'regressing';
+    else if ((changePct as number) >= PROGRESS_PCT) status = 'progressing';
+    else if ((changePct as number) <= REGRESS_PCT) status = 'regressing';
     else status = 'stalled';
     const recordValue = Math.max(...inRange.map((b) => b.value));
-    const recordDate = inRange.find((b) => b.value === recordValue).date;
+    const recordDate = (inRange.find((b) => b.value === recordValue) as Best).date;
     const trendFrom = addDays(weekStart(asOf), -25 * 7);
-    const weekly = new Map();
+    const weekly = new Map<string, number>();
     for (const b of inRange.filter((x) => x.date >= trendFrom)) {
       const k = weekStart(b.date);
-      if (!weekly.has(k) || b.value > weekly.get(k)) weekly.set(k, b.value);
+      if (!weekly.has(k) || b.value > (weekly.get(k) as number)) weekly.set(k, b.value);
     }
     out.push({
       ...base, status, range, recentBest, baselineBest, changePct, recentSessions: r.length, baselineSessions: bl.length,
@@ -124,6 +128,6 @@ export function liftProgress(sets, asOf, { phases } = {}) {
 }
 
 /** The weekly review's view: recently trained lifts only, without the trend points. */
-export function liftsForReview(sets, weekEnd, options) {
+export function liftsForReview(sets: Row[], weekEnd: string, options?: { phases?: Map<string, string> }) {
   return liftProgress(sets, weekEnd, options).filter((l) => l.status !== 'not_trained').map(({ trend, ...l }) => l);
 }

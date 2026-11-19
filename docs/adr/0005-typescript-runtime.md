@@ -64,3 +64,18 @@ Update, 2026-11-11: the image, CI and the PC moved to Node 26 (`node:26-bookworm
 - **Guards:** `scripts/security-check.js` allows child processes in `tools/backup/pg.ts`.
 - **The backup image:** it runs the converted files through type stripping, checked by its backup, restore, transfer
   and row-level security tests.
+
+## Update, 2026-11-19: metrics/
+- **Converted:** the 24 files of `metrics/`, checked strict with the rest (`tsconfig.strict.json` adds
+  `metrics/**/*.ts`).
+- **Types:**
+  - `stats.ts` exports `Row`: a database row whose SQL decides the shape, `any` as in `db/`.
+  - Interfaces live in the module that produces them, for example `ZoneBounds`, `Catalog`, `Dictionary`,
+    `MedicationEvent`, `AdvisorInput` and `WeekData`.
+  - `load.ts` takes a structural `Db` (anything with `prepare`), because `metrics/` imports nothing from `db/`
+    (ADR 0012).
+- **Behavior:** unchanged. Where strict mode needed a guard or a narrowed local, the rewrite does the same thing, for
+  example a map's get-or-create written as `get(key) ?? []`, or an index in place of `.at(-1)`. The metric fixtures pass
+  unchanged.
+- **The harness gate:** `agent/review.js` imports `metrics/index.js` and `metrics/load.js`, and the eval runner imports
+  `metrics/stats.js`. Those three stay as one-line re-exports until the `agent/` step, so no re-approval is needed.

@@ -11,7 +11,7 @@ import { openOwnerStore } from '../db/store.ts';
 import {
   ReviewError, blockStatus, confirmBlocks, editBlock, listBlocks, mergeBlocks, refreshPhases, sessionCoverage, splitBlock, unassignDays,
 } from '../ingest/program-blocks.js';
-import { userCatalog } from '../metrics/load.js';
+import { userCatalog } from '../metrics/load.ts';
 import { localDate } from '../server/queries.js';
 
 const [command, ...rest] = process.argv.slice(2);

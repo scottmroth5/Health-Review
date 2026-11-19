@@ -11,7 +11,7 @@ import { sign, sessionKey } from '../server/session.js';
 import { nextReviewDay, setupSteps, sheetProblem } from '../server/setup.js';
 import { reviewStatus, dataCheckWarnings } from '../server/queries.js';
 import { scopeDatabase } from '../db/scope.ts';
-import { computeWeek } from '../metrics/index.js';
+import { computeWeek } from '../metrics/index.ts';
 import { ownerStore, openTestStore } from './helpers.js';
 
 const TODAY = '2026-10-21'; // a Wednesday

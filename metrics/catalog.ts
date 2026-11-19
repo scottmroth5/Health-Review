@@ -4,13 +4,28 @@
 // week) ever leave this machine. Everything works without it: phases are simply unknown.
 import { existsSync, readFileSync } from 'node:fs';
 import { dataPath } from '../tools/paths.ts';
-import { PROGRAMS } from './programs.js';
+import { PROGRAMS } from './programs.ts';
 
 export const CATALOG_PATH = dataPath('maps', 'programs.json');
 const PROGRAM_NAMES = PROGRAMS.map(([name]) => name);
 
+/** A program as the catalog file holds it (name, weeks, phases with workouts); checked by createCatalog. */
+export type Program = Record<string, any>;
+/** Where a week of a program falls. */
+export interface PhaseAt { phase: string | null, beyond: boolean, deload: boolean, failure: boolean }
+export interface Catalog {
+  programs: Program[];
+  find(name: string): Program | null;
+  programWeeks(name: string): number | null;
+  phaseAt(name: string, week: number): PhaseAt | null;
+  /** On a merged catalog: the names that are the user's own. */
+  own?: Set<string>;
+}
+/** A range of whole numbers. */
+export interface Span { min: number, max: number }
+
 /** "2-5" -> { min: 2, max: 5 }; "3" -> { min: 3, max: 3 }; anything else -> null. */
-export function parseRange(text) {
+export function parseRange(text: unknown): Span | null {
   const m = /^\s*(\d+)\s*(?:-\s*(\d+))?\s*$/.exec(String(text ?? ''));
   if (!m) return null;
   const min = Number(m[1]);
@@ -19,40 +34,39 @@ export function parseRange(text) {
 }
 
 /** Prescribed reps: "8-12" -> { min: 8, max: 12, unit: 'reps' }; a timed hold "30-60s" -> unit 'seconds'. */
-export function parseReps(text) {
+export function parseReps(text: unknown): (Span & { unit: 'seconds' | 'reps' }) | null {
   const timed = /^\s*(.+?)\s*s\s*$/.exec(String(text ?? ''));
   const r = parseRange(timed ? timed[1] : text);
-  return r ? { ...r, unit: timed ? 'seconds' : 'reps' } : null;
+  return r ? { ...r, unit: timed ? 'seconds' as const : 'reps' as const } : null;
 }
 
 /** The middle of a prescribed range, for estimates ("4-6" sets -> 5). */
-export const midpoint = (text) => {
+export const midpoint = (text: unknown): number | null => {
   const r = parseRange(text);
   return r ? (r.min + r.max) / 2 : null;
 };
 
-const isInt = (n) => Number.isInteger(n) && n > 0;
+const isInt = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0;
 
 /**
  * Validates a parsed catalog (throws listing every problem) and builds its lookups.
- * @param {object} json
- * @param {{ programs?: string[]|null }} [options]  known program names (defaults to PROGRAMS in metrics/programs.js); null
- *   allows any name (a user's own programs, phase 5)
+ * json: as parsed, unchecked. programs: the known program names (defaults to PROGRAMS in metrics/programs.ts); null
+ * allows any name (a user's own programs, phase 5).
  */
-export function createCatalog(json, { programs = PROGRAM_NAMES } = {}) {
-  const problems = [];
+export function createCatalog(json: any, { programs = PROGRAM_NAMES }: { programs?: string[] | null } = {}): Catalog {
+  const problems: string[] = [];
   if (json?.version !== 1) problems.push('version must be 1');
-  const list = Array.isArray(json?.programs) ? json.programs : (problems.push('programs must be a list'), []);
-  const seen = new Set();
+  const list: Program[] = Array.isArray(json?.programs) ? json.programs : (problems.push('programs must be a list'), []);
+  const seen = new Set<unknown>();
   for (const [i, p] of list.entries()) {
     const at = p?.name ? `${p.name}` : `program #${i + 1}`;
     if (programs ? !programs.includes(p?.name) : !(typeof p?.name === 'string' && p.name.trim())) {
-      problems.push(programs ? `${at}: name must be one of the programs in metrics/programs.js` : `${at}: needs a name`);
+      problems.push(programs ? `${at}: name must be one of the programs in metrics/programs.ts` : `${at}: needs a name`);
     }
     if (seen.has(p?.name)) problems.push(`${at}: listed twice`);
     seen.add(p?.name);
     if (!isInt(p?.weeks)) problems.push(`${at}: weeks must be a whole number of weeks`);
-    const phases = Array.isArray(p?.phases) ? p.phases : [];
+    const phases: any[] = Array.isArray(p?.phases) ? p.phases : [];
     if (!phases.length) problems.push(`${at}: phases must be a non-empty list`);
     let next = 1;
     for (const ph of phases) {
@@ -78,22 +92,20 @@ export function createCatalog(json, { programs = PROGRAM_NAMES } = {}) {
     if (phases.length && isInt(p?.weeks) && next - 1 !== p.weeks) problems.push(`${at}: phases cover weeks 1-${next - 1}, but the program has ${p.weeks}`);
   }
   if (problems.length) {
-    const err = new Error(`Program catalog is invalid:\n  ${problems.join('\n  ')}`);
-    err.problems = problems;
-    throw err;
+    throw Object.assign(new Error(`Program catalog is invalid:\n  ${problems.join('\n  ')}`), { problems });
   }
 
-  const byName = new Map(list.map((p) => [p.name, p]));
+  const byName = new Map<string, Program>(list.map((p) => [p.name, p]));
   return {
     programs: list,
-    find: (name) => byName.get(name) ?? null,
-    programWeeks: (name) => byName.get(name)?.weeks ?? null,
+    find: (name: string) => byName.get(name) ?? null,
+    programWeeks: (name: string) => byName.get(name)?.weeks ?? null,
     /** The phase for a week of a program: { phase, deload, failure }, { phase: null, beyond: true } past the end, or null. */
-    phaseAt(name, week) {
+    phaseAt(name: string, week: number): PhaseAt | null {
       const p = byName.get(name);
       if (!p || !isInt(week)) return null;
       if (week > p.weeks) return { phase: null, beyond: true, deload: false, failure: false };
-      const ph = p.phases.find((x) => week >= x.weeks[0] && week <= x.weeks[1]);
+      const ph = p.phases.find((x: any) => week >= x.weeks[0] && week <= x.weeks[1]);
       return {
         phase: ph.name,
         beyond: false,
@@ -111,16 +123,15 @@ const UNILATERAL = /\b(single|one[- ]arm|one[- ]leg|alternating|lunges?|split sq
  * workouts, sets per workout, sets per week, and the share of heavy sets (5 reps or fewer; a range that straddles
  * 5 counts for the part of it at 5 or fewer, so "4-8" is 2 of 5 rep counts, 40% heavy),
  * on arm isolation (dictionary pattern "arms") and on one side at a time. Names with no dictionary entry are listed.
- * @param {object} phase  a catalog phase
- * @param {(name: string) => {status: string, pattern: string|null}} lookup  dictionary.lookup
+ * phase: a catalog phase; lookup: the dictionary's.
  */
-export function phaseStats(phase, lookup) {
-  const workouts = phase.workouts ?? [];
+export function phaseStats(phase: Program, lookup: (name: string) => { status: string, pattern: string | null }) {
+  const workouts: any[] = phase.workouts ?? [];
   let sets = 0;
   let heavy = 0;
   let arms = 0;
   let unilateral = 0;
-  const unmapped = new Set();
+  const unmapped = new Set<string>();
   for (const wo of workouts) {
     for (const ex of wo.exercises ?? []) {
       const n = midpoint(ex.sets ?? '1') ?? 1;
@@ -134,7 +145,7 @@ export function phaseStats(phase, lookup) {
     }
   }
   const perWorkout = workouts.length ? sets / workouts.length : 0;
-  const share = (x) => (sets ? Math.round((x / sets) * 100) : 0);
+  const share = (x: number): number => (sets ? Math.round((x / sets) * 100) : 0);
   return {
     workouts: workouts.length,
     setsPerWorkout: Math.round(perWorkout),
@@ -148,14 +159,14 @@ export function phaseStats(phase, lookup) {
 
 /**
  * One of a user's own programs checked like a catalog entry: the list of problems (empty when it is valid). Names may be
- * anything (not only metrics/programs.js), up to 80 characters.
+ * anything (not only metrics/programs.ts), up to 80 characters.
  */
-export function programProblems(program) {
+export function programProblems(program: any): string[] {
   const extra = typeof program?.name === 'string' && program.name.length > 80 ? ['name: at most 80 characters'] : [];
   try {
     createCatalog({ version: 1, programs: [program] }, { programs: null });
     return extra;
-  } catch (err) {
+  } catch (err: any) {
     if (!err.problems) throw err;
     return [...extra, ...err.problems];
   }
@@ -165,17 +176,16 @@ export function programProblems(program) {
  * A user's catalog (multi-user, phase 5): their own programs first, then the shared catalog's (the owner's MAPS file, for
  * the owner and the users it is shared with), leaving out a shared program with the name of one of theirs. own lists
  * the names that are the user's own.
- * @param {object[]} own  the user's programs (already checked with programProblems)
- * @param {object|null} shared  a catalog from createCatalog, or null
+ * own: the user's programs (already checked with programProblems); shared: a catalog from createCatalog, or null.
  */
-export function mergeCatalogs(own, shared) {
+export function mergeCatalogs(own: Program[], shared: Catalog | null | undefined): Catalog & { own: Set<string> } {
   const names = new Set(own.map((p) => p.name));
   const catalog = createCatalog({ version: 1, programs: [...own, ...(shared?.programs ?? []).filter((p) => !names.has(p.name))] }, { programs: null });
   return { ...catalog, own: names };
 }
 
 /** The catalog, or null when the file does not exist (an invalid file throws). */
-export function loadCatalog(path = CATALOG_PATH) {
+export function loadCatalog(path = CATALOG_PATH): Catalog | null {
   if (!existsSync(path)) return null;
   return createCatalog(JSON.parse(readFileSync(path, 'utf8')));
 }

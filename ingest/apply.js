@@ -2,7 +2,7 @@
 // (ingest/sync.js) or its REST posts (POST /api/ingest/*, server/app.js).
 //   Health days: merged with the stored day (mergeHealthDays: the fullest row wins, gaps filled), so a partial export never
 //     lowers a full day and a value missing from the new data never erases a stored one; exported_through keeps the latest
-//     write time (a day exported before it ended is partial, metrics/dataquality.js).
+//     write time (a day exported before it ended is partial, metrics/dataquality.ts).
 //   Stand hours: each { date, hour } with standing is kept (stand_hour_samples); a day's stand_hours is the larger of the
 //     stored value and the distinct hours recorded, so exports holding part of a day add up and a re-sent hour counts once.
 //   Workouts: one row per workout (same type, start within a minute is the same one) and its per-minute heart rate.

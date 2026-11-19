@@ -2,10 +2,10 @@
 // (moved from server/app.js, v3 Phase 2 step 2, docs/adr/0012). register(app, ctx) adds these routes; ctx is what
 // buildApp shares with every route module (server/app.js).
 import * as q from '../queries.js';
-import { VIEWS } from '../../metrics/volume.js';
-import { loadDictionary } from '../../metrics/dictionary.js';
-import { loadSubstitutions, loadUserPrograms } from '../../metrics/load.js';
-import { GOALS, MAX_WEIGHT } from '../../metrics/advisor.js';
+import { VIEWS } from '../../metrics/volume.ts';
+import { loadDictionary } from '../../metrics/dictionary.ts';
+import { loadSubstitutions, loadUserPrograms } from '../../metrics/load.ts';
+import { GOALS, MAX_WEIGHT } from '../../metrics/advisor.ts';
 import { changeBlockDates, confirmBlocks, currentProgram, endBlock, listBlocks, refreshPhases, ReviewError, startBlock } from '../../ingest/program-blocks.js';
 import { ProgramError, SOURCES, deleteProgram, exportPrograms, importPrograms, saveProgram } from '../../ingest/user-programs.js';
 import { MAX_PDF_BYTES, extractProgram, isPdf } from '../../agent/extract-program.js';

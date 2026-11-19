@@ -10,8 +10,8 @@ import fastifyStatic from '@fastify/static';
 import { registerAuth } from './auth.js';
 import { registerSecurityHeaders, registerRateLimits, errorReply, DEMO_REQUEST_LIMIT, analyticsConfig, siteHostname } from './security.js';
 import * as q from './queries.js';
-import { loadCatalog } from '../metrics/catalog.js';
-import { userCatalog } from '../metrics/load.js';
+import { loadCatalog } from '../metrics/catalog.ts';
+import { userCatalog } from '../metrics/load.ts';
 import { costFromUsage } from '@scottmroth5/agent-core/pricing';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_TZ, withTimeZone } from '../tools/time.ts';
@@ -272,7 +272,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
 
 
   // ---- helpers more than one route module uses ----
-  // The program catalog a request may use (metrics/load.js userCatalog): the user's own programs (phase 5), then the
+  // The program catalog a request may use (metrics/load.ts userCatalog): the user's own programs (phase 5), then the
   // owner's (MAPS) for the owner and for users the owner shares it with (users.maps_shared); theirs win a name clash.
   const ownerCatalog = () => (catalog === undefined ? loadCatalog() : catalog);
   const sharedCatalog = async (req) => {

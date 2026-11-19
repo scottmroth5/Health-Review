@@ -1,16 +1,21 @@
 // Training volume from the Workout Log: reps x total load (per-hand weights doubled), using the same
-// rules as metrics/strength.js. Only performed sets on or before "today" count, so planned workouts
+// rules as metrics/strength.ts. Only performed sets on or before "today" count, so planned workouts
 // in the log are left out. A day or week with no lifting is a real zero, not missing data.
 // Sets with no weight to count (bands, bodyweight, timed, unparsed reps) are reported as set counts.
-import { addDays, inRange, round, sum } from './stats.js';
-import { performed, totalLbs, volumeOf } from './strength.js';
-import { programsByDay, programSummary } from './programs.js';
-import { exerciseKey, exerciseName } from './exercises.js';
+import { addDays, inRange, round, sum } from './stats.ts';
+import { performed, totalLbs, volumeOf } from './strength.ts';
+import { programsByDay, programSummary } from './programs.ts';
+import { exerciseKey, exerciseName } from './exercises.ts';
+import type { Matcher } from './programs.ts';
+import type { Row, Window } from './stats.ts';
 
-const isWeighted = (s) => s.reps != null && totalLbs(s) != null;
+type Bucket = 'day' | 'week' | 'month';
+interface Period { start: string, end: string, label: string, weekEnding?: string, month?: string }
+
+const isWeighted = (s: Row): boolean => s.reps != null && totalLbs(s) != null;
 
 /** Why a performed set adds no volume, or null when it does. */
-export function unweightedKind(s) {
+export function unweightedKind(s: Row): 'band' | 'bodyweight' | 'timed' | 'other' | null {
   if (isWeighted(s)) return null;
   if (s.band) return 'band';
   if (s.bodyweight) return 'bodyweight';
@@ -18,9 +23,9 @@ export function unweightedKind(s) {
   return 'other';
 }
 
-const doneIn = (sets, { from, to }) => sets.filter((s) => inRange(s.date, from, to) && performed(s));
+const doneIn = (sets: Row[], { from, to }: Window): Row[] => sets.filter((s) => inRange(s.date, from, to) && performed(s));
 
-export function volumeTotals(sets, range) {
+export function volumeTotals(sets: Row[], range: Window) {
   const done = doneIn(sets, range);
   return {
     volumeLbs: round(volumeOf(done), 0),
@@ -31,7 +36,7 @@ export function volumeTotals(sets, range) {
   };
 }
 
-export function unweightedCounts(sets, range) {
+export function unweightedCounts(sets: Row[], range: Window) {
   const counts = { band: 0, bodyweight: 0, timed: 0, other: 0 };
   for (const s of doneIn(sets, range)) {
     const kind = unweightedKind(s);
@@ -40,25 +45,26 @@ export function unweightedCounts(sets, range) {
   return counts;
 }
 
-/** Top exercises by volume in the range, one row per canonical exercise (metrics/exercises.js). */
-export function volumeByExercise(sets, range, top = 10) {
-  const groups = new Map();
+/** Top exercises by volume in the range, one row per canonical exercise (metrics/exercises.ts). */
+export function volumeByExercise(sets: Row[], range: Window, top = 10) {
+  const groups = new Map<string, Row[]>();
   for (const s of doneIn(sets, range)) {
     const key = exerciseKey(s);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(s);
+    const list = groups.get(key) ?? [];
+    groups.set(key, list);
+    list.push(s);
   }
   return [...groups]
-    .map(([, g]) => ({ exercise: exerciseName(g), volumeLbs: round(volumeOf(g), 0), sets: g.length }))
+    .map(([, g]) => ({ exercise: exerciseName(g as { exercise: string, date: string }[]), volumeLbs: round(volumeOf(g), 0), sets: g.length }))
     .filter((e) => e.volumeLbs > 0)
     .sort((a, b) => b.volumeLbs - a.volumeLbs || a.exercise.localeCompare(b.exercise))
     .slice(0, top);
 }
 
-const dow = (date) => new Date(`${date}T00:00:00Z`).getUTCDay(); // 0 = Sunday
-export const saturdayOnOrAfter = (date) => addDays(date, 6 - dow(date));
-const monthStart = (date) => `${date.slice(0, 7)}-01`;
-const nextMonth = (date) => {
+const dow = (date: string): number => new Date(`${date}T00:00:00Z`).getUTCDay(); // 0 = Sunday
+export const saturdayOnOrAfter = (date: string): string => addDays(date, 6 - dow(date));
+const monthStart = (date: string): string => `${date.slice(0, 7)}-01`;
+const nextMonth = (date: string): string => {
   const d = new Date(`${monthStart(date)}T00:00:00Z`);
   d.setUTCMonth(d.getUTCMonth() + 1);
   return d.toISOString().slice(0, 10);
@@ -66,8 +72,8 @@ const nextMonth = (date) => {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** The bucket periods covering from..to, each clipped to the range. Weeks end on Saturday. */
-function periods(from, to, bucket) {
-  const out = [];
+function periods(from: string, to: string, bucket: Bucket): Period[] {
+  const out: Period[] = [];
   if (bucket === 'day') {
     for (let d = from; d <= to; d = addDays(d, 1)) out.push({ start: d, end: d, label: d });
   } else if (bucket === 'week') {
@@ -84,7 +90,7 @@ function periods(from, to, bucket) {
 }
 
 /** Volume per day, week (ending Saturday) or calendar month across the range, empty buckets included. */
-export function volumeBuckets(sets, { from, to, bucket }) {
+export function volumeBuckets(sets: Row[], { from, to, bucket }: Window & { bucket: Bucket }) {
   const done = doneIn(sets, { from, to });
   return periods(from, to, bucket).map((p) => {
     const inside = done.filter((s) => inRange(s.date, p.start, p.end));
@@ -100,27 +106,27 @@ export function volumeBuckets(sets, { from, to, bucket }) {
 
 export const VIEWS = ['week', 'month', '3m', '6m', 'year', '2y', '5y', 'all'];
 /** Weekly-bar views: how many weeks each shows, ending this Saturday (the current week so far included). */
-const WEEK_VIEWS = { '3m': 13, '6m': 26, year: 52 };
+const WEEK_VIEWS: Record<string, number> = { '3m': 13, '6m': 26, year: 52 };
 
 /** The first day of the month k months before the month of date. */
-const monthsBack = (date, k) => {
+const monthsBack = (date: string, k: number): string => {
   let m = monthStart(date);
   for (let i = 0; i < k; i++) m = monthStart(addDays(m, -1));
   return m;
 };
 
 /** Adds each bucket's training programs (by lifting day, gaps filled from nearby named days). */
-function withPrograms(sets, buckets, range, matchers) {
+function withPrograms<B extends Period>(sets: Row[], buckets: B[], range: Window, matchers?: Matcher[]) {
   const liftingDates = [...new Set(doneIn(sets, range).map((s) => s.date))];
   const byDay = programsByDay(sets, liftingDates, matchers);
   return buckets.map((b) => ({ ...b, ...programSummary(liftingDates.filter((d) => inRange(d, b.start, b.end)), byDay) }));
 }
 
 /** Everything the training dashboard shows for one view, ending today (matchers: the user's program names, userMatchers). */
-export function trainingView(sets, view, today, matchers) {
-  let range;
-  let previous = null;
-  let bucket;
+export function trainingView(sets: Row[], view: string, today: string, matchers?: Matcher[]) {
+  let range: Window;
+  let previous: Window | null = null;
+  let bucket: Bucket;
   if (view === 'week') {
     range = { from: addDays(today, -6), to: today };
     previous = { from: addDays(today, -13), to: addDays(today, -7) };
@@ -164,7 +170,7 @@ export function trainingView(sets, view, today, matchers) {
 }
 
 /** Longer-term load for the weekly review: the last 12 weeks and the last 12 calendar months. */
-export function volumeTrend(sets, weekEnd) {
+export function volumeTrend(sets: Row[], weekEnd: string) {
   const weeks = volumeBuckets(sets, { from: addDays(weekEnd, -12 * 7 + 1), to: weekEnd, bucket: 'week' })
     .map((b) => ({ weekEnding: b.weekEnding, volumeLbs: b.volumeLbs, liftingDays: b.liftingDays }));
   let first = monthStart(weekEnd);

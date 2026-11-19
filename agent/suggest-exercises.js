@@ -2,7 +2,7 @@
 // holds exercise names only (the unmapped names and the dictionary's existing names), never weights, dates,
 // set counts or anything else from the log (hard rule). Proposals go to a local file; nothing reaches the
 // dictionary until the owner keeps them and runs log:unmapped -- --accept.
-import { IMPLEMENTS, PATTERNS } from '../metrics/dictionary.js';
+import { IMPLEMENTS, PATTERNS } from '../metrics/dictionary.ts';
 
 export const SUGGEST_MODEL = 'claude-sonnet-5-5';
 

@@ -2,7 +2,19 @@
 // each event. A period's stopped_on is the first day it no longer applied, so a change on day X
 // closes the old period with stopped_on X and opens the new one with started_on X.
 // Impact numbers are observational (before and after averages), never evidence of cause.
-import { mean, round, addDays, inRange, daysBetween } from './stats.js';
+import { mean, round, addDays, inRange, daysBetween } from './stats.ts';
+import type { Row, Window } from './stats.ts';
+
+/** One ingredient of a combined item. */
+export interface Ingredient { name: string, dose: string | null }
+/** What was taken in a period: the dose or the ingredients, and when. */
+export interface Regimen { dose: string | null, ingredients: Ingredient[] | null, timings: any }
+/** A start, change or stop, derived from the periods. */
+export interface MedicationEvent {
+  medicationId: number, name: string, kind: string, date: string, type: 'start' | 'change' | 'stop',
+  from: Regimen | null, to: Regimen | null, reason: string | null,
+  ingredientChanges?: { name: string, from: string | null, to: string | null }[],
+}
 
 export const TIMINGS = ['morning', 'afternoon', 'before_bed', 'before_workout', 'during_workout', 'after_workout', 'daily'];
 
@@ -12,7 +24,7 @@ const AFTER_DAYS = 28; // days compared after the settling period
 const OVERLAP_DAYS = 28;
 
 /** Compared values: source table, decimals, and the minimum days needed on each side. */
-export const IMPACT_FIELDS = {
+export const IMPACT_FIELDS: Record<string, { from: 'metrics' | 'checkins', d: number, min: number }> = {
   hrv_ms: { from: 'metrics', d: 0, min: 14 },
   resting_hr: { from: 'metrics', d: 1, min: 14 },
   sleep_total_hr: { from: 'metrics', d: 1, min: 14 },
@@ -22,28 +34,28 @@ export const IMPACT_FIELDS = {
   stress: { from: 'checkins', d: 1, min: 7 },
 };
 
-const parsed = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
+const parsed = (v: unknown): any => (typeof v === 'string' ? JSON.parse(v) : v);
 
 /** A period's ingredients ([{ name, dose }]), or null for an item with one dose. */
-export const ingredientsOf = (p) => {
+export const ingredientsOf = (p: Row): Ingredient[] | null => {
   const list = parsed(p.ingredients ?? null);
-  return Array.isArray(list) && list.length ? list.map((i) => ({ name: i.name, dose: i.dose ?? null })) : null;
+  return Array.isArray(list) && list.length ? list.map((i: any) => ({ name: i.name, dose: i.dose ?? null })) : null;
 };
 
 /** The dose as one line: the dose, or each ingredient with its dose ("Alpha 5 mg + Beta 10 mg"). */
-export function doseText(p) {
+export function doseText(p: Row): string | null {
   const list = ingredientsOf(p);
   if (!list) return p.dose ?? null;
   return list.map((i) => (i.dose ? `${i.name} ${i.dose}` : i.name)).join(' + ');
 }
 
-const regimen = (p) => ({ dose: p.dose ?? null, ingredients: ingredientsOf(p), timings: parsed(p.timings) });
+const regimen = (p: Row): Regimen => ({ dose: p.dose ?? null, ingredients: ingredientsOf(p), timings: parsed(p.timings) });
 
 /** Ingredients added, removed or with a new dose between two regimens: [{ name, from, to }] (from or to null). */
-export function ingredientChanges(from, to) {
+export function ingredientChanges(from: Regimen, to: Regimen): { name: string, from: string | null, to: string | null }[] {
   const a = new Map((from.ingredients ?? []).map((i) => [i.name.toLowerCase(), i]));
   const b = new Map((to.ingredients ?? []).map((i) => [i.name.toLowerCase(), i]));
-  const out = [];
+  const out: { name: string, from: string | null, to: string | null }[] = [];
   for (const [key, i] of a) {
     const j = b.get(key);
     if (!j) out.push({ name: i.name, from: i.dose, to: null });
@@ -55,29 +67,29 @@ export function ingredientChanges(from, to) {
 
 /**
  * Start, change and stop events, oldest first.
- * @param {Array<{id, name, kind, purpose, prescribed}>} medications
- * @param {Array<{id, medication_id, dose, timings, started_on, stopped_on, stop_reason}>} periods
+ * medications: rows (id, name, kind, purpose, prescribed); periods: medication_periods rows.
  */
-export function medicationEvents(medications, periods) {
-  const byId = new Map(medications.map((m) => [m.id, m]));
-  const grouped = new Map();
+export function medicationEvents(medications: Row[], periods: Row[]): MedicationEvent[] {
+  const byId = new Map<number, Row>(medications.map((m) => [m.id, m]));
+  const grouped = new Map<number, Row[]>();
   for (const p of periods) {
-    if (!grouped.has(p.medication_id)) grouped.set(p.medication_id, []);
-    grouped.get(p.medication_id).push(p);
+    const list = grouped.get(p.medication_id) ?? [];
+    grouped.set(p.medication_id, list);
+    list.push(p);
   }
-  const events = [];
+  const events: MedicationEvent[] = [];
   for (const [id, list] of grouped) {
     const med = byId.get(id);
     if (!med) continue;
     list.sort((a, b) => a.started_on.localeCompare(b.started_on) || a.id - b.id);
-    const base = { medicationId: id, name: med.name, kind: med.kind };
+    const base = { medicationId: id, name: med.name as string, kind: med.kind as string };
     list.forEach((p, i) => {
       const prev = list[i - 1];
       const next = list[i + 1];
       if (prev && prev.stopped_on === p.started_on) {
         const from = regimen(prev);
         const to = regimen(p);
-        const change = { ...base, date: p.started_on, type: 'change', from, to, reason: null };
+        const change: MedicationEvent = { ...base, date: p.started_on, type: 'change', from, to, reason: null };
         if (from.ingredients || to.ingredients) change.ingredientChanges = ingredientChanges(from, to);
         events.push(change);
       } else if (!p.start_estimated) {
@@ -94,20 +106,17 @@ export function medicationEvents(medications, periods) {
 
 /**
  * Averages in the 28 days before an event against days 7 to 34 after it.
- * @param {object} event        from medicationEvents
- * @param {object[]} metrics    daily_metrics rows
- * @param {object[]} checkins   checkins rows
- * @param {string} today        the last day that can have data
- * @param {object[]} [events]   all events, to note others close enough to muddy the comparison
+ * metrics: daily_metrics rows; checkins: checkins rows; today: the last day that can have data; events: all events, to
+ * note others close enough to muddy the comparison.
  */
-export function eventImpact(event, metrics, checkins, today, events = []) {
+export function eventImpact(event: MedicationEvent, metrics: Row[], checkins: Row[], today: string, events: MedicationEvent[] = []) {
   const before = { from: addDays(event.date, -BEFORE_DAYS), to: addDays(event.date, -1) };
   const after = { from: addDays(event.date, SETTLE_DAYS), to: addDays(event.date, SETTLE_DAYS + AFTER_DAYS - 1) };
   const sources = { metrics, checkins };
 
-  const fields = {};
+  const fields: Record<string, unknown> = {};
   for (const [key, { from, d, min }] of Object.entries(IMPACT_FIELDS)) {
-    const values = (range) => sources[from].filter((r) => inRange(r.date, range.from, range.to) && typeof r[key] === 'number').map((r) => r[key]);
+    const values = (range: Window): number[] => sources[from].filter((r) => inRange(r.date, range.from, range.to) && typeof r[key] === 'number').map((r) => r[key]);
     const b = values(before);
     const a = values(after);
     const bm = b.length >= min ? mean(b) : null;
@@ -137,20 +146,20 @@ export function eventImpact(event, metrics, checkins, today, events = []) {
  * Daily check-offs by week for the Meds tab: per item, per week ending on a Saturday (the last one is the current week,
  * so far), how many saved slots were taken out of how many were saved. A week with nothing saved has logged 0: not
  * logged, never missed.
- * @param {Array<{date: string, medication_id: number, taken: number|boolean}>} doses  medication_doses rows
- * @param {{ weeks?: number, today: string }} options
- * @returns {{ weekEnds: string[], items: Map<number, Array<{weekEnd: string, taken: number, logged: number}>> }}
+ * doses: medication_doses rows (date, medication_id, taken).
  */
-export function weeklyCheckoffs(doses, { weeks = 12, today }) {
+export function weeklyCheckoffs(doses: Row[], { weeks = 12, today }: { weeks?: number, today: string }):
+  { weekEnds: string[], items: Map<number, { weekEnd: string, taken: number, logged: number }[]> } {
   const dow = new Date(`${today}T00:00:00Z`).getUTCDay(); // 0 = Sunday
   const current = addDays(today, 6 - dow);
   const weekEnds = Array.from({ length: weeks }, (_, i) => addDays(current, -7 * (weeks - 1 - i)));
   const first = addDays(weekEnds[0], -6);
-  const items = new Map();
+  const items = new Map<number, { weekEnd: string, taken: number, logged: number }[]>();
   for (const d of doses) {
     if (d.date < first || d.date > today) continue;
-    if (!items.has(d.medication_id)) items.set(d.medication_id, weekEnds.map((weekEnd) => ({ weekEnd, taken: 0, logged: 0 })));
-    const week = items.get(d.medication_id)[Math.floor(daysBetween(first, d.date) / 7)];
+    const weeksOf = items.get(d.medication_id) ?? weekEnds.map((weekEnd) => ({ weekEnd, taken: 0, logged: 0 }));
+    items.set(d.medication_id, weeksOf);
+    const week = weeksOf[Math.floor(daysBetween(first, d.date) / 7)];
     week.logged += 1;
     if (d.taken) week.taken += 1;
   }
@@ -158,22 +167,22 @@ export function weeklyCheckoffs(doses, { weeks = 12, today }) {
 }
 
 /** The period in effect on a date, or null. */
-export const activeOn = (periods, date) =>
+export const activeOn = (periods: Row[], date: string): Row | null =>
   periods.find((p) => p.started_on <= date && (p.stopped_on === null || p.stopped_on === undefined || p.stopped_on > date)) ?? null;
 
 /**
  * Medication context for the weekly summary: what was current at the week's end, how the week's
  * saved check-offs went, and recent changes.
- * @param {object[]} [doses]  medication_doses rows (a saved day has a row per slot, taken 1 or 0)
+ * doses: medication_doses rows (a saved day has a row per slot, taken 1 or 0).
  */
-export function medicationsWeek(medications, periods, metrics, checkins, weekEnd, doses = []) {
-  const byId = new Map(medications.map((m) => [m.id, m]));
+export function medicationsWeek(medications: Row[], periods: Row[], metrics: Row[], checkins: Row[], weekEnd: string, doses: Row[] = []) {
+  const byId = new Map<number, Row>(medications.map((m) => [m.id, m]));
   const weekFrom = addDays(weekEnd, -6);
   const weekDoses = doses.filter((d) => inRange(d.date, weekFrom, weekEnd));
   const current = periods
     .filter((p) => p === activeOn(periods.filter((q) => q.medication_id === p.medication_id), weekEnd))
     .map((p) => {
-      const m = byId.get(p.medication_id);
+      const m = byId.get(p.medication_id) as Row;
       const mine = weekDoses.filter((d) => d.medication_id === p.medication_id);
       const taken = mine.filter((d) => d.taken).length;
       return {
@@ -190,7 +199,7 @@ export function medicationsWeek(medications, periods, metrics, checkins, weekEnd
     .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
 
   const events = medicationEvents(medications, periods).filter((e) => e.date <= weekEnd);
-  const strip = ({ medicationId, ...e }) => e;
+  const strip = ({ medicationId, ...e }: MedicationEvent) => e;
   return {
     current,
     changesThisWeek: events.filter((e) => inRange(e.date, addDays(weekEnd, -6), weekEnd)).map(strip),

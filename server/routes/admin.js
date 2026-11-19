@@ -1,7 +1,7 @@
 // Feedback (yours and the administrator's list), user administration and usage (moved from server/app.js, v3 Phase 2
 // step 2, docs/adr/0012). register(app, ctx) adds these routes; ctx is what buildApp shares with every route module
 // (server/app.js).
-import { addDays } from '../../metrics/stats.js';
+import { addDays } from '../../metrics/stats.ts';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_TZ, localDate as zonedDate } from '../../tools/time.ts';
 import { scopeDatabase } from '../../db/scope.ts';

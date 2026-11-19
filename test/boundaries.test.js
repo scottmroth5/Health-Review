@@ -50,9 +50,9 @@ const EXCEPTIONS = [
   },
 ];
 
-// Metrics is the pure library: no SQL. metrics/load.js is the data access that still lives there (it moves out with the
+// Metrics is the pure library: no SQL. metrics/load.ts is the data access that still lives there (it moves out with the
 // agent files it serves, under the same harness gate).
-const SQL_IN_METRICS = new Set(['metrics/load.js']);
+const SQL_IN_METRICS = new Set(['metrics/load.ts']);
 
 const IMPORT_FLOOR = 500; // 519 on 2026-11-17 after the route modules
 const IMPORT = /\b(?:import|export)\s[^'"`;]*?\bfrom\s*['"]([^'"]+)['"]|\bimport\s*['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]\s*\)/g;

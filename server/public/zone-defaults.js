@@ -1,4 +1,4 @@
-// Heart rate zone defaults for an age (pure; metrics/zones.js and the Settings card both use it). Each zone is saved by
+// Heart rate zone defaults for an age (pure; metrics/zones.ts and the Settings card both use it). Each zone is saved by
 // its top: Zone 1 ends one below Zone 2's low end, and every later zone starts one above the zone before, so the zones
 // never leave a gap. A top left unset takes the age default here.
 

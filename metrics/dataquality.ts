@@ -3,7 +3,13 @@
 // a workout duration longer than the workout (the 3-hour shift coming back) and impossible values. Findings name
 // dates and counts only. Today is never expected to be complete. A partial day is one whose export file was written
 // before the day ended, or (days from the consolidated sheet, no file time) one with far fewer steps than usual.
-import { addDays, daysBetween } from './stats.js';
+import { addDays, daysBetween } from './stats.ts';
+import type { Row } from './stats.ts';
+
+/** A data check's finding: dates and counts only. */
+export interface Finding { kind: string, severity: 'warn' | 'info', dates: string[], message: string }
+/** The newest export file's write time (UTC ISO, and local wall clock for the message) and when a sync last looked. */
+export interface ExportTimes { lastFileAt: string, lastFileLocal: string, lookedAt: string }
 
 export const LOOKBACK_DAYS = 14;
 export const PARTIAL_SHARE = 0.25; // steps under a quarter of the 28-day median look like a partial export
@@ -14,23 +20,23 @@ export const WORKOUT_EXPORT_STALE_HOURS = 72; // longer: a rest day may write no
 const SPAN_SLACK_SEC = 120;
 const STRENGTH_TYPES = /strength|core|functional|high intensity|hiit|cross training/i;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const short = (d) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
-const list = (dates) => dates.map(short).join(', ');
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const short = (d: string): string => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
+const list = (dates: string[]): string => dates.map(short).join(', ');
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 /** Local wall-clock text (YYYY-MM-DDTHH:MM) as "Oct 15, 2:07 PM". */
-const shortTime = (stamp) => {
+const shortTime = (stamp: string): string => {
   const hh = Number(stamp.slice(11, 13));
   return `${short(stamp.slice(0, 10))}, ${hh % 12 || 12}:${stamp.slice(14, 16)} ${hh < 12 ? 'AM' : 'PM'}`;
 };
-const median = (xs) => {
+const median = (xs: number[]): number => {
   const s = [...xs].sort((a, b) => a - b);
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
 /** Days from `from` to `to` inclusive. */
-function days(from, to) {
-  const out = [];
+function days(from: string, to: string): string[] {
+  const out: string[] = [];
   for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);
   return out;
 }
@@ -40,47 +46,41 @@ function days(from, to) {
  * clock) is partial when that is before the day ended (export_early), whatever its steps. A day without one (from the
  * consolidated sheet) falls back to steps under a quarter of the median of the 28 days before it, with at least 10 of
  * those days logged (low_steps).
- * @param {Array<{date: string, steps?: number|null, exported_through?: string|null}>} daily
- * @returns {Array<{date: string, reason: 'export_early'|'low_steps'}>}
  */
-export function partialReasons(daily, from, to) {
-  const exported = new Map(daily.filter((r) => r.exported_through).map((r) => [r.date, r.exported_through]));
-  const steps = new Map(daily.filter((r) => r.steps !== null && r.steps !== undefined).map((r) => [r.date, r.steps]));
-  const out = [];
+export function partialReasons(daily: Row[], from: string, to: string): { date: string, reason: 'export_early' | 'low_steps' }[] {
+  const exported = new Map<string, string>(daily.filter((r) => r.exported_through).map((r) => [r.date, r.exported_through]));
+  const steps = new Map<string, number>(daily.filter((r) => r.steps !== null && r.steps !== undefined).map((r) => [r.date, r.steps]));
+  const out: { date: string, reason: 'export_early' | 'low_steps' }[] = [];
   for (const d of days(from, to)) {
     if (exported.has(d)) {
-      if (exported.get(d) < `${addDays(d, 1)}T00:00`) out.push({ date: d, reason: 'export_early' });
+      if ((exported.get(d) as string) < `${addDays(d, 1)}T00:00`) out.push({ date: d, reason: 'export_early' });
       continue;
     }
     if (!steps.has(d)) continue;
-    const before = days(addDays(d, -MEDIAN_DAYS), addDays(d, -1)).filter((x) => steps.has(x)).map((x) => steps.get(x));
-    if (before.length >= MIN_MEDIAN_DAYS && steps.get(d) < PARTIAL_SHARE * median(before)) out.push({ date: d, reason: 'low_steps' });
+    const before = days(addDays(d, -MEDIAN_DAYS), addDays(d, -1)).filter((x) => steps.has(x)).map((x) => steps.get(x) as number);
+    if (before.length >= MIN_MEDIAN_DAYS && (steps.get(d) as number) < PARTIAL_SHARE * median(before)) out.push({ date: d, reason: 'low_steps' });
   }
   return out;
 }
 
 /** Dates of partialReasons. */
-export const partialDays = (daily, from, to) => partialReasons(daily, from, to).map((p) => p.date);
+export const partialDays = (daily: Row[], from: string, to: string): string[] => partialReasons(daily, from, to).map((p) => p.date);
 
 /**
- * @param {object} input
- * @param {Array<object>} input.daily  daily_metrics rows (date, steps, resting_hr, sleep_total_hr, exercise_min), at least 42 days
- * @param {Array<object>} input.sessions  workout_sessions rows (type, start, end, duration_sec) for the last 14 days or more
- * @param {string[]} input.liftingDays  Workout Log days with performed sets
- * @param {string} input.today
- * @param {{lastFileAt: string, lastFileLocal: string, lookedAt: string}|null} [input.exports]  the newest health export
- *   file's write time (UTC ISO, and local wall clock for the message) and when a sync last looked in the folder (UTC ISO);
- *   null when the export folder is not in use or nothing has been read
- * @param {{lastFileAt: string, lastFileLocal: string, lookedAt: string}|null} [input.workoutExports]  the same for the
- *   JSON workouts folder (judged at WORKOUT_EXPORT_STALE_HOURS)
- * @returns {Array<{kind: string, severity: 'warn'|'info', dates: string[], message: string}>}
+ * daily: daily_metrics rows (date, steps, resting_hr, sleep_total_hr, exercise_min), at least 42 days; sessions:
+ * workout_sessions rows (type, start, end, duration_sec) for the last 14 days or more; liftingDays: Workout Log days with
+ * performed sets; exports: the health export folder's times, null when the folder is not in use or nothing has been
+ * read; workoutExports: the same for the JSON workouts folder (judged at WORKOUT_EXPORT_STALE_HOURS).
  */
-export function dataChecks({ daily = [], sessions = [], liftingDays = [], today, exports = null, workoutExports = null }) {
+export function dataChecks({ daily = [], sessions = [], liftingDays = [], today, exports = null, workoutExports = null }: {
+  daily?: Row[], sessions?: Row[], liftingDays?: string[], today: string,
+  exports?: ExportTimes | null, workoutExports?: ExportTimes | null,
+}): Finding[] {
   const yesterday = addDays(today, -1);
   const from = addDays(today, -LOOKBACK_DAYS);
   const have = new Set(daily.map((r) => r.date));
-  const out = [];
-  const add = (kind, severity, dates, message) => out.push({ kind, severity, dates, message });
+  const out: Finding[] = [];
+  const add = (kind: string, severity: Finding['severity'], dates: string[], message: string) => out.push({ kind, severity, dates, message });
 
   const latest = daily.map((r) => r.date).filter((d) => d <= today).sort().at(-1) ?? null;
   if (!latest) add('health_stale', 'warn', [], 'No Apple Health data at all. Check the Health Auto Export automation and the sync.');
@@ -91,17 +91,17 @@ export function dataChecks({ daily = [], sessions = [], liftingDays = [], today,
 
   // Health Auto Export stopped writing files: a sync looked and found nothing newer for EXPORT_STALE_HOURS (health) or
   // WORKOUT_EXPORT_STALE_HOURS (workouts).
-  const stale = (e, limit) => {
+  const stale = (e: ExportTimes | null, limit: number): number | null => {
     if (!e?.lastFileAt || !e.lookedAt) return null;
     const hours = Math.floor((Date.parse(e.lookedAt) - Date.parse(e.lastFileAt)) / 3600000);
     return hours > limit ? hours : null;
   };
   const healthHours = stale(exports, EXPORT_STALE_HOURS);
-  if (healthHours !== null) {
+  if (healthHours !== null && exports) {
     add('export_stale', 'warn', [exports.lastFileLocal.slice(0, 10)], `No new Apple Health export since ${shortTime(exports.lastFileLocal)} (${healthHours} hours before the last sync). Check the Health Auto Export automation on your phone.`);
   }
   const workoutHours = stale(workoutExports, WORKOUT_EXPORT_STALE_HOURS);
-  if (workoutHours !== null) {
+  if (workoutHours !== null && workoutExports) {
     add('workout_export_stale', 'warn', [workoutExports.lastFileLocal.slice(0, 10)], `No new workout export since ${shortTime(workoutExports.lastFileLocal)} (${workoutHours} hours before the last sync). Check the Health Auto Export Workouts automation on your phone.`);
   }
 
@@ -149,7 +149,7 @@ export function dataChecks({ daily = [], sessions = [], liftingDays = [], today,
  * The review week's data quality, for the weekly summary: days with no Apple Health row and days that look like a
  * partial export. Dates only.
  */
-export function weekDataQuality(daily, weekFrom, weekTo) {
+export function weekDataQuality(daily: Row[], weekFrom: string, weekTo: string) {
   const have = new Set(daily.map((r) => r.date));
   return { missingDays: days(weekFrom, weekTo).filter((d) => !have.has(d)), suspectedPartialDays: partialDays(daily, weekFrom, weekTo) };
 }

@@ -1,10 +1,10 @@
 // Program block detection. Synthetic workout names and dates only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectBlocks, phaseOf, weekOf } from '../metrics/blocks.js';
+import { detectBlocks, phaseOf, weekOf } from '../metrics/blocks.ts';
 import { openOwnerStore } from '../db/store.ts';
 import { detect, writeDetected, sessionCoverage, uuidV5, sessionId } from '../ingest/program-blocks.js';
-import { addDays } from '../metrics/stats.js';
+import { addDays } from '../metrics/stats.ts';
 import { ownerStore } from './helpers.js';
 
 // Lifting every other day from start for n sessions; the first day of each week carries the name.
@@ -154,8 +154,8 @@ test('blocks: a Between programs stretch between two runs of the same program jo
 });
 
 test('progress: uneven logged phases give the real phase, program week and a finish range at the block pace', async () => {
-  const { programProgress } = await import('../metrics/blocks.js');
-  const { createCatalog } = await import('../metrics/catalog.js');
+  const { programProgress } = await import('../metrics/blocks.ts');
+  const { createCatalog } = await import('../metrics/catalog.ts');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 11, phases: [
     { name: 'Phase 1', weeks: [1, 2] }, { name: 'Phase 2', weeks: [3, 5] }, { name: 'Phase 3', weeks: [6, 8] }, { name: 'Phase 4', weeks: [9, 11] }] }] },
   { programs: ['MAPS Symmetry'] });

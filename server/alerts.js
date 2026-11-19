@@ -7,7 +7,7 @@ import { OWNER_ID } from '../db/users.ts';
 import { scopeDatabase } from '../db/scope.ts';
 import { localDate } from '../tools/time.ts';
 
-/** The data checks (metrics/dataquality.js) worth an email after the owner's scheduled sync. */
+/** The data checks (metrics/dataquality.ts) worth an email after the owner's scheduled sync. */
 export const ALERT_CHECKS = ['health_stale', 'export_stale', 'workout_export_stale'];
 
 /**

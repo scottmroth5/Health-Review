@@ -231,7 +231,7 @@ calendars in `data/MAPS Programs/`. Those are Mind Pump's copyrighted material, 
 ```json
 { "version": 1,
   "programs": [
-    { "name": "Program name from metrics/programs.js", "weeks": 9, "focus": "...", "equipment": ["barbell"],
+    { "name": "Program name from metrics/programs.ts", "weeks": 9, "focus": "...", "equipment": ["barbell"],
       "phases": [
         { "name": "Phase 1", "weeks": [1, 3], "workouts_per_week": 6, "sets": "3", "reps": "8-12", "rest": "60 seconds",
           "special_weeks": { "deload": [], "failure": [2] },
@@ -415,7 +415,7 @@ a blend). Choose between them in the Dose box of the Meds tab's Add, Change and 
 ## Program Advisor
 
 The Training tab's **Next program** card ranks the MAPS programs for your next block. The ranking is computed in
-code by `metrics/advisor.js`, never by the model. The program you ran last is left out, and add-ons are listed apart.
+code by `metrics/advisor.ts`, never by the model. The program you ran last is left out, and add-ons are listed apart.
 
 Each program gets four goal scores from 0 to 1:
 - **Strength:** heavy sets (5 reps or fewer) plus half credit for sets of 6 to 12 reps, averaged with the median change

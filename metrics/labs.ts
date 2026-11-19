@@ -4,13 +4,19 @@
 // normal or abnormal; any interpretation belongs to physician discussion.
 import { readFileSync } from 'node:fs';
 import { repoPath } from '../tools/paths.ts';
-import { round, inRange, addDays, daysBetween } from './stats.js';
+import { round, inRange, addDays, daysBetween } from './stats.ts';
+import type { Row } from './stats.ts';
+
+/** config/lab-ranges.json: typical adult ranges by name or alias. */
+export interface LabRangesConfig { tests?: { name: string, aliases?: string[], low?: number | null, high?: number | null, unit?: string | null, note?: string | null }[] }
+/** A range; either end may be missing. */
+export interface Range { low: number | null, high: number | null }
 
 export const LAB_RANGES_PATH = repoPath('config', 'lab-ranges.json');
-export const loadLabRanges = (path = LAB_RANGES_PATH) => JSON.parse(readFileSync(path, 'utf8'));
+export const loadLabRanges = (path = LAB_RANGES_PATH): LabRangesConfig => JSON.parse(readFileSync(path, 'utf8'));
 
 /** The typical range for a test name (case-insensitive name or alias), or null. */
-export function typicalRange(name, config) {
+export function typicalRange(name: unknown, config: LabRangesConfig | null | undefined) {
   const key = String(name ?? '').trim().toLowerCase();
   const t = (config?.tests ?? []).find((x) => x.name.toLowerCase() === key || (x.aliases ?? []).some((a) => a.toLowerCase() === key));
   return t ? { low: t.low ?? null, high: t.high ?? null, unit: t.unit ?? null, note: t.note ?? null } : null;
@@ -18,31 +24,28 @@ export function typicalRange(name, config) {
 
 /**
  * The range in effect for a test: the owner's (ref_set) or the typical one, with where it came from; null when neither.
- * @returns {{ low: number|null, high: number|null, source: 'yours'|'typical' }|null}
  */
-export function effectiveRange(test, config) {
+export function effectiveRange(test: Row, config: LabRangesConfig | null | undefined): (Range & { source: 'yours' | 'typical' }) | null {
   if (test.ref_set) return test.ref_low === null && test.ref_high === null ? null : { low: test.ref_low, high: test.ref_high, source: 'yours' };
   const t = typicalRange(test.name, config);
   return t && (t.low !== null || t.high !== null) ? { low: t.low, high: t.high, source: 'typical' } : null;
 }
 
 /** Where a numeric value sits against a range: below, within (bounds included) or above; null without both. */
-export function rangeStatus(value, range) {
+export function rangeStatus(value: unknown, range: { low?: number | null, high?: number | null } | null | undefined): 'below' | 'within' | 'above' | null {
   if (typeof value !== 'number' || !range || (range.low === null && range.high === null)) return null;
   if (range.low !== null && range.low !== undefined && value < range.low) return 'below';
   if (range.high !== null && range.high !== undefined && value > range.high) return 'above';
   return 'within';
 }
 
-const decimals = (text) => (/^-?\d+\.(\d+)$/.exec(String(text).trim())?.[1].length ?? 0);
-const shown = (r) => (r.value === null || r.value === undefined ? r.value_text : r.value);
+const decimals = (text: unknown): number => (/^-?\d+\.(\d+)$/.exec(String(text).trim())?.[1].length ?? 0);
+const shown = (r: Row) => (r.value === null || r.value === undefined ? r.value_text : r.value);
 
 /**
- * @param {Array<{id, name, panel, unit, position}>} tests
- * @param {Array<{test_id, drawn_on, value, value_text}>} results
- * @param {string} weekEnd
+ * tests: lab_tests rows (id, name, panel, unit, position); results: lab_results rows (test_id, drawn_on, value, value_text).
  */
-export function labsSummary(tests, results, weekEnd, rangesConfig = null) {
+export function labsSummary(tests: Row[], results: Row[], weekEnd: string, rangesConfig: LabRangesConfig | null = null) {
   const upTo = results.filter((r) => r.drawn_on <= weekEnd);
   const draws = [...new Set(upTo.map((r) => r.drawn_on))].sort();
   const latestDraw = draws[draws.length - 1] ?? null;
@@ -68,7 +71,7 @@ export function labsSummary(tests, results, weekEnd, rangesConfig = null) {
         position: t.position ?? 9999,
       };
     })
-    .filter(Boolean)
+    .filter((r) => r !== null)
     .sort((a, b) => a.position - b.position || a.test.localeCompare(b.test))
     .map(({ position, ...r }) => r);
 

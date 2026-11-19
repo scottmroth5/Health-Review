@@ -1,0 +1,366 @@
+// Reads what computeWeek needs from the database: about 120 days up to the week's end (90 days of
+// medication changes plus their 28-day before windows), plus the following morning for
+// next-morning recovery after the last day of the week.
+// Async (v3 Phase 1B, docs/adr/0006): each loader awaits every statement, so it runs on the sync handle or the async
+// one.
+import { existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { addDays } from './stats.ts';
+import { DICTIONARY_PATH, loadDictionary } from './dictionary.ts';
+import { loadCatalog, mergeCatalogs } from './catalog.ts';
+import { userMatchers } from './programs.ts';
+import { cleanGoals } from '../server/public/goals.js';
+import { programAt, programProgress } from './blocks.ts';
+import { liftProgress } from './plateau.ts';
+import { advisorDue } from './advisor.ts';
+import { suggestTarget, loadTargetConfig } from './targets.ts';
+import { loadLabRanges } from './labs.ts';
+import { repoPath } from '../tools/paths.ts';
+import { localStamp } from '../tools/time.ts';
+import type { Catalog, Program } from './catalog.ts';
+import type { Dictionary } from './dictionary.ts';
+import type { Row } from './stats.ts';
+import type { TargetConfig } from './targets.ts';
+import type { AdherenceDay, LoggedExercise } from './adherence.ts';
+import type { AdvisorBlock } from './advisor.ts';
+
+/**
+ * A database these loaders read: db/database.ts's async interface (every statement awaited), or the sync handle.
+ * Structural, as metrics imports nothing from db/ (docs/adr/0012).
+ */
+export type Db = { prepare(sql: string): any };
+
+export const SUBSTITUTIONS_PATH = repoPath('config', 'substitutions.json');
+/** config/substitutions.json: home equipment, swaps and the avoid list. */
+export const loadSubstitutions = (path = SUBSTITUTIONS_PATH): Record<string, any> => JSON.parse(readFileSync(path, 'utf8'));
+
+// The confirmed program block the week ends in, with phase and finish from its logged workout names.
+export async function programForWeek(db: Db, weekEnd: string, catalog: Catalog | null | undefined) {
+  const block = await db.prepare(`SELECT program, start_date, status FROM program_blocks WHERE user_id = @uid AND source = 'confirmed'
+    AND start_date <= ? AND COALESCE(end_date, ?) >= ? ORDER BY start_date DESC LIMIT 1`).get(weekEnd, weekEnd, addDays(weekEnd, -6));
+  if (!block) return null;
+  const rows = await db.prepare('SELECT date, workout FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ?').all(block.start_date, weekEnd);
+  return programAt(block, catalog, weekEnd, rows);
+}
+
+/** A user's own programs (user_programs, phase 5), by name: [{ id, name, match, source, program, created_at, updated_at }]. */
+export async function loadUserPrograms(db: Db): Promise<Row[]> {
+  return (await db.prepare('SELECT id, name, match, source, program, created_at, updated_at FROM user_programs WHERE user_id = @uid ORDER BY LOWER(name), name')
+    .all()).map((r: Row) => ({ ...r, program: JSON.parse(r.program) }));
+}
+
+/** The program matchers for a user's Workout Log names: their own programs' match words, then metrics/programs.ts. */
+export const programMatchers = async (db: Db) => userMatchers((await loadUserPrograms(db)) as { name: string, match?: string | null }[]);
+
+/**
+ * The program catalog a user gets: their own programs, then the shared catalog's (theirs win a name clash); null when
+ * there are neither. shared left out means the owner's MAPS file (the owner, and scripts acting as the owner); pass null
+ * for a user it is not shared with.
+ */
+export async function userCatalog(db: Db, shared: Catalog | null = loadCatalog()): Promise<Catalog | null> {
+  const own: Program[] = (await loadUserPrograms(db)).map((r) => r.program);
+  return own.length ? mergeCatalogs(own, shared) : shared ?? null;
+}
+
+/**
+ * options: the MAPS catalog (defaults to the user's, data/maps/programs.json when present), exercise dictionary and
+ * substitutions (default to config/).
+ */
+export async function loadWeekData(db: Db, weekEnd: string, { catalog, dictionary, substitutions }: {
+  catalog?: Catalog | null, dictionary?: Dictionary, substitutions?: Record<string, any>,
+} = {}) {
+  const from = addDays(weekEnd, -125);
+  const cat = catalog === undefined ? await userCatalog(db) : catalog;
+  const program = await programForWeek(db, weekEnd, cat);
+  // The Program Advisor's input, only when the review should carry the ranking (near the end of a block or between).
+  const advisorInput = cat && advisorDue(program, weekEnd)
+    ? { ...(await loadAdvisorInput(db, weekEnd, cat)), programs: cat.programs, lookup: (dictionary ?? loadDictionary()).lookup,
+      substitutions: substitutions ?? loadSubstitutions() }
+    : null;
+  // Called for vs logged for the week (metrics/adherence.ts): the confirmed block the week ends in, when its program is in
+  // the catalog. computeWeek reduces it to counts and the owner's logged names.
+  const block = cat ? await db.prepare(`SELECT id, program FROM program_blocks WHERE user_id = @uid AND source = 'confirmed' AND start_date <= ?
+    AND COALESCE(end_date, ?) >= ? ORDER BY start_date DESC LIMIT 1`).get(weekEnd, weekEnd, addDays(weekEnd, -6)) : null;
+  const adherenceInput = block && cat && cat.find(block.program)
+    ? { program: cat.find(block.program), programName: block.program, days: await loadAdherenceInput(db, block.id, weekEnd),
+      lookup: (dictionary ?? loadDictionary()).lookup, substitutions: substitutions ?? loadSubstitutions() }
+    : null;
+  const nextMorning = addDays(weekEnd, 1);
+  return {
+    daily_metrics: await db.prepare('SELECT * FROM daily_metrics WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(from, nextMorning),
+    workout_sessions: await db.prepare('SELECT * FROM workout_sessions WHERE user_id = @uid AND start >= ? AND start < ? ORDER BY start')
+      .all(from, `${nextMorning}`),
+    // Per-minute heart rate for those workouts (heart rate zones, metrics/zones.ts), and the birth year the zones need.
+    workout_hr_samples: await db.prepare('SELECT type, start, avg_bpm FROM workout_hr_samples WHERE user_id = @uid AND start >= ? AND start < ?').all(from, `${nextMorning}`),
+    birth_year: (await loadProfile(db, weekEnd)).birthYear,
+    // About 13 months, for the 12-month volume trend (the 28-day strength metrics filter their own window).
+    strength_sets: await loadStrengthSets(db, addDays(weekEnd, -400), weekEnd),
+    drinking_days: await db.prepare('SELECT * FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date').all(from, weekEnd),
+    checkins: await db.prepare('SELECT * FROM checkins WHERE user_id = @uid AND date <= ? ORDER BY date').all(weekEnd),
+    ...(await loadMedications(db)),
+    lab_tests: await db.prepare('SELECT id, name, panel, unit, position, ref_low, ref_high, ref_set FROM lab_tests WHERE user_id = @uid').all(),
+    lab_ranges: loadLabRanges(),
+    lab_results: await db.prepare('SELECT test_id, drawn_on, value, value_text FROM lab_results WHERE user_id = @uid AND drawn_on <= ?').all(weekEnd),
+    medication_doses: await db.prepare('SELECT date, medication_id, timing, taken FROM medication_doses WHERE user_id = @uid AND date BETWEEN ? AND ?')
+      .all(addDays(weekEnd, -6), weekEnd),
+    // The confirmed program block the week ends in, with its phase and week from the catalog.
+    program,
+    advisor_input: advisorInput,
+    // Health targets as of the week's end (owner-set, or suggested from the 90 days to it).
+    targets: await loadTargets(db, weekEnd, loadTargetConfig()),
+    adherence_input: adherenceInput,
+    primary_sets: await loadPrimarySets(db, weekEnd),
+    session_phases: await loadSessionPhases(db),
+  };
+}
+
+/**
+ * The owner's own notes from the review week, oldest first: check-ins, drinking days, Workout Log
+ * comments and text typed in its date column. Sent to the review by the owner's choice (life context
+ * and symptoms); device data never takes this path.
+ */
+export async function loadWeekNotes(db: Db, weekEnd: string): Promise<{ date: string, source: string, text: string }[]> {
+  const from = addDays(weekEnd, -6);
+  const rows: { date: string, source: string, text: string | null }[] = [
+    ...await db.prepare("SELECT date, 'check-in' AS source, notes AS text FROM checkins WHERE user_id = @uid AND date BETWEEN ? AND ? AND notes IS NOT NULL").all(from, weekEnd),
+    ...await db.prepare("SELECT date, 'drinking' AS source, notes AS text FROM drinking_days WHERE user_id = @uid AND date BETWEEN ? AND ? AND notes IS NOT NULL").all(from, weekEnd),
+    ...await db.prepare("SELECT date, 'workout: ' || exercise AS source, comment AS text FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ? AND comment IS NOT NULL").all(from, weekEnd),
+    ...await db.prepare("SELECT date, 'workout log' AS source, text FROM workout_log_notes WHERE user_id = @uid AND date BETWEEN ? AND ?").all(from, weekEnd),
+  ];
+  return (rows.filter((r) => r.text?.trim()) as { date: string, source: string, text: string }[]).sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source));
+}
+
+/** One row per Workout Log set (with its exercise and date) between two dates. */
+// Dictionary names by canonical id, read once per process (the file changes only between runs).
+let canonicalNames: Map<string, string> | undefined;
+function canonicalName(id: string | null | undefined): string | null {
+  if (!id) return null;
+  if (canonicalNames === undefined) {
+    try {
+      canonicalNames = existsSync(DICTIONARY_PATH) ? new Map(loadDictionary().exercises.map((e) => [e.id, e.name])) : new Map();
+    } catch {
+      canonicalNames = new Map(); // an invalid dictionary is reported by sync and log:normalize
+    }
+  }
+  return canonicalNames?.get(id) ?? null;
+}
+
+/** Performed and planned sets with their normalized exercise (canonical_id, canonical_name, implement). */
+export async function loadStrengthSets(db: Db, from: string, to: string): Promise<Row[]> {
+  return (await db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, e.is_primary, s.set_no, s.weight_lbs, s.per_hand,
+      s.band, s.bodyweight, s.reps, s.reps_text, s.duration_sec, s.distance_yd
+    FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
+    WHERE e.user_id = @uid AND e.date BETWEEN ? AND ? ORDER BY e.date, e.row_no, s.set_no`).all(from, to))
+    .map((s: Row) => ({ ...s, canonical_name: canonicalName(s.canonical_id) }));
+}
+
+/** Every primary-lift set up to a date (records need the full history), with the dictionary name. */
+export async function loadPrimarySets(db: Db, to: string): Promise<Row[]> {
+  return (await db.prepare(`SELECT e.date, e.exercise, e.workout, e.canonical_id, e.implement, e.is_primary, s.set_no, s.weight_lbs, s.per_hand,
+      s.band, s.bodyweight, s.reps, s.reps_text, s.duration_sec, s.distance_yd
+    FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
+    WHERE e.user_id = @uid AND e.is_primary = 1 AND e.date <= ? ORDER BY e.date, e.row_no, s.set_no`).all(to))
+    .map((s: Row) => ({ ...s, canonical_name: canonicalName(s.canonical_id) }));
+}
+
+/** Confirmed program blocks, newest first, for the Called for vs logged picker. */
+export async function loadConfirmedBlocks(db: Db): Promise<Row[]> {
+  return db.prepare(`SELECT id, program, start_date, end_date, status FROM program_blocks
+    WHERE user_id = @uid AND source = 'confirmed' ORDER BY start_date DESC`).all();
+}
+
+/**
+ * A block's lifting days up to today for metrics/adherence.ts: week, phase, the day's Workout name (its first named
+ * row), and each exercise with its performed sets and their reps (planned rows with no reps, time or distance count 0).
+ */
+export async function loadAdherenceInput(db: Db, blockId: string, today: string): Promise<AdherenceDay[]> {
+  const days = await db.prepare(`SELECT date, week, phase FROM log_sessions
+    WHERE user_id = @uid AND block_id = ? AND assignment = 'block' AND date <= ? ORDER BY date`).all(blockId, today);
+  const rows = db.prepare(`SELECT e.id, e.row_no, e.workout, e.exercise, e.canonical_id, e.implement, e.movement_pattern,
+      s.reps, s.reps_text, s.duration_sec, s.distance_yd
+    FROM strength_exercises e LEFT JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
+    WHERE e.user_id = @uid AND e.date = ? ORDER BY e.row_no, s.set_no`);
+  const out: AdherenceDay[] = [];
+  for (const d of days) {
+    const byExercise = new Map<string, LoggedExercise>();
+    let workout: string | null = null;
+    for (const r of await rows.all(d.date)) {
+      workout ??= r.workout?.trim() || null;
+      if (!r.exercise) continue;
+      const key = r.canonical_id ?? r.exercise.trim().toLowerCase();
+      let e = byExercise.get(key);
+      if (!e) {
+        e = { name: r.exercise.trim(), canonical_id: r.canonical_id, canonicalName: canonicalName(r.canonical_id),
+          implement: r.implement, pattern: r.movement_pattern, sets: 0, reps: [] };
+        byExercise.set(key, e);
+      }
+      if (r.reps != null || r.duration_sec != null || r.distance_yd != null || (r.reps_text ?? '') !== '') {
+        e.sets += 1;
+        if (r.reps != null) e.reps.push(r.reps);
+      }
+    }
+    out.push({ ...d, workout, exercises: [...byExercise.values()] });
+  }
+  return out;
+}
+
+/** The stored phase of each session (log_sessions), as { date: phase }. */
+export async function loadSessionPhases(db: Db): Promise<Record<string, string>> {
+  return Object.fromEntries((await db.prepare('SELECT date, phase FROM log_sessions WHERE user_id = @uid AND phase IS NOT NULL').all()).map((r: Row) => [r.date, r.phase]));
+}
+
+/**
+ * What the Program Advisor ranks from, as of a date: confirmed blocks with the share of the program each reached
+ * (the in-progress one as of the date, others at their last session), every primary-lift set, VO2 max readings,
+ * Apple Watch strength and HIIT minutes per lifting day by program, the lifts' current status, and the program run
+ * last (the in-progress confirmed block, else the latest one started).
+ */
+export async function loadAdvisorInput(db: Db, asOf: string, catalog: Catalog | null | undefined) {
+  const blocks: AdvisorBlock[] = [];
+  const rows = db.prepare('SELECT date, workout FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ?');
+  for (const b of await db.prepare(`SELECT b.program, b.start_date, b.end_date, b.status, (SELECT MAX(date) FROM log_sessions WHERE user_id = b.user_id AND block_id = b.id) AS last
+    FROM program_blocks b WHERE b.user_id = @uid AND b.source = 'confirmed' AND b.start_date <= ? ORDER BY b.start_date`).all(asOf)) {
+    const at = b.status === 'in_progress' ? asOf : (b.last ?? b.start_date);
+    const p = programProgress(b, await rows.all(b.start_date, at), catalog, at);
+    blocks.push({ program: b.program, start_date: b.start_date, end_date: b.end_date, status: b.status,
+      percent: p.week && p.programWeeks ? Math.min(100, Math.round((p.week / p.programWeeks) * 100)) : null });
+  }
+  const sets = await loadPrimarySets(db, asOf);
+  return {
+    blocks,
+    sets,
+    vo2: await db.prepare('SELECT date, vo2max AS value FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date').all(asOf),
+    watchMinutes: await db.prepare(`SELECT ls.program, w.minutes FROM log_sessions ls
+      JOIN (SELECT substr(start, 1, 10) AS day, SUM(duration_sec) / 60.0 AS minutes FROM workout_sessions
+        WHERE user_id = @uid AND (LOWER(type) LIKE '%strength%' OR LOWER(type) LIKE '%high intensity%') AND duration_sec IS NOT NULL
+        GROUP BY substr(start, 1, 10)) w ON w.day = ls.date
+      WHERE ls.user_id = @uid AND ls.program IS NOT NULL AND ls.date <= ?`).all(asOf),
+    lifts: liftProgress(sets, asOf, { phases: new Map(Object.entries(await loadSessionPhases(db))) }),
+    lastProgram: (blocks.filter((b) => b.status === 'in_progress').at(-1) ?? blocks.at(-1))?.program ?? null,
+    asOf,
+  };
+}
+
+/** What the data checks (metrics/dataquality.ts) read as of a date: 45 days of health rows, 30 days of workouts, the
+ * Workout Log days with performed sets in the last 14 days, and for each export folder the newest file with when a sync
+ * last looked for one. lookedAt and workoutsLookedAt: a sync passes its own time (or null without that folder);
+ * otherwise the latest ok sync that read that folder. With apple 'rest' (the server), the newest is the last accepted
+ * ingest post of that kind (ingest_log) and it is judged against now, since posts arrive on their own. */
+export async function loadDataCheckInput(db: Db, today: string, { lookedAt, workoutsLookedAt, apple = 'drive', now = new Date() }: {
+  lookedAt?: string | null, workoutsLookedAt?: string | null, apple?: string, now?: Date,
+} = {}) {
+  const newest = async (kinds: string[], key: string, given: string | null | undefined) => {
+    const file = await db.prepare(`SELECT MAX(modified_time) AS at FROM drive_exports WHERE user_id = @uid AND kind IN (${kinds.map(() => '?').join(', ')})`).get(...kinds);
+    if (file?.at) file.local = localStamp(file.at); // the owner's zone, not SQLite's host 'localtime'
+    const looked = given !== undefined ? given
+      : await db.prepare(`SELECT started_at FROM runs WHERE user_id = @uid AND name = 'sync' AND status = 'ok' AND summary LIKE ?
+        ORDER BY id DESC LIMIT 1`).pluck().get(`%"${key}"%`) ?? null;
+    return file?.at && looked ? { lastFileAt: file.at, lastFileLocal: file.local, lookedAt: looked } : null;
+  };
+  const lastPost = async (route: string) => {
+    const at = await db.prepare("SELECT MAX(received_at) FROM ingest_log WHERE user_id = @uid AND route = ? AND result = 'ok'").pluck().get(route);
+    return at ? { lastFileAt: at, lastFileLocal: localStamp(at), lookedAt: now.toISOString() } : null;
+  };
+  return {
+    exports: apple === 'rest' ? await lastPost('health') : await newest(['health', 'health_json'], 'health_exports', lookedAt),
+    workoutExports: apple === 'rest' ? await lastPost('workouts') : await newest(['workouts'], 'workout_exports', workoutsLookedAt),
+    daily: await db.prepare(`SELECT date, steps, resting_hr, sleep_total_hr, exercise_min, exported_through FROM daily_metrics
+      WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date`).all(addDays(today, -45), today),
+    sessions: await db.prepare('SELECT type, start, "end", duration_sec FROM workout_sessions WHERE user_id = @uid AND start >= ? ORDER BY start').all(addDays(today, -30)),
+    liftingDays: (await db.prepare(`SELECT DISTINCT e.date FROM strength_exercises e JOIN strength_sets s ON s.exercise_id = e.id AND s.user_id = e.user_id
+      WHERE e.user_id = @uid AND e.date BETWEEN ? AND ? AND (s.reps IS NOT NULL OR s.duration_sec IS NOT NULL OR s.distance_yd IS NOT NULL OR COALESCE(s.reps_text, '') <> '')`)
+      .all(addDays(today, -14), today)).map((r: Row): string => r.date),
+    today,
+  };
+}
+
+/**
+ * Names that mark a sentence as medication talk for the review's routing check: every medication's name and the names
+ * of its ingredients in any period (an ingredient named alone is caught, not only the full name of the pill).
+ */
+export async function medicationNames(db: Db): Promise<string[]> {
+  const meds = await db.prepare("SELECT id, name FROM medications WHERE user_id = @uid AND kind = 'medication'").all();
+  const ingredients = (await db.prepare(`SELECT p.ingredients FROM medication_periods p JOIN medications m ON m.id = p.medication_id AND m.user_id = p.user_id
+    WHERE p.user_id = @uid AND m.kind = 'medication' AND p.ingredients IS NOT NULL`).pluck().all())
+    .flatMap((json: string): string[] => JSON.parse(json).map((i: { name: string }) => i.name));
+  const seen = new Set<string>();
+  return [...meds.map((m: Row): string => m.name), ...ingredients].filter((n) => !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
+}
+
+/** All medications and their periods (small tables, read whole). */
+export async function loadMedications(db: Db): Promise<{ medications: Row[], medication_periods: Row[] }> {
+  return {
+    medications: await db.prepare('SELECT id, name, kind, purpose, prescribed, notes FROM medications WHERE user_id = @uid ORDER BY name').all(),
+    medication_periods: await db.prepare('SELECT * FROM medication_periods WHERE user_id = @uid ORDER BY medication_id, started_on, id').all(),
+  };
+}
+
+/** Personal settings the metrics use. Zone 2 is null until both ends are set; an unset Zone 3 or 4 top is null (age default). */
+export async function loadMetricSettings(db: Db) {
+  const get = async (key: string) => (await db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').get(key))?.value;
+  const low = Number(await get('zone2_low_bpm'));
+  const high = Number(await get('zone2_high_bpm'));
+  const top = async (key: string): Promise<number | null> => Number(await get(key)) || null;
+  return { zone2: low > 0 && high > low ? { low, high } : null, zones: { zone3High: await top('zone3_high_bpm'), zone4High: await top('zone4_high_bpm') } };
+}
+
+// ---- Health tab targets (metrics/targets.ts) ----
+
+/** The owner's profile for age-based targets (settings: birth_year, sex, height_in), with age on today. */
+export const PROFILE_KEYS = ['birth_year', 'sex', 'height_in'];
+export async function loadProfile(db: Db, today: string) {
+  const rows = Object.fromEntries((await db.prepare(`SELECT key, value FROM settings WHERE user_id = @uid AND key IN (${PROFILE_KEYS.map(() => '?').join(', ')})`)
+    .all(...PROFILE_KEYS)).map((r: Row) => [r.key, r.value]));
+  const birthYear = rows.birth_year ? Number(rows.birth_year) : null;
+  return {
+    birthYear,
+    sex: rows.sex ?? null,
+    heightIn: rows.height_in ? Number(rows.height_in) : null,
+    age: birthYear ? Number(today.slice(0, 4)) - birthYear : null,
+  };
+}
+
+const TARGET_DAILY = ['hrv_ms', 'resting_hr', 'sleep_total_hr', 'steps', 'exercise_min', 'cardio_recovery_bpm', 'walking_hr_avg',
+  'walking_speed_mph', 'walking_asymmetry_pct', 'wrist_temp_f', 'spo2_pct', 'breathing_disturbances'];
+const TARGET_CHECKIN = ['weight_lbs', 'body_fat_pct', 'muscle_mass_lbs', 'visceral_fat', 'readiness'];
+
+/**
+ * Each target metric's current value: the average of its days in the 90 days to today (alcohol per logged drinking
+ * day), and VO2 max's latest reading. Null when there is none.
+ */
+export async function targetCurrents(db: Db, today: string): Promise<Record<string, number | null>> {
+  const from = addDays(today, -89);
+  const avg = (table: string, col: string): Promise<number | null> => db.prepare(`SELECT AVG(${col}) FROM ${table} WHERE user_id = @uid AND date BETWEEN ? AND ? AND ${col} IS NOT NULL`).pluck().get(from, today);
+  const out: Record<string, number | null> = {};
+  for (const c of TARGET_DAILY) out[c] = await avg('daily_metrics', c);
+  for (const c of TARGET_CHECKIN) out[c] = await avg('checkins', c);
+  out.alcohol = await db.prepare(`SELECT AVG(COALESCE(beers, 0) + COALESCE(wine, 0) + COALESCE(bourbon, 0) + COALESCE(other, 0)) FROM drinking_days
+    WHERE user_id = @uid AND date BETWEEN ? AND ?`).pluck().get(from, today);
+  out.vo2max = await db.prepare('SELECT vo2max FROM daily_metrics WHERE user_id = @uid AND vo2max IS NOT NULL AND date <= ? ORDER BY date DESC LIMIT 1').pluck().get(today) ?? null;
+  return out;
+}
+
+/**
+ * Every target metric: its suggestion (suggestTarget) and the target in effect, the owner's where set (health_targets).
+ * In config order; setBy 'owner' or 'suggested'.
+ */
+export async function loadTargets(db: Db, today: string, config: TargetConfig) {
+  const profile = await loadProfile(db, today);
+  const currents = await targetCurrents(db, today);
+  const owned = new Map<string, number>((await db.prepare('SELECT metric, target FROM health_targets WHERE user_id = @uid').all()).map((r: Row) => [r.metric, r.target]));
+  return Object.entries(config.metrics).map(([metric, def]) => {
+    // Every metric here is in the config, so a suggestion always comes back.
+    const s = suggestTarget({ metric, current: currents[metric] ?? null, profile, config }) as NonNullable<ReturnType<typeof suggestTarget>>;
+    const mine = owned.get(metric);
+    return {
+      ...s, label: def.label, unit: def.unit, decimals: def.decimals, direction: def.direction,
+      target: mine ?? s.suggested, setBy: mine === undefined ? 'suggested' : 'owner',
+    };
+  });
+}
+
+/** The user's training goals (settings goal_primary and goal_secondary), checked; { primary: null } when unset. */
+export async function loadGoals(db: Db) {
+  const get = db.prepare('SELECT value FROM settings WHERE user_id = @uid AND key = ?').pluck();
+  return cleanGoals({ primary: await get.get('goal_primary') ?? null, secondary: await get.get('goal_secondary') ?? null });
+}

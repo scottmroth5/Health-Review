@@ -4,7 +4,7 @@
 // user checks in the builder, and nothing is saved here. The PDF is held in memory for this call only: never stored,
 // logged or put in the run record, which keeps metadata only (size, model, counts, cost).
 import { startUserRun } from '../db/users.ts';
-import { programProblems } from '../metrics/catalog.js';
+import { programProblems } from '../metrics/catalog.ts';
 
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const MAX_TOKENS = 32000;
@@ -36,7 +36,7 @@ Return only what the document states; never invent exercises, weeks or numbers. 
 - If the document holds several programs, read the main one and name the others in notes.
 Write without em dashes, en dashes or double hyphens.`;
 
-/** A draft from Claude in the catalog's format (metrics/catalog.js), dropping blank sets and reps. */
+/** A draft from Claude in the catalog's format (metrics/catalog.ts), dropping blank sets and reps. */
 export function draftToProgram(d) {
   const blank = (v) => (String(v ?? '').trim() ? String(v).trim() : undefined);
   return {

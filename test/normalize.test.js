@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.ts';
-import { createDictionary } from '../metrics/dictionary.js';
+import { createDictionary } from '../metrics/dictionary.ts';
 import { normalizeAll, unmappedNames } from '../ingest/normalize.js';
 import { runSync } from '../ingest/sync.js';
 import { fakeSource, serial, silentLogger, ownerStore } from './helpers.js';

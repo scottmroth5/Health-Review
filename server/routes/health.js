@@ -2,9 +2,9 @@
 // server/app.js, v3 Phase 2 step 2, docs/adr/0012). register(app, ctx) adds these routes; ctx is what buildApp shares
 // with every route module (server/app.js).
 import * as q from '../queries.js';
-import { VO2_VIEWS } from '../../metrics/vo2max.js';
-import { loadTargets, loadProfile } from '../../metrics/load.js';
-import { loadTargetConfig } from '../../metrics/targets.js';
+import { VO2_VIEWS } from '../../metrics/vo2max.ts';
+import { loadTargets, loadProfile } from '../../metrics/load.ts';
+import { loadTargetConfig } from '../../metrics/targets.ts';
 import { maxHrFor, upperTops, zone2Default, zoneOrderProblem } from '../public/zone-defaults.js';
 import { nullable, anyObject, dateParams, checkinBody, drinkingBody, badRequest } from './schemas.js';
 

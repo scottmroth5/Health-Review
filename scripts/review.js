@@ -10,7 +10,7 @@
 // sent, a 'skipped' review run is recorded with the dates, and the Reviews tab offers a manual run. The same job runs in
 // the server on SCHEDULE_REVIEW (jobs/review.js). REVIEW_MODEL and REVIEW_EFFORT in .env override the defaults.
 import { openOwnerStore } from '../db/store.ts';
-import { addDays, lastWeekEnd } from '../metrics/stats.js';
+import { addDays, lastWeekEnd } from '../metrics/stats.ts';
 import { isValidDate, localDate, reviewStatus } from '../server/queries.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { prepareReview } from '../agent/review.js';

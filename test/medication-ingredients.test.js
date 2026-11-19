@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { dayMedications } from '../server/queries.js';
-import { medicationNames } from '../metrics/load.js';
+import { medicationNames } from '../metrics/load.ts';
 import { ownerStore } from './helpers.js';
 
 const TODAY = new Date(2026, 2, 9, 12, 0); // 2026-03-09

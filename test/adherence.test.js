@@ -4,9 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
-import { createCatalog } from '../metrics/catalog.js';
-import { createDictionary } from '../metrics/dictionary.js';
-import { workoutNumber, isFocusSession } from '../metrics/adherence.js';
+import { createCatalog } from '../metrics/catalog.ts';
+import { createDictionary } from '../metrics/dictionary.ts';
+import { workoutNumber, isFocusSession } from '../metrics/adherence.ts';
 import { ownerStore } from './helpers.js';
 
 test('workoutNumber: the number in logged and catalog workout names', () => {

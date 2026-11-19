@@ -1,7 +1,7 @@
 // The program catalog. A synthetic catalog only: real blueprints are copyrighted and never committed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createCatalog, parseRange } from '../metrics/catalog.js';
+import { createCatalog, parseRange } from '../metrics/catalog.ts';
 
 const PROGRAMS = ['Test Program', 'Other Program'];
 const CATALOG = {
@@ -63,7 +63,7 @@ test('catalog: invalid files are refused with every problem listed', () => {
 });
 
 test('catalog: timed holds, set midpoints, and per-phase prescribed work', async () => {
-  const { parseReps, midpoint, phaseStats } = await import('../metrics/catalog.js');
+  const { parseReps, midpoint, phaseStats } = await import('../metrics/catalog.ts');
   assert.deepEqual(parseReps('30-60s'), { min: 30, max: 60, unit: 'seconds' });
   assert.deepEqual(parseReps('8-12'), { min: 8, max: 12, unit: 'reps' });
   assert.equal(parseReps('max'), null);

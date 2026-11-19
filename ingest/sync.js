@@ -9,8 +9,8 @@
 //    last year during January); backfill reads every year tab.
 //  - Drinking log and weekly check-in are imported only on backfill: the UI owns them after
 //    that, and rows entered in the UI are never overwritten.
-import { dataChecks } from '../metrics/dataquality.js';
-import { loadDataCheckInput, userCatalog } from '../metrics/load.js';
+import { dataChecks } from '../metrics/dataquality.ts';
+import { loadDataCheckInput, userCatalog } from '../metrics/load.ts';
 import { createHash } from 'node:crypto';
 import {
   parseHealthMetrics,
@@ -22,9 +22,9 @@ import {
   parseLabSheet,
 } from './parsers.js';
 import { canonicalSetCounts, normalizeAll, unmappedNames } from './normalize.js';
-import { typoCandidates } from '../metrics/name-typos.js';
+import { typoCandidates } from '../metrics/name-typos.ts';
 import { assignForward, refreshPhases } from './program-blocks.js';
-import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.js';
+import { DICTIONARY_PATH, loadDictionary } from '../metrics/dictionary.ts';
 import { existsSync } from 'node:fs';
 import { localDate, zonedParts } from '../tools/time.ts';
 import { applyHealthDays, applyWorkouts } from './apply.js';
@@ -353,7 +353,7 @@ async function normalizeLog(db, dictionary, now, warnings) {
   return { sets, mappedPct };
 }
 
-/** How many exercise names look like typos (metrics/name-typos.js), for an info line; 0 without a valid dictionary. */
+/** How many exercise names look like typos (metrics/name-typos.ts), for an info line; 0 without a valid dictionary. */
 async function typoCount(db, dictionary) {
   let dict = dictionary;
   try {
