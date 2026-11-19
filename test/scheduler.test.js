@@ -1,11 +1,11 @@
-// The in-app scheduler (server/scheduler.js) and the weekly review job (jobs/review.js). Times are given as instants and
+// The in-app scheduler (server/scheduler.js) and the weekly review job (jobs/review.ts). Times are given as instants and
 // read in the owner's zone (America/New_York), so these pass whatever the host's zone is (CI runs UTC and New York).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.ts';
 import { createScheduler, lastRun, nextRun, parseSchedule, schedulesFromEnv, CATCH_UP_HOURS } from '../server/scheduler.js';
 import { jobRunsLookup as runsLookup } from '../server/admin-queries.js';
-import { weeklyReview } from '../jobs/review.js';
+import { weeklyReview } from '../jobs/review.ts';
 import { ownerStore } from './helpers.js';
 
 const NY = 'America/New_York';

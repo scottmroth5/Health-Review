@@ -6,8 +6,8 @@ import { VIEWS } from '../../metrics/volume.ts';
 import { loadDictionary } from '../../metrics/dictionary.ts';
 import { loadSubstitutions, loadUserPrograms } from '../../metrics/load.ts';
 import { GOALS, MAX_WEIGHT } from '../../metrics/advisor.ts';
-import { changeBlockDates, confirmBlocks, currentProgram, endBlock, listBlocks, refreshPhases, ReviewError, startBlock } from '../../ingest/program-blocks.js';
-import { ProgramError, SOURCES, deleteProgram, exportPrograms, importPrograms, saveProgram } from '../../ingest/user-programs.js';
+import { changeBlockDates, confirmBlocks, currentProgram, endBlock, listBlocks, refreshPhases, ReviewError, startBlock } from '../../ingest/program-blocks.ts';
+import { ProgramError, SOURCES, deleteProgram, exportPrograms, importPrograms, saveProgram } from '../../ingest/user-programs.ts';
 import { MAX_PDF_BYTES, extractProgram, isPdf } from '../../agent/extract-program.js';
 import { askAdvisor, clearChat, deleteChatNote, listChat, MAX_NOTE_CHARS } from '../../agent/advisor-chat.js';
 import { OWNER_ID } from '../../db/users.ts';
@@ -110,7 +110,7 @@ export async function register(app, ctx) {
   app.delete('/api/advisor/chat', { schema: { summary: 'Clear the whole thread', response: { 200: anyObject } } },
     async () => ({ deleted: await clearChat(db) }));
 
-  // ---- a user's own programs (multi-user, phase 5; ingest/user-programs.js): built here, imported as JSON, or drafted
+  // ---- a user's own programs (multi-user, phase 5; ingest/user-programs.ts): built here, imported as JSON, or drafted
   // by Claude from a PDF (never stored). The shared catalog (the owner's MAPS) shows by name only, never its contents.
   const programsView = async (req) => {
     const own = await loadUserPrograms(db);
@@ -194,7 +194,7 @@ export async function register(app, ctx) {
       await refreshPhases(db, await programCatalog(req));
       return { blocks: await listBlocks(db) };
     });
-  // End program and Start program on the Training tab's Current program card (ingest/program-blocks.js endBlock,
+  // End program and Start program on the Training tab's Current program card (ingest/program-blocks.ts endBlock,
   // startBlock). Either answers the current program and the block list after the change.
   const blockDate = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
   const blockChange = async (req, reply, change) => {

@@ -1,4 +1,4 @@
-// The monthly backup restore test (tools/backup/restore-check.ts, jobs/restore-check.js). Synthetic data; Google Drive is
+// The monthly backup restore test (tools/backup/restore-check.ts, jobs/restore-check.ts). Synthetic data; Google Drive is
 // faked, nothing touches the network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +9,7 @@ import { openOwnerStore } from '../db/store.ts';
 import { backupName } from '../tools/backup/run.ts';
 import { encrypt, pack } from '../tools/backup/crypto.ts';
 import { restoreTest } from '../tools/backup/restore-check.ts';
-import { restoreTestJob } from '../jobs/restore-check.js';
+import { restoreTestJob } from '../jobs/restore-check.ts';
 import { dataCheckWarnings } from '../server/queries.js';
 
 const PASS = 'correct horse battery staple';

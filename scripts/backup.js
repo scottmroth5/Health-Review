@@ -1,13 +1,13 @@
 // Encrypted backup of data/health.db and the MAPS catalog (data/maps/programs.json), uploaded to the
 // "Health-Review backups" folder in Google Drive, keeping 7 nightly, 3 weekly and 1 monthly copies.
 // Prints the file name, size and counts only; never contents or the passphrase. The same job runs in the server on
-// SCHEDULE_BACKUP (jobs/backup.js).
+// SCHEDULE_BACKUP (jobs/backup.ts).
 //   npm run backup                          back up now and upload
 //   npm run backup -- --to E:\HealthBackups  write the encrypted file to a folder (e.g. a USB drive), no upload
 //   npm run backup -- --check-passphrase    check HEALTH_BACKUP_PASSPHRASE in .env, then stop
 import { openOwnerStore } from '../db/store.ts';
 import { checkPassphrase } from '../tools/backup/crypto.ts';
-import { backupJob } from '../jobs/backup.js';
+import { backupJob } from '../jobs/backup.ts';
 
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };
 

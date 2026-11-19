@@ -6,7 +6,7 @@ import { ownerTz, zonedParts, localDate, localStamp, DEFAULT_TZ } from '../tools
 import { lastWeekEnd } from '../metrics/stats.ts';
 import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
-import { parseWorkoutJson, localStamp as fileStamp } from '../ingest/parsers.js';
+import { parseWorkoutJson, localStamp as fileStamp } from '../ingest/parsers.ts';
 import { partialDays } from '../metrics/dataquality.ts';
 import { ownerStore } from './helpers.js';
 

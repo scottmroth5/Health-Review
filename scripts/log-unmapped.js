@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { openOwnerStore } from '../db/store.ts';
-import { canonicalSetCounts, unmappedNames } from '../ingest/normalize.js';
+import { canonicalSetCounts, unmappedNames } from '../ingest/normalize.ts';
 import { typoCandidates } from '../metrics/name-typos.ts';
 import { DICTIONARY_PATH, createDictionary, loadDictionary } from '../metrics/dictionary.ts';
 import { applySuggestions, suggestMappings, SUGGEST_MODEL } from '../agent/suggest-exercises.js';

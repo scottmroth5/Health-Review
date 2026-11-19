@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { reviewStatus } from '../server/queries.js';
-import { withArchive } from '../jobs/review.js';
+import { withArchive } from '../jobs/review.ts';
 import { addDays } from '../metrics/stats.ts';
 import { OWNER_ID } from '../db/users.ts';
 import { ownerStore } from './helpers.js';

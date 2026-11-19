@@ -6,37 +6,45 @@
 import { randomUUID } from 'node:crypto';
 import { programProblems } from '../metrics/catalog.ts';
 import { loadUserPrograms } from '../metrics/load.ts';
-import { detect, writeDetected, refreshPhases } from './program-blocks.js';
+import { detect, writeDetected, refreshPhases } from './program-blocks.ts';
+import type { AfterChangeContext } from './app-workouts.ts';
+import type { Program } from '../metrics/catalog.ts';
+import type { Row } from '../metrics/stats.ts';
+import type { UserDb } from './types.ts';
+
+/** today, the user's catalog (read after the change) and the clock. */
+type Change = { today: string, catalog: AfterChangeContext['catalog'], now?: Date };
 
 export const SOURCES = ['manual', 'import', 'pdf'];
 const MAX_MATCH = 200;
 export class ProgramError extends Error {
-  constructor(message, problems = []) {
+  declare problems: string[];
+  constructor(message: string, problems: string[] = []) {
     super(message);
     this.problems = problems;
   }
 }
 
 /** The fields a stored program keeps (anything else in a submitted program is dropped). */
-function clean(p) {
-  const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o?.[k] !== undefined && o[k] !== null && o[k] !== '').map((k) => [k, o[k]]));
+function clean(p: any): Program {
+  const pick = (o: any, keys: string[]): Record<string, any> => Object.fromEntries(keys.filter((k) => o?.[k] !== undefined && o[k] !== null && o[k] !== '').map((k) => [k, o[k]]));
   const profile = pick(p.profile, ['focus', 'conditioning', 'mobility', 'extra_minutes_per_week', 'standalone']);
   return {
     name: String(p.name ?? '').trim(),
     weeks: p.weeks,
     ...(Object.keys(profile).length ? { profile } : {}),
-    phases: (p.phases ?? []).map((ph) => ({
+    phases: (p.phases ?? []).map((ph: any) => ({
       ...pick(ph, ['name', 'weeks', 'workouts_per_week', 'sets', 'reps', 'rest', 'special_weeks']),
-      workouts: (ph.workouts ?? []).map((wo) => ({
+      workouts: (ph.workouts ?? []).map((wo: any) => ({
         name: wo.name,
-        exercises: (wo.exercises ?? []).map((ex) => pick(ex, ['name', 'sets', 'reps', 'rest', 'notes'])),
+        exercises: (wo.exercises ?? []).map((ex: any) => pick(ex, ['name', 'sets', 'reps', 'rest', 'notes'])),
       })),
     })),
   };
 }
 
 /** Checks a program and its match words; throws a ProgramError listing every problem. Returns the cleaned program. */
-export function checkProgram(program, match) {
+export function checkProgram(program: unknown, match: unknown): Program {
   const p = clean(program ?? {});
   const problems = programProblems(p);
   if (String(match ?? '').length > MAX_MATCH) problems.push(`match words: at most ${MAX_MATCH} characters`);
@@ -45,17 +53,18 @@ export function checkProgram(program, match) {
 }
 
 /** After any change: detect blocks again (detected ones only) and refresh phases with the user's catalog. */
-async function refresh(db, today, catalog, now) {
+async function refresh(db: UserDb, today: string, catalog: Change['catalog'], now: Date) {
   await writeDetected(db, await detect(db, today), { now });
   await refreshPhases(db, await catalog());
 }
 
 /**
  * Saves a new program or replaces one (by id). Names are unique per user.
- * @param {{ id?: string, program: object, match?: string, source?: string, today: string, catalog: () => object|null, now?: Date }} o
- * @returns the stored row
+ * Returns the stored row.
  */
-export async function saveProgram(db, { id, program, match, source = 'manual', today, catalog, now = new Date() }) {
+export async function saveProgram(db: UserDb, { id, program, match, source = 'manual', today, catalog, now = new Date() }: Change & {
+  id?: string, program: unknown, match?: string, source?: string,
+}): Promise<Row | undefined> {
   const p = checkProgram(program, match);
   const words = String(match ?? '').trim() || p.name;
   const stamp = now.toISOString();
@@ -77,7 +86,7 @@ export async function saveProgram(db, { id, program, match, source = 'manual', t
 }
 
 /** Deletes one program; returns whether it existed. */
-export async function deleteProgram(db, id, { today, catalog, now = new Date() }) {
+export async function deleteProgram(db: UserDb, id: string, { today, catalog, now = new Date() }: Change): Promise<boolean> {
   let gone = false;
   await db.tx(async () => {
     gone = (await db.prepare('DELETE FROM user_programs WHERE user_id = @uid AND id = ?').run(id)).changes > 0;
@@ -89,15 +98,15 @@ export async function deleteProgram(db, id, { today, catalog, now = new Date() }
 /**
  * Imports one program or a catalog ({ version: 1, programs: [...] }), all or nothing: every program must be valid and
  * none may share a name with another in the file or with one the user already has. Each may carry match words (match).
- * @returns {number} programs added
+ * Returns the number of programs added.
  */
-export async function importPrograms(db, json, { today, catalog, now = new Date() }) {
-  const list = Array.isArray(json?.programs) ? json.programs : json && typeof json === 'object' && json.name ? [json] : null;
+export async function importPrograms(db: UserDb, json: any, { today, catalog, now = new Date() }: Change): Promise<number> {
+  const list: any[] | null = Array.isArray(json?.programs) ? json.programs : json && typeof json === 'object' && json.name ? [json] : null;
   if (!list?.length) throw new ProgramError('Expected a program, or a catalog with a programs list');
   if (list.length > 50) throw new ProgramError('At most 50 programs at a time');
-  const problems = [];
-  const have = new Set((await loadUserPrograms(db)).map((r) => r.name));
-  const seen = new Set();
+  const problems: string[] = [];
+  const have = new Set((await loadUserPrograms(db)).map((r): string => r.name));
+  const seen = new Set<string>();
   const checked = list.map((raw, i) => {
     try {
       const p = checkProgram(raw, raw?.match);
@@ -116,13 +125,14 @@ export async function importPrograms(db, json, { today, catalog, now = new Date(
   const insert = db.prepare(`INSERT INTO user_programs (user_id, id, name, match, program, source, created_at, updated_at)
     VALUES (@uid, ?, ?, ?, ?, 'import', ?, ?)`);
   await db.tx(async () => {
-    for (const { p, match } of checked) await insert.run(randomUUID(), p.name, match, JSON.stringify(p), stamp, stamp);
+    // Every entry is checked by now: a failed one threw above.
+    for (const { p, match } of checked as { p: Program, match: string }[]) await insert.run(randomUUID(), p.name, match, JSON.stringify(p), stamp, stamp);
     await refresh(db, today, catalog, now);
   });
   return checked.length;
 }
 
 /** The user's own programs as a catalog file (with their match words), never anyone else's. */
-export async function exportPrograms(db) {
+export async function exportPrograms(db: UserDb) {
   return { version: 1, programs: (await loadUserPrograms(db)).map((r) => ({ ...r.program, match: r.match })) };
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.ts';
 import { buildApp } from '../server/app.js';
 import { assertSafeBinding } from '../server/auth.js';
-import { normalizeAll } from '../ingest/normalize.js';
+import { normalizeAll } from '../ingest/normalize.ts';
 import { loadDictionary } from '../metrics/dictionary.ts';
 import { ownerStore } from './helpers.js';
 import { isUniqueViolation } from '../db/dialect.ts';

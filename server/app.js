@@ -166,7 +166,7 @@ export async function buildApp({ store, services = {}, publicDir, authMode = 'no
     await setGoogleToken(store.db, u.id, seal(refreshToken, u.id, keyBox ?? boxKey()));
     log.info('[users] Google Sheets connected');
   };
-  // "Create my Workout Log": a new sheet in their Drive (services.createWorkoutSheet, ingest/create-sheet.js), saved as
+  // "Create my Workout Log": a new sheet in their Drive (services.createWorkoutSheet, ingest/create-sheet.ts), saved as
   // their Workout Log. Never the owner, whose Workout Log comes from the server's settings.
   const createSheet = async ({ email }) => {
     const u = await userByEmail(store.db, email);

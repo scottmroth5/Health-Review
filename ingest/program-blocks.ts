@@ -10,10 +10,16 @@ import { programOf } from '../metrics/programs.ts';
 import { performed } from '../metrics/strength.ts';
 import { daysBetween } from '../metrics/stats.ts';
 import { OWNER_ID } from '../db/users.ts';
+import type { Catalog } from '../metrics/catalog.ts';
+import type { Row } from '../metrics/stats.ts';
+import type { UserDb } from './types.ts';
+
+/** today and the clock, for the review commands. */
+type When = { today: string, now?: Date };
 
 // UUID v5 (RFC 9562) in a fixed namespace for this app's sessions.
 const SESSION_NAMESPACE = 'a3c1f6e2-5b8d-4f0a-9c7e-2d4b6a8e0f13';
-export function uuidV5(name, namespace = SESSION_NAMESPACE) {
+export function uuidV5(name: string, namespace = SESSION_NAMESPACE): string {
   const ns = Buffer.from(namespace.replace(/-/g, ''), 'hex');
   const bytes = createHash('sha1').update(Buffer.concat([ns, Buffer.from(name, 'utf8')])).digest().subarray(0, 16);
   bytes[6] = (bytes[6] & 0x0f) | 0x50;
@@ -23,23 +29,24 @@ export function uuidV5(name, namespace = SESSION_NAMESPACE) {
 }
 // The owner's ids stay as they were before users (session:date); other users' include their id, so two people lifting
 // on the same day never share a session row.
-export const sessionId = (date, uid = OWNER_ID) => uuidV5(uid === OWNER_ID ? `session:${date}` : `session:${uid}:${date}`);
+// An unscoped call (uid undefined) takes the default, the owner, as before.
+export const sessionId = (date: string, uid: string | undefined = OWNER_ID): string => uuidV5(uid === OWNER_ID ? `session:${date}` : `session:${uid}:${date}`);
 
 /** Every set row up to today, and the days with performed sets. */
-async function history(db, today) {
+async function history(db: UserDb, today: string): Promise<{ sets: Row[], liftingDates: string[] }> {
   const sets = await loadStrengthSets(db, '0000-01-01', today);
-  return { sets, liftingDates: [...new Set(sets.filter(performed).map((s) => s.date))].sort() };
+  return { sets, liftingDates: [...new Set(sets.filter(performed).map((s): string => s.date))].sort() };
 }
 
 /** Detected blocks for the lifting days not already held by a confirmed block or a forward assignment. */
-export async function detect(db, today) {
+export async function detect(db: UserDb, today: string) {
   const { sets, liftingDates } = await history(db, today);
-  const held = new Set((await db.prepare("SELECT date FROM log_sessions WHERE user_id = @uid AND source IN ('confirmed', 'forward')").all()).map((r) => r.date));
+  const held = new Set((await db.prepare("SELECT date FROM log_sessions WHERE user_id = @uid AND source IN ('confirmed', 'forward')").all()).map((r: Row): string => r.date));
   return detectBlocks(sets, liftingDates.filter((d) => !held.has(d)), today, await programMatchers(db));
 }
 
 /** Replaces previously detected blocks and sessions with a new detection. Confirmed ones are untouched. */
-export async function writeDetected(db, detection, { now = new Date() } = {}) {
+export async function writeDetected(db: UserDb, detection: ReturnType<typeof detectBlocks>, { now = new Date() }: { now?: Date } = {}) {
   const stamp = now.toISOString();
   const insertBlock = db.prepare(`INSERT INTO program_blocks (user_id, id, program, phase, start_date, end_date, status, source, notes, created_at, updated_at)
     VALUES (@uid, ?, ?, NULL, ?, ?, ?, 'detected', ?, ?, ?)`);
@@ -58,11 +65,11 @@ export async function writeDetected(db, detection, { now = new Date() } = {}) {
 }
 
 /** Sessions by status, and lifting days with no session row yet. Counts only. */
-export async function sessionCoverage(db, today) {
+export async function sessionCoverage(db: UserDb, today: string) {
   const { liftingDates } = await history(db, today);
   const rows = await db.prepare(`SELECT s.date, s.assignment, s.source, b.source AS block_source FROM log_sessions s
     LEFT JOIN program_blocks b ON b.id = s.block_id AND b.user_id = s.user_id WHERE s.user_id = @uid`).all();
-  const byDate = new Map(rows.map((r) => [r.date, r]));
+  const byDate = new Map<string, Row>(rows.map((r: Row) => [r.date, r]));
   const out = { liftingDays: liftingDates.length, confirmed: 0, unassigned: 0, detected: 0, missing: 0 };
   for (const d of liftingDates) {
     const r = byDate.get(d);
@@ -78,11 +85,11 @@ export async function sessionCoverage(db, today) {
  * New lifting days (no session row yet) from the start of the in-progress confirmed block join it with its
  * program and week number, so future sessions never need detection. Without such a block nothing happens.
  */
-export async function assignForward(db, today, { now = new Date() } = {}) {
+export async function assignForward(db: UserDb, today: string, { now = new Date() }: { now?: Date } = {}): Promise<{ assigned: number, block: string | null }> {
   const block = await db.prepare(`SELECT * FROM program_blocks WHERE user_id = @uid AND source = 'confirmed' AND status = 'in_progress'
     ORDER BY start_date DESC LIMIT 1`).get();
   if (!block) return { assigned: 0, block: null };
-  const known = new Set((await db.prepare('SELECT date FROM log_sessions WHERE user_id = @uid AND date >= ?').all(block.start_date)).map((r) => r.date));
+  const known = new Set((await db.prepare('SELECT date FROM log_sessions WHERE user_id = @uid AND date >= ?').all(block.start_date)).map((r: Row): string => r.date));
   const insert = db.prepare(`INSERT INTO log_sessions (user_id, id, date, block_id, assignment, program, week, source, updated_at)
     VALUES (@uid, ?, ?, ?, 'block', ?, ?, 'forward', ?)`);
   const days = (await history(db, today)).liftingDates.filter((d) => d >= block.start_date && !known.has(d));
@@ -94,7 +101,7 @@ export async function assignForward(db, today, { now = new Date() } = {}) {
 // ---- phases and status from the program catalog ----
 
 // The block's Workout Log rows (date and workout name) from its start to a date.
-const blockRows = (db, block, to) => db.prepare('SELECT date, workout FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date, row_no')
+const blockRows = (db: UserDb, block: Row, to: string): Promise<Row[]> => db.prepare('SELECT date, workout FROM strength_exercises WHERE user_id = @uid AND date BETWEEN ? AND ? ORDER BY date, row_no')
   .all(block.start_date, to);
 
 /**
@@ -102,7 +109,7 @@ const blockRows = (db, block, to) => db.prepare('SELECT date, workout FROM stren
  * (the latest phase named on or before the day); the catalog's calendar is the fallback for days before any
  * named phase. NULL when neither knows.
  */
-export async function refreshPhases(db, catalog) {
+export async function refreshPhases(db: UserDb, catalog: Catalog | null | undefined) {
   const blocks = await db.prepare('SELECT id, program, start_date, end_date FROM program_blocks WHERE user_id = @uid').all();
   const setWeeks = db.prepare('UPDATE program_blocks SET program_weeks = ? WHERE user_id = @uid AND id = ?');
   const setPhase = db.prepare('UPDATE log_sessions SET phase = ? WHERE user_id = @uid AND id = ?');
@@ -112,7 +119,7 @@ export async function refreshPhases(db, catalog) {
       await setWeeks.run(catalog?.programWeeks(b.program) ?? null, b.id);
       const sessions = await db.prepare('SELECT id, date FROM log_sessions WHERE user_id = @uid AND block_id = ? ORDER BY date').all(b.id);
       if (!sessions.length) continue;
-      const logged = loggedPhases(await blockRows(db, b, sessions[sessions.length - 1].date));
+      const logged = loggedPhases((await blockRows(db, b, sessions[sessions.length - 1].date)) as { date: string, workout: string | null }[]);
       for (const s of sessions) await setPhase.run(phaseOnDay(b, logged, catalog, s.date), s.id);
     }
   });
@@ -123,16 +130,16 @@ export async function refreshPhases(db, catalog) {
  * week of the phase and of the program, deload or failure week, and the earliest and at-your-pace finish.
  * Facts only: status stays what detection or the owner set.
  */
-export async function blockStatus(db, block, today, catalog) {
+export async function blockStatus(db: UserDb, block: Row, today: string, catalog: Catalog | null | undefined) {
   const sessions = await db.prepare('SELECT COUNT(*) AS n, MAX(date) AS last FROM log_sessions WHERE user_id = @uid AND block_id = ?').get(block.id);
   const inProgress = block.status === 'in_progress';
   const asOf = inProgress ? today : (sessions.last ?? block.start_date);
   const rows = await blockRows(db, block, asOf);
-  const p = programProgress(block, rows, catalog, asOf);
+  const p = programProgress(block as { program: string, start_date: string }, rows as { date: string, workout: string | null }[], catalog, asOf);
   // The last day whose Workout Log name belongs to this program: the End form's default, since days after it may
   // already be something else (they join the block until it is ended).
   const matchers = await programMatchers(db);
-  const named = rows.filter((r) => programOf(r.workout, matchers) === block.program).map((r) => r.date);
+  const named: string[] = rows.filter((r) => programOf(r.workout, matchers) === block.program).map((r) => r.date);
   return {
     in_catalog: Boolean(catalog?.find(block.program)),
     last_named_session: named.length ? named[named.length - 1] : null,
@@ -162,7 +169,7 @@ export async function blockStatus(db, block, today, catalog) {
 }
 
 /** The confirmed in-progress block's status, or null. */
-export async function currentProgram(db, today, catalog) {
+export async function currentProgram(db: UserDb, today: string, catalog: Catalog | null | undefined) {
   const block = await db.prepare(`SELECT * FROM program_blocks WHERE user_id = @uid AND source = 'confirmed' AND status = 'in_progress'
     ORDER BY start_date DESC LIMIT 1`).get();
   return block ? await blockStatus(db, block, today, catalog) : null;
@@ -170,11 +177,11 @@ export async function currentProgram(db, today, catalog) {
 
 // ---- review: list, confirm, edit, merge, split, unassign ----
 const STATUSES = ['completed', 'abandoned', 'in_progress'];
-const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d ?? '') && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+const isDate = (d: unknown): boolean => /^\d{4}-\d{2}-\d{2}$/.test((d ?? '') as string) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
 export class ReviewError extends Error {}
 
 /** A block by full id or a unique id prefix. */
-export async function findBlock(db, ref) {
+export async function findBlock(db: UserDb, ref: unknown): Promise<Row> {
   if (!ref) throw new ReviewError('Give a block id (the first characters are enough)');
   const rows = await db.prepare('SELECT * FROM program_blocks WHERE user_id = @uid AND id LIKE ?').all(`${String(ref).toLowerCase()}%`);
   if (rows.length === 0) throw new ReviewError(`No block ${ref}`);
@@ -182,13 +189,13 @@ export async function findBlock(db, ref) {
   return rows[0];
 }
 
-export async function listBlocks(db, { unconfirmed = false } = {}) {
+export async function listBlocks(db: UserDb, { unconfirmed = false }: { unconfirmed?: boolean } = {}): Promise<Row[]> {
   return await db.prepare(`SELECT b.*, COUNT(s.id) AS sessions, MAX(s.date) AS last_session FROM program_blocks b
     LEFT JOIN log_sessions s ON s.block_id = b.id AND s.user_id = b.user_id WHERE b.user_id = @uid ${unconfirmed ? "AND b.source = 'detected'" : ''}
     GROUP BY b.id ORDER BY b.start_date`).all();
 }
 
-async function assertNoOverlap(db, block) {
+async function assertNoOverlap(db: UserDb, block: Row) {
   const other = await db.prepare(`SELECT id, program, start_date FROM program_blocks WHERE user_id = @uid AND source = 'confirmed' AND id <> ?
     AND start_date <= ? AND COALESCE(end_date, '9999-12-31') >= ?`).get(block.id, block.end_date ?? '9999-12-31', block.start_date);
   if (other) throw new ReviewError(`Overlaps confirmed block ${other.id.slice(0, 8)} (${other.program} from ${other.start_date}). Change its dates on the Programs tab.`);
@@ -198,7 +205,7 @@ async function assertNoOverlap(db, block) {
  * Makes the sessions agree with a block: lifting days in its date range join it (except days held by
  * another confirmed block or confirmed as unassigned), and its days outside the range become unassigned.
  */
-async function reassign(db, blockId, today, stamp) {
+async function reassign(db: UserDb, blockId: string, today: string, stamp: string) {
   const b = await db.prepare('SELECT * FROM program_blocks WHERE user_id = @uid AND id = ?').get(blockId);
   const end = b.end_date ?? today;
   const source = b.source === 'confirmed' ? 'confirmed' : 'detected';
@@ -207,7 +214,7 @@ async function reassign(db, blockId, today, stamp) {
     ON CONFLICT (user_id, date) DO UPDATE SET block_id = excluded.block_id, assignment = 'block', program = excluded.program,
       week = excluded.week, source = excluded.source, updated_at = excluded.updated_at`);
   const held = new Set((await db.prepare(`SELECT s.date FROM log_sessions s LEFT JOIN program_blocks o ON o.id = s.block_id AND o.user_id = s.user_id
-    WHERE s.user_id = @uid AND ((o.source = 'confirmed' AND o.id <> ?) OR (s.assignment = 'unassigned' AND s.source = 'confirmed'))`).all(blockId)).map((r) => r.date));
+    WHERE s.user_id = @uid AND ((o.source = 'confirmed' AND o.id <> ?) OR (s.assignment = 'unassigned' AND s.source = 'confirmed'))`).all(blockId)).map((r: Row): string => r.date));
   for (const date of (await history(db, today)).liftingDates) {
     if (date < b.start_date || date > end || held.has(date)) continue;
     await upsert.run(sessionId(date, db.uid), date, blockId, b.program, weekOf(b.start_date, date), source, stamp);
@@ -217,9 +224,9 @@ async function reassign(db, blockId, today, stamp) {
 }
 
 /** Confirms one block, or every detected block with 'all-detected'. Returns the number confirmed. */
-export async function confirmBlocks(db, ref, { today, now = new Date() }) {
+export async function confirmBlocks(db: UserDb, ref: unknown, { today, now = new Date() }: When): Promise<number> {
   const stamp = now.toISOString();
-  const blocks = ref === 'all-detected'
+  const blocks: Row[] = ref === 'all-detected'
     ? await db.prepare("SELECT * FROM program_blocks WHERE user_id = @uid AND source = 'detected' ORDER BY start_date").all()
     : [await findBlock(db, ref)];
   await db.tx(async () => {
@@ -233,9 +240,9 @@ export async function confirmBlocks(db, ref, { today, now = new Date() }) {
 }
 
 /** Changes a block's fields; date changes move sessions in or out. */
-export async function editBlock(db, ref, changes, { today, now = new Date() }) {
+export async function editBlock(db: UserDb, ref: unknown, changes: Record<string, any>, { today, now = new Date() }: When): Promise<Row> {
   const b = await findBlock(db, ref);
-  const next = { ...b };
+  const next: Row = { ...b };
   for (const k of ['program', 'phase', 'notes']) if (changes[k] !== undefined) next[k] = changes[k] === '' ? null : changes[k];
   if (changes.start !== undefined) next.start_date = changes.start;
   if (changes.end !== undefined) next.end_date = changes.end === '' ? null : changes.end;
@@ -263,7 +270,7 @@ const OUTCOMES = ['completed', 'abandoned'];
  * Ends the confirmed in-progress block on a day (its last), as completed or abandoned (stopped early). Lifting days
  * after it leave the block. The app's End program.
  */
-export async function endBlock(db, ref, { end, outcome }, { today, now = new Date() }) {
+export async function endBlock(db: UserDb, ref: unknown, { end, outcome }: { end: string, outcome: string }, { today, now = new Date() }: When) {
   const b = await findBlock(db, ref);
   if (b.source !== 'confirmed' || b.status !== 'in_progress') throw new ReviewError('Only the program in progress can be ended');
   if (!OUTCOMES.includes(outcome)) throw new ReviewError(`Outcome must be one of ${OUTCOMES.join(', ')}`);
@@ -276,11 +283,11 @@ export async function endBlock(db, ref, { end, outcome }, { today, now = new Dat
  * Changes a block's start, last day or status from the app (Programs tab, Edit): neither date after today; an
  * in-progress block has no last day. Validation, the overlap check and moving sessions are editBlock's.
  */
-export async function changeBlockDates(db, ref, { start, end, status }, { today, now = new Date() }) {
+export async function changeBlockDates(db: UserDb, ref: unknown, { start, end, status }: { start?: string, end?: string | null, status?: string }, { today, now = new Date() }: When) {
   if (start !== undefined && (!isDate(start) || start > today)) throw new ReviewError(isDate(start) ? 'The start can not be after today' : `Not a date: ${start}`);
   if (end !== undefined && end !== null && (!isDate(end) || end > today)) throw new ReviewError(isDate(end) ? 'The last day can not be after today' : `Not a date: ${end}`);
   if (end === null && status !== undefined && status !== 'in_progress') throw new ReviewError('Give the last day, or mark it in progress');
-  const changes = {};
+  const changes: Record<string, any> = {};
   if (start !== undefined) changes.start = start;
   if (end !== undefined) changes.end = end ?? '';
   if (status !== undefined) changes.status = status;
@@ -292,7 +299,7 @@ export async function changeBlockDates(db, ref, { start, end, status }, { today,
  * and later ones follow (assignForward). Any name: one outside the catalog has no phases or finish. The app's Start
  * program; refused while another program is in progress.
  */
-export async function startBlock(db, { program, start }, { today, now = new Date() }) {
+export async function startBlock(db: UserDb, { program, start }: { program: unknown, start: string }, { today, now = new Date() }: When): Promise<Row> {
   const name = String(program ?? '').trim();
   if (!name) throw new ReviewError('Give the program a name');
   if (name.length > 80) throw new ReviewError('The name is longer than 80 characters');
@@ -314,7 +321,7 @@ export async function startBlock(db, { program, start }, { today, now = new Date
 }
 
 /** Merges the second block into the first: the earlier start, the later end, and all sessions. */
-export async function mergeBlocks(db, refA, refB, { today, now = new Date() }) {
+export async function mergeBlocks(db: UserDb, refA: unknown, refB: unknown, { today, now = new Date() }: When): Promise<Row> {
   const a = await findBlock(db, refA);
   const b = await findBlock(db, refB);
   if (a.id === b.id) throw new ReviewError('Choose two different blocks');
@@ -334,7 +341,7 @@ export async function mergeBlocks(db, refA, refB, { today, now = new Date() }) {
 }
 
 /** Splits a block at a date: sessions from that date on move to a new block of the same program and source. */
-export async function splitBlock(db, ref, date, { today, now = new Date() }) {
+export async function splitBlock(db: UserDb, ref: unknown, date: string, { today, now = new Date() }: When): Promise<string> {
   const b = await findBlock(db, ref);
   if (!isDate(date)) throw new ReviewError(`Not a date: ${date}`);
   const before = (await db.prepare('SELECT MAX(date) AS d FROM log_sessions WHERE user_id = @uid AND block_id = ? AND date < ?').get(b.id, date)).d;
@@ -355,7 +362,7 @@ export async function splitBlock(db, ref, date, { today, now = new Date() }) {
 }
 
 /** Marks lifting days in a date range as confirmed unassigned (no block), creating session rows as needed. */
-export async function unassignDays(db, from, to = from, { today, now = new Date() }) {
+export async function unassignDays(db: UserDb, from: string, to: string = from, { today, now = new Date() }: When): Promise<number> {
   if (!isDate(from) || !isDate(to) || to < from) throw new ReviewError('Give a date, or a from and a to date');
   const stamp = now.toISOString();
   const upsert = db.prepare(`INSERT INTO log_sessions (user_id, id, date, block_id, assignment, program, week, source, updated_at)

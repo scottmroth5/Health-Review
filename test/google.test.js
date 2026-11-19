@@ -30,7 +30,7 @@ test('client credentials and refresh token come from env first, then files', () 
 });
 
 test('export files: Health Auto Export names map to their kind; anything else is ignored', async () => {
-  const { exportKind } = await import('../ingest/sheets.js');
+  const { exportKind } = await import('../ingest/sheets.ts');
   assert.equal(exportKind('HealthAutoExport-2026-03-02 Apple Health Metrics-HealthMetrics-2026-03-02'), 'health');
   assert.equal(exportKind('HealthAutoExport-2026-03-02.json'), 'workouts'); // JSON workouts, one file a day
   assert.equal(exportKind('Workout session metrics-2026-03-02'), null); // the Sheets-format workout export, retired
@@ -38,7 +38,7 @@ test('export files: Health Auto Export names map to their kind; anything else is
 });
 
 test('reads are paced: each waits until the gap since the one before has passed, in call order', async () => {
-  const { createPacer } = await import('../ingest/sheets.js');
+  const { createPacer } = await import('../ingest/sheets.ts');
   let t = 1000;
   const waits = [];
   const pace = createPacer(1100, { now: () => t, sleep: async (ms) => { waits.push(ms); t += ms; } });

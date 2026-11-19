@@ -8,8 +8,8 @@ import { buildApp } from '../server/app.js';
 import { authSettings, SHEETS_CALLBACK_PATH, SHEETS_SCOPE, DRIVE_FILE_SCOPE } from '../server/auth.js';
 import { boxKey } from '../tools/secret-box.ts';
 import { OWNER_ID } from '../db/users.ts';
-import { createWorkoutSheet, workoutSheetBody, WORKOUT_LOG_HEADER, WORKOUT_LOG_TITLE } from '../ingest/create-sheet.js';
-import { parseWorkoutLogTab } from '../ingest/parsers.js';
+import { createWorkoutSheet, workoutSheetBody, WORKOUT_LOG_HEADER, WORKOUT_LOG_TITLE } from '../ingest/create-sheet.ts';
+import { parseWorkoutLogTab } from '../ingest/parsers.ts';
 import { openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';
@@ -115,7 +115,7 @@ test('Create my Workout Log: refused when drive.file is not granted, and never f
 });
 
 test('each new year: a created sheet gets its year tab with the column row; a present tab is left alone', async () => {
-  const { ensureYearTab } = await import('../ingest/create-sheet.js');
+  const { ensureYearTab } = await import('../ingest/create-sheet.ts');
   const calls = [];
   const sheet = (titles) => ({ spreadsheets: {
     get: async () => ({ data: { sheets: titles.map((title, i) => ({ properties: { sheetId: i === 0 ? 0 : 2027, title } })) } }),
@@ -132,7 +132,7 @@ test('each new year: a created sheet gets its year tab with the column row; a pr
 });
 
 test('sync: the year tab is checked first for a created sheet only; a failure is a warning, the sync goes on', async () => {
-  const { syncJob } = await import('../jobs/sync.js');
+  const { syncJob } = await import('../jobs/sync.ts');
   const { scopeStore } = await import('../db/scope.ts');
   const store = await openTestStore();
   await store.db.prepare("INSERT INTO users (id, email, role, status, created_at) VALUES ('lee', 'lee@example.com', 'user', 'approved', 'x')").run();

@@ -10,7 +10,7 @@ import { buildApp } from '../server/app.js';
 import { authSettings, SHEETS_CALLBACK_PATH } from '../server/auth.js';
 import { boxKey, open } from '../tools/secret-box.ts';
 import { OWNER_ID } from '../db/users.ts';
-import { syncJob } from '../jobs/sync.js';
+import { syncJob } from '../jobs/sync.ts';
 import { openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';

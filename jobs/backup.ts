@@ -11,29 +11,29 @@ import { getGoogleAuth } from '../tools/google/auth.ts';
 import { dataPath } from '../tools/paths.ts';
 import { localDate } from '../tools/time.ts';
 import { startUserRun } from '../db/users.ts';
+import type { DriveClient } from '../tools/backup/drive.ts';
+import type { UserStore } from '../ingest/types.ts';
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} };
 
 /**
- * @param {object} o
- * @param {{ db: object }} o.store
- * @param {string} [o.passphrase]
- * @param {string} [o.toDir]  write the encrypted file to this folder instead of uploading
- * @param {object} [o.drive]  a Drive client (tests pass a fake); default: Google Drive with the saved sign-in
- * @param {string|null} [o.copiesDir]  the pre-migration copies to age out after a backup (default: the database's; null: none)
- * @param {string} [o.pgUrl]  back up this PostgreSQL database (the backup role's URL) instead of the store's SQLite file
+ * toDir: write the encrypted file to this folder instead of uploading. drive: a Drive client (tests pass a fake); default:
+ * Google Drive with the saved sign-in. copiesDir: the pre-migration copies to age out after a backup (default: the
+ * database's; null: none). pgUrl: back up this PostgreSQL database (the backup role's URL) instead of the store's SQLite file.
  */
-export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, toDir, drive, date = localDate(), copiesDir = migrationCopiesDir(), pgUrl }) {
+export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, toDir, drive, date = localDate(), copiesDir = migrationCopiesDir(), pgUrl }: {
+  store: UserStore, passphrase?: string, toDir?: string, drive?: DriveClient, date?: string, copiesDir?: string | null, pgUrl?: string,
+}) {
   checkPassphrase(passphrase);
   const run = await startUserRun(store, 'backup', { to: toDir ? 'folder' : 'google-drive' }, quiet);
   try {
     const r = await runBackup({
       // SQLite: the guarded sync handle (better-sqlite3's backup API), which throws rather than copy another request's
       // open transaction. PostgreSQL: pg_dump's own consistent snapshot.
-      ...(pgUrl ? { pgUrl } : { db: store.syncDb }),
+      ...(pgUrl ? { pgUrl } : { db: store.syncDb as NonNullable<UserStore['syncDb']> }), // SQLite stores always have it
       passphrase,
       extras: [{ name: 'programs.json', path: dataPath('maps', 'programs.json') }],
-      drive: toDir ? null : drive ?? createDriveClient(getGoogleAuth()),
+      drive: (toDir ? null : drive ?? createDriveClient(getGoogleAuth())) as DriveClient | undefined, // null with toDir, as before
       toDir,
       date,
     });
@@ -42,7 +42,7 @@ export async function backupJob({ store, passphrase = process.env.HEALTH_BACKUP_
     const prunedCopies = copiesDir && existsSync(copiesDir) ? pruneMigrationCopies(copiesDir).length : 0;
     await run.finish('ok', { file: r.name, bytes: r.bytes, contents: r.files, ...(toDir ? { savedTo: r.savedTo } : { kept: r.kept, deleted: r.deleted }), prunedCopies });
     return r;
-  } catch (err) {
+  } catch (err: any) {
     await run.finish('error', { error: err.message });
     throw err;
   }

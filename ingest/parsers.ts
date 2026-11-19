@@ -1,40 +1,63 @@
 // Parsers from raw sheet values (UNFORMATTED_VALUE, dates as serial numbers) to table records.
 // Each takes { header, rows, firstRowNumber, tab } and returns { records, warnings }.
 // Warnings carry sheet row numbers and a kind, never cell text, so they are safe to print.
-import { serialToDate, serialToDateTime, serialToSeconds, parseUsDate } from './serial.js';
+import { serialToDate, serialToDateTime, serialToSeconds, parseUsDate } from './serial.ts';
 import { localStamp as ownerStamp } from '../tools/time.ts';
 
-const isEmpty = (v) => v === '' || v === null || v === undefined;
-const isBlankRow = (row) => !row?.some((c) => !isEmpty(c));
-const cleanHeader = (h) => String(h ?? '').trim();
+/** A tab's values as the Sheets client reads them (ingest/sheets.ts SheetData), with the tab's name. */
+export interface TabInput { header: any[], rows: any[][], firstRowNumber: number, tab?: string }
+/** A parser warning: the sheet row and a kind, never cell text. */
+export interface ParseWarning { source: string, tab?: string, row?: number, kind: string, detail?: string }
+/** A record for one table row: column name to value. */
+export type ParsedRecord = Record<string, any>;
+/** What parseWeight reads from a Weight N cell. */
+export interface WeightFields { weight_text: string | null, weight_lbs: number | null, per_hand: number, band: string | null, bodyweight: number }
+/** What parseSet reads from a Set N cell. */
+export interface SetFields { reps_text: string | null, reps: number | null, duration_sec: number | null, distance_yd: number | null }
+/** One set of a Workout Log exercise. */
+export type LogSet = { set_no: number } & WeightFields & SetFields;
+/** One Workout Log exercise row with its sets. */
+export interface LogExercise {
+  tab_year: number, row_no: number, date: string, workout: string | null, prime: string | null, exercise: string,
+  post: string | null, comment: string | null, sets: LogSet[],
+}
+/** Text in a Workout Log date column that is not a date (illness, vacation). */
+export interface LogNote { tab_year: number, row_no: number, date: string | null, text: string }
+/** One minute of a JSON workout's heart rate. */
+export interface HrSample { type: string, start: string, t: string, avg_bpm: number, min_bpm: number | null, max_bpm: number | null }
+type Warn = (kind: string, detail?: string) => unknown;
+
+const isEmpty = (v: unknown): v is '' | null | undefined => v === '' || v === null || v === undefined;
+const isBlankRow = (row: any[] | null | undefined): boolean => !row?.some((c) => !isEmpty(c));
+const cleanHeader = (h: unknown): string => String(h ?? '').trim();
 
 /** Number, numeric text, or null for an empty cell; undefined when the cell is not a number. */
-function toNumber(v) {
+function toNumber(v: unknown): number | null | undefined {
   if (isEmpty(v)) return null;
   if (typeof v === 'number') return v;
   const s = String(v).trim();
   return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : undefined;
 }
 
-const text = (v) => (isEmpty(v) ? null : String(v).trim() || null);
+const text = (v: unknown): string | null => (isEmpty(v) ? null : String(v).trim() || null);
 
 /**
  * Maps known headers to fields. Unknown non-empty headers become one warning each, so new
  * Health Auto Export columns are noticed rather than silently dropped.
  */
-function columnIndex(header, fields, source) {
+function columnIndex(header: any[], fields: Record<string, string>, source: string): { index: Record<string, number>, warnings: ParseWarning[] } {
   const names = header.map(cleanHeader);
-  const index = {};
+  const index: Record<string, number> = {};
   for (const [field, name] of Object.entries(fields)) index[field] = names.indexOf(name);
   const known = new Set(Object.values(fields));
   const warnings = names
     .filter((n) => n && !known.has(n))
-    .map((n) => ({ source, kind: 'unknown column', detail: n }));
+    .map((n): ParseWarning => ({ source, kind: 'unknown column', detail: n }));
   return { index, warnings };
 }
 
-function numericFields(row, index, fields, warn) {
-  const out = {};
+function numericFields(row: any[], index: Record<string, number>, fields: string[], warn: Warn): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
   for (const field of fields) {
     const n = index[field] >= 0 ? toNumber(row[index[field]]) : null;
     if (n === undefined) {
@@ -46,7 +69,7 @@ function numericFields(row, index, fields, warn) {
 }
 
 // ---- Consolidated Apple Health Metrics ----
-const HEALTH_FIELDS = {
+const HEALTH_FIELDS: Record<string, string> = {
   date: 'Date/Time',
   active_energy_kcal: 'Active Energy (kcal)',
   exercise_min: 'Apple Exercise Time (min)',
@@ -83,20 +106,20 @@ export const HEALTH_METRIC_COLUMNS = Object.keys(HEALTH_FIELDS).filter((f) => f 
 /**
  * One record per date: the sheet can hold several rows for a day (see mergeHealthDays), and they are merged here.
  */
-export function parseHealthMetrics({ header, rows, firstRowNumber, tab }) {
+export function parseHealthMetrics({ header, rows, firstRowNumber, tab }: TabInput): { records: ParsedRecord[], warnings: ParseWarning[] } {
   const source = 'health_metrics';
   const { index, warnings } = columnIndex(header, HEALTH_FIELDS, source);
   if (index.date < 0) throw new Error('Health metrics sheet has no "Date/Time" column');
-  const records = [];
-  rows.forEach((row, i) => {
+  const records: ParsedRecord[] = [];
+  rows.forEach((row: any[], i: number) => {
     if (isBlankRow(row)) return;
     const rowNo = firstRowNumber + i;
-    const warn = (kind, detail) => warnings.push({ source, tab, row: rowNo, kind, detail });
+    const warn = (kind: string, detail?: string) => warnings.push({ source, tab, row: rowNo, kind, detail });
     const when = row[index.date];
     if (typeof when !== 'number') return warn('missing or text date');
     records.push({ date: serialToDate(when), ...numericFields(row, index, HEALTH_METRIC_COLUMNS, warn) });
   });
-  const counts = new Map();
+  const counts = new Map<string, number>();
   for (const r of records) counts.set(r.date, (counts.get(r.date) ?? 0) + 1);
   const several = [...counts].filter(([, n]) => n > 1).map(([d]) => d);
   if (several.length) {
@@ -112,17 +135,18 @@ export function parseHealthMetrics({ header, rows, firstRowNumber, tab }) {
  * without steps counts lowest; a tie goes to the later row); any field it lacks comes from the latest other row
  * that has one.
  */
-export function mergeHealthDays(records) {
-  const byDate = new Map();
+export function mergeHealthDays(records: ParsedRecord[]): ParsedRecord[] {
+  const byDate = new Map<string, ParsedRecord[]>();
   for (const r of records) {
-    if (!byDate.has(r.date)) byDate.set(r.date, []);
-    byDate.get(r.date).push(r);
+    const list = byDate.get(r.date) ?? [];
+    byDate.set(r.date, list);
+    list.push(r);
   }
   return [...byDate.values()].map((rows) => {
     if (rows.length === 1) return rows[0];
-    const steps = (r) => (r.steps === null || r.steps === undefined ? -1 : r.steps);
+    const steps = (r: ParsedRecord): number => (r.steps === null || r.steps === undefined ? -1 : r.steps);
     const base = rows.reduce((best, r) => (steps(r) >= steps(best) ? r : best));
-    const merged = { ...base };
+    const merged: ParsedRecord = { ...base };
     for (const field of HEALTH_METRIC_COLUMNS) {
       if (merged[field] !== null && merged[field] !== undefined) continue;
       const donor = rows.findLast((r) => r[field] !== null && r[field] !== undefined);
@@ -133,10 +157,10 @@ export function mergeHealthDays(records) {
 }
 
 /** An instant (Drive's modifiedTime, ISO UTC) as the owner's wall-clock text (OWNER_TZ), YYYY-MM-DDTHH:MM, like every stored time. */
-export const localStamp = (iso) => ownerStamp(iso);
+export const localStamp = (iso: string): string => ownerStamp(iso);
 
 // ---- Consolidated Apple Workout Sessions ----
-const SESSION_FIELDS = {
+const SESSION_FIELDS: Record<string, string> = {
   type: 'Type',
   start: 'Start',
   end: 'End',
@@ -167,21 +191,21 @@ const SPAN_SLACK_SEC = 120; // start and end are whole minutes
  * Active seconds of a session from the sheet's Duration (seconds) and its start and end serials: the shifted value
  * repaired, an unshifted value kept, and null when neither fits inside the span (minutes then come from start to end).
  */
-export function sessionDuration(rawSec, start, end) {
+export function sessionDuration(rawSec: number, start: number, end: number): number | null {
   const span = Math.round((end - start) * 86400);
-  const fits = (s) => s > 0 && s <= span + SPAN_SLACK_SEC;
+  const fits = (s: number) => s > 0 && s <= span + SPAN_SLACK_SEC;
   if (fits(rawSec - DURATION_SHIFT_SEC)) return rawSec - DURATION_SHIFT_SEC;
   return fits(rawSec) ? rawSec : null;
 }
 
-export function parseWorkoutSessions({ header, rows, firstRowNumber, tab }) {
+export function parseWorkoutSessions({ header, rows, firstRowNumber, tab }: TabInput): { records: ParsedRecord[], warnings: ParseWarning[] } {
   const source = 'workout_sessions';
   const { index, warnings } = columnIndex(header, SESSION_FIELDS, source);  for (const f of ['type', 'start', 'end']) if (index[f] < 0) throw new Error(`Workout sessions sheet has no "${SESSION_FIELDS[f]}" column`);
-  const records = [];
-  rows.forEach((row, i) => {
+  const records: ParsedRecord[] = [];
+  rows.forEach((row: any[], i: number) => {
     if (isBlankRow(row)) return;
     const rowNo = firstRowNumber + i;
-    const warn = (kind, detail) => warnings.push({ source, tab, row: rowNo, kind, detail });
+    const warn = (kind: string, detail?: string) => warnings.push({ source, tab, row: rowNo, kind, detail });
     const type = text(row[index.type]);
     const start = row[index.start];
     const end = row[index.end];
@@ -202,33 +226,32 @@ export function parseWorkoutSessions({ header, rows, firstRowNumber, tab }) {
 // "2026-10-22 14:32:17 -0400": the phone's local wall clock, kept as written (no time zone conversion).
 const JSON_TIME = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}):\d{2}/;
 /** The local minute of a JSON time, YYYY-MM-DDTHH:MM, or null. */
-const jsonMinute = (s) => {
+const jsonMinute = (s: unknown): string | null => {
   const m = JSON_TIME.exec(String(s ?? ''));
   return m ? `${m[1]}T${m[2]}` : null;
 };
-const qty = (v, units) => (v && typeof v.qty === 'number' && (!units || v.units === units) ? v.qty : null);
+const qty = (v: any, units?: string): number | null => (v && typeof v.qty === 'number' && (!units || v.units === units) ? v.qty : null);
 
 /**
  * One file's workouts: a record per workout in the workout_sessions shape (start and end to the minute, like every
  * stored workout; ":00" seconds) and its per-minute heart rate from heartRateData (t is the local minute; Avg, Min and
  * Max bpm). A quantity in units other than the expected ones (kcal, bpm, mi, mi/hr, ft, count/min) is left empty with a
  * warning rather than converted by guess. Never logs values.
- * @returns {{ records: object[], samples: Array<{type, start, t, avg_bpm, min_bpm, max_bpm}>, warnings: object[] }}
  */
-export function parseWorkoutJson(json, { file } = {}) {
+export function parseWorkoutJson(json: any, { file }: { file?: string } = {}): { records: ParsedRecord[], samples: HrSample[], warnings: ParseWarning[] } {
   const source = 'workout_json';
-  const warnings = [];
-  const records = [];
-  const samples = [];
+  const warnings: ParseWarning[] = [];
+  const records: ParsedRecord[] = [];
+  const samples: HrSample[] = [];
   const workouts = json?.data?.workouts;
   if (!Array.isArray(workouts)) throw new Error('Workout JSON has no data.workouts list (is it a Health Auto Export Workouts export, Version 2?)');
-  workouts.forEach((w, i) => {
-    const warn = (kind, detail) => warnings.push({ source, tab: file, row: i + 1, kind, ...(detail ? { detail } : {}) });
+  workouts.forEach((w: any, i: number) => {
+    const warn = (kind: string, detail?: string) => warnings.push({ source, tab: file, row: i + 1, kind, ...(detail ? { detail } : {}) });
     const type = text(w?.name);
     const startMin = jsonMinute(w?.start);
     const endMin = jsonMinute(w?.end);
     if (!type || !startMin || !endMin) return warn('missing name, start or end');
-    const unitChecked = (field, value, units) => {
+    const unitChecked = (field: string, value: unknown, units: string): number | null => {
       if (value === undefined || value === null) return null;
       const n = qty(value, units);
       if (n === null) warn('unexpected units', `${field} not in ${units}`);
@@ -244,13 +267,13 @@ export function parseWorkoutJson(json, { file } = {}) {
       avg_hr: unitChecked('avgHeartRate', w.avgHeartRate, 'bpm'),
       distance_mi: unitChecked('distance', w.distance, 'mi'),
       avg_speed_mph: unitChecked('speed', w.speed, 'mi/hr'),
-      step_count: Array.isArray(w.stepCount) && w.stepCount.length ? Math.round(w.stepCount.reduce((s, x) => s + (x?.qty ?? 0), 0)) : null,
+      step_count: Array.isArray(w.stepCount) && w.stepCount.length ? Math.round(w.stepCount.reduce((s: number, x: any) => s + (x?.qty ?? 0), 0)) : null,
       step_cadence_spm: unitChecked('stepCadence', w.stepCadence, 'count/min'),
       elevation_up_ft: unitChecked('elevationUp', w.elevationUp, 'ft'),
       swim_stroke_count: null, swim_stroke_cadence_spm: null, flights_climbed: null, elevation_down_ft: null,
     };
     records.push(record);
-    const seen = new Set();
+    const seen = new Set<string>();
     for (const h of Array.isArray(w.heartRateData) ? w.heartRateData : []) {
       const t = jsonMinute(h?.date);
       if (!t || typeof h.Avg !== 'number' || seen.has(t)) continue; // one sample a minute
@@ -269,20 +292,20 @@ const BAND = new RegExp(`^(?:band-?)?(${BAND_COLORS.join('|')})(?:band)?$`);
 // API returns as a serial number (about 43,000 to 47,000 for 2018 to 2028). No real weight or rep
 // count is that large, so such a number is turned back into the text that was typed, month/day.
 const DATE_SERIAL = { min: 36526, max: 73051 }; // 2000-01-01 .. 2099-12-31
-const typedAsDate = (cell) => typeof cell === 'number' && cell >= DATE_SERIAL.min && cell <= DATE_SERIAL.max;
-const asTypedText = (serial) => {
+const typedAsDate = (cell: unknown): cell is number => typeof cell === 'number' && cell >= DATE_SERIAL.min && cell <= DATE_SERIAL.max;
+const asTypedText = (serial: number): string => {
   const [, m, d] = serialToDate(serial).split('-').map(Number);
   return `${m}/${d}`;
 };
 
 /** Parses a Weight N cell: pounds, per-hand ("95ea"), a band color, or bodyweight ("bw"). */
-export function parseWeight(cell) {
+export function parseWeight(cell: unknown): WeightFields {
   if (typedAsDate(cell)) return { weight_text: asTypedText(cell), weight_lbs: null, per_hand: 0, band: null, bodyweight: 0 };
-  const out = { weight_text: text(cell), weight_lbs: null, per_hand: 0, band: null, bodyweight: 0 };
+  const out: WeightFields = { weight_text: text(cell), weight_lbs: null, per_hand: 0, band: null, bodyweight: 0 };
   if (out.weight_text === null) return out;
   if (typeof cell === 'number') return { ...out, weight_lbs: cell };
   const s = out.weight_text.toLowerCase().replace(/\s+/g, '');
-  let m;
+  let m: RegExpExecArray | null;
   if ((m = /^(\d+(?:\.\d+)?)$/.exec(s))) out.weight_lbs = Number(m[1]);
   else if ((m = /^(\d+(?:\.\d+)?)ea$/.exec(s))) Object.assign(out, { weight_lbs: Number(m[1]), per_hand: 1 });
   else if (s === 'bw') out.bodyweight = 1;
@@ -291,13 +314,13 @@ export function parseWeight(cell) {
 }
 
 /** Parses a Set N cell: reps, seconds (":30", "30 seconds", "2 minutes") or yards ("40 yards"). */
-export function parseSet(cell) {
+export function parseSet(cell: unknown): SetFields {
   if (typedAsDate(cell)) return { reps_text: asTypedText(cell), reps: null, duration_sec: null, distance_yd: null };
-  const out = { reps_text: text(cell), reps: null, duration_sec: null, distance_yd: null };
+  const out: SetFields = { reps_text: text(cell), reps: null, duration_sec: null, distance_yd: null };
   if (out.reps_text === null) return out;
   if (typeof cell === 'number') return Number.isInteger(cell) ? { ...out, reps: cell } : out;
   const s = out.reps_text.toLowerCase();
-  let m;
+  let m: RegExpExecArray | null;
   if ((m = /^(\d+)$/.exec(s))) out.reps = Number(m[1]);
   else if ((m = /^:(\d+)$/.exec(s))) out.duration_sec = Number(m[1]);
   else if ((m = /^(\d+(?:\.\d+)?)\s*([a-z]+)/.exec(s))) {
@@ -319,28 +342,28 @@ export const SET_PAIRS = 8;
  * date header is blank or mistyped use the first column. Dates in the wrong year are corrected
  * to the tab's year; text in the date column that is not a date is kept as a note.
  */
-export function parseWorkoutLogTab({ header, rows, firstRowNumber, tab }) {
+export function parseWorkoutLogTab({ header, rows, firstRowNumber, tab }: TabInput): { records: LogExercise[], notes: LogNote[], warnings: ParseWarning[] } {
   const source = 'workout_log';
   const tabYear = Number(tab);
   const names = header.map(cleanHeader);
   if (!names.includes('Date') && !names.includes('FilledDate') && !['Prime', 'Exercise'].includes(names[0])) names[0] = 'Date';
-  const col = (n) => names.indexOf(n);
+  const col = (n: string): number => names.indexOf(n);
   const iDate = col('FilledDate') >= 0 ? col('FilledDate') : col('Date');
   const iRawDate = col('Date');
   const iExercise = col('Exercise');
   if (iDate < 0 || iExercise < 0) throw new Error(`Workout Log tab ${tab} has no date or Exercise column`);
 
-  const exercises = [];
-  const notes = [];
-  const warnings = [];
-  let carried = null;
+  const exercises: LogExercise[] = [];
+  const notes: LogNote[] = [];
+  const warnings: ParseWarning[] = [];
+  let carried: string | null = null;
 
-  rows.forEach((row, i) => {
+  rows.forEach((row: any[], i: number) => {
     if (isBlankRow(row)) return;
     const rowNo = firstRowNumber + i;
-    const warn = (kind, detail) => warnings.push({ source, tab, row: rowNo, kind, detail });
+    const warn = (kind: string, detail?: string) => warnings.push({ source, tab, row: rowNo, kind, detail });
 
-    const readDate = (cell) => (typeof cell === 'number' ? serialToDate(cell) : isEmpty(cell) ? null : parseUsDate(cell));
+    const readDate = (cell: unknown): string | null => (typeof cell === 'number' ? serialToDate(cell) : isEmpty(cell) ? null : parseUsDate(cell));
     let date = readDate(row[iDate]);
     if (date) {
       if (Number(date.slice(0, 4)) !== tabYear) {
@@ -359,7 +382,7 @@ export function parseWorkoutLogTab({ header, rows, firstRowNumber, tab }) {
     if (!exercise) return;
     if (!carried) return warn('exercise before the first date');
 
-    const sets = [];
+    const sets: LogSet[] = [];
     for (let k = 1; k <= SET_PAIRS; k++) {
       const w = row[col(`Weight ${k}`)];
       const s = row[col(`Set ${k}`)];
@@ -382,7 +405,7 @@ export function parseWorkoutLogTab({ header, rows, firstRowNumber, tab }) {
 }
 
 // ---- Drinking Log (one row per day) ----
-const DRINK_FIELDS = {
+const DRINK_FIELDS: Record<string, string> = {
   date: 'Date',
   beers: 'Number of Beers',
   wine: 'Number of glasses of wine',
@@ -396,15 +419,15 @@ const DRINK_FIELDS = {
 };
 
 /** The sheet's Total Drinks is only checked; totals are always computed in code. */
-export function parseDrinkingLog({ header, rows, firstRowNumber, tab }) {
+export function parseDrinkingLog({ header, rows, firstRowNumber, tab }: TabInput): { records: ParsedRecord[], warnings: ParseWarning[] } {
   const source = 'drinking_log';
   const { index, warnings } = columnIndex(header, DRINK_FIELDS, source);
   if (index.date < 0) throw new Error('Drinking log has no "Date" column');
-  const records = [];
-  rows.forEach((row, i) => {
+  const records: ParsedRecord[] = [];
+  rows.forEach((row: any[], i: number) => {
     if (isBlankRow(row)) return;
     const rowNo = firstRowNumber + i;
-    const warn = (kind, detail) => warnings.push({ source, tab, row: rowNo, kind, detail });
+    const warn = (kind: string, detail?: string) => warnings.push({ source, tab, row: rowNo, kind, detail });
     if (typeof row[index.date] !== 'number') return warn('missing or text date');
     const n = numericFields(row, index, ['beers', 'wine', 'bourbon', 'other', 'total', 'mood_before', 'mood_after'], warn);
     const counts = { beers: n.beers ?? 0, wine: n.wine ?? 0, bourbon: n.bourbon ?? 0, other: n.other ?? 0 };
@@ -425,7 +448,7 @@ export function parseDrinkingLog({ header, rows, firstRowNumber, tab }) {
 // ---- Lab results (tests in rows, one column per draw date) ----
 
 /** Parses a lab cell: numbers (or numeric text) get a value; anything else is kept as text only. */
-export function parseLabValue(cell) {
+export function parseLabValue(cell: unknown): { value: number | null, value_text: string } | null {
   if (isEmpty(cell)) return null;
   const value_text = String(cell).trim();
   if (!value_text) return null;
@@ -440,25 +463,25 @@ const LAB_HEADER_DATE = /^\d{4}-\d{2}-\d{2}$/;
  * when written in capitals (LIPID PANEL); otherwise it is a test with no results yet. Blank rows
  * are skipped. Returns { tests: [{ name, panel, position }], results: [{ test, drawn_on, value, value_text }] }.
  */
-export function parseLabSheet({ header, rows, firstRowNumber, tab }) {
+export function parseLabSheet({ header, rows, firstRowNumber, tab }: TabInput) {
   const source = 'lab_results';
-  const warnings = [];
-  const dateCols = [];
-  header.forEach((cell, j) => {
+  const warnings: ParseWarning[] = [];
+  const dateCols: { j: number, date: string }[] = [];
+  header.forEach((cell: unknown, j: number) => {
     if (j === 0 || isEmpty(cell)) return;
     const date = typeof cell === 'number' ? serialToDate(cell) : LAB_HEADER_DATE.test(String(cell).trim()) ? String(cell).trim() : parseUsDate(cell);
     if (date) dateCols.push({ j, date });
     else warnings.push({ source, tab, row: 1, kind: 'header is not a date', detail: `column ${j + 1}` });
   });
 
-  const tests = [];
-  const results = [];
-  const seen = new Set();
-  let panel = null;
-  rows.forEach((row, i) => {
+  const tests: { name: string, panel: string | null, position: number }[] = [];
+  const results: { test: string, drawn_on: string, value: number | null, value_text: string }[] = [];
+  const seen = new Set<string>();
+  let panel: string | null = null;
+  rows.forEach((row: any[], i: number) => {
     const name = text(row?.[0]);
     if (!name) return;
-    const values = dateCols.map(({ j, date }) => ({ date, parsed: parseLabValue(row[j]) })).filter((v) => v.parsed);
+    const values = dateCols.map(({ j, date }) => ({ date, parsed: parseLabValue(row[j]) })).filter((v): v is { date: string, parsed: NonNullable<ReturnType<typeof parseLabValue>> } => Boolean(v.parsed));
     if (!values.length && name === name.toUpperCase() && /[A-Z]/.test(name)) {
       panel = name;
       return;
@@ -476,7 +499,7 @@ export function parseLabSheet({ header, rows, firstRowNumber, tab }) {
 }
 
 // ---- Weekly Check-In (v1, one row per week) ----
-const CHECKIN_FIELDS = {
+const CHECKIN_FIELDS: Record<string, string> = {
   date: 'Week Ending (Saturday)',
   readiness: 'Morning Readiness (1-10)',
   energy: 'Avg Energy (1-10)',
@@ -491,15 +514,15 @@ const CHECKIN_FIELDS = {
   notes: 'Notes',
 };
 
-export function parseWeeklyCheckins({ header, rows, firstRowNumber, tab }) {
+export function parseWeeklyCheckins({ header, rows, firstRowNumber, tab }: TabInput): { records: ParsedRecord[], warnings: ParseWarning[] } {
   const source = 'weekly_checkin';
   const { index, warnings } = columnIndex(header, CHECKIN_FIELDS, source);
   if (index.date < 0) throw new Error('Weekly check-in has no "Week Ending (Saturday)" column');
-  const records = [];
-  rows.forEach((row, i) => {
+  const records: ParsedRecord[] = [];
+  rows.forEach((row: any[], i: number) => {
     if (isBlankRow(row)) return;
     const rowNo = firstRowNumber + i;
-    const warn = (kind, detail) => warnings.push({ source, tab, row: rowNo, kind, detail });
+    const warn = (kind: string, detail?: string) => warnings.push({ source, tab, row: rowNo, kind, detail });
     if (typeof row[index.date] !== 'number') return warn('missing or text date');
     const measured = index.body_measured_on >= 0 ? row[index.body_measured_on] : null;
     records.push({

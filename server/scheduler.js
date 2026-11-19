@@ -5,7 +5,7 @@
 // copy with the lines commented out never runs jobs):
 //   SCHEDULE_SYNC="daily 07:00"
 //   SCHEDULE_REVIEW="Sun,Mon,Tue 08:00 | Sun 13:00"   Sunday afternoon, Monday and Tuesday are catch-ups: the job does
-//                                             nothing once the week's review exists (jobs/review.js)
+//                                             nothing once the week's review exists (jobs/review.ts)
 //   SCHEDULE_BACKUP="daily 23:00"
 //   SCHEDULE_RESTORE_TEST="monthly 1 05:00"   on that day of the month (1 to 28)
 // A spec is a day list (daily, weekdays, weekends, names like Mon,Thu, or "monthly N") and a 24-hour time (HH:MM);

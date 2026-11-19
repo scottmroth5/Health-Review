@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.ts';
-import { fixSessionTimes, moveHours } from '../ingest/session-times.js';
+import { fixSessionTimes, moveHours } from '../ingest/session-times.ts';
 
 const EXPORT_STAMP = '2026-10-15T16:10:54.853Z';
 const SHEET_STAMP = '2026-10-15T11:00:03.386Z';

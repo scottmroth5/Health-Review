@@ -1,13 +1,13 @@
-// Health Auto Export JSON through both ways in: the Drive files (ingest/sync.js) and the REST posts (POST /api/ingest/*),
-// which share the parsers and writers (ingest/health-json.js, ingest/apply.js). Made-up values only (test/fixtures/ingest).
+// Health Auto Export JSON through both ways in: the Drive files (ingest/sync.ts) and the REST posts (POST /api/ingest/*),
+// which share the parsers and writers (ingest/health-json.ts, ingest/apply.ts). Made-up values only (test/fixtures/ingest).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { openOwnerStore } from '../db/store.ts';
 import { buildApp, INGEST_BODY_LIMIT, INGEST_RATE_LIMIT } from '../server/app.js';
-import { runSync } from '../ingest/sync.js';
-import { parseHealthJson } from '../ingest/health-json.js';
-import { applyHealthDays } from '../ingest/apply.js';
+import { runSync } from '../ingest/sync.ts';
+import { parseHealthJson } from '../ingest/health-json.ts';
+import { applyHealthDays } from '../ingest/apply.ts';
 import { repoPath } from '../tools/paths.ts';
 import { fakeSource, silentLogger, ownerStore } from './helpers.js';
 

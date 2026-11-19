@@ -3,7 +3,7 @@
 // buildApp shares with every route module (server/app.js).
 import * as q from '../queries.js';
 import { loadGoals } from '../../metrics/load.ts';
-import { currentProgram } from '../../ingest/program-blocks.js';
+import { currentProgram } from '../../ingest/program-blocks.ts';
 import { isTimeZone, ownerTz, withTimeZone } from '../../tools/time.ts';
 import { OWNER_ID, clearIngestToken, getUser, newIngestToken, setClaudeKey, setGoogleToken, setUserFeeds, timeZoneOf } from '../../db/users.ts';
 import { exportUserData, setUserStatus } from '../admin-queries.js';

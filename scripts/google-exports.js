@@ -3,9 +3,9 @@
 // never file names or contents.
 //   npm run google:exports
 import { getGoogleAuth } from '../tools/google/auth.ts';
-import { createSheetsSource } from '../ingest/sheets.js';
+import { createSheetsSource } from '../ingest/sheets.ts';
 import { openOwnerStore } from '../db/store.ts';
-import { EXPORT_FILES_PER_SYNC } from '../ingest/sync.js';
+import { EXPORT_FILES_PER_SYNC } from '../ingest/sync.ts';
 
 const FOLDERS = [
   { kind: 'health', env: 'HEALTH_EXPORT_FOLDER_ID', label: 'Health metrics folder' },

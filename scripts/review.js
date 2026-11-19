@@ -8,14 +8,14 @@
 //                                        when the week's review already exists
 // Without --force, a week with any day missing from Apple Health (or a likely partial export) is skipped: nothing is
 // sent, a 'skipped' review run is recorded with the dates, and the Reviews tab offers a manual run. The same job runs in
-// the server on SCHEDULE_REVIEW (jobs/review.js). REVIEW_MODEL and REVIEW_EFFORT in .env override the defaults.
+// the server on SCHEDULE_REVIEW (jobs/review.ts). REVIEW_MODEL and REVIEW_EFFORT in .env override the defaults.
 import { openOwnerStore } from '../db/store.ts';
 import { addDays, lastWeekEnd } from '../metrics/stats.ts';
 import { isValidDate, localDate, reviewStatus } from '../server/queries.js';
 import { createReviewClaude, DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_EFFORT } from '../agent/claude.js';
 import { prepareReview } from '../agent/review.js';
-import { weeklyReview } from '../jobs/review.js';
-import { syncJob } from '../jobs/sync.js';
+import { weeklyReview } from '../jobs/review.ts';
+import { syncJob } from '../jobs/sync.ts';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);

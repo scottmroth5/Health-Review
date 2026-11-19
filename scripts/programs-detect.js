@@ -2,7 +2,7 @@
 //   npm run programs:detect              show the proposal
 //   npm run programs:detect -- --write   save it (replaces earlier detected blocks; confirmed ones are kept)
 import { openOwnerStore } from '../db/store.ts';
-import { detect, writeDetected, sessionCoverage, refreshPhases } from '../ingest/program-blocks.js';
+import { detect, writeDetected, sessionCoverage, refreshPhases } from '../ingest/program-blocks.ts';
 import { userCatalog } from '../metrics/load.ts';
 import { weekOf } from '../metrics/blocks.ts';
 import { localDate } from '../server/queries.js';

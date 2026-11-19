@@ -1,10 +1,10 @@
 // One-off: moves workouts from the consolidated Workout Sessions sheet back the 3 hours that sheet added to their start
-// and end, and deletes their late twins of workouts already read from Health Auto Export's files (ingest/session-times.js).
+// and end, and deletes their late twins of workouts already read from Health Auto Export's files (ingest/session-times.ts).
 // Prints counts only.
 //   npm run fix:session-times             dry run: what would change
 //   npm run fix:session-times -- --apply  do it (once; back up data/health.db first)
 import { openOwnerStore } from '../db/store.ts';
-import { fixSessionTimes } from '../ingest/session-times.js';
+import { fixSessionTimes } from '../ingest/session-times.ts';
 
 const apply = process.argv.includes('--apply');
 const store = openOwnerStore();

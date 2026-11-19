@@ -79,3 +79,18 @@ Update, 2026-11-11: the image, CI and the PC moved to Node 26 (`node:26-bookworm
   unchanged.
 - **The harness gate:** `agent/review.js` imports `metrics/index.js` and `metrics/load.js`, and the eval runner imports
   `metrics/stats.js`. Those three stay as one-line re-exports until the `agent/` step, so no re-approval is needed.
+
+## Update, 2026-11-19: ingest/ and jobs/
+- **Converted:** the 14 files of `ingest/` and the 5 of `jobs/`, checked strict with the rest (`tsconfig.strict.json`
+  adds `ingest/**/*.ts` and `jobs/**/*.ts`).
+- **Types:**
+  - `ingest/types.ts` (types only) holds what both folders share: `UserDb` (the async database, scoped to one user),
+    `UserStore`, `SyncWarning` and `Logger`.
+  - The rest live in the module that produces them, for example `SheetsSource` (the client tests fake), the parsers'
+    `TabInput`, `ParseWarning`, `LogExercise` and `HrSample`, and `AfterChangeContext` for workouts logged in the app.
+  - SQL rows stay `Row`, as in `metrics/`.
+- **Behavior:** unchanged. Two comparisons that rely on `null` or `undefined` comparing false are kept as written,
+  with a cast and a comment. `ProgramError.problems` is a `declare` field, so nothing is added at run time.
+- **The harness gate:** no gated file imports `ingest/` or `jobs/`, so no re-exports and no re-approval are needed.
+  `jobs/review.ts` calls the gated `agent/review.js`, whose JSDoc names the wrong database type and leaves out
+  `catalog`; it passes its options as before, typed `any` with a comment, until the `agent/` step.

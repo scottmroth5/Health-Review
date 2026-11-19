@@ -5,7 +5,7 @@ import { openOwnerStore } from '../db/store.ts';
 import {
   ReviewError, assignForward, blockStatus, changeBlockDates, confirmBlocks, detect, editBlock, endBlock, findBlock, listBlocks, mergeBlocks,
   sessionCoverage, splitBlock, startBlock, unassignDays, writeDetected,
-} from '../ingest/program-blocks.js';
+} from '../ingest/program-blocks.ts';
 import { addDays } from '../metrics/stats.ts';
 import { ownerStore } from './helpers.js';
 
@@ -141,8 +141,8 @@ test('review: unassigned days are confirmed, survive re-detection, and are not p
 });
 
 test('forward: new lifting days join the in-progress confirmed block with program and week; nothing without one', async () => {
-  const { runSync } = await import('../ingest/sync.js');
-  const { assignForward } = await import('../ingest/program-blocks.js');
+  const { runSync } = await import('../ingest/sync.ts');
+  const { assignForward } = await import('../ingest/program-blocks.ts');
   const { fakeSource, serial, silentLogger } = await import('./helpers.js');
   const store = await ownerStore();
   const db = store.db;
@@ -172,7 +172,7 @@ test('forward: new lifting days join the in-progress confirmed block with progra
 
 test('phases: sessions take the logged phase; status reports phase week, program week and finish from the names', async () => {
   const { createCatalog } = await import('../metrics/catalog.ts');
-  const { refreshPhases, blockStatus, currentProgram } = await import('../ingest/program-blocks.js');
+  const { refreshPhases, blockStatus, currentProgram } = await import('../ingest/program-blocks.ts');
   const catalog = createCatalog({ version: 1, programs: [{ name: 'MAPS Symmetry', weeks: 4, phases: [
     { name: 'Phase 1', weeks: [1, 2] }, { name: 'Phase 2', weeks: [3, 4], special_weeks: { deload: [4] } }] }] }, { programs: ['MAPS Symmetry', 'MAPS Anabolic'] });
   const { store, db, adb, sym, ana } = await setup(); // Symmetry Jan 6 to Jan 20, every name "Phase 1"; Anabolic Jan 27 to Feb 10

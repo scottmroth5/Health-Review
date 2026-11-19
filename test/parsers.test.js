@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { serialToDate, serialToDateTime, serialToSeconds, parseUsDate } from '../ingest/serial.js';
+import { serialToDate, serialToDateTime, serialToSeconds, parseUsDate } from '../ingest/serial.ts';
 import {
   parseHealthMetrics,
   parseWorkoutSessions,
@@ -11,7 +11,7 @@ import {
   parseWeeklyCheckins,
   sessionDuration,
   mergeHealthDays,
-} from '../ingest/parsers.js';
+} from '../ingest/parsers.ts';
 import { openOwnerStore } from '../db/store.ts';
 import { MIGRATIONS } from '../db/migrations.ts';
 import { serial, ownerStore } from './helpers.js';
@@ -213,7 +213,7 @@ test('weekly check-ins: trailing space in the header is tolerated; rows are week
 
 // ---- lab sheet ----
 test('lab sheet: panels from capitalized rows, one result per draw column, text values kept, bad header dates warned', async () => {
-  const { parseLabSheet } = await import('../ingest/parsers.js');
+  const { parseLabSheet } = await import('../ingest/parsers.ts');
   const { tests, results, warnings } = parseLabSheet({
     header: ['Lab Test', serial('2026-03-23'), '09/15/2025', 'next time'],
     firstRowNumber: 2,

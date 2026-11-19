@@ -10,7 +10,7 @@
 import { openOwnerStore } from '../db/store.ts';
 import {
   ReviewError, blockStatus, confirmBlocks, editBlock, listBlocks, mergeBlocks, refreshPhases, sessionCoverage, splitBlock, unassignDays,
-} from '../ingest/program-blocks.js';
+} from '../ingest/program-blocks.ts';
 import { userCatalog } from '../metrics/load.ts';
 import { localDate } from '../server/queries.js';
 

@@ -19,7 +19,7 @@ import { scannedFiles, stringLiterals } from './source-scan.js';
 
 /** Files that refuse PostgreSQL or never meet it: SQLite's migrations and runner, and a one-off keyed on rowid. */
 const SQLITE_ONLY = new Set(['db/migrations.ts', 'db/migrations-users.ts', 'db/migrate.ts', 'db/store.ts',
-  'ingest/session-times.js']);
+  'ingest/session-times.ts']);
 const STATEMENT = /^\s*(SELECT|INSERT|UPDATE|DELETE|WITH)\s/; // upper case, as the code writes SQL (help text is not)
 const SQLITE_CATALOG = /\bsqlite_(master|sequence)\b/;
 

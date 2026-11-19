@@ -10,7 +10,7 @@ import { createReviewClaude } from '../agent/claude.js';
 import { runReview, prepareReview } from '../agent/review.js';
 import { computeWeek } from '../metrics/index.ts';
 import { fakeClaudeClient, silentLogger, ownerStore } from './helpers.js';
-import { weeklyReview } from '../jobs/review.js';
+import { weeklyReview } from '../jobs/review.ts';
 import { OWNER_ID } from '../db/users.ts';
 
 // A report in the review's shape; the opening holds one plain highlight unless a test sets its own.

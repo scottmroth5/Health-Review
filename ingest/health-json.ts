@@ -5,11 +5,12 @@
 //
 // Stand hours: the Day-grouped apple_stand_hour undercounts (7 against the Activity ring's 16), so it is ignored. A
 // separate automation exports Apple Stand Hour grouped by hour (qty 1 for an hour with standing); each such hour is
-// kept as { date, hour } and the day's stand hours are the distinct hours recorded (ingest/apply.js), because one export
+// kept as { date, hour } and the day's stand hours are the distinct hours recorded (ingest/apply.ts), because one export
 // may hold only part of a day.
+import type { ParseWarning } from './parsers.ts';
 
 /** Metric name -> [column, units] for single-value metrics. */
-export const HEALTH_JSON_METRICS = {
+export const HEALTH_JSON_METRICS: Record<string, [string, string]> = {
   active_energy: ['active_energy_kcal', 'kcal'],
   apple_exercise_time: ['exercise_min', 'min'],
   apple_move_time: ['move_min', 'min'],
@@ -34,37 +35,39 @@ const WHOLE = new Set(['steps']); // stored as integers, like the Sheets import
 
 // "2026-10-22 00:00:00 -0400": the phone's local wall clock, kept as written.
 const TIME = /^(\d{4}-\d{2}-\d{2}) (\d{2}):\d{2}:\d{2}/;
-const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /**
- * @param {object} json  a Health Auto Export health metrics payload
- * @param {{ file?: string }} [opts]  file: a name for warnings
- * @returns {{ records: object[], standHours: Array<{date: string, hour: number}>, warnings: object[] }}
- *   records: one per date with the columns found (others absent, so they never erase stored values)
+ * json: a Health Auto Export health metrics payload; file: a name for warnings. records: one per date with the columns
+ * found (others absent, so they never erase stored values).
  */
-export function parseHealthJson(json, { file } = {}) {
+export function parseHealthJson(json: any, { file }: { file?: string } = {}): {
+  records: Record<string, any>[], standHours: { date: string, hour: number }[], warnings: ParseWarning[],
+} {
   const source = 'health_json';
-  const warnings = [];
+  const warnings: ParseWarning[] = [];
   const metrics = json?.data?.metrics;
   if (!Array.isArray(metrics)) throw new Error('Health JSON has no data.metrics list (is it a Health Auto Export health metrics export, Version 2?)');
-  const byDate = new Map();
-  const day = (date) => {
-    if (!byDate.has(date)) byDate.set(date, { date });
-    return byDate.get(date);
+  const byDate = new Map<string, Record<string, any>>();
+  const day = (date: string): Record<string, any> => {
+    let d = byDate.get(date);
+    if (!d) { d = { date }; byDate.set(date, d); }
+    return d;
   };
-  const standHours = [];
-  const warn = (kind, detail) => warnings.push({ source, tab: file, kind, ...(detail ? { detail } : {}) });
+  const standHours: { date: string, hour: number }[] = [];
+  const warn = (kind: string, detail?: string) => warnings.push({ source, tab: file, kind, ...(detail ? { detail } : {}) });
 
   for (const m of metrics) {
-    const entries = Array.isArray(m?.data) ? m.data : [];
-    const dated = entries.map((e) => ({ e, t: TIME.exec(String(e?.date ?? '')) })).filter((x) => x.t);
+    const entries: any[] = Array.isArray(m?.data) ? m.data : [];
+    const dated = entries.map((e) => ({ e, t: TIME.exec(String(e?.date ?? '')) })).filter((x): x is { e: any, t: RegExpExecArray } => Boolean(x.t));
     if (m?.name === 'apple_stand_hour') {
       // Hour-grouped: every value is 0 or 1. Day-grouped (any value above 1) undercounts, so it is ignored.
-      if (dated.some(({ e }) => num(e.qty) > 1)) continue;
-      for (const { e, t } of dated) if (num(e.qty) > 0) standHours.push({ date: t[1], hour: Number(t[2]) });
+      // A null compares false, as before.
+      if (dated.some(({ e }) => (num(e.qty) as number) > 1)) continue;
+      for (const { e, t } of dated) if ((num(e.qty) as number) > 0) standHours.push({ date: t[1], hour: Number(t[2]) });
       continue;
     }
-    const perDay = new Map();
+    const perDay = new Map<string, number>();
     for (const x of dated) perDay.set(x.t[1], (perDay.get(x.t[1]) ?? 0) + 1);
     if ([...perDay.values()].some((n) => n > 1)) { warn('not grouped by day', m.name); continue; } // set Time Grouping: Day
     if (m?.name === 'heart_rate') {

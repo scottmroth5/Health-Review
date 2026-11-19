@@ -73,7 +73,7 @@ export async function register(app, ctx) {
         syncing.add(uid);
         try { await services.sync({ uid }); } catch { /* review the data already stored, as npm run review does */ } finally { syncing.delete(uid); }
       }
-      // The data gate for the week asked (as of the Sunday after it, as jobs/review.js does for an explicit week).
+      // The data gate for the week asked (as of the Sunday after it, as jobs/review.ts does for an explicit week).
       const status = await q.reviewStatus(db, asked && asked !== lastWeek ? addDays(asked, 1) : q.localDate(clock()), clock());
       if (!status.ready && !req.body?.force) {
         reviewRun.running = false;

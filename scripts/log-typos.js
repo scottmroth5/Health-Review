@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { openOwnerStore } from '../db/store.ts';
 import { DICTIONARY_PATH, createDictionary } from '../metrics/dictionary.ts';
 import { typoCandidates, applyTypoMerges, markDistinct } from '../metrics/name-typos.ts';
-import { canonicalSetCounts, normalizeAll, unmappedNames } from '../ingest/normalize.js';
+import { canonicalSetCounts, normalizeAll, unmappedNames } from '../ingest/normalize.ts';
 
 const arg = (flag) => { const i = process.argv.indexOf(flag); return i > 0 ? process.argv[i + 1] : undefined; };
 const numbers = (text) => (text ?? '').split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);

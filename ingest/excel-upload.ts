@@ -3,9 +3,11 @@
 // the Google Sheet (parseWorkoutLogTab), and replaces that year's rows, as a sheet sync does. Years not in the file and
 // workouts logged in the app (tab_year 0) are left alone. Takes a scoped async database (docs/adr/0006).
 import { readXlsx, writeXlsx } from '../tools/xlsx.ts';
-import { parseWorkoutLogTab } from './parsers.js';
-import { WORKOUT_LOG_HEADER, HOW_TO_USE } from './create-sheet.js';
-import { afterChange } from './app-workouts.js';
+import { parseWorkoutLogTab } from './parsers.ts';
+import { WORKOUT_LOG_HEADER, HOW_TO_USE } from './create-sheet.ts';
+import { afterChange } from './app-workouts.ts';
+import type { AfterChangeContext } from './app-workouts.ts';
+import type { UserDb } from './types.ts';
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 export const TEMPLATE_NAME = 'Health Review Workout Log.xlsx';
@@ -13,7 +15,7 @@ const DAYS_1904 = 1462; // a 1904-system date serial plus this is the 1900-syste
 export class UploadError extends Error {}
 
 /** The Excel Workout Log for a year: the year tab with the column row, and How to use. */
-export function workoutTemplate(year) {
+export function workoutTemplate(year: string | number): Buffer {
   const widths = WORKOUT_LOG_HEADER.map((h) => (h === 'Date' ? 12 : h === 'Workout' ? 30 : h === 'Exercise' ? 28 : h === 'Comment' ? 34 : 9));
   const howTo = HOW_TO_USE.map((line) => line.replace('Health Review reads this sheet every morning, or when you tap Sync now on Home. It never changes it.',
     'When you have logged some workouts, upload this file in Health Review: Settings, Data feeds, Workout Log, Upload. Each upload replaces the years in the file.'));
@@ -25,10 +27,8 @@ export function workoutTemplate(year) {
 
 /**
  * Reads an uploaded workbook and replaces the years it holds. Throws UploadError (or XlsxError) with a message to show.
- * @param {{ today: string, now?: Date, dictionary: object, catalog: () => object|null }} ctx
- * @returns {{ years: number[], exercises: number, sets: number, notes: number, warnings: Record<string, number> }}
  */
-export async function ingestWorkbook(db, buf, ctx) {
+export async function ingestWorkbook(db: UserDb, buf: Buffer, ctx: Omit<AfterChangeContext, 'now'> & { today: string, now?: Date }) {
   const { sheets, date1904 } = readXlsx(buf);
   const thisYear = Number(ctx.today.slice(0, 4));
   const tabs = sheets.filter((s) => /^\d{4}$/.test(s.name.trim()) && Number(s.name) >= 2000 && Number(s.name) <= thisYear + 1);
@@ -42,17 +42,17 @@ export async function ingestWorkbook(db, buf, ctx) {
     }
     try {
       return parseWorkoutLogTab({ header, rows, firstRowNumber: 2, tab: s.name.trim() });
-    } catch (err) {
+    } catch (err: any) {
       throw new UploadError(`Tab ${s.name}: ${err.message}. Row 1 needs the Workout Log columns (Date, Workout, Exercise, Weight 1, Set 1, ...).`);
     }
   });
-  const result = { years: tabs.map((s) => Number(s.name)), exercises: 0, sets: 0, notes: 0, warnings: {} };
+  const result = { years: tabs.map((s) => Number(s.name)), exercises: 0, sets: 0, notes: 0, warnings: {} as Record<string, number> };
   const insertExercise = db.prepare(`INSERT INTO strength_exercises (user_id, tab_year, row_no, date, workout, prime, exercise, post, comment)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`);
   const insertSet = db.prepare(`INSERT INTO strength_sets (user_id, exercise_id, set_no, weight_text, weight_lbs, per_hand, band, bodyweight, reps_text, reps, duration_sec, distance_yd)
     VALUES (@uid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const insertNote = db.prepare('INSERT INTO workout_log_notes (user_id, tab_year, row_no, date, text) VALUES (@uid, ?, ?, ?, ?)');
-  const names = new Set();
+  const names = new Set<string>();
   await db.tx(async () => {
     for (const [i, { records, notes, warnings }] of parsed.entries()) {
       const year = result.years[i];

@@ -2,5 +2,5 @@
   "//": "Strict TypeScript for the folders converted so far (v3 Phase 2, docs/adr/0005): npm run typecheck runs this and tsconfig.json. Each conversion step adds its folder here.",
   "extends": "./tsconfig.json",
   "compilerOptions": { "strict": true, "checkJs": false },
-  "include": ["db/**/*.ts", "tools/**/*.ts", "metrics/**/*.ts"]
+  "include": ["db/**/*.ts", "tools/**/*.ts", "metrics/**/*.ts", "ingest/**/*.ts", "jobs/**/*.ts"]
 }

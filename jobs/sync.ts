@@ -2,27 +2,30 @@
 // the Drive folders here, or (APPLE_SOURCE=rest, the server) through POST /api/ingest/*, so the sync then only reads the
 // Workout Log sheet.
 import { getGoogleAuth } from '../tools/google/auth.ts';
-import { createSheetsSource } from '../ingest/sheets.js';
-import { runSync } from '../ingest/sync.js';
+import { createSheetsSource } from '../ingest/sheets.ts';
+import type { SheetsSource } from '../ingest/sheets.ts';
+import { runSync } from '../ingest/sync.ts';
 import { OWNER_ID } from '../db/users.ts';
+import type { Logger, SyncWarning, UserStore } from '../ingest/types.ts';
+import type { Catalog } from '../metrics/catalog.ts';
 
 const quiet = { info() {}, warn() {}, error() {} };
 
 /**
- * @param {object} o
- * @param {{ auth?: object, sheetId?: string|null, catalog?: object|null, ensureYearTab?: () => Promise<boolean> }} [o.userFeed]
- *   another user's Workout Log: their own Google sign-in (Sheets read only) and their sheet (multi-user, phase 3); Apple
- *   data arrives by their REST posts. ensureYearTab: for a sheet the app created, adds this year's tab first.
- * @returns {Promise<{ counts: object, warnings: object[] }>}
+ * userFeed: another user's Workout Log: their own Google sign-in (Sheets read only) and their sheet (multi-user, phase 3);
+ * Apple data arrives by their REST posts. ensureYearTab: for a sheet the app created, adds this year's tab first.
  */
-export async function syncJob({ store, backfill = false, logger = quiet, source, userFeed }) {
+export async function syncJob({ store, backfill = false, logger = quiet, source, userFeed }: {
+  store: UserStore, backfill?: boolean, logger?: Logger, source?: SheetsSource,
+  userFeed?: { auth?: any, sheetId?: string | null, catalog?: Catalog | null, ensureYearTab?: () => Promise<boolean> },
+}): Promise<{ counts: Record<string, any>, warnings: SyncWarning[] }> {
   if (store.db.uid !== OWNER_ID) {
     // Another user: only their own Workout Log, read with their own permission; nothing of the owner's .env.
     if (!userFeed?.sheetId || !(userFeed.auth || source)) return { counts: {}, warnings: [] };
     // A sheet Health Review created gets this year's tab before it is read (January); a failure is a warning only.
-    let tabWarning = null;
+    let tabWarning: SyncWarning | null = null;
     if (userFeed.ensureYearTab) {
-      try { await userFeed.ensureYearTab(); } catch (err) {
+      try { await userFeed.ensureYearTab(); } catch (err: any) {
         tabWarning = { source: 'workout_log', kind: "this year's tab not added", detail: `Add a tab named with this year (${err.name})`, severity: 'warn' };
       }
     }

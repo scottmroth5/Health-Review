@@ -7,7 +7,7 @@ import { isUniqueViolation, jsonText, listTables, primaryKey, tableColumns } fro
 import { OWNER_ID } from '../db/users.ts';
 import { scopeStore } from '../db/scope.ts';
 import { listChat } from '../agent/advisor-chat.js';
-import { fixSessionTimes } from '../ingest/session-times.js';
+import { fixSessionTimes } from '../ingest/session-times.ts';
 import { freshPgDatabase, pgSkip } from './pg.js';
 
 const quiet = { info() {} };

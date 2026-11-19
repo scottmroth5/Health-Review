@@ -1,4 +1,4 @@
-// The Excel Workout Log: the template download, and uploading a workbook (ingest/excel-upload.js). Only .xlsx is taken,
+// The Excel Workout Log: the template download, and uploading a workbook (ingest/excel-upload.ts). Only .xlsx is taken,
 // the year tabs replace those years' rows (other years and app workouts stay), and every refusal leaves nothing behind.
 // Synthetic accounts and made-up workouts; no network.
 import { test } from 'node:test';
@@ -10,8 +10,8 @@ import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
 import { OWNER_ID } from '../db/users.ts';
 import { readXlsx, writeXlsx, XLSX_TYPE } from '../tools/xlsx.ts';
-import { WORKOUT_LOG_HEADER } from '../ingest/create-sheet.js';
-import { MAX_UPLOAD_BYTES } from '../ingest/excel-upload.js';
+import { WORKOUT_LOG_HEADER } from '../ingest/create-sheet.ts';
+import { MAX_UPLOAD_BYTES } from '../ingest/excel-upload.ts';
 import { openTestStore } from './helpers.js';
 
 const SITE = 'http://localhost:5188';

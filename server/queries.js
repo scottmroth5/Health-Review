@@ -161,7 +161,7 @@ export async function dataCheckWarnings(db, today, { apple = 'drive', now = new 
   const warnings = hasApple
     ? dataChecks(await loadDataCheckInput(db, today, { apple, now })).filter((c) => c.severity === 'warn').map(({ kind, dates, message }) => ({ kind, dates, message }))
     : [];
-  // The backup restore test (jobs/restore-check.js): its last run failing stays a warning until a later one passes.
+  // The backup restore test (jobs/restore-check.ts): its last run failing stays a warning until a later one passes.
   const test = await db.prepare("SELECT status, started_at, summary FROM runs WHERE user_id = @uid AND name = 'restore-test' AND status IN ('ok', 'error') ORDER BY id DESC LIMIT 1").get();
   if (test?.status === 'error') {
     const s = parseJson(test.summary) ?? {};
@@ -272,8 +272,8 @@ export async function spend(db, { evalDir, price, today }) {
   };
 }
 
-// The review gate lives in jobs/review-status.js (docs/adr/0012); re-exported for the routes, scripts and tests.
-export { REVIEW_DUE_HOUR, reviewStatus } from '../jobs/review-status.js';
+// The review gate lives in jobs/review-status.ts (docs/adr/0012); re-exported for the routes, scripts and tests.
+export { REVIEW_DUE_HOUR, reviewStatus } from '../jobs/review-status.ts';
 
 // ---- settings ----
 

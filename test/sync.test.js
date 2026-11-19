@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openOwnerStore } from '../db/store.ts';
-import { runSync } from '../ingest/sync.js';
+import { runSync } from '../ingest/sync.ts';
 import { buildApp } from '../server/app.js';
 import { fakeSource, jsonWorkout, serial, silentLogger, ownerStore } from './helpers.js';
 
@@ -384,7 +384,7 @@ test('export files: a partial export read after the full day never lowers it; it
 });
 
 test('export files: at most 200 per folder per sync, oldest first; the rest wait with an info line', async () => {
-  const { EXPORT_FILES_PER_SYNC } = await import('../ingest/sync.js');
+  const { EXPORT_FILES_PER_SYNC } = await import('../ingest/sync.ts');
   const store = (await open());
   const src = fakeSource(sheets());
   const n = EXPORT_FILES_PER_SYNC + 5;
@@ -404,7 +404,7 @@ test('export files: at most 200 per folder per sync, oldest first; the rest wait
 
 
 test('export files: if Google still says too many requests, what was read is saved and the rest waits; the sync succeeds', async () => {
-  const { EXPORT_SAVE_EVERY } = await import('../ingest/sync.js');
+  const { EXPORT_SAVE_EVERY } = await import('../ingest/sync.ts');
   const store = (await open());
   const src = fakeSource(sheets());
   const n = EXPORT_SAVE_EVERY + 10;

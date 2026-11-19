@@ -23,9 +23,9 @@ Health specific logic stays in this repo; never add it to agent-core.
                     detection), catalog.ts (MAPS program catalog loader); index.js, load.js and stats.js are one-line
                     re-exports for the review eval's harness-gated files;
                     fixtures with hand-computed expectations in evals/fixtures/metrics, run by test/metrics.test.js
-/ingest             Google Sheets to SQLite: sheets.js (read-only client, fakeable), parsers.js (one per sheet), sync.js;
-                    the only code touching raw source rows; normalize.js (dictionary onto the Workout Log) and
-                    program-blocks.js (blocks, sessions, review operations)
+/ingest             Google Sheets to SQLite, strict TypeScript: sheets.ts (read-only client, fakeable), parsers.ts (one per
+                    sheet), sync.ts; the only code touching raw source rows; normalize.ts (dictionary onto the Workout Log),
+                    program-blocks.ts (blocks, sessions, review operations) and types.ts (UserStore, UserDb, SyncWarning)
 /config             exercise-dictionary.json: canonical exercises and name variants (names only; see README.md);
                     substitutions.json: home equipment, what fills a cable or machine slot, and the avoid list;
                     supplement-limits.json: adult tolerable upper intake levels (NIH ODS) checked on supplement suggestions
@@ -168,7 +168,7 @@ Health specific logic stays in this repo; never add it to agent-core.
                     Apple Health day yet); settings demo_built_for records the day, and server/index.js remakes it in
                     place (refreshDemoDatabase) on start and within 10 minutes of the owner's midnight. The demo's clock
                     is noon on demo_built_for, so a late refresh never shows "data stopped"
-/jobs               the scheduled jobs shared by the npm scripts and the in-app scheduler: sync, review, backup,
+/jobs               the scheduled jobs shared by the npm scripts and the in-app scheduler (strict TypeScript): sync, review, backup,
                     restore-check (the monthly restore test), review-status (the review gate, reviewStatus; server/queries.js
                     re-exports it)
 /scripts            command-line entry points
@@ -214,8 +214,8 @@ node scripts/migrate-to-postgres.js --audit [--from <file>]   what PostgreSQL wo
 DATABASE_URL=... node scripts/export-to-sqlite.js --out <new file>   PostgreSQL back to a new SQLite file (the rollback
                                   path), verified; never over an existing file, and deleted if verification fails
 npm run typecheck                 tsc, checking only: tsconfig.json (db/ JavaScript, not strict) and tsconfig.strict.json
-                                  (strict: true over the converted TypeScript, db/**/*.ts, tools/**/*.ts and metrics/**/*.ts so
-                                  far; each conversion step adds its folder; v3 Phase 2). TypeScript 6.0.x, as typescript-eslint
+                                  (strict: true over the converted TypeScript, db/**/*.ts, tools/**/*.ts, metrics/**/*.ts,
+                                  ingest/**/*.ts and jobs/**/*.ts so far; each conversion step adds its folder; v3 Phase 2). TypeScript 6.0.x, as typescript-eslint
                                   supports below 6.1; .ts runs through Node's type stripping, docs/adr/0005. Converted files
                                   are imported by their .ts name; db/store.js, scope.js, users.js, tools/paths.js and
                                   metrics/index.js, load.js and stats.js are
@@ -323,11 +323,11 @@ need no argument. The schedule itself (and the review's due hour) is on OWNER_TZ
 (migration 021 used 'localtime' once, on the owner's New York machine, so its stored values are right). Tests pass under
 both TZ=UTC and TZ=America/New_York (test/time.test.js holds the Saturday 11:30 pm case).
 Sheets are read unformatted with dates as serial numbers and stored as local wall-clock text; no time zone conversion.
-Apple Health comes only from Health Auto Export's own day files, one Drive folder per kind (ingest/sync.js syncExports;
+Apple Health comes only from Health Auto Export's own day files, one Drive folder per kind (ingest/sync.ts syncExports;
 listed with drive.metadata.readonly and filtered to that kind's file names): HEALTH_EXPORT_FOLDER_ID holds health metrics
 as Google Sheets files (read with the Sheets scope); WORKOUT_JSON_FOLDER_ID holds workouts as JSON (Workouts automation,
 Export Version 2, Include Workout Metrics, grouped by minute; HealthAutoExport-YYYY-MM-DD.json; downloaded with
-drive.readonly, owner's choice 2026-10-22, reading only that folder). ingest/parsers.js parseWorkoutJson keeps start and end
+drive.readonly, owner's choice 2026-10-22, reading only that folder). ingest/parsers.ts parseWorkoutJson keeps start and end
 to the minute like every stored workout and each workout's heartRateData as workout_hr_samples (migration 022: one row a
 local minute, Avg, Min and Max bpm); a stored workout of the same type starting within a minute is the same one (its
 values fill gaps, then it is replaced), so re-exports never duplicate. The Sheets-format workout export (broken by iOS
@@ -337,14 +337,14 @@ values fill gaps, then it is replaced), so re-exports never duplicate. The Sheet
 mergeHealthDays so a partial export never lowers a full day. A missing folder variable skips that kind with a warn line.
 The v1 consolidated health and workout sheets (and their Apps Script) are retired (owner's choice, 2026-10-16) and never
 read; days stored from them stay, have no exported_through, and keep the steps rule for partial days.
-Health metrics as JSON (ingest/health-json.js parseHealthJson; Export Version 2, Time Grouping Day; checked against stored
+Health metrics as JSON (ingest/health-json.ts parseHealthJson; Export Version 2, Time Grouping Day; checked against stored
 days 2026-10-23: 21 metrics matched on every full day): files of any automation name in the health folder (kind health_json;
 the Sheets files stay kind health) and in STAND_EXPORT_FOLDER_ID. Units are checked per metric (a mismatch is skipped with a
 warning); readings not grouped by day are skipped. Past-range exports lack the day's totals (steps, exercise, stand time),
 and the merge keeps stored ones. Stand hours: the Day-grouped apple_stand_hour undercounts (7 vs the ring's 16), so it is
 ignored; a separate "Stand Hours" automation (Apple Stand Hour only, Time Grouping Hours) gives qty 1 per hour with standing,
 kept in stand_hour_samples (migration 023), and stand_hours = MAX(stored, distinct hours), since one export may hold part of
-a day. ingest/apply.js applyHealthDays, writeJsonWorkout and applyWorkouts are the one write path for the Drive files and
+a day. ingest/apply.ts applyHealthDays, writeJsonWorkout and applyWorkouts are the one write path for the Drive files and
 the REST posts.
 REST ingest (the server, APPLE_SOURCE=rest; the default drive keeps reading the Drive folders, and rest reads none):
 POST /api/ingest/health and /api/ingest/workouts take Health Auto Export's REST automation payloads (the same JSON), with
@@ -371,8 +371,8 @@ with reps, time, or distance, on dates up to today. Text in the log's date colum
 in workout_log_notes; treat it as symptom data under the hard rules. History: the retired consolidated Workout Sessions
 sheet ran 3 hours late in Start, End and Duration alike (the v1 Apps Script copied between files in different time zones;
 the export files are right, confirmed against Fitness 2026-10-15): migration 012 repaired stored durations, and the one-off
-npm run fix:session-times (ingest/session-times.js, run 2026-10-15) moved stored starts and ends back and deleted the late
-twins of export rows. ingest/parsers.js sessionDuration still drops a Duration 3 hours longer than the workout's span; a
+npm run fix:session-times (ingest/session-times.ts, run 2026-10-15) moved stored starts and ends back and deleted the late
+twins of export rows. ingest/parsers.ts sessionDuration still drops a Duration 3 hours longer than the workout's span; a
 duration that fits neither way is NULL and minutes come from start to end.
 
 ## Metrics
@@ -425,7 +425,7 @@ Each bar also lists its training programs (metrics/programs.ts): Workout Log "Wo
 PROGRAMS (first match wins); an unnamed lifting day takes the program from up to 7 days before, and a Trigger Session
 day takes the nearest named program within 14 days either way. Edit PROGRAMS to add or rename a program.
 Exercise normalization: config/exercise-dictionary.json maps every name variant to a canonical exercise with an
-implement, movement pattern and primary flag; ingest/normalize.js writes canonical_id, implement, movement_pattern,
+implement, movement pattern and primary flag; ingest/normalize.ts writes canonical_id, implement, movement_pattern,
 is_primary and map_status next to the raw strength_exercises row (raw names never change), and sync reruns it after
 replacing a tab. Names match by baseKey (spelling, plural, hyphen, typo and word order); same lifts named with
 different words merge only through dictionary variants, which the owner decides. Unknown names are flagged, never
@@ -442,7 +442,7 @@ same program on both sides joins that run),
 then confirmed by the owner. log_sessions holds one row per lifting day (UUID v5 of the date) with its block or an
 explicit unassigned; re-detection never touches confirmed blocks, owner-unassigned days or forward sessions. After a
 sync, new lifting days join the in-progress confirmed block with program and week (source 'forward'). The app's
-Current program card ends and starts blocks (2026-11-17; ingest/program-blocks.js endBlock and startBlock; POST
+Current program card ends and starts blocks (2026-11-17; ingest/program-blocks.ts endBlock and startBlock; POST
 /api/program/blocks/:id/end { end, outcome completed|abandoned } and POST /api/program/blocks { program, start }):
 End is the confirmed in-progress block only, its form defaulting to last_named_session (the last day whose Workout
 Log name maps to the program); Start takes any name (80 characters), refused while a block is in progress. A name
@@ -548,7 +548,7 @@ of sensitive sections sent; prompt and report text never go to logs or run recor
 Run again (2026-11-17): POST /api/reviews/run takes weekEnd, a Saturday up to last week's end with a review already
 (400 otherwise, 404 with none), gated for that week (reviewStatus as of the Sunday after); status carries
 runningWeekEnd. Writing a week that has a review keeps the old one in review_versions (migration 034, a user table:
-report, model, warnings and dates, never the summary sent): jobs/review.js withArchive copies it before the call and
+report, model, warnings and dates, never the summary sent): jobs/review.ts withArchive copies it before the call and
 removes the copy if the run fails, wrapping both the app's services.review and weeklyReview (npm run review -- --week);
 agent/ is unchanged, so the eval harness gate is too. GET /api/reviews lists each week's versions (ids and dates) and GET
 /api/reviews/versions/:id opens one, shown on the Reviews tab marked Archived.
@@ -560,13 +560,13 @@ in the background through services.review (main instance only; never in the demo
 Scheduling (server/scheduler.js, ported from Job-Agent; test/scheduler.test.js): while the server runs, SCHEDULE_SYNC
 ("daily 07:00"), SCHEDULE_REVIEW ("Sun,Mon,Tue 08:00 | Sun 13:00": several parts separated by "|", the earliest next
 run wins), SCHEDULE_BACKUP ("daily 23:00") and SCHEDULE_RESTORE_TEST
-("monthly 1 05:00") run the same jobs as the npm scripts (jobs/sync.js syncJob, jobs/review.js weeklyReview with
-scheduled true, jobs/backup.js backupJob). Times are in OWNER_TZ (tools/time.ts zonedInstant), never the host's zone. A
+("monthly 1 05:00") run the same jobs as the npm scripts (jobs/sync.ts syncJob, jobs/review.ts weeklyReview with
+scheduled true, jobs/backup.ts backupJob). Times are in OWNER_TZ (tools/time.ts zonedInstant), never the host's zone. A
 missing or blank line turns that job off, so the PC (lines commented out) runs nothing and keeps its Windows tasks until
 the move; a bad spec stops the server rather than silently disabling a job. A run missed within 12 hours runs on start
 when the job has not run since; a job never overlaps itself (in this process, or a run of that name marked running in the
 last 30 minutes). GET /api/jobs carries each job's schedule and next run for the Activity tab; [schedule] lines go to
-stdout. The restore test runs jobs/restore-check.js restoreTestJob.
+stdout. The restore test runs jobs/restore-check.ts restoreTestJob.
 The scheduled review (and the Windows task's --scheduled): a Monday or Tuesday catch-up does nothing once the week's review exists. A review whose saved
 summary has dataQuality (written with gaps) gets rewriteAvailable once the week is complete; the notice offers Rewrite with
 the full week (POST /api/reviews/run overwrites the week's review); nothing rewrites automatically.
@@ -697,7 +697,7 @@ user in memory; system prompt is the guides HELP_GUIDES, the prompt is the quest
 help-ask run keeps lengths and cost). docs/guides/using-the-app.md is the tile-by-tile guide. The demo's banner and Home
 link to REQUEST_ACCESS_URL (deploy/compose.yml: the main app's /auth/login from SITE_ADDRESS), only in the demo.
 Users, phase 5 (2026-10-24), each user's own programs: user_programs (migration 028; in USER_TABLES, so the scope and
-isolation guards cover it) holds programs in the catalog format with match words; ingest/user-programs.js (saveProgram,
+isolation guards cover it) holds programs in the catalog format with match words; ingest/user-programs.ts (saveProgram,
 deleteProgram, importPrograms all or nothing, exportPrograms their own only) checks each with metrics/catalog.ts
 programProblems (any name, 80 characters) and re-runs detection (detected blocks only) and refreshPhases after every
 change. metrics/load.ts userCatalog(db, shared) is the catalog a user gets: their own first, then the shared one (the MAPS
@@ -770,7 +770,7 @@ tab's Help me write a section (agent/prompt-draft.js SECTION_KINDS): GET /api/pr
 (a template without AI, or claude-sonnet-5-5 with the user's AI from their answers and goals only, never their data or
 medications; 20 an hour; prompt-draft run with lengths), opened as a new section to edit and save. Guide:
 docs/guides/prompts.md (guidance and examples per section).
-Excel Workout Log (2026-10-25): GET /api/workout-log/template.xlsx (ingest/excel-upload.js workoutTemplate: the year tab with
+Excel Workout Log (2026-10-25): GET /api/workout-log/template.xlsx (ingest/excel-upload.ts workoutTemplate: the year tab with
 WORKOUT_LOG_HEADER, bold and frozen, Date as m/d/yyyy, and How to use) and POST /api/workout-log/upload: the raw body with
 the .xlsx content type only (its own parser, 5 MB; anything else 415), an X-File-Name ending .xlsx, never the demo, the
 owner, a paused user or one with a Google Sheet Workout Log set, 10 an hour per user. tools/xlsx.ts (no dependency; Node
@@ -778,7 +778,7 @@ zlib) reads it strictly: the central directory, no encryption or zip64, safe par
 capped (10 MB a part, 40 MB in all, ratio 200), a spreadsheetml workbook only (no .xls, macros, external links or
 embedded objects), no DOCTYPE or ENTITY, at most 50 tabs, 20,000 rows and 60 columns, cells cut at 2,000 characters,
 formulas as their cached values; 1904 workbooks shift the Date column. Year tabs go through parseWorkoutLogTab and replace
-those years (tab_year = year), then afterChange (ingest/app-workouts.js); the file is never stored or logged, and the
+those years (tab_year = year), then afterChange (ingest/app-workouts.ts); the file is never stored or logged, and the
 workout-upload run keeps counts only. test/fixtures/excel holds files saved by Excel with made-up rows and personal
 information removed.
 Enhancements (2026-10-25): sync, the manual review run and the chat question are one at a time per user (app.js syncing,
@@ -787,13 +787,13 @@ review, at most once a day per kind, settings row alert:<key> on the owner, clea
 skipped at Tuesday's catch-up, and after the owner's scheduled sync health_stale, export_stale or workout_export_stale
 (once until it clears); names, dates and error names only. A sheet the app created (settings workout_log_created) gets
 each new year's tab on its first sync of the year (ensureYearTab; a failure is a sync warning). Workouts logged in the
-app (ingest/app-workouts.js, the Training tab's Log workout card): strength_exercises and strength_sets at tab_year 0
+app (ingest/app-workouts.ts, the Training tab's Log workout card): strength_exercises and strength_sets at tab_year 0
 (APP_TAB_YEAR; the Sheets sync deletes only the year tabs it reads), one per day, parsed with parseWeight and parseSet,
 then the dictionary, detection, assignForward and refreshPhases; GET /api/workouts, /api/workouts/suggest (their history
 and dictionary names, their own programs' workouts only), PUT and DELETE /api/workouts/:date (up to today).
 Create my Workout Log (2026-10-25): /auth/google/sheets?create=1 asks for spreadsheets.readonly plus drive.file (DRIVE_FILE_SCOPE,
 non-sensitive: only files the app created); the callback refuses a grant without both, stores the token, then app.js
-createSheet (never the owner) calls services.createWorkoutSheet (ingest/create-sheet.js: "Health Review Workout Log",
+createSheet (never the owner) calls services.createWorkoutSheet (ingest/create-sheet.ts: "Health Review Workout Log",
 a tab named with the owner's year holding WORKOUT_LOG_HEADER in row 1, bold and frozen, and a How to use tab; no example
 rows) and saves it as workout_log_sheet_id (sheets-created, or sheets-create-failed). feedsView gives the user their own
 sheetUrl (never the admin screens) and canCreate. The Today section is labeled Daily Check-in (#today unchanged).
@@ -803,7 +803,7 @@ their id (INGEST_TOKEN stays the owner's; a pending, rejected or paused user's t
 separate Google consent for spreadsheets.readonly only (/auth/google/sheets and SHEETS_CALLBACK_PATH, PKCE, state cookie
 hr_sheets; the refresh token sealed in users.google_refresh_enc, migration 027), then PUT /api/account/workout-sheet
 (a link or ID, checked by listing its tabs with their permission; needs a year tab; stored in their own settings row
-workout_log_sheet_id, never on the admin screen); DELETE /api/account/google forgets both. jobs/sync.js syncJob with
+workout_log_sheet_id, never on the admin screen); DELETE /api/account/google forgets both. jobs/sync.ts syncJob with
 userFeed reads only that sheet (apple rest, no Drive folders, no lab sheet, no v1 imports; catalog null unless MAPS is
 shared). users.feeds (PUT /api/account/feeds, chosen at Request access too) drives the Settings Data feeds card. Setup
 guides are public pages /guides and /guides/<name> (docs/guides/*.md through server/pages.js; {{SITE}} filled in at
@@ -846,7 +846,7 @@ cluster in the OS temp folder, v3 Phase 1G), packed with the MAPS catalog, gzipp
 HEALTH_BACKUP_PASSPHRASE (.env only, never uploaded or logged) and a fresh salt and nonce per file, verified by
 decrypting before it is uploaded over HTTPS with the drive.file scope (the app sees only files it created). Plaintext
 snapshots exist only in the OS temp folder and are deleted on every exit path. Kept: 7 nightly, 3 weekly, 1 monthly.
-The monthly restore test (tools/backup/restore-check.ts restoreTest, jobs/restore-check.js; SCHEDULE_RESTORE_TEST,
+The monthly restore test (tools/backup/restore-check.ts restoreTest, jobs/restore-check.ts; SCHEDULE_RESTORE_TEST,
 npm run backup:test) proves the newest backup can be read: decrypted into a new OS temp folder (deleted on every exit
 path), integrity checked (a PostgreSQL dump: restored into a throwaway local cluster, never the production instance), and
 compared with the live database by table row counts only. It fails on a decrypt or integrity

@@ -5,14 +5,14 @@ import * as q from '../queries.js';
 import { addDays } from '../../metrics/stats.ts';
 import { loadDictionary } from '../../metrics/dictionary.ts';
 import { loadUserPrograms } from '../../metrics/load.ts';
-import { WorkoutError, deleteWorkout, listWorkouts, saveWorkout, workoutSuggestions } from '../../ingest/app-workouts.js';
-import { MAX_UPLOAD_BYTES, TEMPLATE_NAME, UploadError, ingestWorkbook, workoutTemplate } from '../../ingest/excel-upload.js';
+import { WorkoutError, deleteWorkout, listWorkouts, saveWorkout, workoutSuggestions } from '../../ingest/app-workouts.ts';
+import { MAX_UPLOAD_BYTES, TEMPLATE_NAME, UploadError, ingestWorkbook, workoutTemplate } from '../../ingest/excel-upload.ts';
 import { XLSX_TYPE, XlsxError } from '../../tools/xlsx.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createRateLimiter } from '../security.js';
-import { parseHealthJson } from '../../ingest/health-json.js';
-import { parseWorkoutJson } from '../../ingest/parsers.js';
-import { applyHealthDays, applyWorkouts } from '../../ingest/apply.js';
+import { parseHealthJson } from '../../ingest/health-json.ts';
+import { parseWorkoutJson } from '../../ingest/parsers.ts';
+import { applyHealthDays, applyWorkouts } from '../../ingest/apply.ts';
 import { localStamp } from '../../tools/time.ts';
 import { OWNER_ID, startUserRun, userByIngestToken } from '../../db/users.ts';
 import { INGEST_BODY_LIMIT, INGEST_RATE_LIMIT, anyObject, badRequest } from './schemas.js';
@@ -23,7 +23,7 @@ export async function register(app, ctx) {
     NO_AI, authMode, clock, db, dictionary, ingest, instance, isPaused, log, programCatalog, requireDate, store,
     uidOf, userStore,
   } = ctx;
-  // ---- workouts logged in the app (ingest/app-workouts.js; tab_year 0, never touched by the Sheets sync) ----
+  // ---- workouts logged in the app (ingest/app-workouts.ts; tab_year 0, never touched by the Sheets sync) ----
   const workoutCtx = (req) => ({ today: q.localDate(clock()), now: clock(), dictionary: dictionary ?? loadDictionary(), catalog: () => programCatalog(req) });
   const workoutError = (reply, err) => {
     if (err instanceof WorkoutError) return reply.code(400).send({ error: err.message });
@@ -60,7 +60,7 @@ export async function register(app, ctx) {
   app.delete('/api/workouts/:date', { schema: { summary: "Delete the day's workout logged in the app", params: dateOnly, response: { 200: anyObject } } },
     async (req, reply) => ((await deleteWorkout(db, requireDate(req.params.date), workoutCtx(req))) ? { deleted: true } : reply.code(404).send({ error: 'No workout logged in the app that day' })));
 
-  // ---- the Excel Workout Log (ingest/excel-upload.js, tools/xlsx.js): a template to download, and uploading it ----
+  // ---- the Excel Workout Log (ingest/excel-upload.ts, tools/xlsx.js): a template to download, and uploading it ----
   // Only .xlsx is accepted: this content type (any other gets 415 before anything is read), a name ending .xlsx, up to
   // 5 MB; the workbook itself is checked by tools/xlsx.js (a real zip, no macros, no legacy .xls, no external links,
   // no DOCTYPE, size and row limits). Read in memory, never stored or logged; never in the demo.
@@ -106,7 +106,7 @@ export async function register(app, ctx) {
   // ---- Health Auto Export REST ingest (the server: APPLE_SOURCE=rest) ----
   // Open to the internet without a Google session (server/auth.js), so each post carries Authorization: Bearer
   // INGEST_TOKEN, compared in constant time. JSON only, 5 MB at most, 30 posts per 15 minutes per address. The data goes
-  // through the same parsers and writers as the Drive files (ingest/apply.js); ingest_log keeps metadata only.
+  // through the same parsers and writers as the Drive files (ingest/apply.ts); ingest_log keeps metadata only.
   const ingestLimiter = createRateLimiter(INGEST_RATE_LIMIT);
   const tokenHash = ingest.token ? createHash('sha256').update(ingest.token).digest() : null;
   // Whose post it is (multi-user, phase 3): INGEST_TOKEN is the owner's; any other token is an approved user's own

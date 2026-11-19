@@ -3,7 +3,7 @@
 //   npm run log:normalize
 import { openOwnerStore } from '../db/store.ts';
 import { loadDictionary } from '../metrics/dictionary.ts';
-import { normalizeAll } from '../ingest/normalize.js';
+import { normalizeAll } from '../ingest/normalize.ts';
 
 let dictionary;
 try {

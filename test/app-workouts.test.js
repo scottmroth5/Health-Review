@@ -1,4 +1,4 @@
-// Workouts logged in the app (ingest/app-workouts.js): stored at tab_year 0 with the sheet's own parsing, used by
+// Workouts logged in the app (ingest/app-workouts.ts): stored at tab_year 0 with the sheet's own parsing, used by
 // volume and program blocks like sheet rows, never touched by a Workout Log sync, one per day, the user's own only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,9 +7,9 @@ import { openHealthStore } from '../db/store.ts';
 import { scopeStore } from '../db/scope.ts';
 import { buildApp } from '../server/app.js';
 import { authSettings } from '../server/auth.js';
-import { runSync } from '../ingest/sync.js';
+import { runSync } from '../ingest/sync.ts';
 import { fakeSource, openTestStore } from './helpers.js';
-import { WORKOUT_LOG_HEADER } from '../ingest/create-sheet.js';
+import { WORKOUT_LOG_HEADER } from '../ingest/create-sheet.ts';
 
 const SITE = 'http://localhost:5188';
 const NOW = new Date('2026-03-20T16:00:00Z');

@@ -4,34 +4,52 @@
 // it reads (tab_year = the year), so it never touches these. One app workout per day; weights and reps are read with
 // the sheet's own parsers, so "BW", "40ea", a band color or "30s" mean the same here. Takes a scoped database: the async
 // handle (docs/adr/0006) for saveWorkout, deleteWorkout and afterChange, which open transactions; either for the rest.
-import { parseSet, parseWeight, SET_PAIRS } from './parsers.js';
-import { detect, writeDetected, assignForward, refreshPhases } from './program-blocks.js';
+import { parseSet, parseWeight, SET_PAIRS } from './parsers.ts';
+import { detect, writeDetected, assignForward, refreshPhases } from './program-blocks.ts';
 import { performed } from '../metrics/strength.ts';
+import type { Catalog, Program } from '../metrics/catalog.ts';
+import type { Dictionary } from '../metrics/dictionary.ts';
+import type { Row } from '../metrics/stats.ts';
+import type { SetFields, WeightFields } from './parsers.ts';
+import type { UserDb } from './types.ts';
+
+/** What a change to the log needs: today, the clock, the dictionary, and the user's catalog (read when needed). */
+export interface AfterChangeContext {
+  today: string;
+  now: Date;
+  dictionary: Dictionary;
+  catalog: () => Catalog | null | Promise<Catalog | null>;
+}
+/** A day's workouts as the Training tab lists them. */
+export interface WorkoutDay {
+  date: string, source: 'app' | 'sheet', workout: string | null,
+  exercises: { name: string, comment: string | null, sets: { weight: string | null, reps: string | null }[], performed: boolean }[],
+}
 
 export const APP_TAB_YEAR = 0;
 export const MAX_EXERCISES = 30;
 export class WorkoutError extends Error {}
 
-const clean = (v, max) => {
+const clean = (v: unknown, max: number): string | null => {
   const t = String(v ?? '').trim();
   return t ? t.slice(0, max) : null;
 };
 
 /** The days with workouts between two dates, newest first: each with its source (app: editable; sheet: read only). */
-export async function listWorkouts(db, { from, to }) {
+export async function listWorkouts(db: UserDb, { from, to }: { from: string, to: string }): Promise<WorkoutDay[]> {
   const rows = await db.prepare(`SELECT e.id, e.tab_year, e.row_no, e.date, e.workout, e.exercise, e.comment
     FROM strength_exercises e WHERE e.user_id = @uid AND e.date BETWEEN ? AND ? ORDER BY e.date DESC, e.tab_year, e.row_no`).all(from, to);
   const sets = await db.prepare(`SELECT s.exercise_id, s.set_no, s.weight_text, s.reps_text, s.weight_lbs, s.reps, s.duration_sec, s.distance_yd, s.bodyweight, s.band
     FROM strength_sets s JOIN strength_exercises e ON e.id = s.exercise_id AND e.user_id = s.user_id
     WHERE s.user_id = @uid AND e.date BETWEEN ? AND ? ORDER BY s.exercise_id, s.set_no`).all(from, to);
-  const setsOf = new Map();
+  const setsOf = new Map<number, Row[]>();
   for (const s of sets) setsOf.set(s.exercise_id, [...(setsOf.get(s.exercise_id) ?? []), s]);
-  const days = new Map();
+  const days = new Map<string, WorkoutDay>();
   for (const r of rows) {
     const source = r.tab_year === APP_TAB_YEAR ? 'app' : 'sheet';
     const k = `${r.date}|${source}`;
-    if (!days.has(k)) days.set(k, { date: r.date, source, workout: null, exercises: [] });
-    const day = days.get(k);
+    let day = days.get(k);
+    if (!day) { day = { date: r.date, source, workout: null, exercises: [] }; days.set(k, day); }
     day.workout ??= r.workout;
     const own = setsOf.get(r.id) ?? [];
     day.exercises.push({ name: r.exercise, comment: r.comment, sets: own.map((s) => ({ weight: s.weight_text, reps: s.reps_text })), performed: own.some(performed) });
@@ -41,13 +59,12 @@ export async function listWorkouts(db, { from, to }) {
 
 /**
  * Checks a submitted workout and parses its sets like the sheet's. Throws WorkoutError with what is wrong.
- * @returns {{ workout: string|null, exercises: Array<{ name, comment, sets: object[] }> }}
  */
-export function checkWorkout(body) {
-  const exercises = (body?.exercises ?? []).map((ex, i) => {
+export function checkWorkout(body: any): { workout: string | null, exercises: { name: string, comment: string | null, sets: ({ set_no: number } & WeightFields & SetFields)[] }[] } {
+  const exercises = (body?.exercises ?? []).map((ex: any, i: number) => {
     const name = clean(ex?.name, 120);
     if (!name) throw new WorkoutError(`Exercise ${i + 1} needs a name`);
-    const raw = (ex.sets ?? []).filter((s) => clean(s?.weight, 40) || clean(s?.reps, 40));
+    const raw: any[] = (ex.sets ?? []).filter((s: any) => clean(s?.weight, 40) || clean(s?.reps, 40));
     if (raw.length > SET_PAIRS) throw new WorkoutError(`${name}: at most ${SET_PAIRS} sets`);
     return { name, comment: clean(ex.comment, 500), sets: raw.map((s, k) => ({ set_no: k + 1, ...parseWeight(clean(s.weight, 40)), ...parseSet(clean(s.reps, 40)) })) };
   });
@@ -57,7 +74,7 @@ export function checkWorkout(body) {
 }
 
 /** After a change to the log: the dictionary onto the given names, then blocks and phases as a sync does (confirmed blocks untouched). */
-export async function afterChange(db, names, { today, now, dictionary, catalog }) {
+export async function afterChange(db: UserDb, names: string[], { today, now, dictionary, catalog }: AfterChangeContext) {
   const update = db.prepare(`UPDATE strength_exercises SET canonical_id = ?, implement = ?, movement_pattern = ?, is_primary = ?, map_status = ?, normalized_at = ?
     WHERE user_id = @uid AND exercise = ?`);
   for (const name of new Set(names)) {
@@ -71,9 +88,8 @@ export async function afterChange(db, names, { today, now, dictionary, catalog }
 
 /**
  * Saves a day's app workout, replacing any earlier one that day (sheet rows that day are left as they are).
- * @param {{ today: string, now?: Date, dictionary: object, catalog: () => object|null }} ctx
  */
-export async function saveWorkout(db, date, body, ctx) {
+export async function saveWorkout(db: UserDb, date: string, body: any, ctx: Omit<AfterChangeContext, 'now'> & { now?: Date }) {
   if (date > ctx.today) throw new WorkoutError('Log workouts up to today, not ahead');
   const w = checkWorkout(body);
   const now = ctx.now ?? new Date();
@@ -95,7 +111,7 @@ export async function saveWorkout(db, date, body, ctx) {
 }
 
 /** Deletes a day's app workout; returns whether there was one. */
-export async function deleteWorkout(db, date, ctx) {
+export async function deleteWorkout(db: UserDb, date: string, ctx: Omit<AfterChangeContext, 'now'> & { now?: Date }) {
   let gone = 0;
   await db.tx(async () => {
     gone = (await db.prepare('DELETE FROM strength_exercises WHERE user_id = @uid AND tab_year = ? AND date = ?').run(APP_TAB_YEAR, date)).changes;
@@ -108,13 +124,13 @@ export async function deleteWorkout(db, date, ctx) {
  * Help for the form: exercise names from their own history (most logged first) and the dictionary, and their own
  * programs' workouts to start from (never a shared catalog's contents).
  */
-export async function workoutSuggestions(db, { dictionary, ownPrograms }) {
-  const history = (await db.prepare(`SELECT exercise, COUNT(*) AS n FROM strength_exercises WHERE user_id = @uid GROUP BY exercise ORDER BY n DESC, exercise LIMIT 300`).all()).map((r) => r.exercise);
+export async function workoutSuggestions(db: UserDb, { dictionary, ownPrograms }: { dictionary: Dictionary, ownPrograms: Program[] }) {
+  const history = (await db.prepare(`SELECT exercise, COUNT(*) AS n FROM strength_exercises WHERE user_id = @uid GROUP BY exercise ORDER BY n DESC, exercise LIMIT 300`).all()).map((r: Row): string => r.exercise);
   const names = [...new Set([...history, ...dictionary.exercises.map((e) => e.name)])];
-  const templates = ownPrograms.flatMap((p) => p.phases.flatMap((ph) => (ph.workouts ?? []).map((wo) => ({
+  const templates = ownPrograms.flatMap((p) => p.phases.flatMap((ph: any) => (ph.workouts ?? []).map((wo: any) => ({
     label: `${p.name}, ${ph.name}, ${wo.name}`,
     workout: `${p.name} ${ph.name} ${wo.name}`,
-    exercises: (wo.exercises ?? []).map((ex) => ({ name: ex.name, sets: ex.sets ?? null, reps: ex.reps ?? null })),
+    exercises: (wo.exercises ?? []).map((ex: any) => ({ name: ex.name, sets: ex.sets ?? null, reps: ex.reps ?? null })),
   }))));
   return { names, templates };
 }

@@ -4,23 +4,20 @@
  * empty cells are left out, while 0 and false are kept. The Sheets API omits trailing
  * empty cells, so undefined counts as empty. Values are returned unchanged; unlike v1,
  * dates are never flattened to text here.
- *
- * @param {Array<Array<any>>} values
- * @returns {Array<Record<string, any>>}
  */
-export function rowsToRecords(values) {
+export function rowsToRecords(values: any[][] | null | undefined): Record<string, any>[] {
   const [headers = [], ...rows] = values ?? [];
-  const seen = new Set();
+  const seen = new Set<any>();
   for (const h of headers) {
     if (!h) continue;
     if (seen.has(h)) throw new Error(`Duplicate column header "${h}"`);
     seen.add(h);
   }
 
-  const records = [];
+  const records: Record<string, any>[] = [];
   for (const row of rows) {
-    const record = {};
-    headers.forEach((header, j) => {
+    const record: Record<string, any> = {};
+    headers.forEach((header: any, j: number) => {
       const cell = row?.[j];
       if (header && !isEmpty(cell)) record[header] = cell;
     });
@@ -29,4 +26,4 @@ export function rowsToRecords(values) {
   return records;
 }
 
-const isEmpty = (cell) => cell === '' || cell === null || cell === undefined;
+const isEmpty = (cell: unknown): boolean => cell === '' || cell === null || cell === undefined;

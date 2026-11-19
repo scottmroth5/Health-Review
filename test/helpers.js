@@ -35,7 +35,7 @@ export function fakeSource(tabs) {
     // workouts) }]; kind follows the file name, as in the real source, so a file of the other kind in a folder is left out.
     exports: [],
     async listExports(folderId, kind) {
-      const { exportKind } = await import('../ingest/sheets.js');
+      const { exportKind } = await import('../ingest/sheets.ts');
       return this.exports.filter((f) => f.folder === folderId && exportKind(f.name, kind) === kind)
         .map(({ values: _, folder: __, json: ___, ...f }) => ({ ...f, kind })).sort((a, b) => a.name.localeCompare(b.name));
     },

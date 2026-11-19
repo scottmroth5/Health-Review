@@ -4,8 +4,8 @@
 //   npm run sync -- --backfill   one-time full import, including the drinking log and weekly check-ins
 import { getGoogleAuth } from '../tools/google/auth.ts';
 import { openOwnerStore } from '../db/store.ts';
-import { createSheetsSource } from '../ingest/sheets.js';
-import { runSync } from '../ingest/sync.js';
+import { createSheetsSource } from '../ingest/sheets.ts';
+import { runSync } from '../ingest/sync.ts';
 
 const DETAILED = new Set(['year corrected', 'unknown column', 'several rows for one day']);
 

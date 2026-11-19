@@ -4,12 +4,14 @@
 // synced_at in drive_exports) are kept as they are. Every other row came from the sheet: a late twin of an export row is
 // deleted, and the rest move back 3 hours. Counts only; never workout details.
 import { startUserRun } from '../db/users.ts';
+import type { Row } from '../metrics/stats.ts';
+import type { Logger, UserStore } from './types.ts';
 
 export const SHEET_LATE_HOURS = 3;
 const RUN_NAME = 'fix-session-times';
 
 /** A local wall-clock 'YYYY-MM-DDTHH:MM:SS' moved by whole hours (the stored times have no zone). */
-export function moveHours(text, hours) {
+export function moveHours(text: string, hours: number): string {
   const d = new Date(`${text}Z`);
   d.setUTCHours(d.getUTCHours() + hours);
   return d.toISOString().slice(0, 19);
@@ -18,23 +20,21 @@ export function moveHours(text, hours) {
 /**
  * Plans the repair, and applies it when apply is true (one transaction; refused when it was applied before, or when a
  * moved workout would land on one already stored).
- * @returns {{ total: number, fromExports: number, lateTwins: number, toMove: number, movedToEarlierDate: number,
- *   collisions: number, alreadyApplied: boolean, applied: boolean }}
  */
-export async function fixSessionTimes(store, { apply = false, logger = { info() {}, warn() {}, error() {} } } = {}) {
+export async function fixSessionTimes(store: UserStore, { apply = false, logger = { info() {}, warn() {}, error() {} } }: { apply?: boolean, logger?: Logger } = {}) {
   const db = store.db;
   // Already applied (2026-10-15) and keyed on SQLite's rowid: SQLite only, never run on PostgreSQL.
   if (db.engine !== 'sqlite') throw new Error('The workout time fix runs on SQLite only; it was applied before the move.');
   const alreadyApplied = Boolean(await db.prepare("SELECT 1 FROM runs WHERE user_id = @uid AND name = ? AND status = 'ok'").get(RUN_NAME));
   const stamps = new Set(await db.prepare("SELECT DISTINCT synced_at FROM drive_exports WHERE user_id = @uid AND kind = 'workouts'").pluck().all());
   const rows = await db.prepare('SELECT rowid AS id, type, start, "end", updated_at FROM workout_sessions WHERE user_id = @uid').all();
-  const key = (type, start, end) => `${type}|${start}|${end}`;
-  const fromExports = new Set(rows.filter((r) => stamps.has(r.updated_at)).map((r) => key(r.type, r.start, r.end)));
-  const sheetRows = rows.filter((r) => !stamps.has(r.updated_at));
-  const exportStarts = new Set(rows.filter((r) => stamps.has(r.updated_at)).map((r) => `${r.type}|${r.start}`));
+  const key = (type: string, start: string, end: string) => `${type}|${start}|${end}`;
+  const fromExports = new Set(rows.filter((r: Row) => stamps.has(r.updated_at)).map((r: Row) => key(r.type, r.start, r.end)));
+  const sheetRows = rows.filter((r: Row) => !stamps.has(r.updated_at));
+  const exportStarts = new Set(rows.filter((r: Row) => stamps.has(r.updated_at)).map((r: Row) => `${r.type}|${r.start}`));
 
-  const lateTwins = [];
-  const toMove = [];
+  const lateTwins: Row[] = [];
+  const toMove: Row[] = [];
   for (const r of sheetRows) {
     const start = moveHours(r.start, -SHEET_LATE_HOURS);
     const end = moveHours(r.end, -SHEET_LATE_HOURS);
@@ -69,7 +69,7 @@ export async function fixSessionTimes(store, { apply = false, logger = { info() 
       for (const m of toMove) await upd.run(m.newStart, m.newEnd, m.id);
     });
     await run.finish('ok', { deleted: lateTwins.length, moved: toMove.length });
-  } catch (err) {
+  } catch (err: any) {
     await run.finish('error', { error: err.name });
     throw err;
   }

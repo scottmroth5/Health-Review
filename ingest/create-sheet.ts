@@ -3,7 +3,7 @@
 // named with the year holds the column row; a "How to use" tab explains it (the sync reads only year tabs). No example
 // rows, since they would count as a real workout.
 import { sheets as sheetsApi } from '@googleapis/sheets';
-import { SET_PAIRS } from './parsers.js';
+import { SET_PAIRS } from './parsers.ts';
 
 export const WORKOUT_LOG_TITLE = 'Health Review Workout Log';
 export const WORKOUT_LOG_HEADER = ['Date', 'Workout', 'Exercise',
@@ -21,10 +21,10 @@ export const HOW_TO_USE = [
   'Health Review reads this sheet every morning, or when you tap Sync now on Home. It never changes it.',
 ];
 
-const text = (v) => ({ userEnteredValue: { stringValue: v } });
+const text = (v: string) => ({ userEnteredValue: { stringValue: v } });
 
 /** The spreadsheets.create body: the year tab with its bold, frozen column row, and the How to use tab. */
-export function workoutSheetBody(year) {
+export function workoutSheetBody(year: string | number) {
   return {
     properties: { title: WORKOUT_LOG_TITLE },
     sheets: [
@@ -42,7 +42,7 @@ export function workoutSheetBody(year) {
 
 /** Formats the Date column (below row 1) as dates, and widens the Exercise and Comment columns. */
 export function workoutSheetFormat() {
-  const width = (col, pixelSize) => ({ updateDimensionProperties: { range: { sheetId: 0, dimension: 'COLUMNS', startIndex: col, endIndex: col + 1 }, properties: { pixelSize }, fields: 'pixelSize' } });
+  const width = (col: number, pixelSize: number) => ({ updateDimensionProperties: { range: { sheetId: 0, dimension: 'COLUMNS', startIndex: col, endIndex: col + 1 }, properties: { pixelSize }, fields: 'pixelSize' } });
   return {
     requests: [
       { repeatCell: { range: { sheetId: 0, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'm/d/yyyy' } } }, fields: 'userEnteredFormat.numberFormat' } },
@@ -54,9 +54,9 @@ export function workoutSheetFormat() {
 
 /**
  * Creates the Workout Log in the user's Drive with their Google permission (drive.file). Returns its id and link.
- * @param {{ auth?: object, year: string|number, api?: object }} o  api: a fake Sheets client for tests
+ * auth: the user's Google permission; api: a fake Sheets client for tests.
  */
-export async function createWorkoutSheet({ auth, year, api = sheetsApi({ version: 'v4', auth }) }) {
+export async function createWorkoutSheet({ auth, year, api = sheetsApi({ version: 'v4', auth }) }: { auth?: any, year: string | number, api?: any }) {
   const { data } = await api.spreadsheets.create({ requestBody: workoutSheetBody(year) });
   await api.spreadsheets.batchUpdate({ spreadsheetId: data.spreadsheetId, requestBody: workoutSheetFormat() });
   return { id: data.spreadsheetId, url: data.spreadsheetUrl ?? `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit` };
@@ -66,11 +66,10 @@ export async function createWorkoutSheet({ auth, year, api = sheetsApi({ version
  * A sheet Health Review created gets each new year's tab (with the same bold, frozen column row) on its first sync of
  * that year, so the log keeps syncing in January. Returns true when it added the tab. Only for a sheet the app created:
  * drive.file cannot change any other.
- * @param {{ auth?: object, sheetId: string, year: string|number, api?: object }} o
  */
-export async function ensureYearTab({ auth, sheetId, year, api = sheetsApi({ version: 'v4', auth }) }) {
+export async function ensureYearTab({ auth, sheetId, year, api = sheetsApi({ version: 'v4', auth }) }: { auth?: any, sheetId: string, year: string | number, api?: any }): Promise<boolean> {
   const { data } = await api.spreadsheets.get({ spreadsheetId: sheetId, fields: 'sheets.properties(sheetId,title)' });
-  const tabs = (data.sheets ?? []).map((s) => s.properties);
+  const tabs: { sheetId?: number, title?: string }[] = (data.sheets ?? []).map((s: any) => s.properties);
   if (tabs.some((t) => t.title === String(year))) return false;
   let tabId = Number(year);
   while (tabs.some((t) => t.sheetId === tabId)) tabId += 1;

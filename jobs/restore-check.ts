@@ -8,20 +8,22 @@ import { DRIVE_FOLDER } from '../tools/backup/run.ts';
 import { newestBackup, restoreTest } from '../tools/backup/restore-check.ts';
 import { getGoogleAuth } from '../tools/google/auth.ts';
 import { startUserRun } from '../db/users.ts';
+import type { DriveClient } from '../tools/backup/drive.ts';
+import type { UserStore } from '../ingest/types.ts';
 
 const quiet = { info() {}, warn() {}, error() {}, log() {} };
 
 /**
- * @param {object} o
- * @param {{ db: object }} o.store
- * @param {object} [o.drive]  a Drive client (tests pass a fake); default: Google Drive with the saved sign-in
- * @param {string} [o.fromFile]  test this backup file instead of the newest one in Drive
+ * drive: a Drive client (tests pass a fake); default: Google Drive with the saved sign-in. fromFile: test this backup file
+ * instead of the newest one in Drive.
  */
-export async function restoreTestJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, drive, fromFile }) {
+export async function restoreTestJob({ store, passphrase = process.env.HEALTH_BACKUP_PASSPHRASE, drive, fromFile }: {
+  store: UserStore, passphrase?: string, drive?: DriveClient, fromFile?: string,
+}) {
   const run = await startUserRun(store, 'restore-test', { from: fromFile ? 'file' : 'google-drive' }, quiet);
   try {
-    let name;
-    let file;
+    let name: string | undefined;
+    let file: Buffer;
     if (fromFile) {
       name = fromFile.split(/[\\/]/).pop();
       file = readFileSync(fromFile);
@@ -32,11 +34,11 @@ export async function restoreTestJob({ store, passphrase = process.env.HEALTH_BA
       name = newest.name;
       file = await client.download(newest.id);
     }
-    const r = await restoreTest({ file, passphrase, live: store.db }); // either engine: counts through the async interface
+    const r = await restoreTest({ file, passphrase: passphrase as string, live: store.db }); // either engine: counts through the async interface
     const summary = { file: name, tables: r.tables, rowsBackup: r.rowsBackup, rowsLive: r.rowsLive, differences: r.differences.length, problems: r.problems };
     await run.finish(r.ok ? 'ok' : 'error', summary);
     return { ...r, file: name };
-  } catch (err) {
+  } catch (err: any) {
     await run.finish('error', { error: err.message });
     throw err;
   }

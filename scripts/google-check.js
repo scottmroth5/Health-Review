@@ -3,7 +3,7 @@
 //   npm run google:check
 import { sheets as sheetsApi } from '@googleapis/sheets';
 import { getGoogleAuth } from '../tools/google/auth.ts';
-import { SHEET_ENV } from '../ingest/sheets.js';
+import { SHEET_ENV } from '../ingest/sheets.ts';
 
 const SHEET_ENV_KEYS = Object.values(SHEET_ENV);
 

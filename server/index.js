@@ -6,17 +6,17 @@ import { scopeStore } from '../db/scope.ts';
 import { OWNER_ID, getUser, startUserRun, syncOwnerEmail, timeZoneOf } from '../db/users.ts';
 import { open } from '../tools/secret-box.ts';
 import { OAuth2Client } from 'google-auth-library';
-import { createSheetsSource } from '../ingest/sheets.js';
-import { createWorkoutSheet, ensureYearTab } from '../ingest/create-sheet.js';
+import { createSheetsSource } from '../ingest/sheets.ts';
+import { createWorkoutSheet, ensureYearTab } from '../ingest/create-sheet.ts';
 import { createMailer } from '../tools/mail.ts';
 import { repoPath, dataPath } from '../tools/paths.ts';
 import { localDate as ownerDate, withTimeZone, zonedInstant, zonedParts } from '../tools/time.ts';
 import { createAlerts } from './alerts.js';
-import { appleSource } from '../ingest/sync.js';
-import { syncJob } from '../jobs/sync.js';
-import { weeklyReview, withArchive } from '../jobs/review.js';
-import { backupJob } from '../jobs/backup.js';
-import { restoreTestJob } from '../jobs/restore-check.js';
+import { appleSource } from '../ingest/sync.ts';
+import { syncJob } from '../jobs/sync.ts';
+import { weeklyReview, withArchive } from '../jobs/review.ts';
+import { backupJob } from '../jobs/backup.ts';
+import { restoreTestJob } from '../jobs/restore-check.ts';
 import { createScheduler, schedulesFromEnv } from './scheduler.js';
 import { jobRunsLookup, activeUserIds } from './admin-queries.js';
 import { buildApp } from './app.js';
@@ -149,7 +149,7 @@ if (demo) {
     hasAi,
     aiAccess: (uid) => ai.check(uid),
     // The Reviews tab's "Run review now": the same call as npm run review, after the route's sync and data gate.
-    // Writing a week again keeps the review it replaces as an earlier version (jobs/review.js withArchive).
+    // Writing a week again keeps the review it replaces as an earlier version (jobs/review.ts withArchive).
     review: async ({ uid = OWNER_ID, weekEnd, today }) => {
       const store = forUser(uid);
       const claude = await claudeFor(uid);
