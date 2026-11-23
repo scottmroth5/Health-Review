@@ -97,7 +97,5 @@ flowchart LR
 6. **The app to the database (row-level security, ADR 0011):** each statement runs as its user, so the database returns only that user's rows even if a query forgets its filter. The admin screens, backups and transfer tools read every user's rows in an explicit all-users mode. This guards against mistakes in code, not against a compromised server.
 
 ## Known limits that v3 addresses
-- The old Lightsail server, stopped, and its snapshots keep AWS-managed keys until they are deleted on 2026-12-01; then the exception (ADR 0003) ends.
-- Row-level security in the database (Phase 1I) is next; today isolation is enforced in code.
 - Background jobs share the web process (ADR 0002, ADR 0004).
 - Ingest, jobs and AI calls share one process and its secrets (ADR 0002).

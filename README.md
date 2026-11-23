@@ -49,8 +49,10 @@ what is running.
   the MAPS catalog and PDFs and the pre-migration dumps. Every deploy keeps both, and the nightly encrypted backup
   covers the database and the catalog.
 - **Settings:** in Parameter Store under `/health-review/`, encrypted with the owner's key; `deploy/env-from-ssm.sh`
-  rebuilds `/opt/health-review/.env` (owner deploy, mode 600) from them before every start. `deploy/cloud.env.example`
-  lists the names.
+  rebuilds `/opt/health-review/.env` (owner deploy, mode 600) from them before every start, so an edit to `.env` on the
+  server is lost. `deploy/cloud.env.example` lists the names. To change one, in PowerShell signed in with `aws login`:
+  `aws ssm put-parameter --region us-east-2 --name /health-review/env/<NAME> --type SecureString --key-id alias/health-review --overwrite --value "<value>"`
+  (or the Parameter Store console), then `sudo -u deploy ./deploy.sh up` on the server.
 - **Administration:** through SSM Session Manager; the only SSH key on the server is the deploy key.
 
 **Server settings:**
@@ -66,8 +68,8 @@ what is running.
 
 **Storage and encryption.**
 - **Keys:** the database, its snapshots and point-in-time recovery, the server's disk and the settings are encrypted
-  with your own KMS key (`alias/health-review`). The old Lightsail server (AWS-managed keys) is kept stopped as the
-  fallback until 2026-12-01, then deleted with its snapshots, which ends that exception.
+  with your own KMS key (`alias/health-review`). Nothing that holds health data uses AWS-managed keys: the old
+  Lightsail server and its snapshots were deleted on 2026-11-22.
 - **Backups:** the nightly backup is still encrypted with your own passphrase before it leaves the server.
 
 **Policies and consent.** [PRIVACY.md](PRIVACY.md), [TERMS.md](TERMS.md) and
@@ -611,7 +613,7 @@ Health Review is an evolving personal project. Potential areas for continued dev
   healthcare professional.
 - **Keys you control:** done 2026-11-17. Production runs on RDS plus EC2 with a KMS customer-managed key
   ([infra/README.md](infra/README.md), [ADR 0009](docs/adr/0009-infrastructure.md)); the temporary AWS-managed-key
-  exception ends when the stopped Lightsail fallback is deleted (2026-12-01).
+  exception ended when the Lightsail server was deleted (2026-11-22).
 - **v3 architecture:** the decisions are in [docs/adr](docs/adr) and today's system in
   [docs/architecture/current.md](docs/architecture/current.md).
 

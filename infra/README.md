@@ -96,17 +96,24 @@ Their URLs are stored as SecureString parameters:
 
 It prints progress lines only. See [ADR 0010](../docs/adr/0010-postgres-operations.md).
 
-### 5. The settings, in staging mode
-The Lightsail server's `.env` and Google sign-in files are read over SSH into memory and stored under
-`/health-review/env/`. Staging changes four things:
-- the two site names;
-- no scheduled jobs;
-- no email;
-- its own Drive backup folder.
+### 5. The settings
+Each name in [deploy/cloud.env.example](../deploy/cloud.env.example) is one SecureString parameter under
+`/health-review/env/`, encrypted with the owner's key. `deploy/env-from-ssm.sh` turns them into the server's `.env`
+before every start. From `infra\`, signed in with `aws login`, once per name:
 ```powershell
-powershell -ExecutionPolicy Bypass -File env-to-ssm.ps1 -Mode staging -Lightsail <user>@<lightsail address> `
-  -KeyFile <path to the Lightsail key> -Site <staging app name> -DemoSite <staging demo name>
+aws ssm put-parameter --region us-east-2 --name /health-review/env/<NAME> --type SecureString --key-id alias/health-review --overwrite --value "<value>"
 ```
+(or the Parameter Store console). A value may not hold a single quote or a line break.
+- **Carried over, never new:** `USER_KEY_SECRET` seals users' Claude keys, `HEALTH_BACKUP_PASSPHRASE` opens the Drive
+  backups, and `SESSION_SECRET` keeps everyone signed in. New values lose those keys, backups or sign-ins.
+- **The Drive sign-in:** `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from `data\google\client_secret.json`, and
+  `GOOGLE_REFRESH_TOKEN` from `data\google\token.json` (`npm run google:login` makes it).
+- **Left out:** `DATABASE_URL` and `DB_ENGINE` (step 4's), and `HEALTH_DB_PATH` and `DATA_DIR`.
+- **A test server:** its own `SITE_ADDRESS`, `DEMO_SITE_ADDRESS`, `PUBLIC_URL` and `BACKUP_DRIVE_FOLDER`, and no
+  `SCHEDULE_` or `SMTP_` names, so it runs no jobs and sends no email.
+
+Lightsail's settings were copied here once by `env-to-ssm.ps1` (1G and 1H, removed after Lightsail was deleted on
+2026-11-22).
 
 ### 6. DNS and Google
 - **DNS:** two A records (the staging app name and the staging demo name) pointing at `terraform output server_public_ip`.
@@ -152,7 +159,8 @@ Then test together:
 - `backup-now` and `restore-test` (the same `docker compose run ... backup` line, with those commands).
 
 Cutover (1H): [docs/runbooks/postgres-cutover.md](../docs/runbooks/postgres-cutover.md). It repeats step 8 with a final
-backup and step 5 in production mode (the reset empties staging's copy from the same database), then moves DNS.
+backup and production's settings (the reset empties staging's copy from the same database), then moves DNS. It ran on
+2026-11-17 and is now a record.
 
 ## Later changes
 Run `terraform plan "-out=main.tfplan"` and read it, then `terraform apply main.tfplan`.

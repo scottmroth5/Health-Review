@@ -11,8 +11,8 @@
 //                           cutover later): audited, copied and verified by fingerprint (db/transfer-jobs.js migrateToPostgres).
 //   resetDatabase           before a load: the typed database name, no other connections, a checked dump kept, then the
 //                           schema dropped and migrated afresh (the freshly migrated state the load requires).
-//   rollbackExport          the 14 days after cutover: the database as a verified SQLite file in an ordinary encrypted
-//                           backup, for the old server's backup:restore.
+//   rollbackExport          a way off PostgreSQL: the database as a verified SQLite file in an ordinary encrypted
+//                           backup, for backup:restore anywhere.
 // Plaintext only in the OS temp folder or data/backups (the server's encrypted disk, mode 600, aged out with the .db
 // copies); counts, names and exit codes in the output, never a value or a URL.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -132,9 +132,9 @@ async function refuseOtherConnections(url: string, waitMs: number): Promise<void
 }
 
 /**
- * The rollback path in the 14 days after cutover (v3 Phase 1H): the PostgreSQL database back into a SQLite file
- * (db/transfer-jobs.js exportToSqlite: fingerprint-verified, deleted if it does not match), packed with the catalog as an
- * ordinary encrypted SQLite backup, health-<date>.hrbk, which the old server restores with backup:restore --file latest.
+ * A way off PostgreSQL (written for the 1H fallback, v3 Phase 1H): the database back into a SQLite file
+ * (db/transfer-jobs.ts exportToSqlite: fingerprint-verified, deleted if it does not match), packed with the catalog as an
+ * ordinary encrypted SQLite backup, health-<date>.hrbk, which backup:restore --file latest opens on any machine.
  * Refuses while anything else is connected, so nothing written after the export is lost. Plaintext only in the OS temp
  * folder, deleted on every path.
  */

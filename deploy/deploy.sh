@@ -4,9 +4,9 @@
 #
 #   ./deploy.sh deploy <image tag>   pull that image, start it, wait for /api/health on the app and the demo; on failure,
 #                                    go back to the last good one. When the image would change the database (its
-#                                    migrations, tried first on a throwaway copy), an encrypted Drive backup is made with
-#                                    the current image before it starts, the app keeps a checked pre-migration copy in
-#                                    data/backups, and a failed deploy puts that copy back before the old image starts.
+#                                    migrations, tried first on a scratch copy), a checked dump is kept in data/backups,
+#                                    an encrypted Drive backup is made with the current image, the migrations run, and a
+#                                    failed deploy puts the dump back before the old image starts.
 #   ./deploy.sh deploy <tag> --no-backup        the same without the Drive backup (emergency only)
 #   ./deploy.sh deploy <tag> --skip-db-check    deploy an image that has no migration check (an old tag)
 #   ./deploy.sh rollback             start the previous good image again. On PostgreSQL, not to an image older than
@@ -23,13 +23,14 @@
 # State (the deployed and previous tags, and the lock) lives in ./state, which the deploy user must own, because
 # /opt/health-review itself is owned by root:  sudo install -d -o deploy -g deploy -m 700 /opt/health-review/state
 #
-# PostgreSQL servers (v3 Phase 1G, docs/adr/0010): ./server.conf (written at first boot by infra/user-data.sh; not secret)
-# holds DB_ENGINE=postgres and ENV_SOURCE=ssm. Then .env is rebuilt from Parameter Store before each start
-# (env-from-ssm.sh), the backup container (compose profile postgres, image <tag>-backup) runs with the app, and a deploy
-# that would migrate goes: pre-migrate (a pg_dump restored into a scratch cluster and migrated there first; the checked
-# dump is kept in data/backups), the encrypted Drive backup with the current image, scripts/migrate.js as the migration
-# role, then the new image. A failed migration or start puts the dump back (under a minute at today's size) before the
-# old image runs. Without server.conf (the Lightsail server) everything runs as before, on SQLite.
+# The server runs on PostgreSQL (v3 Phase 1G, docs/adr/0010): ./server.conf (written at first boot by
+# infra/user-data.sh; not secret) holds DB_ENGINE=postgres and ENV_SOURCE=ssm, and this script refuses to run without the
+# first. .env is rebuilt from Parameter Store before each start (env-from-ssm.sh), the backup container (compose profile
+# postgres, image <tag>-backup) runs with the app, and a deploy that would migrate goes: pre-migrate (a pg_dump restored
+# into a scratch cluster and migrated there first; the checked dump is kept in data/backups), the encrypted Drive backup
+# with the current image, scripts/migrate.js as the migration role, then the new image. A failed migration or start puts
+# the dump back (under a minute at today's size) before the old image runs. The SQLite deploy path went with the
+# Lightsail server (deleted 2026-11-22).
 set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
@@ -55,10 +56,9 @@ OPTION="${ARGS[2]:-}"
 
 # server.conf is read by matching whole lines, never sourced.
 conf() { [[ -f server.conf ]] && grep -qx "$1" server.conf; }
-POSTGRES=0
-if conf 'DB_ENGINE=postgres'; then POSTGRES=1; export COMPOSE_PROFILES=postgres; fi
-SERVICES=(app demo)
-if (( POSTGRES )); then SERVICES+=(backup); fi
+conf 'DB_ENGINE=postgres' || fail "$PWD/server.conf has no DB_ENGINE=postgres line (infra/user-data.sh writes it at first boot). Nothing changed."
+export COMPOSE_PROFILES=postgres
+SERVICES=(app demo backup)
 
 valid_tag() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; }
 
@@ -75,7 +75,7 @@ refresh_env() {
   if conf 'ENV_SOURCE=ssm'; then ./env-from-ssm.sh || fail "Could not read the settings from Parameter Store; nothing changed."; fi
 }
 
-# A one-off backup container of this tag (PostgreSQL servers): scripts/backup-service.js <command>.
+# A one-off backup container of this tag: scripts/backup-service.js <command>.
 backup_run() { local tag="$1"; shift; IMAGE_TAG="$tag" docker compose run --rm --no-deps -T backup node scripts/backup-service.js "$@"; }
 
 # Both the app and the public demo must answer /api/health before a deploy counts as good.
@@ -97,30 +97,12 @@ healthy() {
 # A one-off container of the app's image, with the app's settings and data folder (runs as uid 1000, like the app).
 app_run() { local tag="$1"; shift; IMAGE_TAG="$tag" docker compose run --rm --no-deps -T "$@"; }
 
-# Would this image change the database? Its own check runs the migrations on a throwaway copy: exit 0 none, 10 some (a
-# migration that fails on this data fails here, before the real file is touched).
-db_check() {
-  local tag="$1" code=0
-  app_run "$tag" app node scripts/migrations-pending.js || code=$?
-  return "$code"
-}
-
-# Puts back the database as it was before this deploy's migrations (the newest pre-migration copy the new app took after
-# the deploy began), so the previous image never runs on a schema it does not know.
+# Puts back the database as it was before this deploy's migrations (the checked dump pre-migrate kept after the deploy
+# began), so the previous image never runs on a schema it does not know.
 restore_pre_migration() {
   local tag="$1"
   IMAGE_TAG="$tag" docker compose stop app || true
-  if (( POSTGRES )); then
-    backup_run "$tag" restore-pre-migration
-    return
-  fi
-  app_run "$tag" --entrypoint sh app -c 'set -e
-    f=$(ls -1 /app/data/backups/pre-migration-*.db 2>/dev/null | sort | tail -1)
-    [ -n "$f" ] && [ "$f" -nt /app/data/.deploy-started ] || { echo "[deploy] no pre-migration copy from this deploy" >&2; exit 1; }
-    cp "$f" /app/data/health.db.restoring
-    rm -f /app/data/health.db-wal /app/data/health.db-shm
-    mv /app/data/health.db.restoring /app/data/health.db
-    echo "[deploy] database put back from $f"'
+  backup_run "$tag" restore-pre-migration
 }
 
 start_tag() {
@@ -131,7 +113,7 @@ start_tag() {
   healthy
 }
 
-# PostgreSQL: check, back up and migrate before the new image starts. Sets migrating=1 once migrations may have run.
+# Check, back up and migrate before the new image starts. Sets migrating=1 once migrations may have run.
 pg_prepare() {
   local check=0
   log "Pulling $TAG and checking whether it changes the database (on a scratch copy)"
@@ -164,26 +146,8 @@ case "$ACTION" in
     current="$(cat "$CURRENT_FILE" 2>/dev/null || true)"
     migrating=0
     refresh_env
-    if (( POSTGRES )) && [[ "$OPTION" != --skip-db-check ]]; then
+    if [[ "$OPTION" != --skip-db-check ]]; then
       pg_prepare
-    elif [[ "$OPTION" != --skip-db-check ]]; then
-      log "Pulling $TAG and checking whether it changes the database"
-      IMAGE_TAG="$TAG" docker compose pull app
-      check=0
-      db_check "$TAG" || check=$?
-      if (( check == 10 )); then
-        migrating=1
-        if [[ "$OPTION" == --no-backup ]]; then
-          log "Database changes ahead; the Drive backup is skipped (--no-backup)"
-        else
-          [[ -n "$current" ]] || fail "Database changes ahead but no current image to back up with. Run: ./deploy.sh deploy $TAG --no-backup"
-          log "Database changes ahead: encrypted backup with $current first"
-          app_run "$current" app node scripts/backup.js || fail "The backup failed, so $TAG was not started and nothing changed."
-        fi
-        app_run "$TAG" --entrypoint sh app -c 'touch /app/data/.deploy-started'
-      elif (( check != 0 )); then
-        fail "The database check of $TAG failed (a migration failed on a copy, or the image has no check: use --skip-db-check for an old tag). Nothing changed."
-      fi
     fi
     if start_tag "$TAG"; then
       if [[ -n "$current" && "$current" != "$TAG" ]]; then echo "$current" > "$PREVIOUS_FILE"; fi

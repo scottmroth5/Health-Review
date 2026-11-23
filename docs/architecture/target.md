@@ -46,6 +46,6 @@ flowchart LR
 
 ## Trust boundaries that change
 - **The database leaves the server.** It's reachable only from the server's security group, over TLS, and never from the internet.
-- **Every key that protects health data is the owner's:** the database, its backups and snapshots, the server's disk and the secrets. This ends the Lightsail exception.
+- **Every key that protects health data is the owner's:** the database, its backups and snapshots, the server's disk and the secrets. This ended the Lightsail exception (ADR 0003) once the Lightsail server and its snapshots were deleted on 2026-11-22.
 - **Secrets move from the server's `.env` file to Parameter Store.** The server reads them with its instance role, and no AWS key exists on any machine.
 - **Administration is through SSM Session Manager.** The only SSH key on the server is the deploy key, which can only run the deploy script.

@@ -10,9 +10,9 @@
 //                                                          file) into an empty database
 //   node scripts/backup-service.js reset-database --confirm <database>   before a load: refuses while anything else is
 //                                                          connected, keeps a checked dump, then empties and migrates
-//   node scripts/backup-service.js rollback-export         the 14 days after cutover: the database as an encrypted SQLite
-//                                                          backup in this server's Drive folder (the old server restores
-//                                                          it with backup:restore --file latest); refuses while connected
+//   node scripts/backup-service.js rollback-export         a way off PostgreSQL: the database as an encrypted SQLite
+//                                                          backup in this server's Drive folder (backup:restore --file
+//                                                          latest opens it anywhere); refuses while connected
 // Database URLs (never logged): DATABASE_URL (hr_app: runs, alerts, live counts), BACKUP_DATABASE_URL (hr_backup:
 // pg_dump), MIGRATE_DATABASE_URL (hr_migrate: restore and load only).
 import { readFileSync, statSync } from 'node:fs';

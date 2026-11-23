@@ -85,7 +85,7 @@ services:
         max-size: 5m
         max-file: "2"
 
-  # PostgreSQL servers only (profile postgres; deploy.sh turns it on from server.conf, v3 Phase 1G): the nightly backup
+  # Profile postgres (deploy.sh always turns it on; v3 Phase 1G), so a bare docker compose command leaves it alone: the nightly backup
   # and the monthly restore test with pg_dump, and deploy.sh's pre-migrate, migrate and restore steps. The only container
   # with the migration and backup logins (backup.env). Scratch clusters for checks live in /tmp and are deleted after each.
   backup:
@@ -94,8 +94,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-      # Optional to compose, so a SQLite server without the file (Lightsail) still loads this file; the service itself
-      # refuses to run without the URLs it needs.
+      # Optional to compose, so a missing file never stops the app and demo from starting; the service itself refuses to
+      # run without the URLs it needs.
       - path: backup.env
         required: false
     environment:

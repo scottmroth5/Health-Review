@@ -84,3 +84,9 @@ The connection to RDS must be verified TLS (`rds.force_ssl` is on), and the imag
 - **Revisit when:**
   - the database outgrows a dump in a minute or two (then use snapshots or a replica);
   - 1I's row-level security needs the admin role split out.
+
+## Update, 2026-11-22: Lightsail deleted
+The Lightsail server and its snapshots were deleted on 2026-11-22, so the SQLite-server paths this decision kept are gone:
+- `deploy/deploy.sh` runs only on a server whose `server.conf` says `DB_ENGINE=postgres`, and refuses otherwise. Its file-copy migration check and restore are removed.
+- `infra/env-to-ssm.ps1` is removed. It copied Lightsail's settings into Parameter Store once; a new server's settings are set one by one (infra/README.md step 5).
+- `rollback-export` stays, as a way off PostgreSQL rather than the 14-day fallback.

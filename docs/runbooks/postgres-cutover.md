@@ -1,6 +1,8 @@
 # Cutover runbook: Lightsail (SQLite) to EC2 and RDS (PostgreSQL)
 
-v3 Phase 1H, run 2026-11-17 (the fixes found that day are folded in). The owner runs every step; Claude guides live. Names in angle brackets are the owner's own values (the app
+v3 Phase 1H, run 2026-11-17 (the fixes found that day are folded in). Lightsail was deleted on 2026-11-22, after five
+clean days instead of 14 (owner's choice), so "Back out before DNS" and the rollback below are a record only; a restore
+now comes from RDS's point-in-time recovery or the encrypted Drive backups. The owner runs every step; Claude guides live. Names in angle brackets are the owner's own values (the app
 and demo names, the staging names, the Lightsail address, the Elastic IP, the running image tag). None of them belong in
 this repository.
 
