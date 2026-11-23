@@ -55,7 +55,7 @@
     "@opentelemetry/sdk-metrics": "3.0.0",
     "@opentelemetry/sdk-trace": "3.0.0",
     "@scottmroth5/agent-core": "github:scottmroth5/Agent-Core#semver:^0.4.1",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^13.2.0",
     "fastify": "^5.12.8",
     "google-auth-library": "^11.3.4",
     "maxmind": "^5.0.9",
