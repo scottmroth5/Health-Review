@@ -67,7 +67,7 @@
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "ajv": "^8.20.0",
-    "eslint": "^10.14.0",
+    "eslint": "^10.15.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.2"
   }
